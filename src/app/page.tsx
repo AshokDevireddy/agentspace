@@ -2,9 +2,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import CreatePositionModal from "@/components/modals/create-position-modal"
-import ImportCommissionModal from "@/components/modals/import-commission-modal"
-import PersistencyCard from "@/components/persistency-card"
 import {
   DollarSign,
   Users,
@@ -206,13 +203,6 @@ export default function Home() {
                 >
                   Overview
                 </Link>
-                <Link
-                  href="/analytics/teams"
-                  onClick={() => setOpenDropdown(null)}
-                  className="block px-4 py-3 text-sm text-foreground hover:text-primary hover:bg-accent/50 transition-colors rounded-lg mx-2"
-                >
-                  Teams
-                </Link>
               </div>
             </div>
           )}
@@ -220,7 +210,7 @@ export default function Home() {
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Annual Goal */}
         <Card className="professional-card">
           <CardHeader>
@@ -301,9 +291,6 @@ export default function Home() {
             </div>
           </CardContent>
         </Card>
-
-        {/* Persistency Metrics */}
-        <PersistencyCard />
       </div>
 
       {/* Stats Cards */}

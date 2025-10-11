@@ -120,19 +120,13 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     phoneNumber: "",
     annualGoal: "",
     permissionLevel: "",
-    uplineAgentId: "",
-    positionId: ""
+    uplineAgentId: ""
   })
   const [isOpen, setIsOpen] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [errorFields, setErrorFields] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(false)
-
-  // State for positions dropdown
-  const [positions, setPositions] = useState<SearchOption[]>([])
-  const [positionsLoading, setPositionsLoading] = useState(false)
-  const [positionsError, setPositionsError] = useState<string | null>(null)
 
   // Use the custom agent search hook
   const {
@@ -206,41 +200,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       }
   }, [upline, searchResults, formData.uplineAgentId]);
 
-  // Fetch positions when component mounts
-  useEffect(() => {
-    const fetchPositions = async () => {
-      try {
-        setPositionsLoading(true)
-        setPositionsError(null)
-
-        // API call to fetch positions
-        const response = await fetch('/api/positions/all', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include'
-        })
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch positions')
-        }
-
-        const positionsData: SearchOption[] = await response.json()
-        setPositions(positionsData)
-      } catch (error) {
-        console.error('Error fetching positions:', error)
-        setPositionsError('Failed to load positions. Please refresh and try again.')
-      } finally {
-        setPositionsLoading(false)
-      }
-    }
-
-    if(isOpen) {
-        fetchPositions()
-    }
-  }, [isOpen])
-
   const validateForm = () => {
     const newErrors: string[] = []
     const newErrorFields: Record<string, string> = {}
@@ -293,7 +252,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           phoneNumber: formData.phoneNumber,
           annualGoal: Number(formData.annualGoal),
           permissionLevel: formData.permissionLevel,
-          positionId: formData.positionId || null, // Include position ID
           uplineAgentId: formData.uplineAgentId || null // Include upline agent ID
         }),
         credentials: 'include'
@@ -315,8 +273,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         phoneNumber: "",
         annualGoal: "",
         permissionLevel: "",
-        uplineAgentId: "",
-        positionId: ""
+        uplineAgentId: ""
       })
       setErrors([])
       setErrorFields({})
@@ -362,13 +319,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         {searchError && (
           <Alert variant="destructive" className="mb-4">
             <AlertDescription>{searchError}</AlertDescription>
-          </Alert>
-        )}
-
-        {/* Show positions error if any */}
-        {positionsError && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertDescription>{positionsError}</AlertDescription>
           </Alert>
         )}
 
@@ -462,33 +412,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               placeholder="--------"
               searchPlaceholder="Search permission levels..."
             />
-          </div>
-
-          {/* Position Selection */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-foreground">
-              Position
-            </label>
-            {positionsLoading ? (
-              <div className="h-12 border border-border rounded-lg flex items-center justify-center bg-accent/50">
-                <div className="flex items-center space-x-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                  <span className="text-sm text-muted-foreground">Loading positions...</span>
-                </div>
-              </div>
-            ) : positionsError ? (
-              <div className="h-12 border border-destructive rounded-lg flex items-center justify-center bg-destructive/10">
-                <span className="text-sm text-destructive">Failed to load positions</span>
-              </div>
-            ) : (
-              <SimpleSearchableSelect
-                options={positions}
-                value={formData.positionId}
-                onValueChange={(value) => handleInputChange("positionId", value)}
-                placeholder="Select a position..."
-                searchPlaceholder="Search positions..."
-              />
-            )}
           </div>
 
           {/* Upline Agent Selection */}

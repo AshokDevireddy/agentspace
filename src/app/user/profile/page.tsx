@@ -14,14 +14,6 @@ interface ProfileData {
   createdAt: string;
   totalProduction: number;
   totalPoliciesSold: number;
-  positionHistory: Array<{
-    id: string;
-    date: string;
-    title: string;
-    effectiveDate: string;
-    endDate: string | null;
-    reason: string | null;
-  }>;
 }
 
 export default function ProfilePage() {
@@ -32,18 +24,18 @@ export default function ProfilePage() {
   // Calculate tenure from created_at
   const calculateTenure = (createdAt: string) => {
     if (!createdAt) return "Unknown";
-    
+
     const created = new Date(createdAt);
     const now = new Date();
-    
+
     let years = now.getFullYear() - created.getFullYear();
     let months = now.getMonth() - created.getMonth();
-    
+
     if (months < 0) {
       years--;
       months += 12;
     }
-    
+
     const parts = [];
     if (years > 0) {
       parts.push(`${years} year${years !== 1 ? 's' : ''}`);
@@ -51,7 +43,7 @@ export default function ProfilePage() {
     if (months > 0) {
       parts.push(`${months} month${months !== 1 ? 's' : ''}`);
     }
-    
+
     return parts.length > 0 ? parts.join(', ') : "Less than a month";
   };
 
@@ -65,13 +57,13 @@ export default function ProfilePage() {
 
       try {
         const response = await fetch(`/api/user/profile?user_id=${user.id}`);
-        
+
         if (!response.ok) {
           throw new Error('Failed to fetch profile data');
         }
 
         const result = await response.json();
-        
+
         if (result.success) {
           setProfileData(result.data);
         } else {
@@ -112,10 +104,6 @@ export default function ProfilePage() {
     tenure: calculateTenure(profileData.createdAt),
     allTimeProduction: profileData.totalProduction,
     totalPoliciesSold: profileData.totalPoliciesSold,
-    promotionHistory: profileData.positionHistory.slice().reverse().map(pos => ({
-      date: pos.date,
-      title: pos.title
-    })),
     weeklyStats: [
       {
         label: "This Week",
@@ -170,7 +158,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Weekly Stats Tabs */}
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow mb-8">
+      <div className="w-full max-w-3xl bg-white rounded-2xl shadow">
         <div className="flex border-b">
           <button className="px-6 py-3 font-semibold text-indigo-700 border-b-2 border-indigo-700 bg-white rounded-tl-2xl">
             This Week
@@ -197,28 +185,6 @@ export default function ProfilePage() {
               </span>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Promotion History */}
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow p-8">
-        <div className="text-2xl font-extrabold text-gray-900 mb-6">Promotion History</div>
-        <div className="space-y-4">
-          {user_profile.promotionHistory.map((promotion: { date: string; title: string; }, index: number) => (
-            <div key={index} className="flex items-start">
-              <div className="flex flex-col items-center mr-4 mt-2">
-                <span className="w-3 h-3 bg-indigo-500 rounded-full"></span>
-                {/* Add vertical line if not the last promotion */}
-                {index < user_profile.promotionHistory.length - 1 && (
-                  <div className="w-px h-16 bg-gray-300 mt-2"></div>
-                )}
-              </div>
-              <div className="bg-indigo-50 rounded-xl px-8 py-4 w-full">
-                <div className="text-gray-500 mb-1">{promotion.date}</div>
-                <div className="text-xl font-bold text-gray-900">{promotion.title}</div>
-              </div>
-            </div>
-          ))}
         </div>
       </div>
     </div>

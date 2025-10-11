@@ -13,7 +13,6 @@ import {
   BarChart3,
   Users,
   FileText,
-  CreditCard,
   TrendingUp,
   Settings,
   Home,
@@ -21,8 +20,7 @@ import {
   Phone,
   LogOut,
   Building2,
-  Mail,
-  Calculator
+  Mail
 } from "lucide-react"
 import { createClient } from '@/lib/supabase/client'
 
@@ -36,8 +34,6 @@ const navigationItems = [
     submenu: [
       { name: "All Agents", href: "/agents" },
       { name: "Contracts", href: "/agents/contracts" },
-      { name: "Positions", href: "/agents/positions" },
-      { name: "Archived", href: "/agents/archived" },
     ]
   },
   {
@@ -46,21 +42,7 @@ const navigationItems = [
     icon: FileText,
     submenu: [
       { name: "Post a Deal", href: "/policies/post" },
-      { name: "Drafts", href: "/policies/drafts" },
       { name: "Book of Business", href: "/policies/book" },
-    ]
-  },
-  {
-    name: "Payments",
-    href: "/payments",
-    icon: CreditCard,
-    submenu: [
-      { name: "Estimated Payouts", href: "/payments/estimated" },
-      { name: "Your Payouts", href: "/payments/yours" },
-      { name: "Commission Reports", href: "/payments/reports", adminOnly: true },
-      { name: "Carrier Transactions", href: "/payments/transactions" },
-      { name: "All Transactions", href: "/payments/all-transactions" },
-      { name: "Agent Payrolls", href: "/payments/payrolls" },
     ]
   },
   {
@@ -73,26 +55,7 @@ const navigationItems = [
       { name: "Call Center", href: "/communications/calls" },
     ]
   },
-  {
-    name: "Underwriting",
-    href: "/underwriting",
-    icon: Calculator,
-    submenu: [
-      { name: "Quote Engine", href: "/underwriting/quote" },
-      { name: "Risk Assessment", href: "/underwriting/risk" },
-      { name: "Policy Proposals", href: "/underwriting/proposals" },
-      { name: "Underwriting Dashboard", href: "/underwriting" },
-    ]
-  },
-  {
-    name: "Analytics",
-    href: "/analytics",
-    icon: TrendingUp,
-    submenu: [
-      { name: "Overview", href: "/analytics" },
-      { name: "Teams", href: "/analytics/teams" },
-    ]
-  },
+  { name: "Analytics", href: "/analytics", icon: TrendingUp },
 ]
 
 export default function Navigation() {

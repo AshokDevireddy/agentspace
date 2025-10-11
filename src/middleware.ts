@@ -29,7 +29,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // Admin-only routes
-  const adminRoutes = ['/configuration', '/payments/reports', '/api/create-user', '/api/setup-account', '/api/search-agent', '/api/positions', '/api/carriers/agency']
+  const adminRoutes = ['/configuration', '/api/create-user', '/api/setup-account', '/api/search-agent', '/api/carriers/agency']
   const isAdminRoute = adminRoutes.some(route => req.nextUrl.pathname.startsWith(route))
   // console.log('isAdminRoute', isAdminRoute)
   if (isAdminRoute && session) {

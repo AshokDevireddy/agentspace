@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     const view = searchParams.get('view') || 'table'
 
     const supabase = createAdminClient()
-    const userClient = createServerClient()
+    const userClient = await createServerClient()
 
     const { data: { user } } = await userClient.auth.getUser()
 
@@ -25,8 +25,14 @@ export async function GET(request: Request) {
       .single()
 
     if (currentUserError || !currentUser) {
-      return NextResponse.json({ error: 'Failed to fetch current user' }, { status: 500 })
+      console.error('Current user fetch error:', currentUserError)
+      return NextResponse.json({
+        error: 'Failed to fetch current user',
+        detail: currentUserError?.message || 'User not found'
+      }, { status: 500 })
     }
+
+    console.log('Current user:', currentUser.id, 'Agency:', currentUser.agency_id)
 
     // Fetch all users to build the hierarchy
     const { data: allUsers, error: allUsersError } = await supabase
@@ -35,22 +41,27 @@ export async function GET(request: Request) {
         id,
         first_name,
         last_name,
-        position_id,
+        perm_level,
         upline_id,
         created_at,
         is_active,
         total_prod,
-        total_policies_sold
+        total_policies_sold,
+        role
       `)
       .eq('agency_id', currentUser.agency_id)
+      .neq('role', 'client')
 
     if (allUsersError) {
       console.error('All users fetch error:', allUsersError)
+      console.error('Error details:', JSON.stringify(allUsersError, null, 2))
       return NextResponse.json({
         error: 'Failed to fetch users',
-        detail: 'Database query encountered an error'
+        detail: allUsersError.message || 'Database query encountered an error'
       }, { status: 500 })
     }
+
+    console.log('Fetched users count:', allUsers?.length || 0)
 
     // Build a map of users by their ID and a tree structure
     type BasicUser = NonNullable<typeof allUsers>[number]
@@ -94,26 +105,54 @@ export async function GET(request: Request) {
         }
     }
 
+    // Handle case where there are no agents yet (new agency)
+    if (!allUsers || allUsers.length === 0) {
+        return NextResponse.json({
+            agents: [],
+            pagination: {
+                currentPage: 1,
+                totalPages: 1,
+                totalCount: 0,
+                limit: 20,
+                hasNextPage: false,
+                hasPrevPage: false
+            },
+            tree: {
+                name: `${currentUser.last_name}, ${currentUser.first_name}`,
+                children: [],
+                attributes: { position: 'Admin' }
+            }
+        });
+    }
+
     if (!currentUserNode) {
         // Return the current user as an agent if no downline exists
          return NextResponse.json({
             agents: [{
               id: currentUser.id,
               name: `${currentUser.last_name}, ${currentUser.first_name}`,
-              position: 'Current User',
+              position: 'Admin',
               upline: 'None',
               created: new Date().toISOString(),
               lastLogin: new Date().toISOString(),
               earnings: '$0.00 / $0.00',
               downlines: 0,
               status: 'Active',
-              badge: 'Current User',
+              badge: 'Admin',
               children: []
             }],
+            pagination: {
+                currentPage: 1,
+                totalPages: 1,
+                totalCount: 1,
+                limit: 20,
+                hasNextPage: false,
+                hasPrevPage: false
+            },
             tree: {
               name: `${currentUser.last_name}, ${currentUser.first_name}`,
               children: [],
-              attributes: { position: 'Current User' }
+              attributes: { position: 'Admin' }
             }
         });
     }
@@ -135,49 +174,27 @@ export async function GET(request: Request) {
 
     const downlineUsers = [currentUserNode, ...getDownline(currentUserNode)]
 
-    const positionIds = downlineUsers
-      .map(user => user.position_id)
-      .filter(id => id !== null)
-
-    const { data: positions, error: positionsError } = await supabase
-      .from('positions')
-      .select('id, name')
-      .in('id', positionIds)
-      .eq('agency_id', currentUser.agency_id)
-
-    if (positionsError) {
-      console.error('Positions fetch error:', positionsError)
-      return NextResponse.json({
-        error: 'Failed to fetch positions',
-        detail: 'Database query encountered an error'
-      }, { status: 500 })
-    }
-
-    const positionMap = new Map(
-      positions?.map(pos => [pos.id, pos.name]) || []
-    )
-
     const uplineIds = downlineUsers
       .map(user => user.upline_id)
-      .filter(id => id !== null)
+      .filter(id => id !== null && id !== undefined)
 
-    const { data: uplines, error: uplinesError } = await supabase
-      .from('users')
-      .select('id, first_name, last_name')
-      .in('id', uplineIds)
+    // Only fetch uplines if there are any upline IDs
+    let uplineMap = new Map<string, string>()
+    if (uplineIds.length > 0) {
+      const { data: uplines, error: uplinesError } = await supabase
+        .from('users')
+        .select('id, first_name, last_name')
+        .in('id', uplineIds)
 
-    if (uplinesError) {
-      console.error('Uplines fetch error:', uplinesError)
-      return NextResponse.json({
-        error: 'Failed to fetch uplines',
-        detail: 'Database query encountered an error'
-      }, { status: 500 })
+      if (uplinesError) {
+        console.error('Uplines fetch error:', uplinesError)
+        // Don't fail the whole request, just continue without upline names
+      } else {
+        uplineMap = new Map(
+          uplines?.map(upline => [upline.id, `${upline.last_name}, ${upline.first_name}`]) || []
+        )
+      }
     }
-
-    const uplineMap = new Map(
-      uplines?.map(upline => [upline.id, `${upline.last_name}, ${upline.first_name}`]) || []
-    )
-    // Note: we avoid setting a null key; handle null in lookup instead
 
     type AgentDto = {
       id: string
@@ -194,13 +211,15 @@ export async function GET(request: Request) {
     }
 
     const transformUserToAgent = (user: UserNode): AgentDto => {
-        const positionName = user.position_id ? positionMap.get(user.position_id) || 'Unknown' : 'Unknown'
+        // Format permission level nicely
+        const permLevel = user.perm_level || 'agent'
+        const positionName = permLevel.charAt(0).toUpperCase() + permLevel.slice(1).toLowerCase()
+
         const uplineName = user.upline_id ? (uplineMap.get(user.upline_id) || 'None') : 'None'
         const downlines = user.children.length
 
-        const randomEarnings = Math.floor(Math.random() * 451) + 50
         const totalProd = parseFloat(user.total_prod?.toString() || '0')
-        const earnings = `$${randomEarnings.toFixed(2)} / $${totalProd.toFixed(2)}`
+        const earnings = `$0.00 / $${totalProd.toFixed(2)}`
 
         const today = new Date()
         const maxDaysAgo = 2
@@ -278,9 +297,10 @@ export async function GET(request: Request) {
 
   } catch (error) {
     console.error('API Error in agents:', error)
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
     return NextResponse.json({
       error: 'Internal Server Error',
-      detail: 'An unexpected error occurred while fetching agents'
+      detail: error instanceof Error ? error.message : 'An unexpected error occurred while fetching agents'
     }, { status: 500 })
   }
 }

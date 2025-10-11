@@ -12,8 +12,7 @@ export async function middleware(req: NextRequest) {
   } = await supabase.auth.getSession()
 
   // Public routes that don't require authentication
-  // Treat any auth callback path starting with /auth/confirm as public (handles extra params)
-  const publicRoutes = ['/login', '/signup', '/forgot-password', '/reset-password']
+  const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/setup-account']
   const isPublicRoute = publicRoutes.includes(req.nextUrl.pathname) || req.nextUrl.pathname.startsWith('/auth/confirm')
 
   // If no session and trying to access protected route
@@ -28,28 +27,57 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL('/login', req.url))
   }
 
+  // If user is authenticated, check role-based access
+  if (session) {
+    // Get user profile to check role
+    const { data: user } = await supabase
+      .from('users')
+      .select('role, is_admin, is_active')
+      .eq('auth_user_id', session.user.id)
+      .maybeSingle()
+
+    // Check if user is active
+    if (user && !user.is_active) {
+      await supabase.auth.signOut()
+      return NextResponse.redirect(new URL('/login?message=account-deactivated', req.url))
+    }
+
+    // Client-specific routes
+    if (req.nextUrl.pathname.startsWith('/client/')) {
+      if (!user || user.role !== 'client') {
+        return NextResponse.redirect(new URL('/unauthorized', req.url))
+      }
+      return res
+    }
+
+    // If client tries to access non-client routes (except public routes and logout)
+    if (user && user.role === 'client' && !isPublicRoute && !req.nextUrl.pathname.startsWith('/client/')) {
+      return NextResponse.redirect(new URL('/client/dashboard', req.url))
+    }
+  }
+
   // Admin-only routes
   const adminRoutes = ['/configuration', '/api/create-user', '/api/setup-account', '/api/search-agent', '/api/carriers/agency']
   const isAdminRoute = adminRoutes.some(route => req.nextUrl.pathname.startsWith(route))
-  // console.log('isAdminRoute', isAdminRoute)
+
   if (isAdminRoute && session) {
     // Get user profile to check admin status
     const { data: user } = await supabase
       .from('users')
-      .select('is_admin')
+      .select('is_admin, role')
       .eq('auth_user_id', session.user.id)
-      .single()
+      .maybeSingle()
 
-      if (!user?.is_admin) {
-        const isApiRoute = req.nextUrl.pathname.startsWith('/api/');
-        if (isApiRoute) {
-          return NextResponse.json(
-            { error: 'Forbidden', message: 'Admin access required' },
-            { status: 403 }
-          );
-        }
-        return NextResponse.redirect(new URL('/unauthorized', req.url))
+    if (!user?.is_admin) {
+      const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
+      if (isApiRoute) {
+        return NextResponse.json(
+          { error: 'Forbidden', message: 'Admin access required' },
+          { status: 403 }
+        )
       }
+      return NextResponse.redirect(new URL('/unauthorized', req.url))
+    }
   }
 
   return res

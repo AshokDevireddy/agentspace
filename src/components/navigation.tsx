@@ -81,16 +81,16 @@ export default function Navigation() {
           .from('users')
           .select('is_admin')
           .eq('auth_user_id', user.id)
-          .single()
+          .maybeSingle()
 
         if (error) {
-          console.error('Error fetching user admin status:', error)
+          // Silently handle error - user may not exist in users table yet (e.g., during setup)
           setIsAdmin(false)
         } else {
           setIsAdmin(userData?.is_admin || false)
         }
       } catch (error) {
-        console.error('Error checking admin status:', error)
+        // Silently handle error - user may not exist in users table yet
         setIsAdmin(false)
       } finally {
         setAdminLoading(false)

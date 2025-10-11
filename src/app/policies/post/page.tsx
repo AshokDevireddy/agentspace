@@ -18,6 +18,7 @@ const initialFormData = {
   policyEffectiveDate: "",
   annualPremium: "",
   clientName: "",
+  clientEmail: "",
   clientPhone: "",
   policyNumber: "",
   applicationNumber: "",
@@ -162,12 +163,56 @@ export default function PostDeal() {
       // SECTION 3: Split agent (optional)
       const split_agent_id = formData.splitAgentId || null
 
+      // SECTION 4: Invite client if email is provided
+      let client_auth_id = null
+      if (formData.clientEmail) {
+        try {
+          // Check if client already exists
+          const { data: existingClient } = await supabase
+            .from('users')
+            .select('id, auth_user_id')
+            .eq('email', formData.clientEmail)
+            .eq('role', 'client')
+            .maybeSingle()
+
+          if (existingClient) {
+            client_auth_id = existingClient.id
+          } else {
+            // Send invitation to client
+            const inviteResponse = await fetch('/api/clients/invite', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: formData.clientEmail,
+                // Extract first and last name from client name if possible
+                firstName: formData.clientName.split(' ')[0] || formData.clientName,
+                lastName: formData.clientName.split(' ').slice(1).join(' ') || 'Client',
+                phoneNumber: formData.clientPhone
+              })
+            })
+
+            const inviteData = await inviteResponse.json()
+            if (inviteResponse.ok) {
+              client_auth_id = inviteData.userId
+              console.log('Client invitation sent successfully')
+            } else {
+              console.warn('Failed to invite client:', inviteData.error)
+              // Continue anyway, don't fail the deal creation
+            }
+          }
+        } catch (clientError) {
+          console.warn('Error inviting client:', clientError)
+          // Continue anyway, don't fail the deal creation
+        }
+      }
+
       // SECTION 5: Construct payload and submit to API
       const payload = {
         agent_id,
         carrier_id,
         product_id,
         client_name: formData.clientName,
+        client_email: formData.clientEmail || null,
         client_phone: formData.clientPhone,
         policy_number: formData.policyNumber,
         application_number: formData.applicationNumber,
@@ -320,18 +365,36 @@ export default function PostDeal() {
             </div>
 
             {/* Client Information */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  Client name
-                </label>
-                <Input
-                  type="text"
-                  value={formData.clientName}
-                  onChange={(e) => handleInputChange("clientName", e.target.value)}
-                  className="h-12"
-                  placeholder="Enter client name"
-                />
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-muted-foreground">
+                    Client name
+                  </label>
+                  <Input
+                    type="text"
+                    value={formData.clientName}
+                    onChange={(e) => handleInputChange("clientName", e.target.value)}
+                    className="h-12"
+                    placeholder="Enter client name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-muted-foreground">
+                    Client email
+                  </label>
+                  <Input
+                    type="email"
+                    value={formData.clientEmail}
+                    onChange={(e) => handleInputChange("clientEmail", e.target.value)}
+                    className="h-12"
+                    placeholder="Enter client email"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    An invitation will be sent to this email for client portal access
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-2">

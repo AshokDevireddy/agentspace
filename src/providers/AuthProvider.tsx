@@ -46,13 +46,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+  const signIn = async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
     if (error) throw error
-    router.push('/')
+
+    // Get user profile to check role
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('role, is_active')
+      .eq('auth_user_id', data.user.id)
+      .single()
+
+    if (userError) throw new Error('User profile not found')
+
+    if (!userData.is_active) {
+      await supabase.auth.signOut()
+      throw new Error('Your account has been deactivated')
+    }
+
+    // Verify user is logging in with correct role if expectedRole is provided
+    if (expectedRole && userData.role !== expectedRole) {
+      await supabase.auth.signOut()
+      throw new Error(`Please use the ${userData.role} login tab`)
+    }
+
+    // Route based on role
+    if (userData.role === 'client') {
+      router.push('/client/dashboard')
+    } else {
+      router.push('/')
+    }
   }
 
   const signOut = async () => {

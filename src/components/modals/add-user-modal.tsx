@@ -28,11 +28,8 @@ interface SearchOption {
 }
 
 const permissionLevels = [
-  { value: "admin", label: "Admin" },
-  { value: "manager", label: "Manager" },
   { value: "agent", label: "Agent" },
-  { value: "supervisor", label: "Supervisor" },
-  { value: "trainee", label: "Trainee" }
+  { value: "admin", label: "Admin" }
 ]
 
 // Custom hook for debounced agent search
@@ -118,7 +115,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     lastName: "",
     email: "",
     phoneNumber: "",
-    annualGoal: "",
     permissionLevel: "",
     uplineAgentId: ""
   })
@@ -211,16 +207,16 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       newErrorFields.email = "Invalid email format"
     }
 
-    // Phone validation (simple format: xxx-xxx-xxxx)
+    // Phone validation (10 digits)
     if (formData.phoneNumber.length != 10) {
-      newErrors.push("Phone number must be in format: xxx-xxx-xxxx")
+      newErrors.push("Phone number must be 10 digits")
       newErrorFields.phoneNumber = "Invalid phone format"
     }
 
-    // Annual goal validation
-    if (isNaN(Number(formData.annualGoal)) || Number(formData.annualGoal) < 0) {
-      newErrors.push("Annual goal must be a positive number")
-      newErrorFields.annualGoal = "Invalid number"
+    // Permission level validation
+    if (!formData.permissionLevel) {
+      newErrors.push("Permission level is required")
+      newErrorFields.permissionLevel = "Required"
     }
 
     setErrors(newErrors)
@@ -239,8 +235,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     try {
       setSubmitting(true)
 
-      // Single API call with all user data including upline agent ID and position ID
-      const response = await fetch('/api/create-user', {
+      // Call the API to invite the agent
+      const response = await fetch('/api/agents/invite', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -250,9 +246,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           firstName: formData.firstName,
           lastName: formData.lastName,
           phoneNumber: formData.phoneNumber,
-          annualGoal: Number(formData.annualGoal),
           permissionLevel: formData.permissionLevel,
-          uplineAgentId: formData.uplineAgentId || null // Include upline agent ID
+          uplineAgentId: formData.uplineAgentId || null
         }),
         credentials: 'include'
       })
@@ -260,9 +255,11 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       const data = await response.json()
 
       if (!response.ok) {
-        console.log(response)
-        throw new Error(data.error || 'Failed to create user')
+        throw new Error(data.error || 'Failed to invite agent')
       }
+
+      // Show success message
+      alert(`Invitation sent successfully to ${formData.email}!`)
 
       setIsOpen(false)
       // Reset form
@@ -271,16 +268,18 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         lastName: "",
         email: "",
         phoneNumber: "",
-        annualGoal: "",
         permissionLevel: "",
         uplineAgentId: ""
       })
       setErrors([])
       setErrorFields({})
       setSearchTerm("") // Reset search term
+
+      // Optionally refresh the page to show new agent
+      window.location.reload()
     } catch (error) {
-      console.error('Error creating user:', error)
-      setErrors(['Failed to create user. Please try again.'])
+      console.error('Error inviting agent:', error)
+      setErrors([error instanceof Error ? error.message : 'Failed to invite agent. Please try again.'])
     } finally {
       setSubmitting(false)
     }
@@ -386,20 +385,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             )}
           </div>
 
-          {/* Annual goal */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-foreground">
-              Annual goal
-            </label>
-            <Input
-              type="number"
-              value={formData.annualGoal}
-              onChange={(e) => handleInputChange("annualGoal", e.target.value)}
-              className="h-12"
-              placeholder="0"
-            />
-          </div>
-
           {/* Permission Level */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-foreground">
@@ -409,9 +394,12 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               options={permissionLevels}
               value={formData.permissionLevel}
               onValueChange={(value) => handleInputChange("permissionLevel", value)}
-              placeholder="--------"
+              placeholder="Select permission level"
               searchPlaceholder="Search permission levels..."
             />
+            {errorFields.permissionLevel && (
+              <p className="text-red-500 text-sm">{errorFields.permissionLevel}</p>
+            )}
           </div>
 
           {/* Upline Agent Selection */}

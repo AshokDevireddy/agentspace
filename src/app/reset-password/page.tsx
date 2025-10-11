@@ -39,26 +39,15 @@ export default function ResetPassword() {
 
     try {
       // Send password reset email
-      console.log('=== RESET PASSWORD: Sending reset email ===')
-      console.log('Email:', email)
-      console.log('Redirect URL:', `http://localhost:3000/forgot-password`)
-
-      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/forgot-password`,
       })
 
-      console.log('resetPasswordForEmail result:', { data, error })
-
       if (error) {
         console.error('Error sending reset email:', error)
-        setMessage({ type: 'error', text: 'If an account exists for this email, a reset link will be sent.' })
-        setTimeout(() => {
-          router.push('/login')
-        }, 3000)
-        return
       }
 
-      // Success
+      // Always show success message to prevent email enumeration
       setMessage({ type: 'success', text: 'If an account exists for this email, a reset link has been sent. Check your inbox.' })
       setTimeout(() => {
         router.push('/login')

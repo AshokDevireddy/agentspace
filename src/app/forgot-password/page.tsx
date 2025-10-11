@@ -23,90 +23,53 @@ export default function ForgotPassword() {
   const [tokenValid, setTokenValid] = useState<boolean>(false)
 
   useEffect(() => {
-    console.log('=== FORGOT PASSWORD: useEffect started ===')
-    console.log('Current URL:', window.location.href)
-    console.log('URL search params:', window.location.search)
-    console.log('URL hash:', window.location.hash)
-
     // Try to exchange any auth code in the URL for a session (PKCE / OTP flows)
-    supabase.auth.exchangeCodeForSession(window.location.href).then(({ data, error }) => {
-      console.log('exchangeCodeForSession result:', { hasSession: !!data?.session, error })
-    }).catch((e) => {
-      console.log('exchangeCodeForSession threw:', e)
-    })
+    supabase.auth.exchangeCodeForSession(window.location.href)
 
     // Listen for auth state changes, specifically PASSWORD_RECOVERY events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('=== FORGOT PASSWORD: Auth state change detected ===')
-        console.log('Auth event:', event)
-        console.log('Session exists:', !!session)
-        console.log('Session user:', session?.user)
-        console.log('Session user email:', session?.user?.email)
-        console.log('Session access token exists:', !!session?.access_token)
-        console.log('Session refresh token exists:', !!session?.refresh_token)
-
         if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
-          console.log('=== PASSWORD_RECOVERY event triggered ===')
           // User has clicked the password recovery link and is now authenticated
           if (session?.user?.email) {
-            console.log('Setting user email:', session.user.email)
             setUserEmail(session.user.email)
             setTokenValid(true)
             setLoading(false)
           } else {
-            console.error('No user email found in session during PASSWORD_RECOVERY')
             setLoading(false)
             setTimeout(() => {
               router.push('/login')
             }, 3000)
           }
         } else if (event === 'SIGNED_OUT') {
-          console.log('=== SIGNED_OUT event triggered ===')
-          // User signed out, redirect to login
           router.push('/login')
         } else if (event === 'TOKEN_REFRESHED') {
-          console.log('=== TOKEN_REFRESHED event triggered ===')
           // Check if we have a valid session with user data
           const { data: { user } } = await supabase.auth.getUser()
-          console.log('getUser result:', user)
           if (user?.email) {
-            console.log('Setting user email from TOKEN_REFRESHED:', user.email)
             setUserEmail(user.email)
             setTokenValid(true)
             setLoading(false)
           } else {
-            console.log('No user found during TOKEN_REFRESHED')
             setLoading(false)
             setTimeout(() => {
               router.push('/login')
             }, 3000)
           }
-        } else {
-          console.log('=== Other auth event detected ===')
-          console.log('Event type:', event)
-          console.log('This event is not handled specifically')
         }
       }
     )
 
     // Check if user is already authenticated (in case they refresh the page)
     const checkCurrentSession = async () => {
-      console.log('=== FORGOT PASSWORD: Checking current session ===')
-      const { data: { user }, error } = await supabase.auth.getUser()
-      console.log('checkCurrentSession - getUser result:', user)
-      console.log('checkCurrentSession - getUser error:', error)
+      const { data: { user } } = await supabase.auth.getUser()
 
       if (user?.email) {
-        console.log('User already authenticated, setting email:', user.email)
         setUserEmail(user.email)
         setTokenValid(true)
         setLoading(false)
       } else {
-        console.log('No authenticated user found in current session')
-        // No valid session, redirect to login after a delay
         setLoading(false)
-        // Do not redirect immediately; allow user to see the error UI
       }
     }
 

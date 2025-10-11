@@ -1,0 +1,169 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+    --chart-1: 221.2 83.2% 53.3%;
+    --chart-2: 212 95% 68%;
+    --chart-3: 216 92% 79%;
+    --chart-4: 210 98% 78%;
+    --chart-5: 212 97% 87%;
+    --sidebar-background: 240 10% 3.9%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 0 0% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .text-gradient {
+    @apply bg-gradient-to-r from-blue-500 to-blue-600 bg-clip-text text-transparent;
+  }
+
+  .btn-gradient {
+    @apply bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 transition-all duration-200;
+  }
+
+  .professional-card {
+    @apply bg-card border border-border rounded-lg shadow-sm;
+  }
+
+  .filter-container {
+    @apply bg-card/50 backdrop-blur-sm;
+  }
+
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted));
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground));
+  }
+}
+
+/* Z-index fixes */
+.add-user-modal {
+    z-index: 100 !important;
+}
+
+.professional-card.filter-container {
+    z-index: 1;
+}
+
+/* Tree Graph Styles */
+.tree-path {
+  stroke: #3b82f6;
+  stroke-width: 3;
+  fill: none;
+  filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.4));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Table Styles */
+.table-container {
+  @apply bg-card border border-border rounded-lg shadow-sm overflow-hidden;
+}
+
+.table-wrapper {
+  @apply overflow-x-auto;
+}
+
+.professional-table {
+  @apply w-full;
+}
+
+.professional-table thead {
+  @apply border-b border-border bg-accent/50;
+}
+
+.professional-table th {
+  @apply py-4 px-6 font-medium text-muted-foreground text-left;
+}
+
+.professional-table tbody tr {
+  @apply border-b border-border transition-colors;
+}
+
+.professional-table tbody tr:hover {
+  @apply bg-accent/30;
+}
+
+.professional-table td {
+  @apply py-4 px-6 text-foreground;
+}
+
+/* Sidebar Navigation Styles */
+.sidebar {
+  @apply bg-sidebar-background text-sidebar-foreground border-r border-sidebar-border;
+  height: 100vh;
+}
+
+.sidebar-nav-item {
+  @apply flex items-center space-x-3 px-3 py-2 text-sm font-medium transition-colors duration-200;
+  @apply hover:bg-sidebar-accent hover:text-sidebar-accent-foreground;
+  @apply focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
+}
+
+.sidebar-nav-item.active {
+  @apply bg-sidebar-accent text-sidebar-accent-foreground;
+}
+
+.sidebar-submenu {
+  @apply mt-2 ml-4 space-y-1;
+}
+
+.sidebar-submenu-item {
+  @apply flex items-center space-x-2 px-3 py-2 text-sm transition-colors duration-200;
+  @apply hover:bg-sidebar-accent hover:text-sidebar-accent-foreground;
+  @apply focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
+}
+
+.sidebar-submenu-item.active {
+  @apply bg-sidebar-accent text-sidebar-accent-foreground;
+}

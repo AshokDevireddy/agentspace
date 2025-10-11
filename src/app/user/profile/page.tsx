@@ -1,0 +1,226 @@
+"use client"
+
+import React, { useState, useEffect } from "react";
+import { FaRegClock } from "react-icons/fa6";
+import { useAuth } from "@/providers/AuthProvider";
+import { createClient } from "@/lib/supabase/client";
+
+interface ProfileData {
+  id: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  position: string;
+  createdAt: string;
+  totalProduction: number;
+  totalPoliciesSold: number;
+  positionHistory: Array<{
+    id: string;
+    date: string;
+    title: string;
+    effectiveDate: string;
+    endDate: string | null;
+    reason: string | null;
+  }>;
+}
+
+export default function ProfilePage() {
+  const { user, loading: authLoading } = useAuth();
+  const [profileData, setProfileData] = useState<ProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Calculate tenure from created_at
+  const calculateTenure = (createdAt: string) => {
+    if (!createdAt) return "Unknown";
+    
+    const created = new Date(createdAt);
+    const now = new Date();
+    
+    let years = now.getFullYear() - created.getFullYear();
+    let months = now.getMonth() - created.getMonth();
+    
+    if (months < 0) {
+      years--;
+      months += 12;
+    }
+    
+    const parts = [];
+    if (years > 0) {
+      parts.push(`${years} year${years !== 1 ? 's' : ''}`);
+    }
+    if (months > 0) {
+      parts.push(`${months} month${months !== 1 ? 's' : ''}`);
+    }
+    
+    return parts.length > 0 ? parts.join(', ') : "Less than a month";
+  };
+
+  // Fetch user profile data from API
+  useEffect(() => {
+    const fetchProfileData = async () => {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/user/profile?user_id=${user.id}`);
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch profile data');
+        }
+
+        const result = await response.json();
+        
+        if (result.success) {
+          setProfileData(result.data);
+        } else {
+          console.error('API Error:', result.error);
+        }
+      } catch (error) {
+        console.error('Error fetching profile data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfileData();
+  }, [user]);
+
+  // Helper for formatting currency
+  const formatCurrency = (amount: number) =>
+    `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // Helper for formatting large numbers
+  const formatLargeNumber = (num: number) =>
+    num.toLocaleString();
+
+  // Show loading screen until data is ready
+  if (authLoading || loading || !profileData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  // Prepare user object with API data
+  const user_profile = {
+    name: profileData.fullName,
+    title: profileData.position || "No Position Assigned",
+    avatarUrl: "", // Keep as empty for now
+    tenure: calculateTenure(profileData.createdAt),
+    allTimeProduction: profileData.totalProduction,
+    totalPoliciesSold: profileData.totalPoliciesSold,
+    promotionHistory: profileData.positionHistory.slice().reverse().map(pos => ({
+      date: pos.date,
+      title: pos.title
+    })),
+    weeklyStats: [
+      {
+        label: "This Week",
+        range: "May 26 - June 1, 2025", // Keep static for now
+        production: 0, // Keep static for now
+        policiesSold: 0, // Keep static for now
+      },
+    ],
+  };
+
+  return (
+    <div className="flex flex-col items-center w-full min-h-screen bg-gray-50 py-8">
+      {/* Profile Card */}
+      <div className="w-full max-w-3xl bg-gradient-to-br from-[#f5f6ff] to-[#f5f6ff] rounded-2xl shadow-md p-8 mb-8">
+        <div className="flex items-center">
+          {/* Avatar */}
+          <div className="w-32 h-32 bg-gray-200 rounded-lg flex items-center justify-center mr-8 shadow">
+            {/* Show avatar if available, else fallback */}
+            {user_profile.avatarUrl ? (
+              <img src={user_profile.avatarUrl} alt="Profile" className="w-full h-full object-cover rounded-lg" />
+            ) : (
+              <svg className="w-20 h-20 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="8" r="5" />
+                <path d="M12 14c-5 0-8 2.5-8 5v1h16v-1c0-2.5-3-5-8-5z" />
+              </svg>
+            )}
+          </div>
+          {/* Info */}
+          <div>
+            <h1 className="text-4xl font-extrabold text-gray-900 mb-1">{user_profile.name}</h1>
+            <div className="text-xl text-gray-500 mb-3">{user_profile.title}</div>
+            <div className="flex items-center mb-4">
+              <FaRegClock className="text-gray-400 mr-2" />
+              <span className="text-gray-700 text-sm">{user_profile.tenure}</span>
+            </div>
+            <div className="flex gap-4">
+              <div className="bg-white rounded-xl px-6 py-3 shadow flex flex-col items-center">
+                <span className="text-sm font-semibold text-gray-500">All-Time Production</span>
+                <span className="text-2xl font-bold text-indigo-600 mt-1">
+                  {`$${(user_profile.allTimeProduction / 1_000_000).toFixed(2)}M`}
+                </span>
+              </div>
+              <div className="bg-white rounded-xl px-6 py-3 shadow flex flex-col items-center">
+                <span className="text-sm font-semibold text-gray-500">Total Policies Sold</span>
+                <span className="text-2xl font-bold text-indigo-600 mt-1">
+                  {formatLargeNumber(user_profile.totalPoliciesSold)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Weekly Stats Tabs */}
+      <div className="w-full max-w-3xl bg-white rounded-2xl shadow mb-8">
+        <div className="flex border-b">
+          <button className="px-6 py-3 font-semibold text-indigo-700 border-b-2 border-indigo-700 bg-white rounded-tl-2xl">
+            This Week
+          </button>
+          <button className="px-6 py-3 font-semibold text-indigo-600 hover:text-indigo-800">
+            Last Week
+          </button>
+        </div>
+        <div className="p-8">
+          <div className="text-2xl font-extrabold text-gray-900 mb-4">
+            {user_profile.weeklyStats[0].range}
+          </div>
+          <div className="flex gap-8">
+            <div className="flex flex-col items-center bg-gray-50 rounded-xl px-8 py-4">
+              <span className="font-semibold text-gray-700">Production</span>
+              <span className="text-xl font-bold text-indigo-600 mt-1">
+                {formatCurrency(user_profile.weeklyStats[0].production)}
+              </span>
+            </div>
+            <div className="flex flex-col items-center bg-gray-50 rounded-xl px-8 py-4">
+              <span className="font-semibold text-gray-700">Policies Sold</span>
+              <span className="text-xl font-bold text-indigo-600 mt-1">
+                {user_profile.weeklyStats[0].policiesSold}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Promotion History */}
+      <div className="w-full max-w-3xl bg-white rounded-2xl shadow p-8">
+        <div className="text-2xl font-extrabold text-gray-900 mb-6">Promotion History</div>
+        <div className="space-y-4">
+          {user_profile.promotionHistory.map((promotion: { date: string; title: string; }, index: number) => (
+            <div key={index} className="flex items-start">
+              <div className="flex flex-col items-center mr-4 mt-2">
+                <span className="w-3 h-3 bg-indigo-500 rounded-full"></span>
+                {/* Add vertical line if not the last promotion */}
+                {index < user_profile.promotionHistory.length - 1 && (
+                  <div className="w-px h-16 bg-gray-300 mt-2"></div>
+                )}
+              </div>
+              <div className="bg-indigo-50 rounded-xl px-8 py-4 w-full">
+                <div className="text-gray-500 mb-1">{promotion.date}</div>
+                <div className="text-xl font-bold text-gray-900">{promotion.title}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

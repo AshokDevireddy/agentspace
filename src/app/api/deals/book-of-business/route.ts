@@ -3,7 +3,7 @@ import { createAdminClient, createServerClient } from "@/lib/supabase/server";
 
 export async function GET(req: NextRequest) {
   const admin = createAdminClient();
-  const server = createServerClient();
+  const server = await createServerClient();
 
   try {
     // Identify current user and compute visible agent IDs (self + downline)

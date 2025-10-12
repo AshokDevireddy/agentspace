@@ -16,23 +16,22 @@ const initialFormData = {
   carrierId: "",
   productId: "",
   policyEffectiveDate: "",
-  annualPremium: "",
+  monthlyPremium: "",
   clientName: "",
   clientEmail: "",
   clientPhone: "",
+  clientDateOfBirth: "",
+  clientSsnLast4: "",
+  clientAddress: "",
   policyNumber: "",
   applicationNumber: "",
-  splitAgentId: "",
-  splitPercentage: "0.0",
-  referralCount: "",
-  leadSource: "",
 };
 
 type FormField = keyof typeof initialFormData;
 
 const requiredFields: FormField[] = [
-  "carrierId", "productId", "policyEffectiveDate", "annualPremium",
-  "clientName", "policyNumber", "leadSource"
+  "carrierId", "productId", "policyEffectiveDate", "monthlyPremium",
+  "clientName", "policyNumber"
 ];
 
 export default function PostDeal() {
@@ -49,7 +48,6 @@ export default function PostDeal() {
   const [agencyId, setAgencyId] = useState<string | null>(null)
   const [carriersOptions, setCarriersOptions] = useState<{ value: string, label: string }[]>([])
   const [productsOptions, setProductsOptions] = useState<{ value: string, label: string }[]>([])
-  const [agentsOptions, setAgentsOptions] = useState<{ value: string, label: string }[]>([])
 
   useEffect(() => {
     if (error && errorRef.current) {
@@ -90,16 +88,6 @@ export default function PostDeal() {
         }
       })
       setCarriersOptions(Array.from(carrierMap.values()).map(c => ({ value: c.id, label: c.display_name })))
-
-      // Load all agents in this agency
-      const { data: agencyUsers } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, is_active')
-        .eq('agency_id', agencyIdVal)
-        .eq('is_active', true)
-        .order('last_name')
-
-      setAgentsOptions((agencyUsers || []).map((u: any) => ({ value: u.id, label: `${u.last_name}, ${u.first_name}` })))
     }
 
     loadAgencyAndOptions()
@@ -160,14 +148,13 @@ export default function PostDeal() {
       const carrier_id = formData.carrierId
       const product_id = formData.productId
 
-      // SECTION 3: Split agent (optional)
-      const split_agent_id = formData.splitAgentId || null
+      // SECTION 3: Invite client if email is provided
+      let client_id = null
+      let invitationMessage = ''
 
-      // SECTION 4: Invite client if email is provided
-      let client_auth_id = null
       if (formData.clientEmail) {
         try {
-          // Check if client already exists
+          // Check if client already exists in users table
           const { data: existingClient } = await supabase
             .from('users')
             .select('id, auth_user_id')
@@ -176,53 +163,80 @@ export default function PostDeal() {
             .maybeSingle()
 
           if (existingClient) {
-            client_auth_id = existingClient.id
+            client_id = existingClient.id
+            invitationMessage = 'Client already has an account.'
+            console.log('Client already exists:', client_id)
           } else {
-            // Send invitation to client
-            const inviteResponse = await fetch('/api/clients/invite', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                email: formData.clientEmail,
-                // Extract first and last name from client name if possible
-                firstName: formData.clientName.split(' ')[0] || formData.clientName,
-                lastName: formData.clientName.split(' ').slice(1).join(' ') || 'Client',
-                phoneNumber: formData.clientPhone
-              })
-            })
+            // Check if pending invite exists
+            const { data: pendingInvite } = await supabase
+              .from('pending_invite')
+              .select('id')
+              .eq('email', formData.clientEmail)
+              .maybeSingle()
 
-            const inviteData = await inviteResponse.json()
-            if (inviteResponse.ok) {
-              client_auth_id = inviteData.userId
-              console.log('Client invitation sent successfully')
+            if (pendingInvite) {
+              client_id = pendingInvite.id
+              invitationMessage = 'Client invitation was previously sent.'
+              console.log('Pending invite exists:', client_id)
             } else {
-              console.warn('Failed to invite client:', inviteData.error)
-              // Continue anyway, don't fail the deal creation
+              // Send invitation to client
+              console.log('Sending invitation to:', formData.clientEmail)
+              const inviteResponse = await fetch('/api/clients/invite', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  email: formData.clientEmail,
+                  // Extract first and last name from client name if possible
+                  firstName: formData.clientName.split(' ')[0] || formData.clientName,
+                  lastName: formData.clientName.split(' ').slice(1).join(' ') || 'Client',
+                  phoneNumber: formData.clientPhone
+                })
+              })
+
+              const inviteData = await inviteResponse.json()
+              console.log('Invite API response:', inviteData)
+
+              if (inviteResponse.ok && inviteData.success) {
+                client_id = inviteData.userId
+                invitationMessage = inviteData.alreadyExists
+                  ? 'Client invitation was previously sent.'
+                  : '✓ Invitation email sent to client successfully!'
+                console.log('Client invitation sent successfully, client_id:', client_id)
+              } else {
+                const errorMsg = inviteData.error || 'Unknown error'
+                console.error('Failed to invite client:', errorMsg)
+                invitationMessage = `⚠️ Warning: Failed to send invitation email (${errorMsg}). Deal will still be created.`
+                // Continue anyway, but warn the user
+              }
             }
           }
         } catch (clientError) {
-          console.warn('Error inviting client:', clientError)
-          // Continue anyway, don't fail the deal creation
+          console.error('Error inviting client:', clientError)
+          invitationMessage = `⚠️ Warning: Error sending invitation (${clientError instanceof Error ? clientError.message : 'Unknown error'}). Deal will still be created.`
+          // Continue anyway, but warn the user
         }
+      } else {
+        invitationMessage = 'No client email provided - client will not receive portal access.'
       }
 
-      // SECTION 5: Construct payload and submit to API
+      // SECTION 4: Construct payload and submit to API
+      const monthlyPremium = parseFloat(formData.monthlyPremium)
       const payload = {
         agent_id,
         carrier_id,
         product_id,
+        client_id,
         client_name: formData.clientName,
         client_email: formData.clientEmail || null,
-        client_phone: formData.clientPhone,
+        client_phone: formData.clientPhone || null,
+        date_of_birth: formData.clientDateOfBirth || null,
+        ssn_last_4: formData.clientSsnLast4 || null,
+        client_address: formData.clientAddress || null,
         policy_number: formData.policyNumber,
-        application_number: formData.applicationNumber,
-        monthly_premium: parseFloat(formData.annualPremium) / 12,
-        annual_premium: parseFloat(formData.annualPremium),
+        application_number: formData.applicationNumber || null,
+        monthly_premium: monthlyPremium,
+        annual_premium: monthlyPremium * 12,
         policy_effective_date: formData.policyEffectiveDate,
-        split_agent_id,
-        split_percentage: formData.splitPercentage ? parseFloat(formData.splitPercentage) : null,
-        referral_count: formData.referralCount ? parseInt(formData.referralCount) : 0,
-        lead_source: formData.leadSource,
       }
 
       console.log('[PostDeal] Submitting payload to /api/deals', payload)
@@ -242,13 +256,20 @@ export default function PostDeal() {
       }
 
       // Success: show appropriate message based on operation
+      let successMessage = ''
       if (data.operation === 'updated') {
-        console.log("Deal updated successfully!")
-        alert("Deal updated successfully! This policy already existed and has been updated with your additional information.")
+        successMessage = "Deal updated successfully! This policy already existed and has been updated with your additional information."
       } else {
-        console.log("Deal created successfully!")
-        alert("Deal created successfully!")
+        successMessage = "Deal created successfully!"
       }
+
+      // Add invitation status to the message
+      if (invitationMessage) {
+        successMessage += '\n\n' + invitationMessage
+      }
+
+      console.log("Deal operation complete:", successMessage)
+      alert(successMessage)
 
       router.push("/policies/book")
 
@@ -260,11 +281,19 @@ export default function PostDeal() {
   }
 
   const handleInputChange = (field: string, value: string) => {
-    // For annual premium, allow any string (including empty, partial numbers)
-    if (field === "annualPremium") {
+    // For monthly premium, allow any string (including empty, partial numbers)
+    if (field === "monthlyPremium") {
       // Don't allow negative sign as the first character
       if (value.startsWith("-")) return
       setFormData({ ...formData, [field]: value })
+      return
+    }
+    // For SSN last 4, only allow 4 digits
+    if (field === "clientSsnLast4") {
+      const cleaned = value.replace(/\D/g, "")
+      if (cleaned.length <= 4) {
+        setFormData({ ...formData, [field]: cleaned })
+      }
       return
     }
     setFormData({ ...formData, [field]: value })
@@ -278,10 +307,10 @@ export default function PostDeal() {
         return false
       }
     }
-    // Premium check (annual premium must be a valid non-negative number)
-    const annual = parseFloat(formData.annualPremium)
-    if (Number.isNaN(annual) || annual < 0) {
-      setError("Please enter a valid annual premium.")
+    // Premium check (monthly premium must be a valid non-negative number)
+    const monthly = parseFloat(formData.monthlyPremium)
+    if (Number.isNaN(monthly) || monthly < 0) {
+      setError("Please enter a valid monthly premium.")
       return false
     }
     setError(null)
@@ -347,21 +376,19 @@ export default function PostDeal() {
             </div>
 
             {/* Premium Field */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  What was the annual premium for the policy you wrote?
-                </label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={formData.annualPremium}
-                  onChange={(e) => handleInputChange("annualPremium", e.target.value)}
-                  className="h-12"
-                  placeholder="0.00"
-                />
-              </div>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-muted-foreground">
+                What was the monthly premium for the policy you wrote?
+              </label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.monthlyPremium}
+                onChange={(e) => handleInputChange("monthlyPremium", e.target.value)}
+                className="h-12"
+                placeholder="0.00"
+              />
             </div>
 
             {/* Client Information */}
@@ -409,6 +436,45 @@ export default function PostDeal() {
                   placeholder="Enter phone number"
                 />
               </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-muted-foreground">
+                  Date of birth
+                </label>
+                <Input
+                  type="date"
+                  value={formData.clientDateOfBirth}
+                  onChange={(e) => handleInputChange("clientDateOfBirth", e.target.value)}
+                  className="h-12"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-muted-foreground">
+                  Last 4 digits of SSN
+                </label>
+                <Input
+                  type="text"
+                  value={formData.clientSsnLast4}
+                  onChange={(e) => handleInputChange("clientSsnLast4", e.target.value)}
+                  className="h-12"
+                  placeholder="1234"
+                  maxLength={4}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-muted-foreground">
+                  Address
+                </label>
+                <Input
+                  type="text"
+                  value={formData.clientAddress}
+                  onChange={(e) => handleInputChange("clientAddress", e.target.value)}
+                  className="h-12"
+                  placeholder="Enter address"
+                />
+              </div>
             </div>
 
             {/* Policy Number */}
@@ -443,108 +509,6 @@ export default function PostDeal() {
               <p className="text-xs text-muted-foreground">
                 Enter an application number if the carrier has not given you a policy number yet
               </p>
-            </div>
-
-            {/* Split Commission */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  Split Commission with another Agent
-                </label>
-                <SimpleSearchableSelect
-                  options={agentsOptions}
-                  value={formData.splitAgentId}
-                  onValueChange={(value) => handleInputChange("splitAgentId", value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  Split percentage
-                </label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  value={formData.splitPercentage}
-                  onChange={(e) => handleInputChange("splitPercentage", e.target.value)}
-                  className="h-12"
-                />
-              </div>
-            </div>
-
-            {/* Referrals */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-muted-foreground">
-                How many referrals did you collect from this client?
-              </label>
-              <Input
-                type="number"
-                min="0"
-                value={formData.referralCount}
-                onChange={(e) => handleInputChange("referralCount", e.target.value)}
-                className="h-12"
-                placeholder="0"
-              />
-            </div>
-
-            {/* Lead Source */}
-            <div className="space-y-4">
-              <label className="block text-sm font-medium text-muted-foreground">
-                Lead Source
-              </label>
-              <div className="space-y-3">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="leadSource"
-                    value="referral"
-                    checked={formData.leadSource === "referral"}
-                    onChange={(e) => handleInputChange("leadSource", e.target.value)}
-                    className="mr-3 text-primary"
-                  />
-                  <span className="text-sm text-foreground">Referral</span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="leadSource"
-                    value="purchased"
-                    checked={formData.leadSource === "purchased"}
-                    onChange={(e) => handleInputChange("leadSource", e.target.value)}
-                    className="mr-3 text-primary"
-                  />
-                  <span className="text-sm text-foreground">Purchased Lead</span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="leadSource"
-                    value="provided"
-                    checked={formData.leadSource === "provided"}
-                    onChange={(e) => handleInputChange("leadSource", e.target.value)}
-                    className="mr-3 text-primary"
-                  />
-                  <span className="text-sm text-foreground">Provided Lead</span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="leadSource"
-                    value="no-lead"
-                    checked={formData.leadSource === "no-lead"}
-                    onChange={(e) => handleInputChange("leadSource", e.target.value)}
-                    className="mr-3 text-primary"
-                  />
-                  <span className="text-sm text-foreground">No Lead</span>
-                </label>
-              </div>
-              <div className="mt-4">
-                <Button variant="outline" size="sm" className="text-primary border-primary hover:bg-primary/10">
-                  Submit referrals here
-                </Button>
-              </div>
             </div>
 
             {/* Submit Button */}

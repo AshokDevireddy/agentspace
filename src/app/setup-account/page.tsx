@@ -183,14 +183,31 @@ export default function SetupAccount() {
         console.log('Setting up agent with upline_id:', userData?.upline_id)
       }
 
-      const { error: insertError } = await supabase
+      const { data: newUser, error: insertError } = await supabase
         .from('users')
         .insert([userInsertData])
+        .select()
+        .single()
 
-      if (insertError) {
+      if (insertError || !newUser) {
         console.error('Error inserting user data:', insertError)
         setErrors(['Failed to create user account. Please try again.'])
         return
+      }
+
+      // For clients: Update any deals that have this pending_invite ID as client_id
+      if (userData?.role === 'client') {
+        const { error: dealsUpdateError } = await supabase
+          .from('deals')
+          .update({ client_id: newUser.id })
+          .eq('client_id', userData?.id)
+
+        if (dealsUpdateError) {
+          console.error('Error updating deals with new client_id:', dealsUpdateError)
+          console.log('Warning: Failed to update deals, but continuing with account setup')
+        } else {
+          console.log('Successfully migrated deals to new user ID')
+        }
       }
 
       // Delete the row from pending_invite table

@@ -95,7 +95,7 @@ export default function ConfigurationPage() {
       setProductsLoading(true)
 
       const [carriersResponse, productsResponse] = await Promise.all([
-        fetch('/api/carriers/agency', {
+        fetch('/api/carriers', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -169,7 +169,7 @@ export default function ConfigurationPage() {
         const accessToken = session?.access_token
 
         if (accessToken) {
-          const response = await fetch('/api/carriers/agency', {
+          const response = await fetch('/api/carriers', {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',
@@ -317,7 +317,7 @@ export default function ConfigurationPage() {
           const accessToken = session?.access_token
 
           if (accessToken) {
-            const carriersResponse = await fetch('/api/carriers/agency', {
+            const carriersResponse = await fetch('/api/carriers', {
               method: 'GET',
               headers: {
                 'Content-Type': 'application/json',

@@ -2,9 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Edit, Trash2, Plus, Check, X } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -33,6 +31,7 @@ interface Product {
 
 export default function ConfigurationPage() {
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
+  const [productsModalOpen, setProductsModalOpen] = useState(false)
 
   // Carriers and Products state with caching
   const [carriers, setCarriers] = useState<Carrier[]>([])
@@ -356,6 +355,18 @@ export default function ConfigurationPage() {
     setProductToDelete(null)
   }
 
+  const handleCarrierClick = (carrierId: string) => {
+    setSelectedCarrier(carrierId)
+    setProductsModalOpen(true)
+  }
+
+  const handleCloseProductsModal = () => {
+    setProductsModalOpen(false)
+    setEditingProductId(null)
+    setEditProductFormData({ name: "", product_code: "", is_active: true })
+    setOriginalProductData(null)
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-6 py-8">
@@ -365,182 +376,186 @@ export default function ConfigurationPage() {
           <p className="text-xl text-muted-foreground">Manage products</p>
         </div>
 
-        {/* Products Section */}
-        <div className="space-y-8">
-          {/* Carrier Selection */}
-          <div className="bg-card rounded-xl shadow-lg border border-border">
-            <div className="p-8 border-b border-border">
-              <h2 className="text-3xl font-bold text-foreground">Select Carrier</h2>
-            </div>
-            <div className="p-8">
-              {carriersLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <span className="text-xl text-muted-foreground font-medium">Loading...</span>
+        {/* Carriers Grid Section */}
+        <div className="bg-card rounded-xl shadow-lg border border-border">
+          <div className="p-8 border-b border-border">
+            <h2 className="text-3xl font-bold text-foreground">Select Carrier</h2>
+          </div>
+          <div className="p-8">
+            {carriersLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <span className="text-xl text-muted-foreground font-medium">Loading carriers...</span>
+              </div>
+            ) : carriers.length === 0 ? (
+              <div className="flex items-center justify-center py-12">
+                <span className="text-xl text-muted-foreground font-medium">No carriers available</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {carriers.map((carrier) => (
+                  <button
+                    key={carrier.id}
+                    onClick={() => handleCarrierClick(carrier.id)}
+                    className="group relative bg-white hover:bg-blue-50 border-2 border-gray-200 hover:border-blue-500 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:scale-105 active:scale-100"
+                  >
+                    <div className="flex items-center justify-center h-24">
+                      <span className="text-lg font-semibold text-gray-800 group-hover:text-blue-700 text-center">
+                        {carrier.display_name}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Products Modal */}
+        <Dialog open={productsModalOpen} onOpenChange={handleCloseProductsModal}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <div className="flex items-center justify-between pr-8">
+                <DialogTitle className="text-3xl font-bold text-foreground">
+                  Products for {carriers.find(c => c.id === selectedCarrier)?.display_name}
+                </DialogTitle>
+                <AddProductModal
+                  carrierId={selectedCarrier}
+                  onProductCreated={handleProductCreated}
+                  trigger={
+                    <Button size="lg" className="flex items-center gap-3 px-6 py-3 text-lg font-semibold bg-blue-600 hover:bg-blue-700 shadow-lg">
+                      <Plus className="h-5 w-5" />
+                      Add Product
+                    </Button>
+                  }
+                />
+              </div>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto mt-4">
+              {productsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <span className="text-xl text-muted-foreground font-medium">Loading products...</span>
                 </div>
               ) : (
-                <Select value={selectedCarrier} onValueChange={setSelectedCarrier}>
-                  <SelectTrigger className="w-80 h-12 text-lg border-2 border-border rounded-lg bg-card text-foreground">
-                    <SelectValue placeholder="Choose a carrier" className="text-foreground" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-card border border-border shadow-lg text-foreground">
-                    {carriers.map((carrier) => (
-                      <SelectItem key={carrier.id} value={carrier.id} className="text-lg py-3 text-foreground hover:bg-blue-50 focus:bg-blue-50 data-[highlighted]:bg-blue-50 data-[highlighted]:text-foreground">
-                        {carrier.display_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="overflow-x-auto rounded-lg border border-border shadow-sm">
+                  <table className="w-full text-lg bg-card">
+                    <thead className="sticky top-0 bg-white z-10">
+                      <tr className="border-b-2 border-border bg-gradient-to-r from-gray-50 to-gray-100">
+                        <th className="text-left py-4 px-6 font-bold text-gray-800">Product Name</th>
+                        <th className="text-left py-4 px-6 font-bold text-gray-800">Product Code</th>
+                        <th className="text-left py-4 px-6 font-bold text-gray-800">Status</th>
+                        <th className="text-right py-4 px-6 font-bold text-gray-800">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {products.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-12 text-center text-xl text-muted-foreground font-medium">
+                            No products found for this carrier
+                          </td>
+                        </tr>
+                      ) : (
+                        products.map((product: Product) => (
+                          <tr key={product.id} className="border-b border-border hover:bg-blue-50 transition-colors duration-150">
+                            {/* Product Name Column */}
+                            <td className="py-5 px-6 text-foreground font-medium">
+                              {editingProductId === product.id ? (
+                                <Input
+                                  type="text"
+                                  value={editProductFormData.name}
+                                  onChange={(e) => setEditProductFormData(prev => ({ ...prev, name: e.target.value }))}
+                                  className="h-10 text-lg"
+                                />
+                              ) : (
+                                product.name
+                              )}
+                            </td>
+
+                            {/* Product Code Column */}
+                            <td className="py-5 px-6 text-foreground font-medium">
+                              {editingProductId === product.id ? (
+                                <Input
+                                  type="text"
+                                  value={editProductFormData.product_code}
+                                  onChange={(e) => setEditProductFormData(prev => ({ ...prev, product_code: e.target.value }))}
+                                  className="h-10 text-lg"
+                                  placeholder="N/A"
+                                />
+                              ) : (
+                                product.product_code || "N/A"
+                              )}
+                            </td>
+
+                            {/* Status Column */}
+                            <td className="py-5 px-6">
+                              {editingProductId === product.id ? (
+                                <div className="flex items-center space-x-3">
+                                  <Checkbox
+                                    checked={editProductFormData.is_active}
+                                    onCheckedChange={(checked) => setEditProductFormData(prev => ({ ...prev, is_active: checked as boolean }))}
+                                  />
+                                  <span className="text-lg text-muted-foreground font-medium">
+                                    {editProductFormData.is_active ? "Active" : "Inactive"}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className={`px-3 py-2 rounded-full text-sm font-bold ${
+                                  product.is_active
+                                    ? "bg-green-100 text-green-800 border border-green-300"
+                                    : "bg-red-100 text-red-800 border border-red-300"
+                                }`}>
+                                  {product.is_active ? "Active" : "Inactive"}
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Actions Column */}
+                            <td className="py-5 px-6">
+                              <div className="flex items-center justify-end space-x-3">
+                                {editingProductId === product.id ? (
+                                  <>
+                                    <button
+                                      onClick={handleSaveProductEdit}
+                                      disabled={updatingProduct}
+                                      className="text-green-600 hover:text-green-800 p-2 disabled:opacity-50 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
+                                    >
+                                      <Check className="h-5 w-5" />
+                                    </button>
+                                    <button
+                                      onClick={handleCancelProductEdit}
+                                      disabled={updatingProduct}
+                                      className="text-muted-foreground hover:text-foreground p-2 disabled:opacity-50 bg-accent rounded-lg hover:bg-accent/80 transition-colors"
+                                    >
+                                      <X className="h-5 w-5" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => handleEditProduct(product)}
+                                      className="text-blue-600 hover:text-blue-800 p-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                                    >
+                                      <Edit className="h-5 w-5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteProduct(product)}
+                                      className="text-red-600 hover:text-red-800 p-2 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                                    >
+                                      <Trash2 className="h-5 w-5" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                        </tr>
+                      ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
-          </div>
-
-          {/* Products List */}
-          {selectedCarrier && (
-            <div className="bg-card rounded-xl shadow-lg border border-border">
-              <div className="p-8 border-b border-border">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-3xl font-bold text-foreground">
-                    Products for {carriers.find(c => c.id === selectedCarrier)?.display_name}
-                  </h2>
-                  <AddProductModal
-                    carrierId={selectedCarrier}
-                    onProductCreated={handleProductCreated}
-                    trigger={
-                      <Button size="lg" className="flex items-center gap-3 px-6 py-3 text-lg font-semibold bg-blue-600 hover:bg-blue-700 shadow-lg">
-                        <Plus className="h-5 w-5" />
-                        Add Product
-                      </Button>
-                    }
-                  />
-                </div>
-              </div>
-              <div className="p-8">
-                {productsLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <span className="text-xl text-muted-foreground font-medium">Loading...</span>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-lg border border-border shadow-sm">
-                    <table className="w-full text-lg bg-card">
-                      <thead>
-                        <tr className="border-b-2 border-border bg-gradient-to-r from-gray-50 to-gray-100">
-                          <th className="text-left py-4 px-6 font-bold text-gray-800">Product Name</th>
-                          <th className="text-left py-4 px-6 font-bold text-gray-800">Product Code</th>
-                          <th className="text-left py-4 px-6 font-bold text-gray-800">Status</th>
-                          <th className="text-right py-4 px-6 font-bold text-gray-800">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {products.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="py-12 text-center text-xl text-muted-foreground font-medium">
-                              No products found for this carrier
-                            </td>
-                          </tr>
-                        ) : (
-                          products.map((product: Product) => (
-                            <tr key={product.id} className="border-b border-border hover:bg-blue-50 transition-colors duration-150">
-                              {/* Product Name Column */}
-                              <td className="py-5 px-6 text-foreground font-medium">
-                                {editingProductId === product.id ? (
-                                  <Input
-                                    type="text"
-                                    value={editProductFormData.name}
-                                    onChange={(e) => setEditProductFormData(prev => ({ ...prev, name: e.target.value }))}
-                                    className="h-10 text-lg"
-                                  />
-                                ) : (
-                                  product.name
-                                )}
-                              </td>
-
-                              {/* Product Code Column */}
-                              <td className="py-5 px-6 text-foreground font-medium">
-                                {editingProductId === product.id ? (
-                                  <Input
-                                    type="text"
-                                    value={editProductFormData.product_code}
-                                    onChange={(e) => setEditProductFormData(prev => ({ ...prev, product_code: e.target.value }))}
-                                    className="h-10 text-lg"
-                                    placeholder="N/A"
-                                  />
-                                ) : (
-                                  product.product_code || "N/A"
-                                )}
-                              </td>
-
-                              {/* Status Column */}
-                              <td className="py-5 px-6">
-                                {editingProductId === product.id ? (
-                                  <div className="flex items-center space-x-3">
-                                    <Checkbox
-                                      checked={editProductFormData.is_active}
-                                      onCheckedChange={(checked) => setEditProductFormData(prev => ({ ...prev, is_active: checked as boolean }))}
-                                    />
-                                    <span className="text-lg text-muted-foreground font-medium">
-                                      {editProductFormData.is_active ? "Active" : "Inactive"}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <span className={`px-3 py-2 rounded-full text-sm font-bold ${
-                                    product.is_active
-                                      ? "bg-green-100 text-green-800 border border-green-300"
-                                      : "bg-red-100 text-red-800 border border-red-300"
-                                  }`}>
-                                    {product.is_active ? "Active" : "Inactive"}
-                                  </span>
-                                )}
-                              </td>
-
-                              {/* Actions Column */}
-                              <td className="py-5 px-6">
-                                <div className="flex items-center justify-end space-x-3">
-                                  {editingProductId === product.id ? (
-                                    <>
-                                      <button
-                                        onClick={handleSaveProductEdit}
-                                        disabled={updatingProduct}
-                                        className="text-green-600 hover:text-green-800 p-2 disabled:opacity-50 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
-                                      >
-                                        <Check className="h-5 w-5" />
-                                      </button>
-                                      <button
-                                        onClick={handleCancelProductEdit}
-                                        disabled={updatingProduct}
-                                        className="text-muted-foreground hover:text-foreground p-2 disabled:opacity-50 bg-accent rounded-lg hover:bg-accent/80 transition-colors"
-                                      >
-                                        <X className="h-5 w-5" />
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <button
-                                        onClick={() => handleEditProduct(product)}
-                                        className="text-blue-600 hover:text-blue-800 p-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-                                      >
-                                        <Edit className="h-5 w-5" />
-                                      </button>
-                                      <button
-                                        onClick={() => handleDeleteProduct(product)}
-                                        className="text-red-600 hover:text-red-800 p-2 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
-                                      >
-                                        <Trash2 className="h-5 w-5" />
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </td>
-                          </tr>
-                        ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Product Delete Confirmation Modal */}
         <Dialog open={deleteProductConfirmOpen} onOpenChange={setDeleteProductConfirmOpen}>

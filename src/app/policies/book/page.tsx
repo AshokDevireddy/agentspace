@@ -47,7 +47,7 @@ interface FilterOptions {
 }
 
 const statusColors = {
-  "Draft": "bg-gray-500/20 text-gray-400 border-gray-500/30",
+  "Draft": "bg-gray-500/20 text-foreground border-gray-500/30",
   "Pending Approval": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
   "Verified": "bg-green-500/20 text-green-400 border-green-500/30",
   "Active": "bg-blue-500/20 text-blue-400 border-blue-500/30",
@@ -58,7 +58,7 @@ const leadSourceColors = {
   "Referral": "bg-green-500/20 text-green-400 border-green-500/30",
   "Provided": "bg-blue-500/20 text-blue-400 border-blue-500/30",
   "Purchased": "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  "No Lead": "bg-gray-500/20 text-gray-400 border-gray-500/30"
+  "No Lead": "bg-gray-500/20 text-foreground border-gray-500/30"
 }
 
 export default function BookOfBusiness() {
@@ -508,7 +508,7 @@ export default function BookOfBusiness() {
                           ) : (
                             <div className="flex flex-col items-center space-y-1">
                               <Badge
-                                className={`${leadSourceColors[deal.leadSource as keyof typeof leadSourceColors] || 'bg-gray-500/20 text-gray-400 border-gray-500/30'} border`}
+                                className={`${leadSourceColors[deal.leadSource as keyof typeof leadSourceColors] || 'bg-gray-500/20 text-foreground border-gray-500/30'} border`}
                                 variant="outline"
                               >
                                 {deal.leadSource}

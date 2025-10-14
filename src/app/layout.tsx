@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AgentView - Insurance Commission Management",
+  title: "AgentSpace - Insurance Commission Management",
   description: "Manage your insurance agency commissions and payouts",
 };
 

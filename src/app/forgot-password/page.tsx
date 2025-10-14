@@ -190,19 +190,19 @@ export default function ForgotPassword() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="text-lg text-red-600 mb-2">Error: Forgot Password Link Invalid</div>
-          <div className="text-sm text-gray-600">Please Reset Password Again or Login</div>
+          <div className="text-sm text-muted-foreground">Please Reset Password Again or Login</div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
-        <div className="bg-white shadow-lg rounded-lg p-8">
+        <div className="bg-card shadow-lg rounded-lg p-8">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Reset Password</h1>
-            <p className="text-gray-600">Enter a new password for {userEmail}</p>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Reset Password</h1>
+            <p className="text-muted-foreground">Enter a new password for {userEmail}</p>
           </div>
 
           {/* Password Errors */}
@@ -230,7 +230,7 @@ export default function ForgotPassword() {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email - Locked */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-900">
+              <label className="block text-sm font-medium text-foreground">
                 Email
               </label>
               <Input
@@ -242,12 +242,12 @@ export default function ForgotPassword() {
             </div>
 
             {/* Password Setup Section */}
-            <div className="pt-6 border-t border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Set New Password</h3>
+            <div className="pt-6 border-t border-border">
+              <h3 className="text-lg font-medium text-foreground mb-4">Set New Password</h3>
 
               {/* Password */}
               <div className="space-y-2 mb-4">
-                <label className="block text-sm font-medium text-gray-900">
+                <label className="block text-sm font-medium text-foreground">
                   Password
                 </label>
                 <Input
@@ -265,7 +265,7 @@ export default function ForgotPassword() {
 
               {/* Confirm Password */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-900">
+                <label className="block text-sm font-medium text-foreground">
                   Confirm Password
                 </label>
                 <Input

@@ -65,13 +65,13 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md mx-auto">
-        <div className="bg-white shadow-lg rounded-lg p-8">
+        <div className="bg-card shadow-lg rounded-lg p-8">
           {/* Title */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Reset Password</h1>
-            <p className="text-gray-600">Insert your email to receive a link to reset your password</p>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Reset Password</h1>
+            <p className="text-muted-foreground">Insert your email to receive a link to reset your password</p>
           </div>
 
           {/* Success/Error Messages */}
@@ -86,7 +86,7 @@ export default function ResetPassword() {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email Input */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-900">
+              <label className="block text-sm font-medium text-foreground">
                 Email
               </label>
               <Input

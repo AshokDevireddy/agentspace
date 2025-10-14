@@ -5,7 +5,7 @@ import Link from "next/link"
 
 export default function UnauthorizedPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-background">
       <Card className="w-full max-w-md">
         <CardContent className="pt-6">
           <div className="text-center space-y-4">
@@ -14,8 +14,8 @@ export default function UnauthorizedPage() {
             </div>
 
             <div className="space-y-2">
-              <h1 className="text-2xl font-bold text-gray-900">Access Denied</h1>
-              <p className="text-gray-600">
+              <h1 className="text-2xl font-bold text-foreground">Access Denied</h1>
+              <p className="text-muted-foreground">
                 You don't have permission to access this page. This area is restricted to administrators only.
               </p>
             </div>

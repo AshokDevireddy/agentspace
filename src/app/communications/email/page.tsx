@@ -66,7 +66,7 @@ const mockEmails: Email[] = [
   {
     id: "1",
     from: mockContacts[0],
-    to: [{ id: "me", name: "Agent", email: "agent@agentview.com" }],
+    to: [{ id: "me", name: "Agent", email: "agent@agentspace.com" }],
     subject: "Life Insurance Policy Application Follow-up",
     body: "Hi,\n\nI wanted to follow up on my life insurance application that I submitted last week. Could you please provide an update on the status? I'm particularly interested in knowing if you need any additional documentation from me.\n\nI'm excited to move forward with this policy and would appreciate any information you can share.\n\nBest regards,\nJohn Anderson",
     timestamp: "2:30 PM",
@@ -82,7 +82,7 @@ const mockEmails: Email[] = [
   {
     id: "2",
     from: mockContacts[1],
-    to: [{ id: "me", name: "Agent", email: "agent@agentview.com" }],
+    to: [{ id: "me", name: "Agent", email: "agent@agentspace.com" }],
     subject: "Question about Term Life vs Whole Life Insurance",
     body: "Dear Agent,\n\nI've been researching different types of life insurance and I'm confused about the differences between term life and whole life insurance. Could you help me understand which option would be better for my situation?\n\nI'm 35 years old, married with two young children, and looking for coverage that would protect my family if something happens to me.\n\nThank you for your time.\n\nSarah Williams",
     timestamp: "11:45 AM",
@@ -97,7 +97,7 @@ const mockEmails: Email[] = [
   },
   {
     id: "3",
-    from: { id: "me", name: "Agent", email: "agent@agentview.com" },
+    from: { id: "me", name: "Agent", email: "agent@agentspace.com" },
     to: [mockContacts[2]],
     subject: "Your Auto Insurance Quote - Ready for Review",
     body: "Hi Michael,\n\nI've prepared your auto insurance quote based on the information you provided. The quote includes:\n\n- Comprehensive coverage\n- $500 deductible\n- Roadside assistance\n- Rental car coverage\n\nMonthly premium: $156\n\nI've attached the full quote details to this email. Please review and let me know if you have any questions or if you'd like to proceed with the application.\n\nBest regards,\nYour Insurance Agent",
@@ -114,7 +114,7 @@ const mockEmails: Email[] = [
   {
     id: "4",
     from: mockContacts[3],
-    to: [{ id: "me", name: "Agent", email: "agent@agentview.com" }],
+    to: [{ id: "me", name: "Agent", email: "agent@agentspace.com" }],
     subject: "Claim Status Update Request",
     body: "Hello,\n\nI filed a claim for my home insurance policy last month (Claim #12345) and haven't received any updates recently. Could you please check on the status and let me know what the next steps are?\n\nThe claim was for water damage in my basement.\n\nThank you,\nEmily Rodriguez",
     timestamp: "9:15 AM",
@@ -130,7 +130,7 @@ const mockEmails: Email[] = [
   {
     id: "5",
     from: mockContacts[4],
-    to: [{ id: "me", name: "Agent", email: "agent@agentview.com" }],
+    to: [{ id: "me", name: "Agent", email: "agent@agentspace.com" }],
     subject: "Thank you for excellent service!",
     body: "Hi,\n\nI just wanted to take a moment to thank you for the excellent service you provided during my recent policy renewal. You made the entire process smooth and easy to understand.\n\nI'll definitely be recommending you to my friends and family.\n\nBest regards,\nDavid Thompson",
     timestamp: "4:30 PM",

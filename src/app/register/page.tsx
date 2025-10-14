@@ -167,12 +167,12 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
-        <div className="bg-white shadow-lg rounded-lg p-8">
+        <div className="bg-card shadow-lg rounded-lg p-8 border border-border">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Admin Account</h1>
-            <p className="text-gray-600">Register as an administrator for AgentView</p>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Create Admin Account</h1>
+            <p className="text-muted-foreground">Register as an administrator for AgentSpace</p>
           </div>
 
           {/* Error Messages */}
@@ -189,131 +189,131 @@ export default function RegisterPage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-900">
-                Email <span className="text-red-500">*</span>
+              <label className="block text-sm font-medium text-foreground">
+                Email <span className="text-destructive">*</span>
               </label>
               <Input
                 type="email"
                 value={formData.email}
                 onChange={(e) => handleInputChange("email", e.target.value)}
-                className={`h-12 ${errorFields.email ? 'border-red-500' : ''}`}
+                className={`h-12 ${errorFields.email ? 'border-destructive' : ''}`}
                 placeholder="admin@example.com"
                 required
               />
               {errorFields.email && (
-                <p className="text-red-500 text-sm">{errorFields.email}</p>
+                <p className="text-destructive text-sm">{errorFields.email}</p>
               )}
             </div>
 
             {/* First Name */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-900">
-                First Name <span className="text-red-500">*</span>
+              <label className="block text-sm font-medium text-foreground">
+                First Name <span className="text-destructive">*</span>
               </label>
               <Input
                 type="text"
                 value={formData.firstName}
                 onChange={(e) => handleInputChange("firstName", e.target.value)}
-                className={`h-12 ${errorFields.firstName ? 'border-red-500' : ''}`}
+                className={`h-12 ${errorFields.firstName ? 'border-destructive' : ''}`}
                 placeholder="John"
                 required
               />
               {errorFields.firstName && (
-                <p className="text-red-500 text-sm">{errorFields.firstName}</p>
+                <p className="text-destructive text-sm">{errorFields.firstName}</p>
               )}
             </div>
 
             {/* Last Name */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-900">
-                Last Name <span className="text-red-500">*</span>
+              <label className="block text-sm font-medium text-foreground">
+                Last Name <span className="text-destructive">*</span>
               </label>
               <Input
                 type="text"
                 value={formData.lastName}
                 onChange={(e) => handleInputChange("lastName", e.target.value)}
-                className={`h-12 ${errorFields.lastName ? 'border-red-500' : ''}`}
+                className={`h-12 ${errorFields.lastName ? 'border-destructive' : ''}`}
                 placeholder="Doe"
                 required
               />
               {errorFields.lastName && (
-                <p className="text-red-500 text-sm">{errorFields.lastName}</p>
+                <p className="text-destructive text-sm">{errorFields.lastName}</p>
               )}
             </div>
 
             {/* Phone Number */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-900">
+              <label className="block text-sm font-medium text-foreground">
                 Phone Number (Optional)
               </label>
               <Input
                 type="tel"
                 value={formData.phoneNumber}
                 onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
-                className={`h-12 ${errorFields.phoneNumber ? 'border-red-500' : ''}`}
+                className={`h-12 ${errorFields.phoneNumber ? 'border-destructive' : ''}`}
                 placeholder="1234567890"
               />
               {errorFields.phoneNumber && (
-                <p className="text-red-500 text-sm">{errorFields.phoneNumber}</p>
+                <p className="text-destructive text-sm">{errorFields.phoneNumber}</p>
               )}
             </div>
 
             {/* Agency Name */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-900">
-                Agency Name <span className="text-red-500">*</span>
+              <label className="block text-sm font-medium text-foreground">
+                Agency Name <span className="text-destructive">*</span>
               </label>
               <Input
                 type="text"
                 value={formData.agencyName}
                 onChange={(e) => handleInputChange("agencyName", e.target.value)}
-                className={`h-12 ${errorFields.agencyName ? 'border-red-500' : ''}`}
+                className={`h-12 ${errorFields.agencyName ? 'border-destructive' : ''}`}
                 placeholder="Enter your agency name"
                 required
               />
               {errorFields.agencyName && (
-                <p className="text-red-500 text-sm">{errorFields.agencyName}</p>
+                <p className="text-destructive text-sm">{errorFields.agencyName}</p>
               )}
-              <p className="text-sm text-gray-600">This will be the agency you're an admin for</p>
+              <p className="text-sm text-muted-foreground">This will be the agency you're an admin for</p>
             </div>
 
             {/* Password Section */}
-            <div className="pt-6 border-t border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Set Password</h3>
+            <div className="pt-6 border-t border-border">
+              <h3 className="text-lg font-medium text-foreground mb-4">Set Password</h3>
 
               {/* Password */}
               <div className="space-y-2 mb-4">
-                <label className="block text-sm font-medium text-gray-900">
-                  Password <span className="text-red-500">*</span>
+                <label className="block text-sm font-medium text-foreground">
+                  Password <span className="text-destructive">*</span>
                 </label>
                 <Input
                   type="password"
                   value={formData.password}
                   onChange={(e) => handleInputChange("password", e.target.value)}
-                  className={`h-12 ${errorFields.password ? 'border-red-500' : ''}`}
+                  className={`h-12 ${errorFields.password ? 'border-destructive' : ''}`}
                   placeholder="Enter your password"
                   required
                 />
                 {errorFields.password && (
-                  <p className="text-red-500 text-sm">{errorFields.password}</p>
+                  <p className="text-destructive text-sm">{errorFields.password}</p>
                 )}
               </div>
 
               {/* Confirm Password */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-900">
-                  Confirm Password <span className="text-red-500">*</span>
+                <label className="block text-sm font-medium text-foreground">
+                  Confirm Password <span className="text-destructive">*</span>
                 </label>
                 <Input
                   type="password"
                   value={formData.confirmPassword}
                   onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                  className={`h-12 ${errorFields.confirmPassword ? 'border-red-500' : ''}`}
+                  className={`h-12 ${errorFields.confirmPassword ? 'border-destructive' : ''}`}
                   placeholder="Confirm your password"
                   required
                 />
                 {errorFields.confirmPassword && (
-                  <p className="text-red-500 text-sm">{errorFields.confirmPassword}</p>
+                  <p className="text-destructive text-sm">{errorFields.confirmPassword}</p>
                 )}
               </div>
             </div>

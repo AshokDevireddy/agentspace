@@ -296,7 +296,7 @@ export default function SetupAccount() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8 relative">
+    <div className="min-h-screen bg-background py-8 px-4 sm:px-6 lg:px-8 relative">
       {/* Tooltip */}
       {tooltip.show && (
         <div
@@ -311,12 +311,12 @@ export default function SetupAccount() {
       )}
 
       <div className="max-w-2xl mx-auto">
-        <div className="bg-white shadow-lg rounded-lg p-8">
+        <div className="bg-card shadow-lg rounded-lg p-8">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            <h1 className="text-3xl font-bold text-foreground mb-2">
               {userData.role === 'client' ? 'Welcome!' : 'Setup Account'}
             </h1>
-            <p className="text-gray-600">
+            <p className="text-muted-foreground">
               {userData.role === 'client'
                 ? 'Please set up your account to access your information'
                 : 'Please confirm your information and set up your password'
@@ -360,7 +360,7 @@ export default function SetupAccount() {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* First name - Editable */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-900">
+              <label className="block text-sm font-medium text-foreground">
                 First name
               </label>
               <Input
@@ -374,7 +374,7 @@ export default function SetupAccount() {
 
             {/* Last name - Editable */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-900">
+              <label className="block text-sm font-medium text-foreground">
                 Last name
               </label>
               <Input
@@ -388,7 +388,7 @@ export default function SetupAccount() {
 
             {/* Email - Locked */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-900">
+              <label className="block text-sm font-medium text-foreground">
                 Email
               </label>
               <Input
@@ -403,7 +403,7 @@ export default function SetupAccount() {
 
             {/* Phone number - Editable */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-900">
+              <label className="block text-sm font-medium text-foreground">
                 Phone number {userData.role === 'agent' ? <span className="text-red-500">*</span> : '(Optional)'}
               </label>
               <Input
@@ -424,7 +424,7 @@ export default function SetupAccount() {
               <>
                 {/* Permission Level - Locked */}
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-900">
+                  <label className="block text-sm font-medium text-foreground">
                     Permission Level
                   </label>
                   <Input
@@ -440,7 +440,7 @@ export default function SetupAccount() {
                 {/* Upline Agent - Locked */}
                 {userData.upline_name && (
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-900">
+                    <label className="block text-sm font-medium text-foreground">
                       Upline Agent
                     </label>
                     <Input
@@ -457,12 +457,12 @@ export default function SetupAccount() {
             )}
 
             {/* Password Setup Section */}
-            <div className="pt-6 border-t border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Set Up Password</h3>
+            <div className="pt-6 border-t border-border">
+              <h3 className="text-lg font-medium text-foreground mb-4">Set Up Password</h3>
 
               {/* Password */}
               <div className="space-y-2 mb-4">
-                <label className="block text-sm font-medium text-gray-900">
+                <label className="block text-sm font-medium text-foreground">
                   Password
                 </label>
                 <Input
@@ -480,7 +480,7 @@ export default function SetupAccount() {
 
               {/* Confirm Password */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-900">
+                <label className="block text-sm font-medium text-foreground">
                   Confirm Password
                 </label>
                 <Input

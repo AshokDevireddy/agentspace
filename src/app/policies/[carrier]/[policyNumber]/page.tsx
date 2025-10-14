@@ -243,7 +243,7 @@ export default function PolicyDetail() {
                     <span className="ml-3 text-sm bg-blue-500 text-white px-3 py-1 rounded-full font-medium">Writing Agent</span>
                   )}
                   {commission.uplineOf && (
-                    <div className="text-sm text-gray-300 mt-1">Upline of: {commission.uplineOf}</div>
+                    <div className="text-sm text-muted-foreground mt-1">Upline of: {commission.uplineOf}</div>
                   )}
                 </div>
               </div>

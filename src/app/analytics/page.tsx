@@ -50,7 +50,7 @@ export default function Analytics() {
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-3xl font-bold text-gray-900">Analytics Overview</h1>
+          <h1 className="text-3xl font-bold text-foreground">Analytics Overview</h1>
           <div className="flex items-center space-x-4">
             <Select defaultValue="month">
               <SelectTrigger className="w-40">
@@ -81,8 +81,8 @@ export default function Analytics() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Production</p>
-                <p className="text-2xl font-bold text-gray-900">$264.0K</p>
+                <p className="text-sm text-muted-foreground">Total Production</p>
+                <p className="text-2xl font-bold text-foreground">$264.0K</p>
                 <div className="flex items-center mt-2">
                   <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
                   <span className="text-sm text-green-600">+12.5%</span>
@@ -96,8 +96,8 @@ export default function Analytics() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Commissions</p>
-                <p className="text-2xl font-bold text-gray-900">$52.8K</p>
+                <p className="text-sm text-muted-foreground">Total Commissions</p>
+                <p className="text-2xl font-bold text-foreground">$52.8K</p>
                 <div className="flex items-center mt-2">
                   <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
                   <span className="text-sm text-green-600">+8.2%</span>
@@ -111,8 +111,8 @@ export default function Analytics() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Deals</p>
-                <p className="text-2xl font-bold text-gray-900">152</p>
+                <p className="text-sm text-muted-foreground">Total Deals</p>
+                <p className="text-2xl font-bold text-foreground">152</p>
                 <div className="flex items-center mt-2">
                   <TrendingDown className="h-4 w-4 text-red-500 mr-1" />
                   <span className="text-sm text-red-600">-2.1%</span>
@@ -126,8 +126,8 @@ export default function Analytics() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Avg Deal Size</p>
-                <p className="text-2xl font-bold text-gray-900">$1,737</p>
+                <p className="text-sm text-muted-foreground">Avg Deal Size</p>
+                <p className="text-2xl font-bold text-foreground">$1,737</p>
                 <div className="flex items-center mt-2">
                   <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
                   <span className="text-sm text-green-600">+14.8%</span>
@@ -242,18 +242,18 @@ export default function Analytics() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 font-medium text-gray-600">Agent</th>
-                  <th className="text-center py-3 px-4 font-medium text-gray-600">Deals</th>
-                  <th className="text-center py-3 px-4 font-medium text-gray-600">Production</th>
-                  <th className="text-center py-3 px-4 font-medium text-gray-600">Commissions</th>
-                  <th className="text-center py-3 px-4 font-medium text-gray-600">Trend</th>
+                <tr className="border-b border-border">
+                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">Agent</th>
+                  <th className="text-center py-3 px-4 font-medium text-muted-foreground">Deals</th>
+                  <th className="text-center py-3 px-4 font-medium text-muted-foreground">Production</th>
+                  <th className="text-center py-3 px-4 font-medium text-muted-foreground">Commissions</th>
+                  <th className="text-center py-3 px-4 font-medium text-muted-foreground">Trend</th>
                 </tr>
               </thead>
               <tbody>
                 {agentPerformance.map((agent, index) => (
-                  <tr key={agent.name} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-3 px-4 font-medium text-gray-900">{agent.name}</td>
+                  <tr key={agent.name} className="border-b border-border hover:bg-accent">
+                    <td className="py-3 px-4 font-medium text-foreground">{agent.name}</td>
                     <td className="py-3 px-4 text-center">{agent.deals}</td>
                     <td className="py-3 px-4 text-center">${agent.production.toLocaleString()}</td>
                     <td className="py-3 px-4 text-center">${agent.commissions.toLocaleString()}</td>

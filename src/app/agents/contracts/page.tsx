@@ -65,7 +65,7 @@ export default function AgentContracts() {
     return (
       <div className="container mx-auto px-6 py-8">
         <div className="flex items-center justify-center h-64">
-          <div className="text-lg text-gray-600">Loading contracts...</div>
+          <div className="text-lg text-muted-foreground">Loading contracts...</div>
         </div>
       </div>
     )

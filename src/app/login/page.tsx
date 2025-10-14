@@ -69,14 +69,14 @@ export default function LoginPage() {
   ]
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50">
-      <div className="flex w-full max-w-3xl rounded-2xl shadow-lg overflow-hidden">
+    <div className="flex items-center justify-center min-h-screen bg-background">
+      <div className="flex w-full max-w-3xl rounded-2xl shadow-lg overflow-hidden border border-border">
         {/* Left: Form */}
-        <div className="w-3/5 bg-white p-10 flex flex-col justify-center">
-          <h2 className="text-3xl font-bold mb-6 text-gray-900">Log In</h2>
+        <div className="w-3/5 bg-card p-10 flex flex-col justify-center">
+          <h2 className="text-3xl font-bold mb-6 text-foreground">Log In</h2>
 
           {/* Tabs */}
-          <div className="flex border-b border-gray-200 mb-6">
+          <div className="flex border-b border-border mb-6">
             {tabs.map((tab) => (
               <button
                 key={tab.value}
@@ -84,8 +84,8 @@ export default function LoginPage() {
                 onClick={() => setActiveTab(tab.value)}
                 className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
                   activeTab === tab.value
-                    ? 'border-b-2 border-indigo-500 text-indigo-600'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'border-b-2 border-primary text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {tab.label}
@@ -95,13 +95,13 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block font-semibold mb-1 text-gray-800" htmlFor="email">
+              <label className="block font-semibold mb-1 text-foreground" htmlFor="email">
                 Email
               </label>
               <input
                 id="email"
                 type="email"
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-900 bg-white"
+                className="w-full px-4 py-2 rounded-lg border border-input focus:outline-none focus:ring-2 focus:ring-ring text-foreground bg-background"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
@@ -109,13 +109,13 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="block font-semibold mb-1 text-gray-800" htmlFor="password">
+              <label className="block font-semibold mb-1 text-foreground" htmlFor="password">
                 Password
               </label>
               <input
                 id="password"
                 type="password"
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-900 bg-white"
+                className="w-full px-4 py-2 rounded-lg border border-input focus:outline-none focus:ring-2 focus:ring-ring text-foreground bg-background"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
@@ -123,18 +123,18 @@ export default function LoginPage() {
               />
             </div>
             {error && (
-              <div className="text-red-500 text-sm bg-red-50 p-3 rounded-lg">{error}</div>
+              <div className="text-destructive text-sm bg-destructive/10 p-3 rounded-lg border border-destructive/20">{error}</div>
             )}
             <button
               type="submit"
-              className="w-full py-2 rounded-lg bg-indigo-500 text-white font-semibold text-lg hover:bg-indigo-600 transition disabled:opacity-60"
+              className="w-full py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-lg hover:bg-primary/90 transition disabled:opacity-60"
               disabled={submitting}
             >
               {submitting ? 'Signing in...' : 'Sign In'}
             </button>
             <button
               type="button"
-              className="w-full py-2 rounded-lg border border-gray-400 text-gray-800 font-semibold hover:bg-gray-100 transition"
+              className="w-full py-2 rounded-lg border border-border text-foreground font-semibold hover:bg-accent transition"
               onClick={() => router.push('/reset-password')}
             >
               Forgot Password?
@@ -142,7 +142,7 @@ export default function LoginPage() {
             {activeTab === 'admin' && (
               <button
                 type="button"
-                className="w-full py-2 rounded-lg bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 transition"
+                className="w-full py-2 rounded-lg bg-secondary text-secondary-foreground font-semibold hover:bg-secondary/80 transition"
                 onClick={() => router.push('/register')}
               >
                 Create Admin Account
@@ -151,8 +151,8 @@ export default function LoginPage() {
           </form>
         </div>
         {/* Right: Logo/Brand */}
-        <div className="w-2/5 bg-[#23233a] flex items-center justify-center">
-          <span className="text-5xl font-extrabold text-indigo-400 select-none">AgentView</span>
+        <div className="w-2/5 bg-primary flex items-center justify-center">
+          <span className="text-5xl font-extrabold text-primary-foreground select-none">AgentSpace</span>
         </div>
       </div>
     </div>

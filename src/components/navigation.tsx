@@ -147,7 +147,7 @@ export default function Navigation() {
           </div>
           {!isSidebarCollapsed && (
             <div className="flex flex-col">
-              <span className="text-lg font-bold text-sidebar-foreground">AgentView</span>
+              <span className="text-lg font-bold text-sidebar-foreground">AgentSpace</span>
               <span className="text-xs text-muted-foreground">CRM Platform</span>
             </div>
           )}

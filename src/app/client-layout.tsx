@@ -68,7 +68,7 @@ export default function ClientLayout({
                 <Building2 className="h-6 w-6" />
               </div>
               <div className="flex flex-col">
-                <span className="text-lg font-bold text-foreground">AgentView</span>
+                <span className="text-lg font-bold text-foreground">AgentSpace</span>
                 <span className="text-xs text-muted-foreground">CRM Platform</span>
               </div>
             </Link>

@@ -357,34 +357,34 @@ export default function ConfigurationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-6 py-8">
         {/* Header */}
-        <div className="mb-10 bg-white rounded-xl shadow-lg p-8 border border-gray-200">
-          <h1 className="text-5xl font-bold text-gray-900 mb-4">Configuration</h1>
-          <p className="text-xl text-gray-700">Manage products</p>
+        <div className="mb-10 bg-card rounded-xl shadow-lg p-8 border border-border">
+          <h1 className="text-5xl font-bold text-foreground mb-4">Configuration</h1>
+          <p className="text-xl text-muted-foreground">Manage products</p>
         </div>
 
         {/* Products Section */}
         <div className="space-y-8">
           {/* Carrier Selection */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200">
-            <div className="p-8 border-b border-gray-200">
-              <h2 className="text-3xl font-bold text-gray-900">Select Carrier</h2>
+          <div className="bg-card rounded-xl shadow-lg border border-border">
+            <div className="p-8 border-b border-border">
+              <h2 className="text-3xl font-bold text-foreground">Select Carrier</h2>
             </div>
             <div className="p-8">
               {carriersLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <span className="text-xl text-gray-600 font-medium">Loading...</span>
+                  <span className="text-xl text-muted-foreground font-medium">Loading...</span>
                 </div>
               ) : (
                 <Select value={selectedCarrier} onValueChange={setSelectedCarrier}>
-                  <SelectTrigger className="w-80 h-12 text-lg border-2 border-gray-300 rounded-lg bg-white text-gray-900">
-                    <SelectValue placeholder="Choose a carrier" className="text-gray-900" />
+                  <SelectTrigger className="w-80 h-12 text-lg border-2 border-border rounded-lg bg-card text-foreground">
+                    <SelectValue placeholder="Choose a carrier" className="text-foreground" />
                   </SelectTrigger>
-                  <SelectContent className="bg-white border border-gray-300 shadow-lg text-gray-900">
+                  <SelectContent className="bg-card border border-border shadow-lg text-foreground">
                     {carriers.map((carrier) => (
-                      <SelectItem key={carrier.id} value={carrier.id} className="text-lg py-3 text-gray-900 hover:bg-blue-50 focus:bg-blue-50 data-[highlighted]:bg-blue-50 data-[highlighted]:text-gray-900">
+                      <SelectItem key={carrier.id} value={carrier.id} className="text-lg py-3 text-foreground hover:bg-blue-50 focus:bg-blue-50 data-[highlighted]:bg-blue-50 data-[highlighted]:text-foreground">
                         {carrier.display_name}
                       </SelectItem>
                     ))}
@@ -396,10 +396,10 @@ export default function ConfigurationPage() {
 
           {/* Products List */}
           {selectedCarrier && (
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200">
-              <div className="p-8 border-b border-gray-200">
+            <div className="bg-card rounded-xl shadow-lg border border-border">
+              <div className="p-8 border-b border-border">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-3xl font-bold text-gray-900">
+                  <h2 className="text-3xl font-bold text-foreground">
                     Products for {carriers.find(c => c.id === selectedCarrier)?.display_name}
                   </h2>
                   <AddProductModal
@@ -417,13 +417,13 @@ export default function ConfigurationPage() {
               <div className="p-8">
                 {productsLoading ? (
                   <div className="flex items-center justify-center py-12">
-                    <span className="text-xl text-gray-600 font-medium">Loading...</span>
+                    <span className="text-xl text-muted-foreground font-medium">Loading...</span>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
-                    <table className="w-full text-lg bg-white">
+                  <div className="overflow-x-auto rounded-lg border border-border shadow-sm">
+                    <table className="w-full text-lg bg-card">
                       <thead>
-                        <tr className="border-b-2 border-gray-300 bg-gradient-to-r from-gray-50 to-gray-100">
+                        <tr className="border-b-2 border-border bg-gradient-to-r from-gray-50 to-gray-100">
                           <th className="text-left py-4 px-6 font-bold text-gray-800">Product Name</th>
                           <th className="text-left py-4 px-6 font-bold text-gray-800">Product Code</th>
                           <th className="text-left py-4 px-6 font-bold text-gray-800">Status</th>
@@ -433,15 +433,15 @@ export default function ConfigurationPage() {
                       <tbody>
                         {products.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="py-12 text-center text-xl text-gray-600 font-medium">
+                            <td colSpan={4} className="py-12 text-center text-xl text-muted-foreground font-medium">
                               No products found for this carrier
                             </td>
                           </tr>
                         ) : (
                           products.map((product: Product) => (
-                            <tr key={product.id} className="border-b border-gray-200 hover:bg-blue-50 transition-colors duration-150">
+                            <tr key={product.id} className="border-b border-border hover:bg-blue-50 transition-colors duration-150">
                               {/* Product Name Column */}
-                              <td className="py-5 px-6 text-gray-900 font-medium">
+                              <td className="py-5 px-6 text-foreground font-medium">
                                 {editingProductId === product.id ? (
                                   <Input
                                     type="text"
@@ -455,7 +455,7 @@ export default function ConfigurationPage() {
                               </td>
 
                               {/* Product Code Column */}
-                              <td className="py-5 px-6 text-gray-900 font-medium">
+                              <td className="py-5 px-6 text-foreground font-medium">
                                 {editingProductId === product.id ? (
                                   <Input
                                     type="text"
@@ -477,7 +477,7 @@ export default function ConfigurationPage() {
                                       checked={editProductFormData.is_active}
                                       onCheckedChange={(checked) => setEditProductFormData(prev => ({ ...prev, is_active: checked as boolean }))}
                                     />
-                                    <span className="text-lg text-gray-700 font-medium">
+                                    <span className="text-lg text-muted-foreground font-medium">
                                       {editProductFormData.is_active ? "Active" : "Inactive"}
                                     </span>
                                   </div>
@@ -507,7 +507,7 @@ export default function ConfigurationPage() {
                                       <button
                                         onClick={handleCancelProductEdit}
                                         disabled={updatingProduct}
-                                        className="text-gray-600 hover:text-gray-800 p-2 disabled:opacity-50 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                                        className="text-muted-foreground hover:text-foreground p-2 disabled:opacity-50 bg-accent rounded-lg hover:bg-accent/80 transition-colors"
                                       >
                                         <X className="h-5 w-5" />
                                       </button>
@@ -549,7 +549,7 @@ export default function ConfigurationPage() {
               <DialogTitle>Delete Product</DialogTitle>
             </DialogHeader>
             <div className="py-4">
-              <p className="text-gray-600">
+              <p className="text-muted-foreground">
                 Are you sure you want to delete the product "{productToDelete?.name}"? This action cannot be undone.
               </p>
             </div>

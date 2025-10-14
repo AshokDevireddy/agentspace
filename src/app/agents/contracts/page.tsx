@@ -11,7 +11,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-import { Edit } from "lucide-react"
 
 // Contract data type
 interface Contract {
@@ -96,10 +95,10 @@ export default function AgentContracts() {
 
       {/* Filters */}
       <Card className="professional-card filter-container">
-        <CardContent className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <CardContent className="p-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
+              <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                 Carrier
               </label>
               <Select value={selectedCarrier} onValueChange={setSelectedCarrier}>
@@ -116,7 +115,7 @@ export default function AgentContracts() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
+              <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                 Agent #
               </label>
               <Input
@@ -124,12 +123,12 @@ export default function AgentContracts() {
                 placeholder="Search by Agent #"
                 value={agentSearch}
                 onChange={(e) => setAgentSearch(e.target.value)}
-                className="h-9 text-sm"
+                className="h-8 text-sm"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
+              <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                 Agent Name
               </label>
               <Select value={selectedAgent} onValueChange={setSelectedAgent}>
@@ -146,7 +145,7 @@ export default function AgentContracts() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
+              <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                 LOA Contract
               </label>
               <Select value={selectedLOA} onValueChange={setSelectedLOA}>
@@ -162,7 +161,7 @@ export default function AgentContracts() {
             </div>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-3">
             <Button variant="outline" size="sm">
               Add Contract +
             </Button>
@@ -171,51 +170,43 @@ export default function AgentContracts() {
       </Card>
 
       {/* Contracts Table */}
-      <Card className="professional-card">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border bg-accent/50">
-                  <th className="text-left py-4 px-6 font-medium text-muted-foreground">Carrier</th>
-                  <th className="text-left py-4 px-6 font-medium text-muted-foreground">Agent</th>
-                  <th className="text-left py-4 px-6 font-medium text-muted-foreground">LOA</th>
-                  <th className="text-left py-4 px-6 font-medium text-muted-foreground">Status</th>
-                  <th className="text-left py-4 px-6 font-medium text-muted-foreground">Start Date</th>
-                  <th className="text-left py-4 px-6 font-medium text-muted-foreground">Agent #</th>
-                  <th className="text-right py-4 px-6 font-medium text-muted-foreground">Actions</th>
+      <div className="table-container">
+        <div className="table-wrapper custom-scrollbar">
+          <table className="jira-table min-w-full">
+            <thead>
+              <tr>
+                <th>Carrier</th>
+                <th>Agent</th>
+                <th>LOA</th>
+                <th>Status</th>
+                <th>Start Date</th>
+                <th>Agent #</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contractsData.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                    No contracts found
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {contractsData.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-8 px-6 text-center text-muted-foreground">
-                      No contracts found
-                    </td>
+              ) : (
+                contractsData.map((contract: Contract) => (
+                  <tr key={contract.id} className="cursor-pointer hover:bg-accent/50 transition-colors">
+                    <td>{contract.carrier}</td>
+                    <td>{contract.agent}</td>
+                    <td>{contract.loa}</td>
+                    <td>{contract.status}</td>
+                    <td>{contract.startDate}</td>
+                    <td>{contract.agentNumber}</td>
                   </tr>
-                ) : (
-                  contractsData.map((contract: Contract) => (
-                    <tr key={contract.id} className="border-b border-border hover:bg-accent/30 transition-colors">
-                      <td className="py-4 px-6 text-foreground">{contract.carrier}</td>
-                      <td className="py-4 px-6 text-foreground">{contract.agent}</td>
-                      <td className="py-4 px-6 text-foreground">{contract.loa}</td>
-                      <td className="py-4 px-6 text-foreground">{contract.status}</td>
-                      <td className="py-4 px-6 text-foreground">{contract.startDate}</td>
-                      <td className="py-4 px-6 text-foreground">{contract.agentNumber}</td>
-                      <td className="py-4 px-6">
-                        <div className="flex items-center justify-end space-x-2">
-                          <Button variant="ghost" size="sm">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
+        <Card className="professional-card border-t-0 rounded-t-none">
           {/* Pagination */}
           <div className="flex items-center justify-between py-4 border-t border-border px-6">
             <div className="text-sm text-muted-foreground">
@@ -283,8 +274,8 @@ export default function AgentContracts() {
               </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   )
 }

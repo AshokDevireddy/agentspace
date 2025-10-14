@@ -71,7 +71,7 @@ export function SimpleSearchableSelect({
         variant="outline"
         role="combobox"
         aria-expanded={open}
-        className={cn("w-full justify-between h-9 text-sm")}
+        className={cn("w-full justify-between h-8 text-xs")}
         onClick={() => setOpen(!open)}
       >
         {selectedOption ? selectedOption.label : placeholder}
@@ -80,19 +80,19 @@ export function SimpleSearchableSelect({
 
       {open && (
         <div className="absolute top-full left-0 z-[51] w-full mt-1 bg-card border border-border rounded-md shadow-2xl backdrop-blur-sm">
-          <div className="p-2">
+          <div className="p-1.5">
             <Input
               type="text"
               placeholder={searchPlaceholder}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-8 text-sm bg-background text-foreground border-border"
+              className="h-7 text-xs bg-background text-foreground border-border"
               autoFocus
             />
           </div>
           <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
             {filteredOptions.length === 0 ? (
-              <div className="py-4 text-center text-sm text-muted-foreground">
+              <div className="py-3 text-center text-xs text-muted-foreground">
                 No option found.
               </div>
             ) : (
@@ -101,7 +101,7 @@ export function SimpleSearchableSelect({
                   type="button"
                   key={option.value}
                   className={cn(
-                    "w-full flex items-center px-3 py-1.5 text-sm text-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors",
+                    "w-full flex items-center px-2.5 py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors",
                     value === option.value && "bg-primary/20 text-primary"
                   )}
                   onClick={() => {

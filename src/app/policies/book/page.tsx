@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
-import { Edit, Trash2, Loader2, Save, X } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 // Types for the API responses
 interface Deal {
@@ -68,7 +68,6 @@ export default function BookOfBusiness() {
   const [policyNumberSearch, setPolicyNumberSearch] = useState("")
   const [selectedStatus, setSelectedStatus] = useState("all")
   const [clientSearch, setClientSearch] = useState("")
-  const [selectedLeadSource, setSelectedLeadSource] = useState("all")
   const [selectedHasAlert, setSelectedHasAlert] = useState("all")
 
   // State for API data
@@ -103,11 +102,6 @@ export default function BookOfBusiness() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Editing state
-  const [editingDealId, setEditingDealId] = useState<string | null>(null)
-  const [editingDeal, setEditingDeal] = useState<EditableDeal | null>(null)
-  const [saving, setSaving] = useState(false)
-
   // Fetch filter options on component mount
   useEffect(() => {
     const fetchFilterOptions = async () => {
@@ -138,7 +132,6 @@ export default function BookOfBusiness() {
       if (policyNumberSearch) params.append('policy_number', policyNumberSearch)
       if (selectedStatus !== 'all') params.append('status', selectedStatus)
       if (clientSearch) params.append('client_name', clientSearch)
-      if (selectedLeadSource !== 'all') params.append('lead_source', selectedLeadSource)
       params.append('limit', '50')
       if (!reset && nextCursor) {
         params.append('cursor_created_at', nextCursor.cursor_created_at)
@@ -170,83 +163,11 @@ export default function BookOfBusiness() {
   useEffect(() => {
     setNextCursor(null)
     fetchDeals(true)
-  }, [selectedAgent, selectedCarrier, policyNumberSearch, selectedStatus, clientSearch, selectedLeadSource])
+  }, [selectedAgent, selectedCarrier, policyNumberSearch, selectedStatus, clientSearch])
 
   const handleRowClick = (deal: Deal) => {
-    // Only navigate if not editing
-    if (editingDealId !== deal.id) {
-      router.push(`/policies/${deal.carrierId}/${deal.policyNumber}`)
-    }
+    router.push(`/policies/${deal.carrier}/${deal.policyNumber}`)
   }
-
-  const handleEditClick = (e: React.MouseEvent, deal: Deal) => {
-    e.stopPropagation()
-    setEditingDealId(deal.id)
-    setEditingDeal({
-      ...deal,
-      originalData: { ...deal }
-    })
-  }
-
-  const handleCancelEdit = () => {
-    setEditingDealId(null)
-    setEditingDeal(null)
-  }
-
-  const handleSaveEdit = async () => {
-    if (!editingDeal) return
-
-    setSaving(true)
-    try {
-      // Convert the editing deal data back to the format expected by the API
-      const updateData = {
-        client_name: editingDeal.clientName,
-        client_phone: editingDeal.clientPhone,
-        application_number: editingDeal.appNumber,
-        annual_premium: parseFloat(editingDeal.annualPremium.replace('$', '').replace(',', '')),
-        monthly_premium: parseFloat(editingDeal.annualPremium.replace('$', '').replace(',', '')) / 12,
-        policy_effective_date: editingDeal.effectiveDate,
-        lead_source: editingDeal.leadSource === 'No Lead' ? 'no_lead' :
-                    editingDeal.leadSource === 'Referral' ? 'referral' :
-                    editingDeal.leadSource === 'Provided' ? 'provided' :
-                    editingDeal.leadSource === 'Purchased' ? 'purchased' :
-                    editingDeal.leadSource.toLowerCase().replace(' ', '_'),
-        notes: editingDeal.leadSourceType,
-        status: editingDeal.status === 'Pending Approval' ? 'pending' :
-                editingDeal.status === 'Verified' ? 'verified' :
-                editingDeal.status === 'Active' ? 'active' :
-                editingDeal.status === 'Terminated' ? 'terminated' : 'draft'
-      }
-
-      const response = await fetch(`/api/deals/${editingDeal.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updateData)
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to update deal')
-      }
-
-      // Refresh the deals list
-      await fetchDeals()
-      setEditingDealId(null)
-      setEditingDeal(null)
-    } catch (err) {
-      console.error('Error updating deal:', err)
-      setError(err instanceof Error ? err.message : 'Failed to update deal')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleInputChange = (field: keyof EditableDeal, value: string) => {
-    if (!editingDeal) return
-    setEditingDeal({ ...editingDeal, [field]: value })
-  }
-
-  const isEditing = (dealId: string) => editingDealId === dealId
 
   return (
     <div className="space-y-6 max-w-full overflow-hidden">
@@ -264,12 +185,12 @@ export default function BookOfBusiness() {
 
       {/* Filters */}
       <Card className="professional-card filter-container">
-        <CardContent className="p-4">
-          <div className="space-y-3">
+        <CardContent className="p-3">
+          <div className="space-y-2">
             {/* First Row - Primary Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   Agent
                 </label>
                 <SimpleSearchableSelect
@@ -282,7 +203,7 @@ export default function BookOfBusiness() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   Carrier
                 </label>
                 <SimpleSearchableSelect
@@ -295,7 +216,7 @@ export default function BookOfBusiness() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   Policy #
                 </label>
                 <SimpleSearchableSelect
@@ -308,7 +229,7 @@ export default function BookOfBusiness() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   Status
                 </label>
                 <SimpleSearchableSelect
@@ -322,9 +243,9 @@ export default function BookOfBusiness() {
             </div>
 
             {/* Second Row - Additional Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   Client
                 </label>
                 <Input
@@ -332,25 +253,12 @@ export default function BookOfBusiness() {
                   placeholder="Enter Client's Name"
                   value={clientSearch}
                   onChange={(e) => setClientSearch(e.target.value)}
-                  className="h-9 text-sm"
+                  className="h-8 text-sm"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
-                  Lead Source
-                </label>
-                <SimpleSearchableSelect
-                  options={filterOptions.leadSources}
-                  value={selectedLeadSource}
-                  onValueChange={setSelectedLeadSource}
-                  placeholder="--------"
-                  searchPlaceholder="Search lead sources..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   Has Alert
                 </label>
                 <SimpleSearchableSelect
@@ -368,35 +276,33 @@ export default function BookOfBusiness() {
 
       {/* Policies Table */}
       <div className="table-container">
-        <div className="table-wrapper">
+        <div className="table-wrapper custom-scrollbar">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               <span className="ml-2 text-muted-foreground">Loading deals...</span>
             </div>
           ) : (
-            <table className="professional-table min-w-full">
+            <table className="jira-table min-w-full">
               <thead>
                 <tr>
-                  <th className="text-left">Date</th>
-                  <th className="text-left">Agent</th>
-                  <th className="text-left">Carrier</th>
-                  <th className="text-left">Product</th>
-                  <th className="text-left">Policy #</th>
-                  <th className="text-left">App #</th>
-                  <th className="text-left">Client Name</th>
-                  <th className="text-left">Client Phone</th>
-                  <th className="text-left">Effective Date</th>
+                  <th>Date</th>
+                  <th>Agent</th>
+                  <th>Carrier</th>
+                  <th>Product</th>
+                  <th>Policy #</th>
+                  <th>App #</th>
+                  <th>Client Name</th>
+                  <th>Client Phone</th>
+                  <th>Effective Date</th>
                   <th className="text-right">Annual Premium</th>
-                  <th className="text-center">Lead Source</th>
                   <th className="text-center">Status</th>
-                  <th className="text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {deals.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="py-8 text-center text-muted-foreground">
+                    <td colSpan={11} className="py-8 text-center text-muted-foreground">
                       No deals found matching your criteria
                     </td>
                   </tr>
@@ -404,209 +310,37 @@ export default function BookOfBusiness() {
                   deals.map((deal) => (
                     <tr
                       key={deal.id}
-                      className={`transition-colors ${
-                        isEditing(deal.id) ? 'bg-primary/10' : 'cursor-pointer hover:bg-accent/30'
-                      }`}
+                      className="cursor-pointer hover:bg-accent/50 transition-colors"
                       onClick={() => handleRowClick(deal)}
                     >
-                        <td className="text-foreground">{deal.date}</td>
-                        <td className="text-foreground">{deal.agent}</td>
-                        <td className="text-foreground">{deal.carrier}</td>
-                        <td className="text-foreground">{deal.product}</td>
-                        <td className="text-foreground">{deal.policyNumber}</td>
-                        <td>
-                          {isEditing(deal.id) ? (
-                            <Input
-                              value={editingDeal?.appNumber || ''}
-                              onChange={(e) => handleInputChange('appNumber', e.target.value)}
-                              className="w-24"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          ) : (
-                            <span className="text-foreground">{deal.appNumber}</span>
-                          )}
-                        </td>
-                        <td>
-                          {isEditing(deal.id) ? (
-                            <Input
-                              value={editingDeal?.clientName || ''}
-                              onChange={(e) => handleInputChange('clientName', e.target.value)}
-                              className="w-32"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          ) : (
-                            <span className="text-foreground">{deal.clientName}</span>
-                          )}
-                        </td>
-                        <td>
-                          {isEditing(deal.id) ? (
-                            <Input
-                              value={editingDeal?.clientPhone || ''}
-                              onChange={(e) => handleInputChange('clientPhone', e.target.value)}
-                              className="w-28"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          ) : (
-                            <span className="text-foreground">{deal.clientPhone}</span>
-                          )}
-                        </td>
-                        <td>
-                          {isEditing(deal.id) ? (
-                            <Input
-                              type="date"
-                              value={editingDeal?.effectiveDate || ''}
-                              onChange={(e) => handleInputChange('effectiveDate', e.target.value)}
-                              className="w-32"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          ) : (
-                            <span className="text-foreground">{deal.effectiveDate}</span>
-                          )}
-                        </td>
+                        <td>{deal.date}</td>
+                        <td>{deal.agent}</td>
+                        <td>{deal.carrier}</td>
+                        <td>{deal.product}</td>
+                        <td>{deal.policyNumber}</td>
+                        <td>{deal.appNumber}</td>
+                        <td>{deal.clientName}</td>
+                        <td>{deal.clientPhone}</td>
+                        <td>{deal.effectiveDate}</td>
                         <td className="text-right">
-                          {isEditing(deal.id) ? (
-                            <Input
-                              value={editingDeal?.annualPremium.replace('$', '') || ''}
-                              onChange={(e) => handleInputChange('annualPremium', `$${e.target.value}`)}
-                              className="w-24 text-right"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          ) : (
-                            <span className="text-primary font-medium">{deal.annualPremium}</span>
-                          )}
+                          <span className="text-primary font-medium">{deal.annualPremium}</span>
                         </td>
                         <td className="text-center">
-                          {isEditing(deal.id) ? (
-                            <div className="flex flex-col items-center space-y-1">
-                              <SimpleSearchableSelect
-                                options={filterOptions.leadSources.filter(option => option.value !== 'all')}
-                                value={editingDeal?.leadSource === 'No Lead' ? 'no_lead' :
-                                       editingDeal?.leadSource === 'Referral' ? 'referral' :
-                                       editingDeal?.leadSource === 'Provided' ? 'provided' :
-                                       editingDeal?.leadSource === 'Purchased' ? 'purchased' :
-                                       editingDeal?.leadSource.toLowerCase().replace(' ', '_') || ''}
-                                onValueChange={(value) => {
-                                  const leadSourceMap = {
-                                    'no_lead': 'No Lead',
-                                    'referral': 'Referral',
-                                    'provided': 'Provided',
-                                    'purchased': 'Purchased'
-                                  }
-                                  handleInputChange('leadSource', leadSourceMap[value as keyof typeof leadSourceMap] || value.replace('_', ' '))
-                                }}
-                                placeholder="Select Lead Source"
-                                searchPlaceholder="Search..."
-                              />
-                              <Input
-                                value={editingDeal?.leadSourceType || ''}
-                                onChange={(e) => handleInputChange('leadSourceType', e.target.value)}
-                                placeholder="Type"
-                                className="w-20 text-xs"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center space-y-1">
-                              <Badge
-                                className={`${leadSourceColors[deal.leadSource as keyof typeof leadSourceColors] || 'bg-gray-500/20 text-foreground border-gray-500/30'} border`}
-                                variant="outline"
-                              >
-                                {deal.leadSource}
-                              </Badge>
-                              {deal.leadSourceType && (
-                                <span className="text-xs text-muted-foreground">{deal.leadSourceType}</span>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                        <td className="text-center">
-                          {isEditing(deal.id) ? (
-                            <SimpleSearchableSelect
-                              options={filterOptions.statuses.filter(option => option.value !== 'all')}
-                              value={editingDeal?.status === 'Pending Approval' ? 'pending' :
-                                     editingDeal?.status === 'Verified' ? 'verified' :
-                                     editingDeal?.status === 'Active' ? 'active' :
-                                     editingDeal?.status === 'Terminated' ? 'terminated' : 'draft'}
-                              onValueChange={(value) => {
-                                const statusMap = {
-                                  'pending': 'Pending Approval',
-                                  'verified': 'Verified',
-                                  'active': 'Active',
-                                  'terminated': 'Terminated',
-                                  'draft': 'Draft'
-                                }
-                                handleInputChange('status', statusMap[value as keyof typeof statusMap] || 'Draft')
-                              }}
-                              placeholder="Select Status"
-                              searchPlaceholder="Search..."
-                            />
-                          ) : (
-                            <Badge
-                              className={`${statusColors[deal.status as keyof typeof statusColors]} border`}
-                              variant="outline"
-                            >
-                              {deal.status}
-                            </Badge>
-                          )}
-                        </td>
-                        <td className="text-right">
-                          <div className="flex items-center justify-end space-x-2">
-                            {isEditing(deal.id) ? (
-                              <>
-                                <button
-                                  className="text-green-400 hover:text-green-300 transition-colors"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleSaveEdit()
-                                  }}
-                                  disabled={saving}
-                                >
-                                  {saving ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Save className="h-4 w-4" />
-                                  )}
-                                </button>
-                                <button
-                                  className="text-muted-foreground hover:text-foreground transition-colors"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleCancelEdit()
-                                  }}
-                                  disabled={saving}
-                                >
-                                  <X className="h-4 w-4" />
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  className="text-muted-foreground hover:text-primary transition-colors"
-                                  onClick={(e) => handleEditClick(e, deal)}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </button>
-                                <button
-                                  className="text-red-400 hover:text-red-300 transition-colors"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    // Handle delete action
-                                  }}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </>
-                            )}
-                          </div>
+                          <Badge
+                            className={`${statusColors[deal.status as keyof typeof statusColors]} border`}
+                            variant="outline"
+                          >
+                            {deal.status}
+                          </Badge>
                         </td>
                       </tr>
                     ))
                   )}
-                </tbody>
-              </table>
-            )}
-          </div>
+              </tbody>
+            </table>
+          )}
         </div>
+      </div>
         {!loading && deals.length > 0 ? (
           <div className="flex justify-center py-4">
             <Button

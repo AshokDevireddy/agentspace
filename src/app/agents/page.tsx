@@ -296,7 +296,7 @@ export default function Agents() {
 
       {/* Search and Filters */}
       <Card className="professional-card filter-container">
-        <CardContent className="p-4">
+        <CardContent className="p-3">
           {/* Search Bar */}
           <div className="mb-4">
             <div className="relative">
@@ -311,12 +311,12 @@ export default function Agents() {
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2">
             {/* First Row - Primary Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
               {/* In Upline */}
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   In Upline
                 </label>
                 <SimpleSearchableSelect
@@ -330,7 +330,7 @@ export default function Agents() {
 
               {/* Direct Upline */}
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   Direct Upline
                 </label>
                 <SimpleSearchableSelect
@@ -344,7 +344,7 @@ export default function Agents() {
 
               {/* Position */}
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   Position
                 </label>
                 <SimpleSearchableSelect
@@ -358,7 +358,7 @@ export default function Agents() {
 
               {/* In Downline */}
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   In Downline
                 </label>
                 <SimpleSearchableSelect
@@ -372,10 +372,10 @@ export default function Agents() {
             </div>
 
             {/* Second Row - Additional Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-2">
               {/* Direct Downline */}
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   Direct Downline
                 </label>
                 <SimpleSearchableSelect
@@ -389,7 +389,7 @@ export default function Agents() {
 
               {/* Agent Name */}
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
                   Agent Name
                 </label>
                 <SimpleSearchableSelect
@@ -406,76 +406,69 @@ export default function Agents() {
       </Card>
 
       {view === 'table' ? (
-        <Card className="professional-card">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border bg-accent/50">
-                    <th className="text-left py-4 px-6 font-medium text-muted-foreground">Agent</th>
-                    <th className="text-left py-4 px-6 font-medium text-muted-foreground">Upline</th>
-                    <th className="text-left py-4 px-6 font-medium text-muted-foreground">Created</th>
-                    <th className="text-left py-4 px-6 font-medium text-muted-foreground">Last Login</th>
-                    <th className="text-left py-4 px-6 font-medium text-muted-foreground">Individual YTD (AP / Earnings)</th>
-                    <th className="text-left py-4 px-6 font-medium text-muted-foreground">Downlines</th>
-                    <th className="text-right py-4 px-6 font-medium text-muted-foreground">Actions</th>
+        <div className="table-container">
+          <div className="table-wrapper custom-scrollbar">
+            <table className="jira-table min-w-full">
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>Upline</th>
+                  <th>Created</th>
+                  <th>Last Login</th>
+                  <th>Individual YTD (AP / Earnings)</th>
+                  <th>Downlines</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAgents.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                      No agents found matching your criteria
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filteredAgents.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-8 px-6 text-center text-muted-foreground">
-                        No agents found matching your criteria
+                ) : (
+                  filteredAgents.map((agent: Agent) => (
+                    <tr key={agent.id} className="cursor-pointer hover:bg-accent/50 transition-colors">
+                      <td>
+                        <div className="flex items-center space-x-3">
+                          <div className="flex-shrink-0">
+                            <div className={`w-8 h-8 rounded-full ${badgeColors[agent.badge] || 'bg-muted text-muted-foreground'} flex items-center justify-center text-xs font-bold border`}>
+                              {agent.badge.charAt(0)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="font-medium text-foreground">{agent.name}</div>
+                            <Badge
+                              className={`mt-1 ${badgeColors[agent.badge] || 'bg-muted text-muted-foreground border-border'} border`}
+                              variant="outline"
+                            >
+                              {agent.badge}
+                            </Badge>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{agent.upline}</td>
+                      <td className="text-muted-foreground">{agent.created}</td>
+                      <td className="text-muted-foreground">{agent.lastLogin}</td>
+                      <td className="text-primary font-medium">{agent.earnings}</td>
+                      <td>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">{agent.downlines}</span>
+                          {agent.downlines > 0 && (
+                            <Button variant="ghost" size="sm">
+                              <Users className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
-                  ) : (
-                    filteredAgents.map((agent: Agent) => (
-                      <tr key={agent.id} className="border-b border-border hover:bg-accent/30 transition-colors">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center space-x-3">
-                            <div className="flex-shrink-0">
-                              <div className={`w-8 h-8 rounded-full ${badgeColors[agent.badge] || 'bg-muted text-muted-foreground'} flex items-center justify-center text-xs font-bold border`}>
-                                {agent.badge.charAt(0)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="font-medium text-foreground">{agent.name}</div>
-                              <Badge
-                                className={`mt-1 ${badgeColors[agent.badge] || 'bg-muted text-muted-foreground border-border'} border`}
-                                variant="outline"
-                              >
-                                {agent.badge}
-                              </Badge>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-4 px-6 text-foreground">{agent.upline}</td>
-                        <td className="py-4 px-6 text-muted-foreground">{agent.created}</td>
-                        <td className="py-4 px-6 text-muted-foreground">{agent.lastLogin}</td>
-                        <td className="py-4 px-6 text-primary font-medium">{agent.earnings}</td>
-                        <td className="py-4 px-6">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-foreground font-medium">{agent.downlines}</span>
-                            {agent.downlines > 0 && (
-                              <Button variant="ghost" size="sm">
-                                <Users className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-4 px-6">
-                          <div className="flex items-center justify-end space-x-2">
-                            <Button variant="ghost" size="sm">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <Card className="professional-card border-t-0 rounded-t-none">
 
             {/* Pagination */}
             <div className="flex items-center justify-between py-4 border-t border-border px-6">
@@ -544,8 +537,8 @@ export default function Agents() {
                 </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </Card>
+        </div>
       ) : (
         <Card className="professional-card">
             <CardContent className="p-4" style={{

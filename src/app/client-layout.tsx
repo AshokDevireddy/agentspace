@@ -97,9 +97,9 @@ export default function ClientLayout({
 
   // Regular authenticated pages with sidebar navigation (for agents, admins, and while loading)
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="min-h-screen bg-background lg:pl-64 overflow-x-hidden">
       <Navigation />
-      <main className="flex-1 lg:ml-64 min-h-screen bg-background">
+      <main className="min-h-screen bg-background">
         <div className="p-4 lg:p-6 space-y-6">
           {children}
         </div>

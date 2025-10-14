@@ -5,7 +5,10 @@ import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Edit } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
+import { ArrowLeft, Edit, Save, X, Trash2 } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import Link from "next/link"
 import { createClient } from '@supabase/supabase-js'
 
@@ -56,6 +59,14 @@ const positionColors = {
   "Prodigy": "bg-indigo-100 text-indigo-800"
 };
 
+const statusOptions = [
+  { value: "draft", label: "Draft" },
+  { value: "pending", label: "Pending Approval" },
+  { value: "verified", label: "Verified" },
+  { value: "active", label: "Active" },
+  { value: "terminated", label: "Terminated" }
+]
+
 export default function PolicyDetail() {
   const params = useParams()
   const router = useRouter()
@@ -63,6 +74,15 @@ export default function PolicyDetail() {
   const [policy, setPolicy] = useState<PolicyData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Edit state
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedData, setEditedData] = useState<any>(null)
+  const [saving, setSaving] = useState(false)
+
+  // Delete state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const carrierId = decodeURIComponent(params.carrier as string)
   const policyNumber = params.policyNumber as string
@@ -213,6 +233,86 @@ export default function PolicyDetail() {
     fetchPolicyData()
   }, [carrierId, policyNumber])
 
+  const handleEdit = () => {
+    if (!policy) return
+    setEditedData({
+      client_name: policy.client_name,
+      policy_effective_date: policy.policy_effective_date,
+      annual_premium: policy.annual_premium,
+      status: policy.status
+    })
+    setIsEditing(true)
+  }
+
+  const handleCancelEdit = () => {
+    setIsEditing(false)
+    setEditedData(null)
+  }
+
+  const handleSave = async () => {
+    if (!policy || !editedData) return
+
+    setSaving(true)
+    try {
+      const response = await fetch(`/api/deals/${policy.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: editedData.client_name,
+          policy_effective_date: editedData.policy_effective_date,
+          annual_premium: parseFloat(editedData.annual_premium),
+          monthly_premium: parseFloat(editedData.annual_premium) / 12,
+          status: editedData.status
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to update policy')
+      }
+
+      // Update local state
+      setPolicy({
+        ...policy,
+        client_name: editedData.client_name,
+        policy_effective_date: editedData.policy_effective_date,
+        annual_premium: parseFloat(editedData.annual_premium),
+        status: editedData.status
+      })
+
+      setIsEditing(false)
+      setEditedData(null)
+    } catch (err) {
+      console.error('Error updating policy:', err)
+      setError(err instanceof Error ? err.message : 'Failed to update policy')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!policy) return
+
+    setDeleting(true)
+    try {
+      const response = await fetch(`/api/deals/${policy.id}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete policy')
+      }
+
+      // Navigate back to book of business
+      router.push('/policies/book')
+    } catch (err) {
+      console.error('Error deleting policy:', err)
+      setError(err instanceof Error ? err.message : 'Failed to delete policy')
+      setDeleting(false)
+      setDeleteDialogOpen(false)
+    }
+  }
 
   // Function to render agent hierarchy with indentation
   const renderAgentHierarchy = (commissions: any[]) => {
@@ -293,10 +393,45 @@ export default function PolicyDetail() {
           <span className="ml-4 text-primary bg-primary/10 px-3 py-1 rounded-full text-sm font-medium border border-primary/30">
             LOA
           </span>
-          <Button className="btn-gradient ml-auto" size="sm">
-            <Edit className="h-4 w-4 mr-2" />
-            Edit
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            {isEditing ? (
+              <>
+                <Button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="bg-green-600 hover:bg-green-700"
+                  size="sm"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  {saving ? 'Saving...' : 'Save'}
+                </Button>
+                <Button
+                  onClick={handleCancelEdit}
+                  disabled={saving}
+                  variant="outline"
+                  size="sm"
+                >
+                  <X className="h-4 w-4 mr-2" />
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button onClick={handleEdit} className="btn-gradient" size="sm">
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button
+                  onClick={() => setDeleteDialogOpen(true)}
+                  variant="destructive"
+                  size="sm"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -305,30 +440,68 @@ export default function PolicyDetail() {
         <Card className="professional-card">
           <CardContent className="p-6">
             <h3 className="text-lg font-semibold text-foreground mb-4">Policy Details</h3>
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div>
-                <span className="text-sm font-medium text-muted-foreground">Effective Date:</span>
-                <span className="ml-2 text-foreground">{formatDate(policy.policy_effective_date)}</span>
+                <label className="text-sm font-medium text-muted-foreground block mb-1">Effective Date:</label>
+                {isEditing ? (
+                  <Input
+                    type="date"
+                    value={editedData?.policy_effective_date || ''}
+                    onChange={(e) => setEditedData({ ...editedData, policy_effective_date: e.target.value })}
+                    className="max-w-xs"
+                  />
+                ) : (
+                  <span className="text-foreground">{formatDate(policy.policy_effective_date)}</span>
+                )}
               </div>
               <div>
-                <span className="text-sm font-medium text-muted-foreground">Client:</span>
-                <span className="ml-2 text-primary underline cursor-pointer">
-                  {policy.client_name}
-                </span>
+                <label className="text-sm font-medium text-muted-foreground block mb-1">Client:</label>
+                {isEditing ? (
+                  <Input
+                    type="text"
+                    value={editedData?.client_name || ''}
+                    onChange={(e) => setEditedData({ ...editedData, client_name: e.target.value })}
+                    className="max-w-xs"
+                  />
+                ) : (
+                  <span className="text-primary underline cursor-pointer">
+                    {policy.client_name}
+                  </span>
+                )}
               </div>
               <div>
-                <span className="text-sm font-medium text-muted-foreground">Product:</span>
-                <span className="ml-2 text-foreground">{policy.product?.name || 'N/A'}</span>
+                <span className="text-sm font-medium text-muted-foreground block mb-1">Product:</span>
+                <span className="text-foreground">{policy.product?.name || 'N/A'}</span>
               </div>
               <div>
-                <span className="text-sm font-medium text-muted-foreground">Annual Premium:</span>
-                <span className="ml-2 text-foreground font-semibold">${policy.annual_premium.toFixed(2)}</span>
+                <label className="text-sm font-medium text-muted-foreground block mb-1">Annual Premium:</label>
+                {isEditing ? (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={editedData?.annual_premium || ''}
+                    onChange={(e) => setEditedData({ ...editedData, annual_premium: e.target.value })}
+                    className="max-w-xs"
+                  />
+                ) : (
+                  <span className="text-foreground font-semibold">${policy.annual_premium.toFixed(2)}</span>
+                )}
               </div>
               <div>
-                <span className="text-sm font-medium text-muted-foreground">Status:</span>
-                <Badge className="ml-2 bg-primary/20 text-primary border border-primary/30">
-                  {policy.status}
-                </Badge>
+                <label className="text-sm font-medium text-muted-foreground block mb-1">Status:</label>
+                {isEditing ? (
+                  <SimpleSearchableSelect
+                    options={statusOptions}
+                    value={editedData?.status || ''}
+                    onValueChange={(value) => setEditedData({ ...editedData, status: value })}
+                    placeholder="Select Status"
+                    searchPlaceholder="Search status..."
+                  />
+                ) : (
+                  <Badge className="bg-primary/20 text-primary border border-primary/30">
+                    {policy.status}
+                  </Badge>
+                )}
               </div>
             </div>
           </CardContent>
@@ -355,6 +528,41 @@ export default function PolicyDetail() {
         </Card>
       </div>
 
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Policy</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this policy? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Policy: <span className="font-semibold text-foreground">{policy.carrier?.name}: {policy.policy_number}</span>
+            </p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Client: <span className="font-semibold text-foreground">{policy.client_name}</span>
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting...' : 'Delete Policy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

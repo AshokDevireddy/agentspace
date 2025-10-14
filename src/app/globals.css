@@ -113,6 +113,8 @@
 
 .table-wrapper {
   @apply overflow-x-auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
 }
 
 .professional-table {
@@ -137,6 +139,36 @@
 
 .professional-table td {
   @apply py-4 px-6 text-foreground;
+}
+
+/* Jira-style Table */
+.jira-table {
+  @apply border-collapse;
+  /* Allow the table to grow beyond the container width so the wrapper can scroll */
+  width: max-content;
+  min-width: 100%;
+}
+
+.jira-table thead {
+  @apply bg-accent/50;
+}
+
+.jira-table th {
+  @apply py-3 px-4 font-semibold text-sm text-muted-foreground text-left border border-border;
+  white-space: nowrap;
+}
+
+.jira-table tbody tr {
+  @apply transition-colors;
+}
+
+.jira-table tbody tr:hover {
+  @apply bg-accent/50;
+}
+
+.jira-table td {
+  @apply py-3 px-4 text-sm text-foreground border border-border;
+  white-space: nowrap;
 }
 
 /* Sidebar Navigation Styles */

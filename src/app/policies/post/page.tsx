@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
-import { Loader2 } from "lucide-react"
+import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 // Options are loaded dynamically from Supabase based on the user's agency
 
@@ -34,6 +35,12 @@ const requiredFields: FormField[] = [
   "clientName", "policyNumber"
 ];
 
+const STEPS = [
+  { id: 1, name: 'Policy Information', icon: FileText },
+  { id: 2, name: 'Client Information', icon: User },
+  { id: 3, name: 'Review & Submit', icon: ClipboardCheck }
+]
+
 export default function PostDeal() {
   const [formData, setFormData] = useState<typeof initialFormData>(initialFormData)
   const { user } = useAuth()
@@ -43,6 +50,8 @@ export default function PostDeal() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const errorRef = useRef<HTMLDivElement>(null)
+  const [currentStep, setCurrentStep] = useState(1)
+  const submitIntentRef = useRef(false)
 
   // Dynamic option states
   const [agencyId, setAgencyId] = useState<string | null>(null)
@@ -116,7 +125,22 @@ export default function PostDeal() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!validateForm()) return
+
+    // Only submit if we're on the final step
+    if (currentStep !== STEPS.length) {
+      submitIntentRef.current = false
+      return
+    }
+
+    // Require explicit submit intent (button click)
+    if (!submitIntentRef.current) {
+      return
+    }
+
+    if (!validateForm()) {
+      submitIntentRef.current = false
+      return
+    }
 
     setSubmitting(true)
     setError(null)
@@ -277,6 +301,14 @@ export default function PostDeal() {
       setError("An unexpected error occurred.")
     } finally {
       setSubmitting(false)
+      submitIntentRef.current = false
+    }
+  }
+
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === "Enter") {
+      // Block Enter from submitting; require explicit click on Submit button
+      e.preventDefault()
     }
   }
 
@@ -317,18 +349,151 @@ export default function PostDeal() {
     return true
   }
 
+  const validateStep = (step: number) => {
+    setError(null)
+
+    if (step === 1) {
+      // Policy Information validation
+      if (!formData.carrierId) {
+        setError("Please select a carrier.")
+        return false
+      }
+      if (!formData.productId) {
+        setError("Please select a product.")
+        return false
+      }
+      if (!formData.policyEffectiveDate) {
+        setError("Please select a policy effective date.")
+        return false
+      }
+      if (!formData.monthlyPremium) {
+        setError("Please enter the monthly premium.")
+        return false
+      }
+      const monthly = parseFloat(formData.monthlyPremium)
+      if (Number.isNaN(monthly) || monthly < 0) {
+        setError("Please enter a valid monthly premium.")
+        return false
+      }
+      // At least one of policy number or application number must be filled
+      if (!formData.policyNumber && !formData.applicationNumber) {
+        setError("Please enter either a policy number or an application number.")
+        return false
+      }
+    } else if (step === 2) {
+      // Client Information validation
+      if (!formData.clientName) {
+        setError("Please enter the client's full name (first and last).")
+        return false
+      }
+      // Email validation if provided
+      if (formData.clientEmail) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        if (!emailRegex.test(formData.clientEmail)) {
+          setError("Please enter a valid email address.")
+          return false
+        }
+      }
+    }
+
+    return true
+  }
+
+  const nextStep = () => {
+    if (validateStep(currentStep)) {
+      setCurrentStep(prev => Math.min(prev + 1, STEPS.length))
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  const prevStep = () => {
+    setCurrentStep(prev => Math.max(prev - 1, 1))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const getCarrierName = (id: string) => {
+    return carriersOptions.find(c => c.value === id)?.label || id
+  }
+
+  const getProductName = (id: string) => {
+    return productsOptions.find(p => p.value === id)?.label || id
+  }
+
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-8 max-w-5xl mx-auto">
       {/* Header */}
       <div>
         <h1 className="text-4xl font-bold text-gradient mb-2">Post a Deal</h1>
+        <p className="text-muted-foreground">Submit a new policy in {STEPS.length} easy steps</p>
+      </div>
+
+      {/* Progress Stepper */}
+      <div className="relative">
+        <div className="flex items-center justify-between">
+          {STEPS.map((step, index) => {
+            const StepIcon = step.icon
+            const isCompleted = currentStep > step.id
+            const isCurrent = currentStep === step.id
+
+            return (
+              <div key={step.id} className="flex-1 relative">
+                <div className="flex flex-col items-center">
+                  {/* Circle with Icon */}
+                  <div
+                    className={cn(
+                      "w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all duration-300 relative z-10",
+                      isCompleted && "bg-primary border-primary text-primary-foreground",
+                      isCurrent && "bg-primary border-primary text-primary-foreground shadow-lg shadow-primary/50",
+                      !isCompleted && !isCurrent && "bg-card border-border text-muted-foreground"
+                    )}
+                  >
+                    {isCompleted ? (
+                      <CheckCircle2 className="h-6 w-6" />
+                    ) : (
+                      <StepIcon className="h-6 w-6" />
+                    )}
+                  </div>
+
+                  {/* Step Label */}
+                  <div className="mt-3 text-center">
+                    <div className={cn(
+                      "text-sm font-medium transition-colors",
+                      (isCurrent || isCompleted) ? "text-foreground" : "text-muted-foreground"
+                    )}>
+                      Step {step.id}
+                    </div>
+                    <div className={cn(
+                      "text-xs mt-1 transition-colors",
+                      (isCurrent || isCompleted) ? "text-foreground" : "text-muted-foreground"
+                    )}>
+                      {step.name}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Connector Line */}
+                {index < STEPS.length - 1 && (
+                  <div
+                    className="absolute top-6 left-1/2 w-full h-0.5 -z-0"
+                    style={{ transform: 'translateY(-50%)' }}
+                  >
+                    <div className={cn(
+                      "h-full transition-all duration-300",
+                      isCompleted ? "bg-primary" : "bg-border"
+                    )} />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {/* Error Banner */}
       {error && (
         <div
           ref={errorRef}
-          className="mb-4 p-4 bg-destructive/10 text-destructive rounded-lg border border-destructive/30"
+          className="p-4 bg-destructive/10 text-destructive rounded-lg border border-destructive/30"
         >
           {error}
         </div>
@@ -337,196 +502,326 @@ export default function PostDeal() {
       {/* Form */}
       <Card className="professional-card">
         <CardContent className="p-8">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Carrier */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-muted-foreground">
-                Carrier
-              </label>
-              <SimpleSearchableSelect
-                options={carriersOptions}
-                value={formData.carrierId}
-                onValueChange={(value) => handleInputChange("carrierId", value)}
-              />
-            </div>
-
-            {/* Product */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-muted-foreground">
-                Product
-              </label>
-              <SimpleSearchableSelect
-                options={productsOptions}
-                value={formData.productId}
-                onValueChange={(value) => handleInputChange("productId", value)}
-              />
-            </div>
-
-            {/* Policy Effective / Draft Date */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-muted-foreground">
-                Policy Effective / Draft Date
-              </label>
-              <Input
-                type="date"
-                value={formData.policyEffectiveDate}
-                onChange={(e) => handleInputChange("policyEffectiveDate", e.target.value)}
-                className="h-12"
-              />
-            </div>
-
-            {/* Premium Field */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-muted-foreground">
-                What was the monthly premium for the policy you wrote?
-              </label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.monthlyPremium}
-                onChange={(e) => handleInputChange("monthlyPremium", e.target.value)}
-                className="h-12"
-                placeholder="0.00"
-              />
-            </div>
-
-            {/* Client Information */}
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-muted-foreground">
-                    Client name
-                  </label>
-                  <Input
-                    type="text"
-                    value={formData.clientName}
-                    onChange={(e) => handleInputChange("clientName", e.target.value)}
-                    className="h-12"
-                    placeholder="Enter client name"
-                  />
+          <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="space-y-8">
+            {/* Step 1: Policy Information */}
+            {currentStep === 1 && (
+              <div className="space-y-6">
+                <div className="border-b border-border pb-4">
+                  <h2 className="text-2xl font-bold text-foreground">Policy Information</h2>
+                  <p className="text-sm text-muted-foreground mt-1">Enter the details of the policy you're submitting</p>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-muted-foreground">
-                    Client email
-                  </label>
-                  <Input
-                    type="email"
-                    value={formData.clientEmail}
-                    onChange={(e) => handleInputChange("clientEmail", e.target.value)}
-                    className="h-12"
-                    placeholder="Enter client email"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    An invitation will be sent to this email for client portal access
-                  </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Carrier */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Carrier <span className="text-destructive">*</span>
+                    </label>
+                    <SimpleSearchableSelect
+                      options={carriersOptions}
+                      value={formData.carrierId}
+                      onValueChange={(value) => handleInputChange("carrierId", value)}
+                    />
+                  </div>
+
+                  {/* Product */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Product <span className="text-destructive">*</span>
+                    </label>
+                    <SimpleSearchableSelect
+                      options={productsOptions}
+                      value={formData.productId}
+                      onValueChange={(value) => handleInputChange("productId", value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Policy Effective / Draft Date */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Policy Effective Date <span className="text-destructive">*</span>
+                    </label>
+                    <Input
+                      type="date"
+                      value={formData.policyEffectiveDate}
+                      onChange={(e) => handleInputChange("policyEffectiveDate", e.target.value)}
+                      className="h-12"
+                    />
+                  </div>
+
+                  {/* Premium Field */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Monthly Premium <span className="text-destructive">*</span>
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.monthlyPremium}
+                      onChange={(e) => handleInputChange("monthlyPremium", e.target.value)}
+                      className="h-12"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Policy Number */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Policy Number
+                    </label>
+                    <Input
+                      type="text"
+                      value={formData.policyNumber}
+                      onChange={(e) => handleInputChange("policyNumber", e.target.value)}
+                      className="h-12"
+                      placeholder="Enter policy number"
+                    />
+                  </div>
+
+                  {/* Application Number */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Application Number
+                    </label>
+                    <Input
+                      type="text"
+                      value={formData.applicationNumber}
+                      onChange={(e) => handleInputChange("applicationNumber", e.target.value)}
+                      className="h-12"
+                      placeholder="Enter application number"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground -mt-4">
+                  <span className="text-destructive">*</span> At least one is required: Enter the policy number if available, otherwise enter the application number
+                </p>
+              </div>
+            )}
+
+            {/* Step 2: Client Information */}
+            {currentStep === 2 && (
+              <div className="space-y-6">
+                <div className="border-b border-border pb-4">
+                  <h2 className="text-2xl font-bold text-foreground">Client Information</h2>
+                  <p className="text-sm text-muted-foreground mt-1">Provide details about your client</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Full Name (First and Last) <span className="text-destructive">*</span>
+                    </label>
+                    <Input
+                      type="text"
+                      value={formData.clientName}
+                      onChange={(e) => handleInputChange("clientName", e.target.value)}
+                      className="h-12"
+                      placeholder="Enter client's full name"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Client Email
+                    </label>
+                    <Input
+                      type="email"
+                      value={formData.clientEmail}
+                      onChange={(e) => handleInputChange("clientEmail", e.target.value)}
+                      className="h-12"
+                      placeholder="Enter client email"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      An invitation will be sent to this email for client portal access
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Client Phone
+                    </label>
+                    <Input
+                      type="tel"
+                      value={formData.clientPhone}
+                      onChange={(e) => handleInputChange("clientPhone", e.target.value)}
+                      className="h-12"
+                      placeholder="Enter phone number"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Date of Birth
+                    </label>
+                    <Input
+                      type="date"
+                      value={formData.clientDateOfBirth}
+                      onChange={(e) => handleInputChange("clientDateOfBirth", e.target.value)}
+                      className="h-12"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Last 4 Digits of SSN
+                    </label>
+                    <Input
+                      type="text"
+                      value={formData.clientSsnLast4}
+                      onChange={(e) => handleInputChange("clientSsnLast4", e.target.value)}
+                      className="h-12"
+                      placeholder="1234"
+                      maxLength={4}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Address
+                    </label>
+                    <Input
+                      type="text"
+                      value={formData.clientAddress}
+                      onChange={(e) => handleInputChange("clientAddress", e.target.value)}
+                      className="h-12"
+                      placeholder="Enter address"
+                    />
+                  </div>
                 </div>
               </div>
+            )}
 
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  Client phone number
-                </label>
-                <Input
-                  type="tel"
-                  value={formData.clientPhone}
-                  onChange={(e) => handleInputChange("clientPhone", e.target.value)}
-                  className="h-12"
-                  placeholder="Enter phone number"
-                />
+            {/* Step 3: Review & Submit */}
+            {currentStep === 3 && (
+              <div className="space-y-6">
+                <div className="border-b border-border pb-4">
+                  <h2 className="text-2xl font-bold text-foreground">Review & Submit</h2>
+                  <p className="text-sm text-muted-foreground mt-1">Please review all information before submitting</p>
+                </div>
+
+                {/* Policy Information Review */}
+                <div className="bg-accent/50 rounded-lg p-6 space-y-4">
+                  <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-primary" />
+                    Policy Information
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Carrier:</span>
+                      <p className="font-medium text-foreground mt-1">{getCarrierName(formData.carrierId)}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Product:</span>
+                      <p className="font-medium text-foreground mt-1">{getProductName(formData.productId)}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Effective Date:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.policyEffectiveDate}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Monthly Premium:</span>
+                      <p className="font-medium text-foreground mt-1">${formData.monthlyPremium}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Policy Number:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.policyNumber || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Application Number:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.applicationNumber || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Client Information Review */}
+                <div className="bg-accent/50 rounded-lg p-6 space-y-4">
+                  <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                    <User className="h-5 w-5 text-primary" />
+                    Client Information
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Name:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.clientName}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Email:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.clientEmail || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Phone:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.clientPhone || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Date of Birth:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.clientDateOfBirth || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">SSN (Last 4):</span>
+                      <p className="font-medium text-foreground mt-1">{formData.clientSsnLast4 || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Address:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.clientAddress || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
+            )}
 
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  Date of birth
-                </label>
-                <Input
-                  type="date"
-                  value={formData.clientDateOfBirth}
-                  onChange={(e) => handleInputChange("clientDateOfBirth", e.target.value)}
-                  className="h-12"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  Last 4 digits of SSN
-                </label>
-                <Input
-                  type="text"
-                  value={formData.clientSsnLast4}
-                  onChange={(e) => handleInputChange("clientSsnLast4", e.target.value)}
-                  className="h-12"
-                  placeholder="1234"
-                  maxLength={4}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  Address
-                </label>
-                <Input
-                  type="text"
-                  value={formData.clientAddress}
-                  onChange={(e) => handleInputChange("clientAddress", e.target.value)}
-                  className="h-12"
-                  placeholder="Enter address"
-                />
-              </div>
-            </div>
-
-            {/* Policy Number */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-muted-foreground">
-                Policy number
-              </label>
-              <Input
-                type="text"
-                value={formData.policyNumber}
-                onChange={(e) => handleInputChange("policyNumber", e.target.value)}
-                className="h-12"
-                placeholder="Enter policy number"
-              />
-              <p className="text-xs text-muted-foreground">
-                If the carrier has not given you a policy number yet, leave this blank and fill out the application number field below
-              </p>
-            </div>
-
-            {/* Application Number */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-muted-foreground">
-                Application number
-              </label>
-              <Input
-                type="text"
-                value={formData.applicationNumber}
-                onChange={(e) => handleInputChange("applicationNumber", e.target.value)}
-                className="h-12"
-                placeholder="Enter application number"
-              />
-              <p className="text-xs text-muted-foreground">
-                Enter an application number if the carrier has not given you a policy number yet
-              </p>
-            </div>
-
-            {/* Submit Button */}
-            <div className="pt-6">
+            {/* Navigation Buttons */}
+            <div className="flex justify-between items-center pt-6 border-t border-border">
               <Button
-                type="submit"
-                disabled={submitting}
-                className="w-full h-12 btn-gradient font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                type="button"
+                variant="outline"
+                onClick={prevStep}
+                disabled={currentStep === 1}
+                className="h-12 px-6"
               >
-                {submitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Submitting...
-                  </>
-                ) : (
-                  "Submit"
-                )}
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Previous
               </Button>
+
+              {currentStep < STEPS.length ? (
+                <Button
+                  type="button"
+                  onClick={nextStep}
+                  className="h-12 px-6 btn-gradient"
+                >
+                  Next
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  onClick={() => {
+                    submitIntentRef.current = true
+                  }}
+                  disabled={submitting}
+                  className="h-12 px-6 btn-gradient disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      Submit Deal
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
           </form>
         </CardContent>

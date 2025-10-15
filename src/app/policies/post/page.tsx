@@ -18,6 +18,8 @@ const initialFormData = {
   productId: "",
   policyEffectiveDate: "",
   monthlyPremium: "",
+  billingCycle: "",
+  leadSource: "",
   clientName: "",
   clientEmail: "",
   clientPhone: "",
@@ -57,6 +59,15 @@ export default function PostDeal() {
   const [agencyId, setAgencyId] = useState<string | null>(null)
   const [carriersOptions, setCarriersOptions] = useState<{ value: string, label: string }[]>([])
   const [productsOptions, setProductsOptions] = useState<{ value: string, label: string }[]>([])
+  const [leadSourceOptions, setLeadSourceOptions] = useState<{ value: string, label: string }[]>([])
+
+  // Billing cycle options (fixed enum)
+  const billingCycleOptions = [
+    { value: "monthly", label: "Monthly" },
+    { value: "quarterly", label: "Quarterly" },
+    { value: "semi-annually", label: "Semi-Annually" },
+    { value: "annually", label: "Annually" },
+  ]
 
   useEffect(() => {
     if (error && errorRef.current) {
@@ -81,6 +92,22 @@ export default function PostDeal() {
 
       const agencyIdVal = currentUser.agency_id as string
       setAgencyId(agencyIdVal)
+
+      // Load agency's lead sources
+      const { data: agencyData } = await supabase
+        .from('agencies')
+        .select('lead_sources')
+        .eq('id', agencyIdVal)
+        .single()
+
+      if (agencyData?.lead_sources) {
+        setLeadSourceOptions(
+          agencyData.lead_sources.map((source: string) => ({
+            value: source,
+            label: source
+          }))
+        )
+      }
 
       // Load carriers that have products for this agency
       const { data: productsForAgency } = await supabase
@@ -261,6 +288,8 @@ export default function PostDeal() {
         monthly_premium: monthlyPremium,
         annual_premium: monthlyPremium * 12,
         policy_effective_date: formData.policyEffectiveDate,
+        billing_cycle: formData.billingCycle || null,
+        lead_source: formData.leadSource || null,
       }
 
       console.log('[PostDeal] Submitting payload to /api/deals', payload)
@@ -600,6 +629,34 @@ export default function PostDeal() {
                 <p className="text-xs text-muted-foreground -mt-4">
                   <span className="text-destructive">*</span> At least one is required: Enter the policy number if available, otherwise enter the application number
                 </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Billing Cycle */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Billing Cycle
+                    </label>
+                    <SimpleSearchableSelect
+                      options={billingCycleOptions}
+                      value={formData.billingCycle}
+                      onValueChange={(value) => handleInputChange("billingCycle", value)}
+                      placeholder="Select billing cycle"
+                    />
+                  </div>
+
+                  {/* Lead Source */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Lead Source
+                    </label>
+                    <SimpleSearchableSelect
+                      options={leadSourceOptions}
+                      value={formData.leadSource}
+                      onValueChange={(value) => handleInputChange("leadSource", value)}
+                      placeholder="Select lead source"
+                    />
+                  </div>
+                </div>
               </div>
             )}
 
@@ -738,6 +795,18 @@ export default function PostDeal() {
                     <div>
                       <span className="text-muted-foreground">Application Number:</span>
                       <p className="font-medium text-foreground mt-1">{formData.applicationNumber || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Billing Cycle:</span>
+                      <p className="font-medium text-foreground mt-1">
+                        {formData.billingCycle
+                          ? billingCycleOptions.find(opt => opt.value === formData.billingCycle)?.label
+                          : 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Lead Source:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.leadSource || 'N/A'}</p>
                     </div>
                   </div>
                 </div>

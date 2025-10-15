@@ -104,6 +104,8 @@ export async function POST(req: NextRequest) {
       monthly_premium,
       annual_premium,
       policy_effective_date,
+      billing_cycle,
+      lead_source,
       status,
       notes,
     } = data;
@@ -139,6 +141,8 @@ export async function POST(req: NextRequest) {
         ssn_last_4: ssn_last_4 || existingDeal.ssn_last_4,
         client_address: client_address || existingDeal.client_address,
         application_number: application_number || existingDeal.application_number,
+        billing_cycle: billing_cycle || existingDeal.billing_cycle,
+        lead_source: lead_source || existingDeal.lead_source,
         notes: notes || existingDeal.notes,
         // Update timestamp
         updated_at: new Date().toISOString(),
@@ -195,6 +199,8 @@ export async function POST(req: NextRequest) {
         monthly_premium,
         annual_premium,
         policy_effective_date,
+        billing_cycle,
+        lead_source,
         status: status || "pending", // Changed from 'draft' to 'pending' to match book of business
         notes,
       };

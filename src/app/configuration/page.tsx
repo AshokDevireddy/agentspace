@@ -8,6 +8,7 @@ import { Edit, Trash2, Plus, Check, X } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
+import { cn } from "@/lib/utils"
 
 // Types for carrier data
 interface Carrier {
@@ -29,9 +30,25 @@ interface Product {
   created_at?: string
 }
 
+// Types for agency data
+interface Agency {
+  id: string
+  name: string
+  lead_sources?: string[]
+}
+
 export default function ConfigurationPage() {
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<"carriers" | "lead-sources">("carriers")
+
+  // Lead Sources state
+  const [agency, setAgency] = useState<Agency | null>(null)
+  const [leadSources, setLeadSources] = useState<string[]>([])
+  const [newLeadSource, setNewLeadSource] = useState("")
+  const [editingLeadSourceIndex, setEditingLeadSourceIndex] = useState<number | null>(null)
+  const [editLeadSourceValue, setEditLeadSourceValue] = useState("")
+  const [savingLeadSources, setSavingLeadSources] = useState(false)
 
   // Carriers and Products state with caching
   const [carriers, setCarriers] = useState<Carrier[]>([])
@@ -92,6 +109,33 @@ export default function ConfigurationPage() {
 
       setCarriersLoading(true)
       setProductsLoading(true)
+
+      // Also fetch the current user's agency info
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      let agencyData: Agency | null = null
+      if (user) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('agency_id')
+          .eq('auth_user_id', user.id)
+          .single()
+
+        if (userData?.agency_id) {
+          const { data: agencyInfo } = await supabase
+            .from('agencies')
+            .select('id, name, lead_sources')
+            .eq('id', userData.agency_id)
+            .single()
+
+          if (agencyInfo) {
+            agencyData = agencyInfo
+            setAgency(agencyInfo)
+            setLeadSources(agencyInfo.lead_sources || [])
+          }
+        }
+      }
 
       const [carriersResponse, productsResponse] = await Promise.all([
         fetch('/api/carriers', {
@@ -367,44 +411,271 @@ export default function ConfigurationPage() {
     setOriginalProductData(null)
   }
 
+  // Lead Sources Management Functions
+  const handleAddLeadSource = async () => {
+    if (!newLeadSource.trim() || !agency) return
+
+    const updatedLeadSources = [...leadSources, newLeadSource.trim()]
+
+    try {
+      setSavingLeadSources(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ lead_sources: updatedLeadSources })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setLeadSources(updatedLeadSources)
+      setNewLeadSource("")
+    } catch (error) {
+      console.error('Error adding lead source:', error)
+      alert('Failed to add lead source')
+    } finally {
+      setSavingLeadSources(false)
+    }
+  }
+
+  const handleEditLeadSource = (index: number) => {
+    setEditingLeadSourceIndex(index)
+    setEditLeadSourceValue(leadSources[index])
+  }
+
+  const handleSaveLeadSourceEdit = async () => {
+    if (editingLeadSourceIndex === null || !editLeadSourceValue.trim() || !agency) return
+
+    const updatedLeadSources = [...leadSources]
+    updatedLeadSources[editingLeadSourceIndex] = editLeadSourceValue.trim()
+
+    try {
+      setSavingLeadSources(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ lead_sources: updatedLeadSources })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setLeadSources(updatedLeadSources)
+      setEditingLeadSourceIndex(null)
+      setEditLeadSourceValue("")
+    } catch (error) {
+      console.error('Error updating lead source:', error)
+      alert('Failed to update lead source')
+    } finally {
+      setSavingLeadSources(false)
+    }
+  }
+
+  const handleCancelLeadSourceEdit = () => {
+    setEditingLeadSourceIndex(null)
+    setEditLeadSourceValue("")
+  }
+
+  const handleDeleteLeadSource = async (index: number) => {
+    if (!agency) return
+
+    const confirmed = window.confirm(`Are you sure you want to delete "${leadSources[index]}"?`)
+    if (!confirmed) return
+
+    const updatedLeadSources = leadSources.filter((_, i) => i !== index)
+
+    try {
+      setSavingLeadSources(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ lead_sources: updatedLeadSources })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setLeadSources(updatedLeadSources)
+    } catch (error) {
+      console.error('Error deleting lead source:', error)
+      alert('Failed to delete lead source')
+    } finally {
+      setSavingLeadSources(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-6 py-8">
         {/* Header */}
         <div className="mb-10 bg-card rounded-xl shadow-lg p-8 border border-border">
           <h1 className="text-5xl font-bold text-foreground mb-4">Configuration</h1>
-          <p className="text-xl text-muted-foreground">Manage products</p>
+          <p className="text-xl text-muted-foreground">Manage products and lead sources</p>
         </div>
 
-        {/* Carriers Grid Section */}
+        {/* Tabs */}
         <div className="bg-card rounded-xl shadow-lg border border-border">
-          <div className="p-8 border-b border-border">
-            <h2 className="text-3xl font-bold text-foreground">Select Carrier</h2>
+          {/* Tab Headers */}
+          <div className="border-b border-border">
+            <div className="flex">
+              <button
+                onClick={() => setActiveTab("carriers")}
+                className={cn(
+                  "flex-1 px-8 py-6 text-lg font-semibold transition-all",
+                  activeTab === "carriers"
+                    ? "bg-blue-50 text-blue-700 border-b-4 border-blue-600"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+              >
+                Carriers & Products
+              </button>
+              <button
+                onClick={() => setActiveTab("lead-sources")}
+                className={cn(
+                  "flex-1 px-8 py-6 text-lg font-semibold transition-all",
+                  activeTab === "lead-sources"
+                    ? "bg-blue-50 text-blue-700 border-b-4 border-blue-600"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+              >
+                Lead Sources
+              </button>
+            </div>
           </div>
+
+          {/* Tab Content */}
           <div className="p-8">
-            {carriersLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <span className="text-xl text-muted-foreground font-medium">Loading carriers...</span>
+            {/* Carriers Tab */}
+            {activeTab === "carriers" && (
+              <div>
+                <div className="mb-6">
+                  <h2 className="text-3xl font-bold text-foreground mb-2">Select Carrier</h2>
+                  <p className="text-sm text-muted-foreground">Choose a carrier to manage its products</p>
+                </div>
+                {carriersLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <span className="text-xl text-muted-foreground font-medium">Loading carriers...</span>
+                  </div>
+                ) : carriers.length === 0 ? (
+                  <div className="flex items-center justify-center py-12">
+                    <span className="text-xl text-muted-foreground font-medium">No carriers available</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    {carriers.map((carrier) => (
+                      <button
+                        key={carrier.id}
+                        onClick={() => handleCarrierClick(carrier.id)}
+                        className="group relative bg-white hover:bg-blue-50 border-2 border-gray-200 hover:border-blue-500 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:scale-105 active:scale-100"
+                      >
+                        <div className="flex items-center justify-center h-24">
+                          <span className="text-lg font-semibold text-gray-800 group-hover:text-blue-700 text-center">
+                            {carrier.display_name}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            ) : carriers.length === 0 ? (
-              <div className="flex items-center justify-center py-12">
-                <span className="text-xl text-muted-foreground font-medium">No carriers available</span>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {carriers.map((carrier) => (
-                  <button
-                    key={carrier.id}
-                    onClick={() => handleCarrierClick(carrier.id)}
-                    className="group relative bg-white hover:bg-blue-50 border-2 border-gray-200 hover:border-blue-500 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:scale-105 active:scale-100"
+            )}
+
+            {/* Lead Sources Tab */}
+            {activeTab === "lead-sources" && (
+              <div>
+                <div className="mb-6">
+                  <h2 className="text-3xl font-bold text-foreground mb-2">Lead Sources</h2>
+                  <p className="text-sm text-muted-foreground">Configure the lead source options available for your agency</p>
+                </div>
+
+                {/* Add New Lead Source */}
+                <div className="flex gap-3 mb-6">
+                  <Input
+                    type="text"
+                    value={newLeadSource}
+                    onChange={(e) => setNewLeadSource(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newLeadSource.trim()) {
+                        handleAddLeadSource()
+                      }
+                    }}
+                    placeholder="Enter new lead source (e.g., Facebook, Referral)"
+                    className="flex-1 h-12 text-lg"
+                    disabled={savingLeadSources}
+                  />
+                  <Button
+                    onClick={handleAddLeadSource}
+                    disabled={!newLeadSource.trim() || savingLeadSources}
+                    className="h-12 px-6 bg-blue-600 hover:bg-blue-700"
                   >
-                    <div className="flex items-center justify-center h-24">
-                      <span className="text-lg font-semibold text-gray-800 group-hover:text-blue-700 text-center">
-                        {carrier.display_name}
-                      </span>
+                    <Plus className="h-5 w-5 mr-2" />
+                    Add
+                  </Button>
+                </div>
+
+                {/* Lead Sources List */}
+                <div className="space-y-3">
+                  {leadSources.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      No lead sources configured. Add one above to get started.
                     </div>
-                  </button>
-                ))}
+                  ) : (
+                    leadSources.map((source, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center gap-3 p-4 bg-accent/50 rounded-lg border border-border"
+                      >
+                        {editingLeadSourceIndex === index ? (
+                          <>
+                            <Input
+                              type="text"
+                              value={editLeadSourceValue}
+                              onChange={(e) => setEditLeadSourceValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveLeadSourceEdit()
+                                if (e.key === 'Escape') handleCancelLeadSourceEdit()
+                              }}
+                              className="flex-1 h-10"
+                              disabled={savingLeadSources}
+                            />
+                            <button
+                              onClick={handleSaveLeadSourceEdit}
+                              disabled={savingLeadSources || !editLeadSourceValue.trim()}
+                              className="text-green-600 hover:text-green-800 p-2 disabled:opacity-50 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
+                            >
+                              <Check className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={handleCancelLeadSourceEdit}
+                              disabled={savingLeadSources}
+                              className="text-muted-foreground hover:text-foreground p-2 disabled:opacity-50 bg-accent rounded-lg hover:bg-accent/80 transition-colors"
+                            >
+                              <X className="h-5 w-5" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="flex-1 text-lg font-medium text-foreground">{source}</span>
+                            <button
+                              onClick={() => handleEditLeadSource(index)}
+                              disabled={savingLeadSources}
+                              className="text-blue-600 hover:text-blue-800 p-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                            >
+                              <Edit className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteLeadSource(index)}
+                              disabled={savingLeadSources}
+                              className="text-red-600 hover:text-red-800 p-2 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+                            >
+                              <Trash2 className="h-5 w-5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </div>

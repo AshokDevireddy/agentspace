@@ -34,7 +34,9 @@ type FormField = keyof typeof initialFormData;
 
 const requiredFields: FormField[] = [
   "carrierId", "productId", "policyEffectiveDate", "monthlyPremium",
-  "clientName", "policyNumber"
+  "billingCycle", "leadSource",
+  "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
+  "clientSsnLast4", "clientAddress", "policyNumber"
 ];
 
 const STEPS = [
@@ -409,19 +411,49 @@ export default function PostDeal() {
         setError("Please enter either a policy number or an application number.")
         return false
       }
+      if (!formData.billingCycle) {
+        setError("Please select a billing cycle.")
+        return false
+      }
+      if (!formData.leadSource) {
+        setError("Please select a lead source.")
+        return false
+      }
     } else if (step === 2) {
       // Client Information validation
       if (!formData.clientName) {
         setError("Please enter the client's full name (first and last).")
         return false
       }
-      // Email validation if provided
-      if (formData.clientEmail) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-        if (!emailRegex.test(formData.clientEmail)) {
-          setError("Please enter a valid email address.")
-          return false
-        }
+      if (!formData.clientEmail) {
+        setError("Please enter the client's email address.")
+        return false
+      }
+      // Email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(formData.clientEmail)) {
+        setError("Please enter a valid email address.")
+        return false
+      }
+      if (!formData.clientPhone) {
+        setError("Please enter the client's phone number.")
+        return false
+      }
+      if (!formData.clientDateOfBirth) {
+        setError("Please enter the client's date of birth.")
+        return false
+      }
+      if (!formData.clientSsnLast4) {
+        setError("Please enter the last 4 digits of the client's SSN.")
+        return false
+      }
+      if (formData.clientSsnLast4.length !== 4) {
+        setError("SSN last 4 digits must be exactly 4 digits.")
+        return false
+      }
+      if (!formData.clientAddress) {
+        setError("Please enter the client's address.")
+        return false
       }
     }
 
@@ -634,7 +666,7 @@ export default function PostDeal() {
                   {/* Billing Cycle */}
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
-                      Billing Cycle
+                      Billing Cycle <span className="text-destructive">*</span>
                     </label>
                     <SimpleSearchableSelect
                       options={billingCycleOptions}
@@ -647,7 +679,7 @@ export default function PostDeal() {
                   {/* Lead Source */}
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
-                      Lead Source
+                      Lead Source <span className="text-destructive">*</span>
                     </label>
                     <SimpleSearchableSelect
                       options={leadSourceOptions}
@@ -684,7 +716,7 @@ export default function PostDeal() {
 
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
-                      Client Email
+                      Client Email <span className="text-destructive">*</span>
                     </label>
                     <Input
                       type="email"
@@ -702,7 +734,7 @@ export default function PostDeal() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
-                      Client Phone
+                      Client Phone <span className="text-destructive">*</span>
                     </label>
                     <Input
                       type="tel"
@@ -715,7 +747,7 @@ export default function PostDeal() {
 
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
-                      Date of Birth
+                      Date of Birth <span className="text-destructive">*</span>
                     </label>
                     <Input
                       type="date"
@@ -729,7 +761,7 @@ export default function PostDeal() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
-                      Last 4 Digits of SSN
+                      Last 4 Digits of SSN <span className="text-destructive">*</span>
                     </label>
                     <Input
                       type="text"
@@ -743,7 +775,7 @@ export default function PostDeal() {
 
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
-                      Address
+                      Address <span className="text-destructive">*</span>
                     </label>
                     <Input
                       type="text"

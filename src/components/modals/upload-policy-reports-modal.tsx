@@ -60,24 +60,48 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
         }
       })
 
-      // Call the upload API
-      const response = await fetch('/api/upload-policy-reports', {
-        method: 'POST',
-        body: formData,
-      })
+      // Call both bucket and staging APIs in parallel
+      const [bucketResponse, stagingResponse] = await Promise.all([
+        fetch('/api/upload-policy-reports/bucket', {
+          method: 'POST',
+          body: formData,
+        }),
+        fetch('/api/upload-policy-reports/staging', {
+          method: 'POST',
+          body: formData,
+        })
+      ])
 
-      const result = await response.json()
+      const bucketResult = await bucketResponse.json()
+      const stagingResult = await stagingResponse.json()
 
-      if (result.success) {
-        const replacementMessage = result.totalFilesReplaced > 0 
-          ? ` and replaced ${result.totalFilesReplaced} existing file(s)`
+      // Handle bucket upload results
+      if (bucketResult.success) {
+        const replacementMessage = bucketResult.totalFilesReplaced > 0 
+          ? ` and replaced ${bucketResult.totalFilesReplaced} existing file(s)`
           : ''
-        alert(`Successfully uploaded ${result.results.length} file(s)${replacementMessage} to ${result.bucketName} bucket!`)
-        console.log('Upload successful:', result)
+        console.log(`Successfully uploaded ${bucketResult.results.length} file(s)${replacementMessage} to ${bucketResult.bucketName} bucket!`)
       } else {
-        alert(`Upload failed: ${result.errors?.join(', ') || result.detail}`)
-        console.error('Upload failed:', result)
+        console.error('Bucket upload failed:', bucketResult.errors?.join(', ') || bucketResult.detail)
       }
+
+      // Handle staging upload results
+      if (stagingResult.success) {
+        console.log(`Successfully processed ${stagingResult.totalRecordsProcessed} records and inserted ${stagingResult.totalRecordsInserted} into staging table!`)
+        alert(`Successfully uploaded files and processed ${stagingResult.totalRecordsInserted} policy records!`)
+      } else {
+        console.error('Staging upload failed:', stagingResult.errors?.join(', ') || stagingResult.detail)
+        // Show staging errors to user
+        if (stagingResult.errors && stagingResult.errors.length > 0) {
+          alert(`File upload successful, but staging failed: ${stagingResult.errors.join(', ')}`)
+        } else {
+          alert(`File upload successful, but staging failed: ${stagingResult.detail}`)
+        }
+      }
+
+      // Clear uploaded files after successful processing
+      setUploads(carriers.map(carrier => ({ carrier, file: null })))
+
     } catch (error) {
       console.error('Error uploading files:', error)
       alert('An error occurred while uploading files. Please try again.')

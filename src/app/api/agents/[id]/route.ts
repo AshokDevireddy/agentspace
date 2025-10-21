@@ -12,7 +12,7 @@ export async function GET(
     const agentId = params.id
 
     if (!agentId) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Missing agent ID',
         detail: 'Agent ID is required'
       }, { status: 400 })
@@ -39,14 +39,14 @@ export async function GET(
 
     if (agentError) {
       console.error('Agent fetch error:', agentError)
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Failed to fetch agent',
         detail: 'Database query encountered an error'
       }, { status: 500 })
     }
 
     if (!agent) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Agent not found',
         detail: 'No agent found with the provided ID'
       }, { status: 404 })
@@ -120,7 +120,7 @@ export async function GET(
       lastLogin: lastLogin,
       earnings: earnings,
       downlines: downlineCount || 0,
-      status: agent.is_active ? 'Active' : 'Inactive',
+      status: agent.status === 'active' ? 'Active' : 'Inactive',
       badge: positionName
     }
 
@@ -128,9 +128,9 @@ export async function GET(
 
   } catch (error) {
     console.error('API Error in agent by ID:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Internal Server Error',
       detail: 'An unexpected error occurred while fetching agent'
     }, { status: 500 })
   }
-} 
+}

@@ -5,8 +5,9 @@
 // - Efficient database queries with proper indexing
 // - Limited result sets to prevent performance issues
 // - Only returns safe, non-sensitive user fields
+// - Respects downline hierarchy (users can only search their downline)
 
-import { createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient, createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
@@ -31,9 +32,44 @@ export async function GET(request: Request) {
       }, { status: 400 })
     }
 
-    // Create admin Supabase client
-    // Security: Middleware protects this route from non-admin access
+    // Create Supabase clients
     const supabase = createAdminClient()
+    const userClient = await createServerClient()
+
+    // Get authenticated user
+    const { data: { user: authUser } } = await userClient.auth.getUser()
+
+    if (!authUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Get current user's data
+    const { data: currentUser, error: currentUserError } = await supabase
+      .from('users')
+      .select('id, agency_id')
+      .eq('auth_user_id', authUser.id)
+      .single()
+
+    if (currentUserError || !currentUser) {
+      console.error('Current user error:', currentUserError)
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    // Fetch user's downline using RPC function
+    const { data: downline, error: downlineError } = await supabase.rpc('get_agent_downline', {
+      agent_id: currentUser.id
+    })
+
+    if (downlineError) {
+      console.error('Downline fetch error:', downlineError)
+      return NextResponse.json({
+        error: 'Failed to fetch downline',
+        detail: downlineError.message
+      }, { status: 500 })
+    }
+
+    // Build list of visible agent IDs (current user + their downline)
+    const visibleAgentIds: string[] = [currentUser.id, ...((downline as any[])?.map((u: any) => u.id) || [])]
 
     // Sanitize search query for SQL injection protection
     const sanitizedQuery = query.trim().replace(/[%_]/g, '\\$&')
@@ -71,7 +107,9 @@ export async function GET(request: Request) {
         last_name,
         email
       `)
-      .eq('is_active', true) // Only return active users
+      .in('id', visibleAgentIds) // Only search within downline
+      .neq('role', 'client') // Exclude clients
+      .eq('status', 'active') // Only return active users
       .or(orConditions.join(','))
       .order('last_name', { ascending: true })
       .limit(50) // Get more results to filter client-side
@@ -90,7 +128,7 @@ export async function GET(request: Request) {
     if (searchWords.length > 1) {
       filteredAgents = filteredAgents.filter(agent => {
         const fullName = `${agent.first_name} ${agent.last_name}`.toLowerCase()
-        const email = agent.email.toLowerCase()
+        const email = agent.email ? agent.email.toLowerCase() : ''
         const queryLower = sanitizedQuery.toLowerCase()
 
         // Check if the full query matches anywhere in the full name or email

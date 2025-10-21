@@ -85,6 +85,7 @@ export async function GET(req: NextRequest) {
           policy_effective_date,
           annual_premium,
           lead_source,
+          billing_cycle,
           status,
           notes,
           agent:agent_id(id, first_name, last_name),
@@ -142,12 +143,8 @@ export async function GET(req: NextRequest) {
         year: '2-digit'
       }),
       annualPremium: `$${Number(deal.annual_premium || 0).toFixed(2)}`,
-      leadSource: deal.lead_source === 'no_lead' ? 'No Lead' :
-                 deal.lead_source === 'referral' ? 'Referral' :
-                 deal.lead_source === 'provided' ? 'Provided' :
-                 deal.lead_source === 'purchased' ? 'Purchased' :
-                 deal.lead_source || 'No Lead',
-      leadSourceType: deal.notes || '',
+      billingCycle: deal.billing_cycle || '',
+      leadSource: deal.lead_source || '',
       status: deal.status === 'pending' ? 'Pending Approval' :
               deal.status === 'verified' ? 'Verified' :
               deal.status === 'active' ? 'Active' :

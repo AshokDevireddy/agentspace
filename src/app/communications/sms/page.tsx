@@ -3,146 +3,53 @@
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import {
   Search,
-  Phone,
   Send,
-  Paperclip,
-  Smile,
-  MoreVertical,
   UserCircle,
-  Clock,
   CheckCheck,
-  ArrowLeft
+  Loader2,
+  MessageSquare,
+  RefreshCw
 } from "lucide-react"
 
-interface Contact {
+interface Conversation {
   id: string
-  name: string
-  phone: string
-  avatar?: string
-  lastMessage?: string
-  lastMessageTime?: string
-  unreadCount?: number
-  isOnline?: boolean
+  dealId: string
+  clientName: string
+  clientPhone: string
+  lastMessage: string
+  lastMessageAt: string
+  unreadCount: number
 }
 
 interface Message {
   id: string
-  content: string
-  timestamp: string
-  isSent: boolean
-  isRead?: boolean
-  type: 'text' | 'image' | 'file'
-}
-
-const mockContacts: Contact[] = [
-  {
-    id: "1",
-    name: "John Anderson",
-    phone: "(555) 123-4567",
-    lastMessage: "Thanks for the policy details!",
-    lastMessageTime: "2 min ago",
-    unreadCount: 2,
-    isOnline: true
-  },
-  {
-    id: "2",
-    name: "Sarah Williams",
-    phone: "(555) 234-5678",
-    lastMessage: "When can we schedule a call?",
-    lastMessageTime: "1 hour ago",
-    unreadCount: 0,
-    isOnline: false
-  },
-  {
-    id: "3",
-    name: "Michael Chen",
-    phone: "(555) 345-6789",
-    lastMessage: "Perfect, I'll review the documents",
-    lastMessageTime: "3 hours ago",
-    unreadCount: 1,
-    isOnline: true
-  },
-  {
-    id: "4",
-    name: "Emily Rodriguez",
-    phone: "(555) 456-7890",
-    lastMessage: "Thank you for your help!",
-    lastMessageTime: "Yesterday",
-    unreadCount: 0,
-    isOnline: false
-  },
-  {
-    id: "5",
-    name: "David Thompson",
-    phone: "(555) 567-8901",
-    lastMessage: "I have a few questions about...",
-    lastMessageTime: "2 days ago",
-    unreadCount: 0,
-    isOnline: true
-  }
-]
-
-const mockMessages: { [key: string]: Message[] } = {
-  "1": [
-    {
-      id: "1",
-      content: "Hi! I wanted to follow up on my life insurance application.",
-      timestamp: "10:30 AM",
-      isSent: false,
-      isRead: true,
-      type: 'text'
-    },
-    {
-      id: "2",
-      content: "Hello John! I've reviewed your application and everything looks good. Let me send you the policy details.",
-      timestamp: "10:32 AM",
-      isSent: true,
-      isRead: true,
-      type: 'text'
-    },
-    {
-      id: "3",
-      content: "Thanks for the policy details!",
-      timestamp: "10:35 AM",
-      isSent: false,
-      isRead: true,
-      type: 'text'
-    }
-  ],
-  "2": [
-    {
-      id: "1",
-      content: "Hi Sarah! I hope you're doing well. I wanted to discuss your insurance options.",
-      timestamp: "9:15 AM",
-      isSent: true,
-      isRead: true,
-      type: 'text'
-    },
-    {
-      id: "2",
-      content: "When can we schedule a call?",
-      timestamp: "11:20 AM",
-      isSent: false,
-      isRead: true,
-      type: 'text'
-    }
-  ]
+  conversation_id: string
+  sender_id: string
+  receiver_id: string
+  body: string
+  direction: 'inbound' | 'outbound'
+  sent_at: string
+  status: string
+  metadata: any
 }
 
 export default function SMSMessagingPage() {
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(mockContacts[0])
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [messageInput, setMessageInput] = useState("")
-  const [messages, setMessages] = useState<Message[]>(mockMessages["1"] || [])
+  const [loading, setLoading] = useState(true)
+  const [messagesLoading, setMessagesLoading] = useState(false)
+  const [sending, setSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const filteredContacts = mockContacts.filter(contact =>
-    contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    contact.phone.includes(searchQuery)
+  const filteredConversations = conversations.filter(conv =>
+    conv.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    conv.clientPhone.includes(searchQuery)
   )
 
   const scrollToBottom = () => {
@@ -153,25 +60,95 @@ export default function SMSMessagingPage() {
     scrollToBottom()
   }, [messages])
 
-  const handleContactSelect = (contact: Contact) => {
-    setSelectedContact(contact)
-    setMessages(mockMessages[contact.id] || [])
+  useEffect(() => {
+    fetchConversations()
+    // Poll for new messages every 10 seconds
+    const interval = setInterval(fetchConversations, 10000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const fetchConversations = async () => {
+    try {
+      const response = await fetch('/api/sms/conversations', {
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch conversations')
+      }
+
+      const data = await response.json()
+      setConversations(data.conversations || [])
+    } catch (error) {
+      console.error('Error fetching conversations:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleSendMessage = () => {
-    if (!messageInput.trim() || !selectedContact) return
+  const fetchMessages = async (conversationId: string) => {
+    try {
+      setMessagesLoading(true)
+      const response = await fetch(
+        `/api/sms/messages?conversationId=${conversationId}`,
+        { credentials: 'include' }
+      )
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      content: messageInput,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isSent: true,
-      isRead: false,
-      type: 'text'
+      if (!response.ok) {
+        throw new Error('Failed to fetch messages')
+      }
+
+      const data = await response.json()
+      setMessages(data.messages || [])
+    } catch (error) {
+      console.error('Error fetching messages:', error)
+    } finally {
+      setMessagesLoading(false)
     }
+  }
 
-    setMessages(prev => [...prev, newMessage])
-    setMessageInput("")
+  const handleConversationSelect = (conversation: Conversation) => {
+    setSelectedConversation(conversation)
+    fetchMessages(conversation.id)
+  }
+
+  const handleSendMessage = async () => {
+    if (!messageInput.trim() || !selectedConversation || sending) return
+
+    try {
+      setSending(true)
+
+      const response = await fetch('/api/sms/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          dealId: selectedConversation.dealId,
+          message: messageInput.trim(),
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to send message')
+      }
+
+      // Clear input
+      setMessageInput("")
+
+      // Refresh messages
+      await fetchMessages(selectedConversation.id)
+
+      // Refresh conversations to update last message
+      await fetchConversations()
+    } catch (error) {
+      console.error('Error sending message:', error)
+      alert(error instanceof Error ? error.message : 'Failed to send message')
+    } finally {
+      setSending(false)
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -181,23 +158,43 @@ export default function SMSMessagingPage() {
     }
   }
 
-  const initiateCall = () => {
-    if (selectedContact) {
-      // This would integrate with your calling system
-      alert(`Initiating call to ${selectedContact.name} at ${selectedContact.phone}`)
-    }
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins} min ago`
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+    if (diffDays === 1) return 'Yesterday'
+    if (diffDays < 7) return `${diffDays} days ago`
+
+    return date.toLocaleDateString()
+  }
+
+  const formatMessageTime = (timestamp: string) => {
+    const date = new Date(timestamp)
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
   return (
     <div className="h-[calc(100vh-3rem)] flex bg-background">
-      {/* Contacts Sidebar */}
+      {/* Conversations Sidebar */}
       <div className="w-80 bg-card border-r border-border flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-semibold text-foreground">Messages</h1>
-            <Button size="sm" variant="outline" className="btn-gradient">
-              New Chat
+            <h1 className="text-xl font-semibold text-foreground">SMS Messages</h1>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={fetchConversations}
+              disabled={loading}
+            >
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             </Button>
           </div>
 
@@ -205,7 +202,7 @@ export default function SMSMessagingPage() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
             <Input
-              placeholder="Search contacts..."
+              placeholder="Search conversations..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 bg-background"
@@ -213,160 +210,171 @@ export default function SMSMessagingPage() {
           </div>
         </div>
 
-        {/* Contacts List */}
+        {/* Conversations List */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-          {filteredContacts.map((contact) => (
-            <div
-              key={contact.id}
-              onClick={() => handleContactSelect(contact)}
-              className={cn(
-                "p-4 border-b border-border cursor-pointer hover:bg-accent/50 transition-colors",
-                selectedContact?.id === contact.id && "bg-accent"
-              )}
-            >
-              <div className="flex items-center space-x-3">
-                <div className="relative">
-                  <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center">
+          {loading ? (
+            <div className="flex items-center justify-center p-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredConversations.length === 0 ? (
+            <div className="p-8 text-center">
+              <p className="text-muted-foreground text-sm">
+                {searchQuery ? 'No conversations found' : 'No conversations yet'}
+              </p>
+            </div>
+          ) : (
+            filteredConversations.map((conversation) => (
+              <div
+                key={conversation.id}
+                onClick={() => handleConversationSelect(conversation)}
+                className={cn(
+                  "p-4 border-b border-border cursor-pointer hover:bg-accent/50 transition-colors",
+                  selectedConversation?.id === conversation.id && "bg-accent"
+                )}
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center flex-shrink-0">
                     <UserCircle className="h-8 w-8 text-primary" />
                   </div>
-                  {contact.isOnline && (
-                    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-card" />
-                  )}
-                </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-foreground truncate">{contact.name}</h3>
-                    <span className="text-xs text-muted-foreground">{contact.lastMessageTime}</span>
-                  </div>
-                  <div className="flex items-center justify-between mt-1">
-                    <p className="text-sm text-muted-foreground truncate">{contact.lastMessage}</p>
-                    {contact.unreadCount && contact.unreadCount > 0 && (
-                      <span className="bg-primary text-primary-foreground text-xs px-2 py-1 rounded-full min-w-[20px] text-center">
-                        {contact.unreadCount}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium text-foreground truncate">{conversation.clientName}</h3>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                        {formatTimestamp(conversation.lastMessageAt)}
                       </span>
-                    )}
+                    </div>
+                    <p className="text-sm text-muted-foreground truncate mt-1">
+                      {conversation.lastMessage || 'No messages yet'}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{conversation.clientPhone}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">{contact.phone}</p>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
 
       {/* Chat Area */}
       <div className="flex-1 flex flex-col">
-        {selectedContact ? (
+        {selectedConversation ? (
           <>
             {/* Chat Header */}
             <div className="p-4 bg-card border-b border-border">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className="relative">
-                    <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center">
-                      <UserCircle className="h-6 w-6 text-primary" />
-                    </div>
-                    {selectedContact.isOnline && (
-                      <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-card" />
-                    )}
+                  <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center">
+                    <UserCircle className="h-6 w-6 text-primary" />
                   </div>
                   <div>
-                    <h2 className="font-semibold text-foreground">{selectedContact.name}</h2>
-                    <p className="text-sm text-muted-foreground">{selectedContact.phone}</p>
+                    <h2 className="font-semibold text-foreground">{selectedConversation.clientName}</h2>
+                    <p className="text-sm text-muted-foreground">{selectedConversation.clientPhone}</p>
                   </div>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={initiateCall}
-                    className="btn-gradient"
-                  >
-                    <Phone className="h-4 w-4 mr-2" />
-                    Call
-                  </Button>
-                  <Button size="sm" variant="ghost">
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
                 </div>
               </div>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "flex",
-                    message.isSent ? "justify-end" : "justify-start"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "chat-bubble",
-                      message.isSent ? "sent" : "received"
-                    )}
-                  >
-                    <p className="text-sm">{message.content}</p>
-                    <div className="flex items-center justify-end mt-1 space-x-1">
-                      <span className="text-xs opacity-70">{message.timestamp}</span>
-                      {message.isSent && (
-                        <CheckCheck className={cn(
-                          "h-3 w-3",
-                          message.isRead ? "text-primary" : "opacity-50"
-                        )} />
-                      )}
-                    </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-gray-50">
+              {messagesLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-2 opacity-50" />
+                    <p className="text-muted-foreground text-sm">No messages yet. Start the conversation!</p>
                   </div>
                 </div>
-              ))}
-              <div ref={messagesEndRef} />
+              ) : (
+                <>
+                  {messages.map((message) => {
+                    const isOutbound = message.direction === 'outbound'
+                    const isAutomated = message.metadata?.automated
+
+                    return (
+                      <div
+                        key={message.id}
+                        className={cn(
+                          "flex",
+                          isOutbound ? "justify-end" : "justify-start"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "max-w-[70%] rounded-2xl px-4 py-2 shadow-sm",
+                            isOutbound
+                              ? "bg-blue-600 text-white"
+                              : "bg-white text-gray-900 border border-gray-200"
+                          )}
+                        >
+                          {isAutomated && (
+                            <div className="text-xs opacity-75 mb-1 italic">
+                              Automated message
+                            </div>
+                          )}
+                          <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p>
+                          <div className="flex items-center justify-end mt-1 space-x-1">
+                            <span className={cn(
+                              "text-xs",
+                              isOutbound ? "opacity-75" : "text-gray-500"
+                            )}>
+                              {formatMessageTime(message.sent_at)}
+                            </span>
+                            {isOutbound && (
+                              <CheckCheck className={cn(
+                                "h-3 w-3",
+                                message.status === 'delivered' ? "opacity-100" : "opacity-50"
+                              )} />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <div ref={messagesEndRef} />
+                </>
+              )}
             </div>
 
             {/* Message Input */}
             <div className="p-4 bg-card border-t border-border">
               <div className="flex items-center space-x-2">
-                <Button size="sm" variant="ghost">
-                  <Paperclip className="h-4 w-4" />
-                </Button>
                 <div className="flex-1 relative">
                   <Input
                     placeholder="Type a message..."
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
                     onKeyPress={handleKeyPress}
+                    disabled={sending}
                     className="pr-10"
                   />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="absolute right-1 top-1/2 transform -translate-y-1/2"
-                  >
-                    <Smile className="h-4 w-4" />
-                  </Button>
                 </div>
                 <Button
                   size="sm"
                   onClick={handleSendMessage}
-                  disabled={!messageInput.trim()}
+                  disabled={!messageInput.trim() || sending}
                   className="btn-gradient"
                 >
-                  <Send className="h-4 w-4" />
+                  {sending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
                 </Button>
               </div>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center bg-gray-50">
             <div className="text-center">
               <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4">
                 <MessageSquare className="h-8 w-8 text-primary" />
               </div>
               <h3 className="text-lg font-semibold text-foreground mb-2">Select a conversation</h3>
-              <p className="text-muted-foreground">Choose a contact to start messaging</p>
+              <p className="text-muted-foreground">Choose a client to start messaging</p>
             </div>
           </div>
         )}

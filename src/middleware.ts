@@ -15,8 +15,12 @@ export async function middleware(req: NextRequest) {
   const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/setup-account']
   const isPublicRoute = publicRoutes.includes(req.nextUrl.pathname) || req.nextUrl.pathname.startsWith('/auth/confirm')
 
+  // Public API prefixes that should bypass auth (cron jobs, webhooks, etc.)
+  const publicApiPrefixes = ['/api/cron/', '/api/telnyx-webhook']
+  const isPublicApi = publicApiPrefixes.some(prefix => req.nextUrl.pathname.startsWith(prefix))
+
   // If no session and trying to access protected route
-  if (!session && !isPublicRoute) {
+  if (!session && !isPublicRoute && !isPublicApi) {
     // For API routes, return 401 instead of redirecting
     if (req.nextUrl.pathname.startsWith('/api/')) {
       return NextResponse.json(
@@ -32,14 +36,26 @@ export async function middleware(req: NextRequest) {
     // Get user profile to check role
     const { data: user } = await supabase
       .from('users')
-      .select('role, is_admin, is_active')
+      .select('role, is_admin, status')
       .eq('auth_user_id', session.user.id)
       .maybeSingle()
 
-    // Check if user is active
-    if (user && !user.is_active) {
-      await supabase.auth.signOut()
-      return NextResponse.redirect(new URL('/login?message=account-deactivated', req.url))
+    // Handle user status
+    if (user) {
+      // If user is pending, only allow access to setup-account page
+      if (user.status === 'pending') {
+        if (req.nextUrl.pathname !== '/setup-account') {
+          return NextResponse.redirect(new URL('/setup-account', req.url))
+        }
+        // Allow access to setup-account page
+        return res
+      }
+
+      // If user is inactive, sign them out and redirect to login
+      if (user.status === 'inactive') {
+        await supabase.auth.signOut()
+        return NextResponse.redirect(new URL('/login?message=account-deactivated', req.url))
+      }
     }
 
     // Client-specific routes

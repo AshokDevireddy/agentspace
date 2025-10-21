@@ -32,13 +32,13 @@ export default function LoginPage() {
       // Get user profile to check role
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('role, is_active')
+        .select('role, status')
         .eq('auth_user_id', data.user.id)
         .single()
 
       if (userError) throw new Error('User profile not found')
 
-      if (!userData.is_active) {
+      if (userData.status !== 'active') {
         await supabase.auth.signOut()
         throw new Error('Your account has been deactivated')
       }

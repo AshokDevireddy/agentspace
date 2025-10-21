@@ -16,9 +16,9 @@ export async function GET(
     // Validate agent ID format (UUID)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     if (!agentId || !uuidRegex.test(agentId)) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         exists: false,
-        error: 'Invalid agent ID format' 
+        error: 'Invalid agent ID format'
       }, { status: 400 })
     }
 
@@ -31,7 +31,7 @@ export async function GET(
       .from('users')
       .select('id')
       .eq('id', agentId)
-      .eq('is_active', true)
+      .eq('status', 'active')
       .single()
 
     if (fetchError) {
@@ -39,25 +39,25 @@ export async function GET(
       if (fetchError.code === 'PGRST116') {
         return NextResponse.json({ exists: false })
       }
-      
+
       console.error('Agent validation error:', fetchError)
-      return NextResponse.json({ 
+      return NextResponse.json({
         exists: false,
         error: 'Database query failed'
       }, { status: 500 })
     }
 
     // Return validation result
-    return NextResponse.json({ 
+    return NextResponse.json({
       exists: !!agent,
-      agentId: agent?.id 
+      agentId: agent?.id
     })
 
   } catch (error) {
     console.error('API Error in validate-agent:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       exists: false,
       error: 'Internal Server Error'
     }, { status: 500 })
   }
-} 
+}

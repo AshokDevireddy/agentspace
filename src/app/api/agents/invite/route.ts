@@ -34,26 +34,18 @@ export async function POST(request: Request) {
 
     console.log('Inviting user with agency_id:', currentUser.agency_id)
 
-    // Check if user with this email already exists
+    // Check if user with this email already exists (including pending invites)
     const { data: existingUser } = await supabase
       .from('users')
-      .select('id')
+      .select('id, status')
       .eq('email', email)
       .maybeSingle()
 
     if (existingUser) {
+      if (existingUser.status === 'pending') {
+        return NextResponse.json({ error: 'An invitation has already been sent to this email' }, { status: 400 })
+      }
       return NextResponse.json({ error: 'A user with this email already exists' }, { status: 400 })
-    }
-
-    // Check pending invites
-    const { data: pendingInvite } = await supabase
-      .from('pending_invite')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle()
-
-    if (pendingInvite) {
-      return NextResponse.json({ error: 'An invitation has already been sent to this email' }, { status: 400 })
     }
 
     // Create Supabase admin client with service role key
@@ -76,11 +68,12 @@ export async function POST(request: Request) {
     const isAdmin = permissionLevel === 'admin'
     const role = permissionLevel === 'admin' ? 'admin' : 'agent'
 
-    // 2. Create pending_invite record with agency_id (using admin client to bypass RLS)
+    // 2. Create user record with status='pending' and agency_id (using admin client to bypass RLS)
     const { error: dbError } = await supabaseAdmin
-      .from('pending_invite')
+      .from('users')
       .insert([{
         id: authData.user.id,
+        auth_user_id: authData.user.id,
         email,
         first_name: firstName,
         last_name: lastName,
@@ -90,10 +83,9 @@ export async function POST(request: Request) {
         annual_goal: 0,
         perm_level: permissionLevel,
         is_admin: isAdmin,
-        is_active: true,
+        status: 'pending',
         total_prod: 0,
         total_policies_sold: 0,
-        agent_number: null,
         start_date: new Date().toISOString().split('T')[0],
         agency_id: currentUser.agency_id  // Inherit agency from inviter
       }])
@@ -106,7 +98,7 @@ export async function POST(request: Request) {
       } catch (cleanupError) {
         console.error('Cleanup error:', cleanupError)
       }
-      return NextResponse.json({ error: dbError.message || 'Failed to create invitation record' }, { status: 500 })
+      return NextResponse.json({ error: dbError.message || 'Failed to create user record' }, { status: 500 })
     }
 
     return NextResponse.json({

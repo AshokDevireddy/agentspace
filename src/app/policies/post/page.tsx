@@ -207,31 +207,21 @@ export default function PostDeal() {
 
       if (formData.clientEmail) {
         try {
-          // Check if client already exists in users table
+          // Check if client already exists in users table (including pending)
           const { data: existingClient } = await supabase
             .from('users')
-            .select('id, auth_user_id')
+            .select('id, auth_user_id, status')
             .eq('email', formData.clientEmail)
             .eq('role', 'client')
             .maybeSingle()
 
           if (existingClient) {
             client_id = existingClient.id
-            invitationMessage = 'Client already has an account.'
-            console.log('Client already exists:', client_id)
+            invitationMessage = existingClient.status === 'pending'
+              ? 'Client invitation was previously sent.'
+              : 'Client already has an account.'
+            console.log('Client exists:', client_id, 'status:', existingClient.status)
           } else {
-            // Check if pending invite exists
-            const { data: pendingInvite } = await supabase
-              .from('pending_invite')
-              .select('id')
-              .eq('email', formData.clientEmail)
-              .maybeSingle()
-
-            if (pendingInvite) {
-              client_id = pendingInvite.id
-              invitationMessage = 'Client invitation was previously sent.'
-              console.log('Pending invite exists:', client_id)
-            } else {
               // Send invitation to client
               console.log('Sending invitation to:', formData.clientEmail)
               const inviteResponse = await fetch('/api/clients/invite', {
@@ -246,21 +236,20 @@ export default function PostDeal() {
                 })
               })
 
-              const inviteData = await inviteResponse.json()
-              console.log('Invite API response:', inviteData)
+            const inviteData = await inviteResponse.json()
+            console.log('Invite API response:', inviteData)
 
-              if (inviteResponse.ok && inviteData.success) {
-                client_id = inviteData.userId
-                invitationMessage = inviteData.alreadyExists
-                  ? 'Client invitation was previously sent.'
-                  : '✓ Invitation email sent to client successfully!'
-                console.log('Client invitation sent successfully, client_id:', client_id)
-              } else {
-                const errorMsg = inviteData.error || 'Unknown error'
-                console.error('Failed to invite client:', errorMsg)
-                invitationMessage = `⚠️ Warning: Failed to send invitation email (${errorMsg}). Deal will still be created.`
-                // Continue anyway, but warn the user
-              }
+            if (inviteResponse.ok && inviteData.success) {
+              client_id = inviteData.userId
+              invitationMessage = inviteData.alreadyExists
+                ? 'Client invitation was previously sent.'
+                : '✓ Invitation email sent to client successfully!'
+              console.log('Client invitation sent successfully, client_id:', client_id)
+            } else {
+              const errorMsg = inviteData.error || 'Unknown error'
+              console.error('Failed to invite client:', errorMsg)
+              invitationMessage = `⚠️ Warning: Failed to send invitation email (${errorMsg}). Deal will still be created.`
+              // Continue anyway, but warn the user
             }
           }
         } catch (clientError) {

@@ -44,7 +44,7 @@ export async function GET(request: Request) {
         perm_level,
         upline_id,
         created_at,
-        is_active,
+        status,
         total_prod,
         total_policies_sold,
         role
@@ -251,7 +251,7 @@ export async function GET(request: Request) {
             lastLogin: lastLogin,
             earnings: earnings,
             downlines: downlines,
-            status: user.is_active ? 'Active' : 'Inactive',
+            status: user.status === 'active' ? 'Active' : 'Inactive',
             badge: positionName,
             children: user.children.map(transformUserToAgent)
         }

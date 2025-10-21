@@ -12,31 +12,69 @@ export default function ConfirmSession() {
   useEffect(() => {
     const confirmSession = async () => {
       try {
+        // Log the full URL to see what we're receiving
+        console.log('Confirm page URL:', window.location.href)
+        console.log('Search params:', window.location.search)
+        console.log('Hash params:', window.location.hash)
+
+        // First, check if we already have a session (user clicked link while logged in)
+        const { data: { session: existingSession } } = await supabase.auth.getSession()
+
+        if (existingSession?.user) {
+          console.log('Found existing session, routing user:', existingSession.user.id)
+          await routeUser(existingSession.user.id)
+          return
+        }
+
         // 1) Handle modern OAuth-style callback with code hash fragment
+        console.log('Attempting to exchange code for session...')
         const { data: { session }, error: exchangeError } = await supabase.auth.exchangeCodeForSession(window.location.href)
 
-        if (!exchangeError && session) {
+        if (exchangeError) {
+          console.error('Exchange code error:', exchangeError)
+        }
+
+        if (!exchangeError && session?.user) {
+          console.log('Successfully exchanged code, routing user:', session.user.id)
           await routeUser(session.user.id)
           return
         }
 
         // 2) Fallback: legacy flow using refresh_token in hash
+        console.log('Trying legacy hash flow...')
         const hash = window.location.hash.substring(1)
         const urlParams = new URLSearchParams(hash)
         const refreshToken = urlParams.get('refresh_token')
+        const accessToken = urlParams.get('access_token')
 
-        if (refreshToken) {
-          const { error: refreshError } = await supabase.auth.refreshSession({ refresh_token: refreshToken })
-          if (!refreshError) {
-            const { data: { user } } = await supabase.auth.getUser()
-            if (user) {
-              await routeUser(user.id)
-              return
+        if (accessToken || refreshToken) {
+          console.log('Found tokens in hash, attempting to set session...')
+
+          if (refreshToken) {
+            const { error: refreshError } = await supabase.auth.refreshSession({ refresh_token: refreshToken })
+            if (!refreshError) {
+              const { data: { user } } = await supabase.auth.getUser()
+              if (user) {
+                console.log('Successfully refreshed session, routing user:', user.id)
+                await routeUser(user.id)
+                return
+              }
+            } else {
+              console.error('Refresh session error:', refreshError)
             }
           }
         }
 
-        // 3) If neither worked, send to login
+        // 3) Check if user is already authenticated (after clicking magic link)
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          console.log('Found authenticated user, routing:', user.id)
+          await routeUser(user.id)
+          return
+        }
+
+        // 4) If nothing worked, send to login
+        console.error('All authentication methods failed')
         setMessage('Session confirmation failed. Redirecting to login...')
         setTimeout(() => router.push('/login'), 2000)
 
@@ -49,11 +87,27 @@ export default function ConfirmSession() {
 
     const routeUser = async (authUserId: string) => {
       try {
-        // Check if user already exists in users table (returning user)
+        // Check if user is pending (new user needs to complete setup)
+        const { data: pendingUser, error: pendingError } = await supabase
+          .from('users')
+          .select('role, status')
+          .eq('auth_user_id', authUserId)
+          .eq('status', 'pending')
+          .maybeSingle()
+
+        if (pendingUser) {
+          // New user needs to complete setup
+          setMessage('Setting up your account...')
+          router.push('/setup-account')
+          return
+        }
+
+        // Check if user already exists and is active (returning user)
         const { data: existingUser, error: userError } = await supabase
           .from('users')
-          .select('role')
+          .select('role, status')
           .eq('auth_user_id', authUserId)
+          .eq('status', 'active')
           .maybeSingle()
 
         if (existingUser) {
@@ -67,22 +121,8 @@ export default function ConfirmSession() {
           return
         }
 
-        // Check if user is in pending_invite (new user)
-        const { data: pendingUser, error: pendingError } = await supabase
-          .from('pending_invite')
-          .select('role')
-          .eq('id', authUserId)
-          .maybeSingle()
-
-        if (pendingUser) {
-          // New user needs to complete setup
-          setMessage('Setting up your account...')
-          router.push('/setup-account')
-          return
-        }
-
-        // User not found in either table
-        console.error('User not found in users or pending_invite')
+        // User not found
+        console.error('User not found in users table')
         setMessage('Account not found. Redirecting to login...')
         setTimeout(() => router.push('/login'), 2000)
 

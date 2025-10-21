@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Edit, Trash2, Plus, Check, X } from "lucide-react"
+import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
@@ -35,12 +35,13 @@ interface Agency {
   id: string
   name: string
   lead_sources?: string[]
+  phone_number?: string
 }
 
 export default function ConfigurationPage() {
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<"carriers" | "lead-sources">("carriers")
+  const [activeTab, setActiveTab] = useState<"carriers" | "lead-sources" | "sms-settings" | "policy-reports">("carriers")
 
   // Lead Sources state
   const [agency, setAgency] = useState<Agency | null>(null)
@@ -49,6 +50,25 @@ export default function ConfigurationPage() {
   const [editingLeadSourceIndex, setEditingLeadSourceIndex] = useState<number | null>(null)
   const [editLeadSourceValue, setEditLeadSourceValue] = useState("")
   const [savingLeadSources, setSavingLeadSources] = useState(false)
+
+  // SMS Settings state
+  const [agencyPhoneNumber, setAgencyPhoneNumber] = useState<string>("")
+  const [editingPhoneNumber, setEditingPhoneNumber] = useState(false)
+  const [phoneNumberValue, setPhoneNumberValue] = useState("")
+  const [savingPhoneNumber, setSavingPhoneNumber] = useState(false)
+
+  // Policy Reports state
+  const [uploads, setUploads] = useState<Array<{carrier: string, file: File | null}>>([
+    { carrier: 'Aetna', file: null },
+    { carrier: 'Aflac', file: null },
+    { carrier: 'American Amicable', file: null },
+    { carrier: 'Combined Insurance', file: null },
+    { carrier: 'American Home Life', file: null },
+    { carrier: 'Royal Neighbors', file: null }
+  ])
+  const [uploadingReports, setUploadingReports] = useState(false)
+  const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
+  const [checkingExistingFiles, setCheckingExistingFiles] = useState(false)
 
   // Carriers and Products state with caching
   const [carriers, setCarriers] = useState<Carrier[]>([])
@@ -82,6 +102,13 @@ export default function ConfigurationPage() {
       fetchAllData()
     }
   }, [carriersLoaded, allProductsLoaded])
+
+  // Check for existing policy files when policy reports tab is opened
+  useEffect(() => {
+    if (activeTab === 'policy-reports') {
+      checkExistingPolicyFiles()
+    }
+  }, [activeTab])
 
   // Filter products when carrier is selected
   useEffect(() => {
@@ -125,7 +152,7 @@ export default function ConfigurationPage() {
         if (userData?.agency_id) {
           const { data: agencyInfo } = await supabase
             .from('agencies')
-            .select('id, name, lead_sources')
+            .select('id, name, lead_sources, phone_number')
             .eq('id', userData.agency_id)
             .single()
 
@@ -133,6 +160,7 @@ export default function ConfigurationPage() {
             agencyData = agencyInfo
             setAgency(agencyInfo)
             setLeadSources(agencyInfo.lead_sources || [])
+            setAgencyPhoneNumber(agencyInfo.phone_number || "")
           }
         }
       }
@@ -504,6 +532,137 @@ export default function ConfigurationPage() {
     }
   }
 
+  // SMS Settings Management Functions
+  const handleEditPhoneNumber = () => {
+    setEditingPhoneNumber(true)
+    setPhoneNumberValue(agencyPhoneNumber)
+  }
+
+  const handleSavePhoneNumber = async () => {
+    if (!agency) return
+
+    try {
+      setSavingPhoneNumber(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ phone_number: phoneNumberValue.trim() || null })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setAgencyPhoneNumber(phoneNumberValue.trim())
+      setEditingPhoneNumber(false)
+      setPhoneNumberValue("")
+    } catch (error) {
+      console.error('Error updating phone number:', error)
+      alert('Failed to update phone number')
+    } finally {
+      setSavingPhoneNumber(false)
+    }
+  }
+
+  const handleCancelPhoneNumberEdit = () => {
+    setEditingPhoneNumber(false)
+    setPhoneNumberValue("")
+  }
+
+  // Policy Reports Management Functions
+  const checkExistingPolicyFiles = async () => {
+    try {
+      setCheckingExistingFiles(true)
+      const response = await fetch('/api/upload-policy-reports/bucket', {
+        method: 'GET',
+        credentials: 'include'
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.files && data.files.length > 0) {
+          setUploadedFilesInfo(data.files)
+        }
+      }
+    } catch (error) {
+      console.error('Error checking existing files:', error)
+    } finally {
+      setCheckingExistingFiles(false)
+    }
+  }
+
+  const handleFileUpload = (carrierIndex: number, file: File) => {
+    const newUploads = [...uploads]
+    newUploads[carrierIndex] = {
+      ...newUploads[carrierIndex],
+      file: file
+    }
+    setUploads(newUploads)
+  }
+
+  const handleFileRemove = (carrierIndex: number) => {
+    const newUploads = [...uploads]
+    newUploads[carrierIndex] = {
+      ...newUploads[carrierIndex],
+      file: null
+    }
+    setUploads(newUploads)
+  }
+
+  const handleAnalyzePersistency = async () => {
+    const uploadedFiles = uploads.filter(upload => upload.file !== null)
+    if (uploadedFiles.length === 0) {
+      alert('Please upload at least one policy report before analyzing.')
+      return
+    }
+
+    try {
+      setUploadingReports(true)
+
+      const formData = new FormData()
+
+      uploadedFiles.forEach((upload) => {
+        if (upload.file) {
+          formData.append(`carrier_${upload.carrier}`, upload.file)
+        }
+      })
+
+      // Call both bucket and staging APIs in parallel
+      const [bucketResponse, stagingResponse] = await Promise.all([
+        fetch('/api/upload-policy-reports/bucket', {
+          method: 'POST',
+          body: formData,
+        }),
+        fetch('/api/upload-policy-reports/staging', {
+          method: 'POST',
+          body: formData,
+        })
+      ])
+
+      const bucketResult = await bucketResponse.json()
+      const stagingResult = await stagingResponse.json()
+
+      // Handle results
+      if (bucketResult.success && stagingResult.success) {
+        alert(`Successfully uploaded files and processed ${stagingResult.totalRecordsInserted} policy records!`)
+        // Clear uploaded files after successful processing
+        setUploads(uploads.map(u => ({ carrier: u.carrier, file: null })))
+        // Refresh existing files
+        checkExistingPolicyFiles()
+      } else {
+        const errors = [
+          ...(bucketResult.errors || []),
+          ...(stagingResult.errors || [])
+        ]
+        alert(`Upload failed: ${errors.join(', ')}`)
+      }
+    } catch (error) {
+      console.error('Error uploading files:', error)
+      alert('An error occurred while uploading files. Please try again.')
+    } finally {
+      setUploadingReports(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-6 py-8">
@@ -539,6 +698,28 @@ export default function ConfigurationPage() {
                 )}
               >
                 Lead Sources
+              </button>
+              <button
+                onClick={() => setActiveTab("sms-settings")}
+                className={cn(
+                  "flex-1 px-8 py-6 text-lg font-semibold transition-all",
+                  activeTab === "sms-settings"
+                    ? "bg-blue-50 text-blue-700 border-b-4 border-blue-600"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+              >
+                SMS Settings
+              </button>
+              <button
+                onClick={() => setActiveTab("policy-reports")}
+                className={cn(
+                  "flex-1 px-8 py-6 text-lg font-semibold transition-all",
+                  activeTab === "policy-reports"
+                    ? "bg-blue-50 text-blue-700 border-b-4 border-blue-600"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+              >
+                Policy Reports
               </button>
             </div>
           </div>
@@ -675,6 +856,206 @@ export default function ConfigurationPage() {
                       </div>
                     ))
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* SMS Settings Tab */}
+            {activeTab === "sms-settings" && (
+              <div>
+                <div className="mb-6">
+                  <h2 className="text-3xl font-bold text-foreground mb-2">SMS Settings</h2>
+                  <p className="text-sm text-muted-foreground">Configure your agency's Telnyx phone number for SMS messaging</p>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Agency Phone Number */}
+                  <div className="bg-accent/30 rounded-xl p-6 border border-border">
+                    <h3 className="text-xl font-semibold text-foreground mb-4">Agency Phone Number</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      This is the phone number your agents will use to send SMS messages to clients via Telnyx.
+                      Enter the number in E.164 format (e.g., +12345678900).
+                    </p>
+
+                    {editingPhoneNumber ? (
+                      <div className="flex gap-3">
+                        <Input
+                          type="tel"
+                          value={phoneNumberValue}
+                          onChange={(e) => setPhoneNumberValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSavePhoneNumber()
+                            if (e.key === 'Escape') handleCancelPhoneNumberEdit()
+                          }}
+                          placeholder="+12345678900"
+                          className="flex-1 h-12 text-lg font-mono"
+                          disabled={savingPhoneNumber}
+                        />
+                        <button
+                          onClick={handleSavePhoneNumber}
+                          disabled={savingPhoneNumber}
+                          className="text-green-600 hover:text-green-800 p-3 disabled:opacity-50 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
+                        >
+                          <Check className="h-6 w-6" />
+                        </button>
+                        <button
+                          onClick={handleCancelPhoneNumberEdit}
+                          disabled={savingPhoneNumber}
+                          className="text-muted-foreground hover:text-foreground p-3 disabled:opacity-50 bg-accent rounded-lg hover:bg-accent/80 transition-colors"
+                        >
+                          <X className="h-6 w-6" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 bg-white rounded-lg border-2 border-gray-200 p-4">
+                          <p className="text-xl font-mono text-foreground">
+                            {agencyPhoneNumber || <span className="text-muted-foreground italic">Not configured</span>}
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleEditPhoneNumber}
+                          className="text-blue-600 hover:text-blue-800 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                        >
+                          <Edit className="h-6 w-6" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Instructions */}
+                  <div className="bg-blue-50 rounded-xl p-6 border border-blue-200">
+                    <h3 className="text-lg font-semibold text-blue-900 mb-3">Setup Instructions</h3>
+                    <ol className="space-y-2 text-sm text-blue-800">
+                      <li className="flex gap-2">
+                        <span className="font-bold">1.</span>
+                        <span>Purchase a phone number from your Telnyx account at portal.telnyx.com</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="font-bold">2.</span>
+                        <span>Enable messaging for the phone number in Telnyx</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="font-bold">3.</span>
+                        <span>Copy the phone number in E.164 format (e.g., +12345678900)</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="font-bold">4.</span>
+                        <span>Paste it above and save</span>
+                      </li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Policy Reports Tab */}
+            {activeTab === "policy-reports" && (
+              <div>
+                <div className="mb-6">
+                  <h2 className="text-3xl font-bold text-foreground mb-2">Policy Reports</h2>
+                  <p className="text-sm text-muted-foreground">Upload CSV or Excel files for each carrier to analyze persistency rates</p>
+                </div>
+
+                {checkingExistingFiles && (
+                  <div className="flex items-center gap-2 text-muted-foreground mb-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Checking for existing uploads...</span>
+                  </div>
+                )}
+
+                {uploadedFilesInfo.length > 0 && (
+                  <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-blue-800">
+                      <strong>Note:</strong> Previous uploads detected. New uploads will replace existing files for those carriers.
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                  {uploads.map((upload, index) => (
+                    <div key={upload.carrier} className="space-y-2">
+                      <h3 className="text-sm font-medium text-gray-700 text-center">
+                        {upload.carrier}
+                      </h3>
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 min-h-[200px] flex flex-col items-center justify-center hover:border-gray-400 transition-colors">
+                        {upload.file ? (
+                          <div className="text-center">
+                            <FileText className="h-12 w-12 text-gray-600 mx-auto mb-3" />
+                            <p className="text-sm font-medium text-gray-900 mb-1">
+                              {upload.file.name}
+                            </p>
+                            <p className="text-xs text-gray-500 mb-4">
+                              {(upload.file.size / 1024).toFixed(2)} KB
+                            </p>
+                            <Button
+                              onClick={() => handleFileRemove(index)}
+                              className="bg-black text-white hover:bg-gray-800 px-4 py-2 text-sm"
+                            >
+                              <X className="h-4 w-4 mr-1" />
+                              Remove
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="text-center">
+                            <Upload className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                            <p className="text-sm font-medium text-gray-700 mb-1">
+                              Click to upload
+                            </p>
+                            <p className="text-xs text-gray-500 mb-4">
+                              CSV or Excel file
+                            </p>
+                            <input
+                              type="file"
+                              accept=".csv,.xlsx,.xls"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) handleFileUpload(index, file)
+                              }}
+                              className="hidden"
+                              id={`upload-config-${index}`}
+                            />
+                            <label
+                              htmlFor={`upload-config-${index}`}
+                              className="cursor-pointer bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded text-sm text-gray-700 inline-block transition-colors"
+                            >
+                              Choose File
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-center">
+                  <Button
+                    onClick={handleAnalyzePersistency}
+                    disabled={uploadingReports || uploads.every(u => u.file === null)}
+                    className="bg-black text-white hover:bg-gray-800 px-8 py-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {uploadingReports ? (
+                      <>
+                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <TrendingUp className="h-5 w-5 mr-2" />
+                        Analyze Persistency
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                <div className="mt-8 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-amber-900 mb-2">Instructions</h3>
+                  <ul className="space-y-1 text-sm text-amber-800 list-disc list-inside">
+                    <li>Upload CSV or Excel files containing your policy data for each carrier</li>
+                    <li>Files will be processed to calculate persistency rates and track policy status</li>
+                    <li>New uploads will replace any existing files for the same carrier</li>
+                    <li>Only American Amicable (AMAM) policy reports are currently supported for staging</li>
+                  </ul>
                 </div>
               </div>
             )}

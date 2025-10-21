@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     const userId = searchParams.get('id')
 
     if (!userId) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Missing user ID',
         detail: 'User ID is required'
       }, { status: 400 })
@@ -21,20 +21,20 @@ export async function GET(request: Request) {
     // Get user information
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, first_name, last_name, agent_number')
+      .select('id, first_name, last_name')
       .eq('id', userId)
       .single()
 
     if (userError) {
       console.error('User fetch error:', userError)
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Failed to fetch user',
         detail: 'Database query encountered an error'
       }, { status: 500 })
     }
 
     if (!user) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'User not found',
         detail: 'No user found with the provided ID'
       }, { status: 404 })
@@ -42,15 +42,14 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       id: user.id,
-      name: `${user.last_name}, ${user.first_name}`,
-      agentNumber: user.agent_number
+      name: `${user.last_name}, ${user.first_name}`
     })
 
   } catch (error) {
     console.error('API Error in users:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Internal Server Error',
       detail: 'An unexpected error occurred while fetching user'
     }, { status: 500 })
   }
-} 
+}

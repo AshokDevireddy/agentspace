@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { sendSMS } from "@/lib/telnyx";
+import { getOrCreateConversation, logMessage } from "@/lib/sms-helpers";
 
 async function createCommissionSnapshotsForDeal(
   supabase: ReturnType<typeof createAdminClient>,
@@ -232,6 +234,68 @@ export async function POST(req: NextRequest) {
         }
       } else {
         console.warn('[Deals API] Missing required fields to create snapshots for deal', { id: deal?.id, agent_id: deal?.agent_id, carrier_id: deal?.carrier_id, product_id: deal?.product_id })
+      }
+
+      // Send welcome SMS to client (if client phone exists)
+      if (deal?.id && deal.client_phone && deal.agent_id) {
+        try {
+          console.log('[Deals API] Sending welcome SMS to client', { dealId: deal.id, clientPhone: deal.client_phone })
+
+          // Get agent and agency details
+          const { data: agentData } = await supabase
+            .from('users')
+            .select('id, first_name, last_name, agency_id, agency:agency_id(name, phone_number)')
+            .eq('id', deal.agent_id)
+            .single()
+
+          if (agentData && agentData.agency?.phone_number) {
+            const agentName = `${agentData.first_name} ${agentData.last_name}`
+            const agencyName = agentData.agency.name
+            const clientFirstName = deal.client_name?.split(' ')[0] || 'there'
+
+            // Generate the setup link (same as in email invites)
+            const setupLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/setup-account`
+
+            const welcomeMessage = `Welcome ${clientFirstName}! Thank you for choosing ${agencyName} for your life insurance needs. Your agent ${agentName} is here to help. Complete your account setup here: ${setupLink}. If you have any questions, feel free to reply to this message!`
+
+            // Send SMS via Telnyx
+            await sendSMS({
+              from: agentData.agency.phone_number,
+              to: deal.client_phone,
+              text: welcomeMessage,
+            })
+
+            // Create conversation and log message
+            const conversation = await getOrCreateConversation(
+              agentData.id,
+              deal.id,
+              agentData.agency_id
+            )
+
+            await logMessage({
+              conversationId: conversation.id,
+              senderId: agentData.id,
+              receiverId: agentData.id, // Placeholder
+              body: welcomeMessage,
+              direction: 'outbound',
+              status: 'sent',
+              metadata: {
+                automated: true,
+                type: 'welcome',
+                client_phone: deal.client_phone,
+                client_name: deal.client_name,
+                deal_id: deal.id,
+              },
+            })
+
+            console.log('[Deals API] Welcome SMS sent successfully to', deal.client_phone)
+          } else {
+            console.warn('[Deals API] Cannot send welcome SMS - agency phone not configured')
+          }
+        } catch (smsError) {
+          // Don't fail the deal creation if SMS fails
+          console.error('[Deals API] Failed to send welcome SMS:', smsError)
+        }
       }
 
       operation = "created";

@@ -31,7 +31,7 @@ interface PolicyData {
 }
 
 interface CommissionSnapshot {
-  agent: { id: string, first_name: string, last_name: string, agent_number: string | null }
+  agent: { id: string, first_name: string, last_name: string }
   position: { name: string }
   amount: number // This will be calculated
   rate: number
@@ -161,7 +161,7 @@ export default function PolicyDetail() {
             upline_agent_id,
             level,
             percentage,
-            agent:agent_id(first_name, last_name, agent_number),
+            agent:agent_id(first_name, last_name),
             position:position_id(name)
           `)
           .eq('deal_id', (deal as any).id)
@@ -190,8 +190,7 @@ export default function PolicyDetail() {
             agent: {
               id: snap.agent_id,
               first_name: agentObj?.first_name || 'N/A',
-              last_name: agentObj?.last_name || 'N/A',
-              agent_number: agentObj?.agent_number || null
+              last_name: agentObj?.last_name || 'N/A'
             },
             position: positionObj || { name: 'N/A' },
             amount: agentEarnings.get(snap.agent_id) || 0,
@@ -337,7 +336,6 @@ export default function PolicyDetail() {
                 <div>
                   <span className="text-white font-semibold text-lg">
                     {commission.agent?.first_name} {commission.agent?.last_name}
-                    {commission.agent?.agent_number && ` (${commission.agent.agent_number})`}
                   </span>
                   {commission.isWritingAgent && (
                     <span className="ml-3 text-sm bg-blue-500 text-white px-3 py-1 rounded-full font-medium">Writing Agent</span>

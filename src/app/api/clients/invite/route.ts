@@ -25,10 +25,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    // Check if client already exists
+    // Check if client already exists (including pending invites)
     const { data: existingClient } = await supabase
       .from('users')
-      .select('id, email')
+      .select('id, email, status')
       .eq('email', email)
       .eq('role', 'client')
       .maybeSingle()
@@ -37,23 +37,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         userId: existingClient.id,
-        message: 'Client already exists',
-        alreadyExists: true
-      })
-    }
-
-    // Check pending invites
-    const { data: pendingInvite } = await supabase
-      .from('pending_invite')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle()
-
-    if (pendingInvite) {
-      return NextResponse.json({
-        success: true,
-        userId: pendingInvite.id,
-        message: 'Invitation already sent',
+        message: existingClient.status === 'pending' ? 'Invitation already sent' : 'Client already exists',
         alreadyExists: true
       })
     }
@@ -74,11 +58,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: inviteError.message || 'Failed to send invitation' }, { status: 400 })
     }
 
-    // 2. Create pending_invite record with agency_id
+    // 2. Create user record with status='pending' and agency_id
     const { error: dbError } = await supabase
-      .from('pending_invite')
+      .from('users')
       .insert([{
         id: authData.user.id,
+        auth_user_id: authData.user.id,
         email,
         first_name: firstName,
         last_name: lastName,
@@ -86,7 +71,7 @@ export async function POST(request: Request) {
         role: 'client',
         perm_level: 'client',
         is_admin: false,
-        is_active: true,
+        status: 'pending',
         agency_id: currentUser.agency_id  // Inherit agency from inviter
       }])
 
@@ -98,7 +83,7 @@ export async function POST(request: Request) {
       } catch (cleanupError) {
         console.error('Cleanup error:', cleanupError)
       }
-      return NextResponse.json({ error: dbError.message || 'Failed to create invitation record' }, { status: 500 })
+      return NextResponse.json({ error: dbError.message || 'Failed to create user record' }, { status: 500 })
     }
 
     return NextResponse.json({

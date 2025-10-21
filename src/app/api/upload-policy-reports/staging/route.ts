@@ -66,40 +66,38 @@ interface AMAMPolicyData {
 
 /**
  * Retrieves the agency ID for the current user
- * TODO: Update this function to get the actual agency_id from the user context
- * Currently returns a test value for development purposes
- * 
+ *
  * @param supabase - Supabase client instance
- * @param userId - The authenticated user's ID
+ * @param userId - The authenticated user's ID (auth_user_id)
  * @returns Promise<string> - The agency ID
  */
 async function getAgencyId(supabase: any, userId: string): Promise<string> {
   try {
-    // TODO: Replace with actual database query to get agency_id from user context
-    // const { data: user, error } = await supabase
-    //   .from('users')
-    //   .select('agency_id')
-    //   .eq('auth_user_id', userId)
-    //   .single()
-    
-    // if (error || !user) {
-    //   throw new Error('Failed to fetch user agency')
-    // }
-    
-    // return user.agency_id
-    
-    // Temporary test value - replace with actual implementation
-    return '958b468d-56db-4783-be54-9d3feed37fa6'
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('agency_id')
+      .eq('auth_user_id', userId)
+      .single()
+
+    if (error || !user) {
+      throw new Error('Failed to fetch user agency')
+    }
+
+    if (!user.agency_id) {
+      throw new Error('User is not associated with an agency')
+    }
+
+    return user.agency_id
   } catch (error) {
     console.error('Error fetching agency ID:', error)
-    throw new Error('Failed to retrieve agency ID')
+    throw error instanceof Error ? error : new Error('Failed to retrieve agency ID')
   }
 }
 
 /**
  * Validates the uploaded file to ensure it meets requirements
  * Checks file type, size, and basic structure
- * 
+ *
  * @param file - The uploaded file object
  * @returns Promise<boolean> - True if file is valid
  */
@@ -107,22 +105,22 @@ async function validateFile(file: File): Promise<boolean> {
   try {
     // Check file type - only allow CSV files for staging
     const allowedTypes = ['text/csv']
-    
+
     if (!allowedTypes.includes(file.type)) {
       throw new Error(`Invalid file type: ${file.type}. Only CSV files are allowed for staging.`)
     }
-    
+
     // Check file size - limit to 10MB
     const maxSize = 10 * 1024 * 1024 // 10MB in bytes
     if (file.size > maxSize) {
       throw new Error(`File size exceeds limit. Maximum size is 10MB.`)
     }
-    
+
     // Check if file has content
     if (file.size === 0) {
       throw new Error('File is empty')
     }
-    
+
     return true
   } catch (error) {
     console.error('File validation error:', error)
@@ -132,7 +130,7 @@ async function validateFile(file: File): Promise<boolean> {
 
 /**
  * Validates AMAM CSV structure and checks for required columns
- * 
+ *
  * @param headers - Array of column headers from CSV
  * @returns {isValid: boolean, error?: string}
  */
@@ -150,14 +148,14 @@ function validateAMAMCSVStructure(headers: string[]): {isValid: boolean, error?:
     'Address1', 'State', 'Zip', 'Phone'
   ]
 
-  const missingColumns = requiredColumns.filter(col => 
+  const missingColumns = requiredColumns.filter(col =>
     !headers.some(header => header.toLowerCase() === col.toLowerCase())
   )
 
   if (missingColumns.length > 0) {
-    return { 
-      isValid: false, 
-      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}` 
+    return {
+      isValid: false,
+      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}`
     }
   }
 
@@ -166,51 +164,51 @@ function validateAMAMCSVStructure(headers: string[]): {isValid: boolean, error?:
 
 /**
  * Formats agent name from "LastName/FirstName Middle Initial" to "FirstName Middle Initial LastName"
- * 
+ *
  * @param agentName - The agent name in AMAM format
  * @returns string - Formatted agent name
  */
 function formatAgentName(agentName: string): string {
   if (!agentName || agentName.trim() === '') return ''
-  
+
   // Split by slash to separate last name and first name + middle initial
   const parts = agentName.split('/')
   if (parts.length !== 2) return agentName // Return original if format is unexpected
-  
+
   const lastName = parts[0].trim()
   const firstNameAndMI = parts[1].trim()
-  
+
   // Capitalize only first letter of each word
-  const capitalizeWords = (str: string) => 
-    str.toLowerCase().split(' ').map(word => 
+  const capitalizeWords = (str: string) =>
+    str.toLowerCase().split(' ').map(word =>
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ')
-  
+
   return `${capitalizeWords(firstNameAndMI)} ${capitalizeWords(lastName)}`
 }
 
 /**
  * Converts MM/DD/YYYY date string to YYYY-MM-DD format
- * 
+ *
  * @param dateString - Date in MM/DD/YYYY format
  * @returns string - Date in YYYY-MM-DD format or empty string if invalid
  */
 function convertDateFormat(dateString: string): string {
   if (!dateString || dateString.trim() === '') return ''
-  
+
   try {
     // Parse MM/DD/YYYY format
     const parts = dateString.split('/')
     if (parts.length !== 3) return ''
-    
+
     const month = parts[0].padStart(2, '0')
     const day = parts[1].padStart(2, '0')
     const year = parts[2]
-    
+
     // Validate date
     const date = new Date(`${year}-${month}-${day}`)
     if (isNaN(date.getTime())) return ''
-    
+
     return `${year}-${month}-${day}`
   } catch (error) {
     return ''
@@ -219,23 +217,23 @@ function convertDateFormat(dateString: string): string {
 
 /**
  * Calculates issue age from policy date and date of birth
- * 
+ *
  * @param policyDate - Policy effective date
  * @param dob - Date of birth
  * @returns number | null - Age in years, rounded to nearest whole number
  */
 function calculateIssueAge(policyDate: string, dob: string): number | null {
   if (!policyDate || !dob) return null
-  
+
   try {
     const policy = new Date(policyDate)
     const birth = new Date(dob)
-    
+
     if (isNaN(policy.getTime()) || isNaN(birth.getTime())) return null
-    
+
     const ageInMs = policy.getTime() - birth.getTime()
     const ageInYears = ageInMs / (365.25 * 24 * 60 * 60 * 1000) // Account for leap years
-    
+
     return Math.round(ageInYears)
   } catch (error) {
     return null
@@ -244,7 +242,7 @@ function calculateIssueAge(policyDate: string, dob: string): number | null {
 
 /**
  * Safely converts string to number, removing commas and dollar signs
- * 
+ *
  * @param value - String value to convert
  * @returns number | null - Converted number or null if invalid
  */
@@ -256,7 +254,7 @@ function toNumber(value: string): number | null {
 
 /**
  * Builds client address from address components
- * 
+ *
  * @param address1 - First address line
  * @param address2 - Second address line
  * @param address3 - Third address line
@@ -267,13 +265,13 @@ function buildClientAddress(address1: string, address2: string, address3: string
   const addressParts = [address1, address2, address3, address4]
     .filter(part => part && part.trim() !== '')
     .map(part => part.trim())
-  
+
   return addressParts.length > 0 ? addressParts.join(' ') : null
 }
 
 /**
  * Standardizes client name capitalization - only first letter of each word capitalized
- * 
+ *
  * @param firstName - First name
  * @param middleInitial - Middle initial
  * @param lastName - Last name
@@ -284,27 +282,27 @@ function standardizeClientName(firstName: string, middleInitial: string, lastNam
     if (!word || word.trim() === '') return ''
     return word.trim().toLowerCase().charAt(0).toUpperCase() + word.trim().toLowerCase().slice(1)
   }
-  
+
   const parts = [
     capitalizeWord(firstName),
     capitalizeWord(middleInitial),
     capitalizeWord(lastName)
   ].filter(part => part !== '')
-  
+
   return parts.join(' ')
 }
 
 /**
  * Normalizes payment frequency values
- * 
+ *
  * @param mode - Payment mode/frequency value
  * @returns string | null - Normalized payment frequency
  */
 function normalizePaymentFrequency(mode: string): string | null {
   if (!mode || mode.trim() === '') return null
-  
+
   const normalizedMode = mode.trim().toLowerCase()
-  
+
   // Standardize common variations
   if (normalizedMode.includes('monthly') || normalizedMode === 'month') {
     return 'Monthly'
@@ -318,56 +316,56 @@ function normalizePaymentFrequency(mode: string): string | null {
   if (normalizedMode.includes('annual') || normalizedMode === 'year') {
     return 'Annual'
   }
-  
+
   // Return original value with proper capitalization if no match
   return mode.trim().charAt(0).toUpperCase() + mode.trim().slice(1).toLowerCase()
 }
 
 /**
  * Standardizes phone number - removes all non-numeric characters
- * 
+ *
  * @param phone - Phone number string
  * @returns string | null - Cleaned phone number with only digits
  */
 function standardizePhoneNumber(phone: string): string | null {
   if (!phone || phone.trim() === '') return null
-  
+
   // Remove all non-numeric characters (dashes, spaces, parentheses, etc.)
   const cleanedPhone = phone.replace(/\D/g, '')
-  
+
   // Return null if no digits found
   return cleanedPhone.length > 0 ? cleanedPhone : null
 }
 
 /**
  * Standardizes email - converts to lowercase
- * 
+ *
  * @param email - Email string
  * @returns string | null - Lowercase email or null if empty
  */
 function standardizeEmail(email: string): string | null {
   if (!email || email.trim() === '') return null
-  
+
   return email.trim().toLowerCase()
 }
 
 /**
  * Cleans CSV values - removes =("value") syntax that appears in CSV data
- * 
+ *
  * @param value - Value from CSV that might have =("value") format
  * @returns string - Cleaned value
  */
 function cleanCSVValue(value: string): string {
   console.log(`Original CSV value: "${value}"`)
-  
+
   if (!value || value.trim() === '') {
     console.log('Value is empty, returning empty string')
     return ''
   }
-  
+
   const trimmedValue = value.trim()
   console.log(`Trimmed value: "${trimmedValue}"`)
-  
+
   // Handle CSV format like =("0110097180")
   if (trimmedValue.match(/^=\("([^"]+)"\)$/)) {
     const match = trimmedValue.match(/^=\("([^"]+)"\)$/)
@@ -375,22 +373,22 @@ function cleanCSVValue(value: string): string {
     console.log(`Extracted value from CSV =("...") format: "${extractedValue}"`)
     return extractedValue
   }
-  
+
   console.log(`Returning original value: "${trimmedValue}"`)
   return trimmedValue
 }
 
 /**
  * Parses AMAM CSV content and converts it to PolicyReportStaging objects
- * 
+ *
  * @param csvContent - The CSV file content as string
  * @param carrierName - The carrier name
  * @param agencyId - The agency ID
  * @returns Promise<PolicyReportStaging[]> - Array of parsed policy reports
  */
 async function parseAMAMCSVToPolicyReports(
-  csvContent: string, 
-  carrierName: string, 
+  csvContent: string,
+  carrierName: string,
   agencyId: string
 ): Promise<PolicyReportStaging[]> {
   try {
@@ -426,15 +424,15 @@ async function parseAMAMCSVToPolicyReports(
 
     // Map AMAM records to PolicyReportStaging objects
     const policyReports: PolicyReportStaging[] = []
-    
+
     for (let i = 0; i < records.length; i++) {
       const record = records[i]
-      
+
       try {
         // Check for required fields - TODO: Remove console.log when productionalizing
         const requiredFields = ['FirstName', 'LastName', 'Policy', 'WritingAgent', 'AgentName', 'Status', 'PolicyDate']
         const missingFields = requiredFields.filter(field => !record[field as keyof AMAMPolicyData] || record[field as keyof AMAMPolicyData].toString().trim() === '')
-        
+
         if (missingFields.length > 0) {
           console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
@@ -443,26 +441,26 @@ async function parseAMAMCSVToPolicyReports(
         // Convert dates
         const policyDate = convertDateFormat(record.PolicyDate)
         const dobDate = convertDateFormat(record.DOB)
-        
+
         // Calculate issue age
         const issueAge = calculateIssueAge(policyDate, dobDate)
-        
+
         // Build client name with proper capitalization
         const clientName = standardizeClientName(record.FirstName, record.MI || '', record.LastName)
-        
+
         // Format agent name
         const formattedAgentName = formatAgentName(record.AgentName)
-        
+
         // Build address
         const clientAddress = buildClientAddress(record.Address1, record.Address2, record.Address3, record.Address4)
-        
+
         // Normalize payment frequency
         const normalizedPaymentFrequency = normalizePaymentFrequency(record.Mode)
-        
+
         // Standardize phone and email
         const standardizedPhone = standardizePhoneNumber(record.Phone)
         const standardizedEmail = standardizeEmail(record.Email)
-        
+
         // Calculate annual premium
         const modePrem = toNumber(record.ModePrem)
         const annualPremium = modePrem ? modePrem * 12 : null
@@ -508,7 +506,7 @@ async function parseAMAMCSVToPolicyReports(
 
 /**
  * Uploads policy reports to the staging table
- * 
+ *
  * @param supabase - Supabase client instance
  * @param policyReports - Array of policy reports to insert
  * @returns Promise<{success: boolean, insertedCount?: number, error?: string}>
@@ -529,15 +527,15 @@ async function uploadPolicyReportsToStaging(
       return { success: false, error: error.message }
     }
 
-    return { 
-      success: true, 
-      insertedCount: data?.length || policyReports.length 
+    return {
+      success: true,
+      insertedCount: data?.length || policyReports.length
     }
   } catch (error) {
     console.error('Upload to staging error:', error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error during staging upload' 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error during staging upload'
     }
   }
 }
@@ -545,7 +543,7 @@ async function uploadPolicyReportsToStaging(
 /**
  * Processes CSV files and uploads them to the staging table
  * Currently only supports AMAM (American Amicable) policy reports
- * 
+ *
  * @param supabase - Supabase client instance
  * @param agencyId - The agency ID
  * @param uploads - Array of carrier upload objects
@@ -558,32 +556,32 @@ async function processCSVUploads(
 ): Promise<{success: boolean, results: any[], errors: string[]}> {
   const results: any[] = []
   const errors: string[] = []
-  
+
   for (const upload of uploads) {
     try {
       // Validate file
       await validateFile(upload.file)
-      
+
       // Read file content
       const csvContent = await upload.file.text()
-      
+
       // Check if this is AMAM (American Amicable) data
       if (upload.carrier.toLowerCase() !== 'american amicable' && upload.carrier.toLowerCase() !== 'amam') {
         errors.push(`${upload.carrier}: Only American Amicable (AMAM) policy reports are currently supported for staging`)
         continue
       }
-      
+
       // Parse AMAM CSV to policy reports
       const policyReports = await parseAMAMCSVToPolicyReports(csvContent, upload.carrier, agencyId)
-      
+
       if (policyReports.length === 0) {
         errors.push(`${upload.carrier}: No valid records found in CSV`)
         continue
       }
-      
+
       // Upload to staging table
       const uploadResult = await uploadPolicyReportsToStaging(supabase, policyReports)
-      
+
       if (uploadResult.success) {
         results.push({
           carrier: upload.carrier,
@@ -591,7 +589,7 @@ async function processCSVUploads(
           recordsProcessed: policyReports.length,
           recordsInserted: uploadResult.insertedCount || policyReports.length
         })
-        
+
         console.log(`Successfully processed ${policyReports.length} AMAM records for carrier ${upload.carrier}`)
       } else {
         errors.push(`${upload.carrier}: ${uploadResult.error}`)
@@ -601,7 +599,7 @@ async function processCSVUploads(
       errors.push(`${upload.carrier}: ${errorMessage}`)
     }
   }
-  
+
   return {
     success: errors.length === 0,
     results,
@@ -618,24 +616,24 @@ export async function POST(request: NextRequest) {
     // Initialize Supabase clients
     const supabase = createAdminClient()
     const userClient = await createServerClient()
-    
+
     // Authenticate user
     const { data: { user }, error: authError } = await userClient.auth.getUser()
-    
+
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized', detail: 'User authentication failed' },
         { status: 401 }
       )
     }
-    
+
     // Get agency ID
     const agencyId = await getAgencyId(supabase, user.id)
-    
+
     // Parse form data
     const formData = await request.formData()
     const uploads: Array<{carrier: string, file: File}> = []
-    
+
     // Extract files from form data
     for (const [key, value] of formData.entries()) {
       if (value instanceof File && value.size > 0) {
@@ -649,7 +647,7 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-    
+
     // Check if any files were uploaded
     if (uploads.length === 0) {
       return NextResponse.json(
@@ -657,19 +655,19 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    
+
     // Process CSV uploads
     const uploadResults = await processCSVUploads(supabase, agencyId, uploads)
-    
+
     // Calculate total records processed
     const totalRecordsProcessed = uploadResults.results.reduce((sum, result) => sum + result.recordsProcessed, 0)
     const totalRecordsInserted = uploadResults.results.reduce((sum, result) => sum + result.recordsInserted, 0)
-    
+
     // Prepare response
     const response = {
       success: uploadResults.success,
-      message: uploadResults.success 
-        ? `Successfully processed ${uploadResults.results.length} file(s) and inserted ${totalRecordsInserted} records into staging table` 
+      message: uploadResults.success
+        ? `Successfully processed ${uploadResults.results.length} file(s) and inserted ${totalRecordsInserted} records into staging table`
         : 'Some files failed to process',
       agencyId,
       totalRecordsProcessed,
@@ -677,14 +675,14 @@ export async function POST(request: NextRequest) {
       results: uploadResults.results,
       errors: uploadResults.errors
     }
-    
-    return NextResponse.json(response, { 
+
+    return NextResponse.json(response, {
       status: uploadResults.success ? 200 : 207 // 207 = Multi-Status for partial success
     })
-    
+
   } catch (error) {
     console.error('Staging API error:', error)
-    
+
     return NextResponse.json(
       {
         error: 'Internal Server Error',
@@ -703,24 +701,24 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = createAdminClient()
     const userClient = await createServerClient()
-    
+
     // Authenticate user
     const { data: { user }, error: authError } = await userClient.auth.getUser()
-    
+
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized', detail: 'User authentication failed' },
         { status: 401 }
       )
     }
-    
+
     const agencyId = await getAgencyId(supabase, user.id)
-    
+
     // Get query parameters
     const { searchParams } = new URL(request.url)
     const carrier = searchParams.get('carrier')
     const limit = parseInt(searchParams.get('limit') || '100')
-    
+
     // Build query
     let query = supabase
       .from('policy_report_staging')
@@ -728,13 +726,13 @@ export async function GET(request: NextRequest) {
       .eq('agency_id', agencyId)
       .order('created_at', { ascending: false })
       .limit(limit)
-    
+
     if (carrier) {
       query = query.eq('carrier_name', carrier)
     }
-    
+
     const { data: records, error } = await query
-    
+
     if (error) {
       console.error('Error fetching staging records:', error)
       return NextResponse.json(
@@ -742,7 +740,7 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       )
     }
-    
+
     return NextResponse.json({
       success: true,
       agencyId,
@@ -750,10 +748,10 @@ export async function GET(request: NextRequest) {
       records: records || [],
       count: records?.length || 0
     })
-    
+
   } catch (error) {
     console.error('Get staging records API error:', error)
-    
+
     return NextResponse.json(
       {
         error: 'Internal Server Error',

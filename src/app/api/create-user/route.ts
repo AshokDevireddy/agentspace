@@ -8,7 +8,7 @@ export async function POST(request: Request) {
 
     // Validate required fields
     if (!email || !firstName || !lastName || !permissionLevel) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Missing required fields',
         detail: 'Email, first name, last name, and permission level are required'
       }, { status: 400 })
@@ -21,11 +21,11 @@ export async function POST(request: Request) {
         .from('users')
         .select('id')
         .eq('id', uplineAgentId)
-        .eq('is_active', true)
+        .eq('status', 'active')
         .single()
 
       if (uplineError || !uplineAgent) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: 'Invalid upline agent',
           detail: 'The selected upline agent does not exist or is not active'
         }, { status: 400 })
@@ -36,8 +36,8 @@ export async function POST(request: Request) {
 
     // Create user via Supabase Auth Admin API and send invite email
     const { data: newUser, error: createUserError } = await admin.auth.admin.inviteUserByEmail(email, {
-      data: { 
-        first_name: firstName, 
+      data: {
+        first_name: firstName,
         last_name: lastName,
         full_name: `${firstName} ${lastName}`
       },
@@ -46,26 +46,27 @@ export async function POST(request: Request) {
 
     if (createUserError) {
       console.error('Error creating user:', createUserError)
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Failed to create user',
-        detail: createUserError.message 
+        detail: createUserError.message
       }, { status: 400 })
     }
 
     if (!newUser.user) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Failed to create user',
         detail: 'No user returned from creation'
       }, { status: 400 })
     }
 
     console.log("Permission Level:", permissionLevel, permissionLevel?.trim().toLowerCase() === 'admin');
-    
-    // Insert user data into pending_invite table instead of users table
+
+    // Insert user data into users table with status='pending'
     const { error: insertError } = await admin
-      .from('pending_invite')
+      .from('users')
       .insert([{
         id: newUser.user.id,
+        auth_user_id: newUser.user.id,
         email,
         first_name: firstName,
         last_name: lastName,
@@ -78,29 +79,29 @@ export async function POST(request: Request) {
         position_id: positionId, // Use position ID instead of position name
         upline_id: uplineAgentId, // Add upline agent ID
         created_at: new Date().toISOString(),
-        is_active: true,
+        status: 'pending',
         is_admin: (permissionLevel?.trim().toLowerCase() === 'admin'),
       }])
 
     if (insertError) {
-      console.error('Error inserting user data into pending_invite:', insertError)
-      
+      console.error('Error inserting user data:', insertError)
+
       // If we fail to insert user data, we should clean up the auth user
       try {
         await admin.auth.admin.deleteUser(newUser.user.id)
       } catch (cleanupError) {
         console.error('Failed to cleanup auth user after insert error:', cleanupError)
       }
-      
-      return NextResponse.json({ 
+
+      return NextResponse.json({
         error: 'Failed to save user data',
-        detail: insertError.message 
+        detail: insertError.message
       }, { status: 500 })
     }
 
-    console.log(`Successfully created pending invite for user: ${email} with permission level: ${permissionLevel}`)
+    console.log(`Successfully created pending user: ${email} with permission level: ${permissionLevel}`)
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
       user: {
         id: newUser.user.id,
@@ -114,7 +115,7 @@ export async function POST(request: Request) {
 
   } catch (err) {
     console.error('API Error:', err)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Internal Server Error',
       detail: 'An unexpected error occurred while creating the user invitation'
     }, { status: 500 })

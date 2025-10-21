@@ -24,7 +24,7 @@ interface Deal {
   effectiveDate: string
   annualPremium: string
   leadSource: string
-  leadSourceType: string
+  billingCycle: string
   status: string
 }
 
@@ -67,6 +67,7 @@ export default function BookOfBusiness() {
   const [selectedCarrier, setSelectedCarrier] = useState("all")
   const [policyNumberSearch, setPolicyNumberSearch] = useState("")
   const [selectedStatus, setSelectedStatus] = useState("all")
+  const [selectedLeadSource, setSelectedLeadSource] = useState("all")
   const [clientSearch, setClientSearch] = useState("")
   const [selectedHasAlert, setSelectedHasAlert] = useState("all")
 
@@ -86,13 +87,7 @@ export default function BookOfBusiness() {
       { value: "active", label: "Active" },
       { value: "terminated", label: "Terminated" }
     ],
-    leadSources: [
-      { value: "all", label: "--------" },
-      { value: "referral", label: "Referral" },
-      { value: "purchased", label: "Purchased Lead" },
-      { value: "provided", label: "Provided Lead" },
-      { value: "no_lead", label: "No Lead" }
-    ],
+    leadSources: [{ value: "all", label: "All Lead Sources" }],
     hasAlertOptions: [
       { value: "all", label: "All" },
       { value: "yes", label: "Yes" },
@@ -111,6 +106,39 @@ export default function BookOfBusiness() {
           throw new Error('Failed to fetch filter options')
         }
         const data = await response.json()
+
+        // Fetch agency's lead sources
+        const { createClient } = await import('@/lib/supabase/client')
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+
+        if (user) {
+          const { data: userData } = await supabase
+            .from('users')
+            .select('agency_id')
+            .eq('auth_user_id', user.id)
+            .single()
+
+          if (userData?.agency_id) {
+            const { data: agencyData } = await supabase
+              .from('agencies')
+              .select('lead_sources')
+              .eq('id', userData.agency_id)
+              .single()
+
+            if (agencyData?.lead_sources) {
+              const leadSourceOptions = [
+                { value: "all", label: "All Lead Sources" },
+                ...agencyData.lead_sources.map((source: string) => ({
+                  value: source,
+                  label: source
+                }))
+              ]
+              data.leadSources = leadSourceOptions
+            }
+          }
+        }
+
         setFilterOptions(data)
       } catch (err) {
         console.error('Error fetching filter options:', err)
@@ -131,6 +159,7 @@ export default function BookOfBusiness() {
       if (selectedCarrier !== 'all') params.append('carrier_id', selectedCarrier)
       if (policyNumberSearch) params.append('policy_number', policyNumberSearch)
       if (selectedStatus !== 'all') params.append('status', selectedStatus)
+      if (selectedLeadSource !== 'all') params.append('lead_source', selectedLeadSource)
       if (clientSearch) params.append('client_name', clientSearch)
       params.append('limit', '50')
       if (!reset && nextCursor) {
@@ -163,7 +192,7 @@ export default function BookOfBusiness() {
   useEffect(() => {
     setNextCursor(null)
     fetchDeals(true)
-  }, [selectedAgent, selectedCarrier, policyNumberSearch, selectedStatus, clientSearch])
+  }, [selectedAgent, selectedCarrier, policyNumberSearch, selectedStatus, selectedLeadSource, clientSearch])
 
   const handleRowClick = (deal: Deal) => {
     router.push(`/policies/${deal.carrier}/${deal.policyNumber}`)
@@ -256,17 +285,16 @@ export default function BookOfBusiness() {
                   className="h-8 text-sm"
                 />
               </div>
-
               <div>
                 <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
-                  Has Alert
+                  Lead Source
                 </label>
                 <SimpleSearchableSelect
-                  options={filterOptions.hasAlertOptions}
-                  value={selectedHasAlert}
-                  onValueChange={setSelectedHasAlert}
-                  placeholder="Select"
-                  searchPlaceholder="Search..."
+                  options={filterOptions.leadSources}
+                  value={selectedLeadSource}
+                  onValueChange={setSelectedLeadSource}
+                  placeholder="Select Lead Source"
+                  searchPlaceholder="Search lead sources..."
                 />
               </div>
             </div>
@@ -296,13 +324,15 @@ export default function BookOfBusiness() {
                   <th>Client Phone</th>
                   <th>Effective Date</th>
                   <th className="text-right">Annual Premium</th>
+                  <th>Billing Cycle</th>
+                  <th>Lead Source</th>
                   <th className="text-center">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {deals.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="py-8 text-center text-muted-foreground">
+                    <td colSpan={13} className="py-8 text-center text-muted-foreground">
                       No deals found matching your criteria
                     </td>
                   </tr>
@@ -325,6 +355,8 @@ export default function BookOfBusiness() {
                         <td className="text-right">
                           <span className="text-primary font-medium">{deal.annualPremium}</span>
                         </td>
+                        <td className="capitalize">{deal.billingCycle || 'N/A'}</td>
+                        <td>{deal.leadSource || 'N/A'}</td>
                         <td className="text-center">
                           <Badge
                             className={`${statusColors[deal.status as keyof typeof statusColors]} border`}

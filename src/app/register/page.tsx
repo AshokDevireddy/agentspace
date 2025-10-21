@@ -125,7 +125,7 @@ export default function RegisterPage() {
           phone_number: formData.phoneNumber || null,
           role: 'admin',
           is_admin: true,
-          is_active: true,
+          status: 'active',
           perm_level: 'admin',
           agency_id: agencyData.id,
           created_at: new Date().toISOString(),

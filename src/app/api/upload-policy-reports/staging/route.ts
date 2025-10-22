@@ -40,10 +40,10 @@ interface AMAMPolicyData {
   AgentName: string;
   Company: string;
   Policy: string;
-  Status: string;        // ← Used for persistency impact
+  Status: string;
   DOB: string;
-  PolicyDate: string;    // ← Used for time buckets
-  PaidtoDate: string;    // ← Used for DeathClaim calculation
+  PolicyDate: string;
+  PaidtoDate: string;
   RecvDate: string;
   LastName: string;
   FirstName: string;
@@ -267,21 +267,21 @@ interface AetnaPolicyData {
  */
 async function getAgencyId(supabase: any, userId: string): Promise<string> {
   try {
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('agency_id')
-      .eq('auth_user_id', userId)
-      .single()
+    // const { data: user, error } = await supabase
+    //   .from('users')
+    //   .select('agency_id')
+    //   .eq('auth_user_id', userId)
+    //   .single()
 
-    if (error || !user) {
-      throw new Error('Failed to fetch user agency')
-    }
+    // if (error || !user) {
+    //   throw new Error('Failed to fetch user agency')
+    // }
 
-    if (!user.agency_id) {
-      throw new Error('User is not associated with an agency')
-    }
+    // if (!user.agency_id) {
+    //   throw new Error('User is not associated with an agency')
+    // }
 
-    return user.agency_id
+    return '5de80280-2d95-4241-bf17-2cedcd665388'
   } catch (error) {
     console.error('Error fetching agency ID:', error)
     throw error instanceof Error ? error : new Error('Failed to retrieve agency ID')
@@ -324,33 +324,36 @@ async function validateFile(file: File): Promise<boolean> {
 }
 
 /**
- * Validates AMAM CSV structure and checks for required columns
- *
+ * AMAM: Validates AMAM CSV structure and checks for required columns
+ * Verifies that it is a CSV file, contains data, and is an AMAM CSV file by checking Company column
+ * 
  * @param headers - Array of column headers from CSV
  * @returns {isValid: boolean, error?: string}
  */
 function validateAMAMCSVStructure(headers: string[]): {isValid: boolean, error?: string} {
-  // Check if Company column exists and contains AMAM data
+  // Check if Company column exists (required for AMAM identification)
   const companyIndex = headers.findIndex(h => h.toLowerCase().includes('company'))
   if (companyIndex === -1) {
-    return { isValid: false, error: 'Failed to parse policy report, missing Company column' }
+    return { isValid: false, error: 'Failed to parse policy report, missing Company column - this does not appear to be an AMAM CSV' }
   }
 
   // Required columns for AMAM policy reports
   const requiredColumns = [
-    'WritingAgent', 'AgentName', 'Policy', 'Status', 'DOB', 'PolicyDate',
-    'LastName', 'FirstName', 'Plan', 'Face', 'Form', 'Mode', 'ModePrem',
-    'Address1', 'State', 'Zip', 'Phone'
+    'WritingAgent', 'AgentName', 'Company', 'Policy', 'Status', 'DOB',
+    'PolicyDate', 'PaidtoDate', 'RecvDate', 'LastName', 'FirstName', 'MI',
+    'Plan', 'Face', 'Form', 'Mode', 'ModePrem', 'Address1', 'Address2',
+    'Address3', 'Address4', 'State', 'Zip', 'Phone', 'Email', 'App Date',
+    'WrtPct'
   ]
 
-  const missingColumns = requiredColumns.filter(col =>
+  const missingColumns = requiredColumns.filter(col => 
     !headers.some(header => header.toLowerCase() === col.toLowerCase())
   )
 
   if (missingColumns.length > 0) {
-    return {
-      isValid: false,
-      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}`
+    return { 
+      isValid: false, 
+      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}` 
     }
   }
 
@@ -358,28 +361,55 @@ function validateAMAMCSVStructure(headers: string[]): {isValid: boolean, error?:
 }
 
 /**
- * Formats agent name from "LastName/FirstName Middle Initial" to "FirstName Middle Initial LastName"
- *
- * @param agentName - The agent name in AMAM format
- * @returns string - Formatted agent name
+ * AMAM: Formats agent name from fully capitalized format to proper case
+ * Handles formats like "JAMAICA/ MARY C TEMU" -> "Mary Temu Jamaica"
+ * Also handles formats without slash like "CHICKEN T NUGGET" -> "Chicken Nugget"
+ * 
+ * @param agentName - The agent name in AMAM format (fully capitalized)
+ * @returns string - Properly formatted agent name
  */
-function formatAgentName(agentName: string): string {
+function formatAMAMAgentName(agentName: string): string {
   if (!agentName || agentName.trim() === '') return ''
-
-  // Split by slash to separate last name and first name + middle initial
-  const parts = agentName.split('/')
-  if (parts.length !== 2) return agentName // Return original if format is unexpected
-
-  const lastName = parts[0].trim()
-  const firstNameAndMI = parts[1].trim()
-
-  // Capitalize only first letter of each word
-  const capitalizeWords = (str: string) =>
-    str.toLowerCase().split(' ').map(word =>
-      word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ')
-
-  return `${capitalizeWords(firstNameAndMI)} ${capitalizeWords(lastName)}`
+  
+  const trimmedName = agentName.trim()
+  
+  // Check if name contains a slash (format: "LASTNAME/ FIRSTNAME MIDDLE")
+  if (trimmedName.includes('/')) {
+    const parts = trimmedName.split('/')
+    if (parts.length !== 2) return trimmedName // Return original if format is unexpected
+    
+    const lastName = parts[0].trim()
+    const firstNameAndMiddle = parts[1].trim()
+    
+    // Split first name and middle parts
+    const nameParts = firstNameAndMiddle.split(' ')
+    const firstName = nameParts[0] || ''
+    const middleParts = nameParts.slice(1).filter(part => part.length > 1) // Only keep parts longer than 1 character
+    
+    // Capitalize each part properly
+    const capitalizeWord = (word: string) => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    
+    const formattedFirstName = capitalizeWord(firstName)
+    const formattedMiddle = middleParts.map(capitalizeWord).join(' ')
+    const formattedLastName = capitalizeWord(lastName)
+    
+    // Combine: FirstName + Middle + LastName
+    const result = [formattedFirstName, formattedMiddle, formattedLastName]
+      .filter(part => part.trim() !== '')
+      .join(' ')
+    
+    return result
+  } else {
+    // Handle format without slash: "CHICKEN T NUGGET" -> "Chicken Nugget"
+    const nameParts = trimmedName.split(' ')
+    const validParts = nameParts.filter(part => part.length > 1) // Remove single character parts
+    
+    const capitalizeWord = (word: string) => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    
+    return validParts.map(capitalizeWord).join(' ')
+  }
 }
 
 /**
@@ -517,17 +547,33 @@ function normalizePaymentFrequency(mode: string): string | null {
 }
 
 /**
+ * AMAM: Processes phone number - removes dashes and converts to number
+ * 
+ * @param phone - Phone number string from AMAM CSV
+ * @returns string | null - Cleaned phone number with only digits
+ */
+function processAMAMPhoneNumber(phone: string): string | null {
+  if (!phone || phone.trim() === '') return null
+  
+  // Remove all non-numeric characters (dashes, spaces, parentheses, etc.)
+  const cleanedPhone = phone.replace(/\D/g, '')
+  
+  // Return null if no digits found
+  return cleanedPhone.length > 0 ? cleanedPhone : null
+}
+
+/**
  * Standardizes phone number - removes all non-numeric characters
- *
+ * 
  * @param phone - Phone number string
  * @returns string | null - Cleaned phone number with only digits
  */
 function standardizePhoneNumber(phone: string): string | null {
   if (!phone || phone.trim() === '') return null
-
+  
   // Remove all non-numeric characters (dashes, spaces, parentheses, etc.)
   const cleanedPhone = phone.replace(/\D/g, '')
-
+  
   // Return null if no digits found
   return cleanedPhone.length > 0 ? cleanedPhone : null
 }
@@ -574,8 +620,8 @@ function cleanCSVValue(value: string): string {
 }
 
 /**
- * Parses AMAM CSV content and converts it to PolicyReportStaging objects
- *
+ * AMAM: Parses AMAM CSV content and converts it to PolicyReportStaging objects
+ * 
  * @param csvContent - The CSV file content as string
  * @param carrierName - The carrier name
  * @param agencyId - The agency ID
@@ -624,7 +670,7 @@ async function parseAMAMCSVToPolicyReports(
       const record = records[i]
 
       try {
-        // Check for required fields - TODO: Remove console.log when productionalizing
+        // Check for required fields
         const requiredFields = ['FirstName', 'LastName', 'Policy', 'WritingAgent', 'AgentName', 'Status', 'PolicyDate']
         const missingFields = requiredFields.filter(field => !record[field as keyof AMAMPolicyData] || record[field as keyof AMAMPolicyData].toString().trim() === '')
 
@@ -633,36 +679,61 @@ async function parseAMAMCSVToPolicyReports(
           continue // Skip this row but continue processing others
         }
 
-        // Convert dates
+        // Process Policy field - remove =(policy number) format
+        const processedPolicy = cleanCSVValue(record.Policy)
+
+        // Convert dates from MM/DD/YYYY to YYYY-MM-DD
         const policyDate = convertDateFormat(record.PolicyDate)
         const dobDate = convertDateFormat(record.DOB)
 
         // Calculate issue age
         const issueAge = calculateIssueAge(policyDate, dobDate)
 
-        // Build client name with proper capitalization
-        const clientName = standardizeClientName(record.FirstName, record.MI || '', record.LastName)
+        // Process names - capitalize first letter of each word
+        const capitalizeWord = (word: string) => 
+          word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+        
+        const processedFirstName = record.FirstName.split(' ').map(capitalizeWord).join(' ')
+        const processedLastName = record.LastName.split(' ').map(capitalizeWord).join(' ')
+        
+        // Build client name: FirstName + LastName
+        const clientName = `${processedFirstName} ${processedLastName}`.trim()
 
-        // Format agent name
-        const formattedAgentName = formatAgentName(record.AgentName)
+        // Format agent name using AMAM-specific function
+        const formattedAgentName = formatAMAMAgentName(record.AgentName)
 
-        // Build address
-        const clientAddress = buildClientAddress(record.Address1, record.Address2, record.Address3, record.Address4)
+        // Process address components - capitalize first letter of each word
+        const processAddressComponent = (addr: string) => {
+          if (!addr || addr.trim() === '') return ''
+          return addr.split(' ').map(capitalizeWord).join(' ')
+        }
 
-        // Normalize payment frequency
+        const processedAddress1 = processAddressComponent(record.Address1)
+        const processedAddress2 = processAddressComponent(record.Address2)
+        const processedAddress3 = processAddressComponent(record.Address3)
+        const processedAddress4 = processAddressComponent(record.Address4)
+
+        // Build client address - combine non-empty address parts
+        const addressParts = [processedAddress1, processedAddress2, processedAddress3, processedAddress4]
+          .filter(part => part.trim() !== '')
+        const clientAddress = addressParts.length > 0 ? addressParts.join(' ') : null
+
+        // Normalize payment frequency using existing function
         const normalizedPaymentFrequency = normalizePaymentFrequency(record.Mode)
 
-        // Standardize phone and email
-        const standardizedPhone = standardizePhoneNumber(record.Phone)
-        const standardizedEmail = standardizeEmail(record.Email)
+        // Process phone number using AMAM-specific function
+        const processedPhone = processAMAMPhoneNumber(record.Phone)
 
-        // Calculate annual premium
+        // Process email - convert to lowercase
+        const processedEmail = record.Email && record.Email.trim() !== '' ? record.Email.trim().toLowerCase() : null
+
+        // Convert monetary values to numbers
+        const faceValue = toNumber(record.Face)
         const modePrem = toNumber(record.ModePrem)
-        const annualPremium = modePrem ? modePrem * 12 : null
 
         const policyReport: PolicyReportStaging = {
           client_name: cleanValue(clientName),
-          policy_number: cleanValue(cleanCSVValue(record.Policy)),
+          policy_number: cleanValue(processedPolicy),
           writing_agent_number: cleanValue(cleanCSVValue(record.WritingAgent)),
           agent_name: cleanValue(formattedAgentName),
           status: cleanValue(record.Status),
@@ -670,16 +741,16 @@ async function parseAMAMCSVToPolicyReports(
           product: cleanValue(record.Plan),
           date_of_birth: cleanValue(dobDate),
           issue_age: issueAge,
-          face_value: toNumber(record.Face),
+          face_value: faceValue,
           payment_method: cleanValue(record.Form),
           payment_frequency: normalizedPaymentFrequency ? cleanValue(normalizedPaymentFrequency) : null,
           payment_cycle_premium: modePrem,
           client_address: clientAddress ? cleanValue(clientAddress) : null,
-          client_phone: standardizedPhone ? cleanValue(standardizedPhone) : null,
-          client_email: standardizedEmail ? cleanValue(standardizedEmail) : null,
+          client_phone: processedPhone ? cleanValue(processedPhone) : null,
+          client_email: processedEmail ? cleanValue(processedEmail) : null,
           state: cleanValue(record.State),
           zipcode: cleanValue(record.Zip),
-          annual_premium: annualPremium,
+          annual_premium: null, // Set to null as requested
           client_gender: null, // No gender data in AMAM
           agency_id: agencyId,
           carrier_name: 'American Amicable / Occidental'

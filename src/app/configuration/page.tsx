@@ -665,24 +665,24 @@ export default function ConfigurationPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-6 py-8">
+      <div className="container mx-auto px-6 py-6">
         {/* Header */}
-        <div className="mb-10 bg-card rounded-xl shadow-lg p-8 border border-border">
-          <h1 className="text-5xl font-bold text-foreground mb-4">Configuration</h1>
-          <p className="text-xl text-muted-foreground">Manage products and lead sources</p>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-foreground mb-1">Settings</h1>
+          <p className="text-sm text-muted-foreground">Manage products and lead sources</p>
         </div>
 
         {/* Tabs */}
-        <div className="bg-card rounded-xl shadow-lg border border-border">
+        <div className="bg-card rounded-lg shadow-sm border border-border">
           {/* Tab Headers */}
           <div className="border-b border-border">
             <div className="flex">
               <button
                 onClick={() => setActiveTab("carriers")}
                 className={cn(
-                  "flex-1 px-8 py-6 text-lg font-semibold transition-all",
+                  "flex-1 px-4 py-3 text-sm font-medium transition-all",
                   activeTab === "carriers"
-                    ? "bg-blue-50 text-blue-700 border-b-4 border-blue-600"
+                    ? "bg-blue-50 text-blue-700 border-b-2 border-blue-600"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 )}
               >
@@ -691,9 +691,9 @@ export default function ConfigurationPage() {
               <button
                 onClick={() => setActiveTab("lead-sources")}
                 className={cn(
-                  "flex-1 px-8 py-6 text-lg font-semibold transition-all",
+                  "flex-1 px-4 py-3 text-sm font-medium transition-all",
                   activeTab === "lead-sources"
-                    ? "bg-blue-50 text-blue-700 border-b-4 border-blue-600"
+                    ? "bg-blue-50 text-blue-700 border-b-2 border-blue-600"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 )}
               >
@@ -702,9 +702,9 @@ export default function ConfigurationPage() {
               <button
                 onClick={() => setActiveTab("sms-settings")}
                 className={cn(
-                  "flex-1 px-8 py-6 text-lg font-semibold transition-all",
+                  "flex-1 px-4 py-3 text-sm font-medium transition-all",
                   activeTab === "sms-settings"
-                    ? "bg-blue-50 text-blue-700 border-b-4 border-blue-600"
+                    ? "bg-blue-50 text-blue-700 border-b-2 border-blue-600"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 )}
               >
@@ -713,9 +713,9 @@ export default function ConfigurationPage() {
               <button
                 onClick={() => setActiveTab("policy-reports")}
                 className={cn(
-                  "flex-1 px-8 py-6 text-lg font-semibold transition-all",
+                  "flex-1 px-4 py-3 text-sm font-medium transition-all",
                   activeTab === "policy-reports"
-                    ? "bg-blue-50 text-blue-700 border-b-4 border-blue-600"
+                    ? "bg-blue-50 text-blue-700 border-b-2 border-blue-600"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 )}
               >
@@ -725,12 +725,12 @@ export default function ConfigurationPage() {
           </div>
 
           {/* Tab Content */}
-          <div className="p-8">
+          <div className="p-6">
             {/* Carriers Tab */}
             {activeTab === "carriers" && (
               <div>
-                <div className="mb-6">
-                  <h2 className="text-3xl font-bold text-foreground mb-2">Select Carrier</h2>
+                <div className="mb-4">
+                  <h2 className="text-xl font-semibold text-foreground mb-1">Select Carrier</h2>
                   <p className="text-sm text-muted-foreground">Choose a carrier to manage its products</p>
                 </div>
                 {carriersLoading ? (
@@ -747,7 +747,7 @@ export default function ConfigurationPage() {
                       <button
                         key={carrier.id}
                         onClick={() => handleCarrierClick(carrier.id)}
-                        className="group relative bg-white hover:bg-blue-50 border-2 border-gray-200 hover:border-blue-500 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:scale-105 active:scale-100"
+                        className="group relative bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-500 rounded-lg p-6 transition-all duration-200 hover:shadow-md hover:scale-[1.02] active:scale-100"
                       >
                         <div className="flex items-center justify-center h-24">
                           <span className="text-lg font-semibold text-gray-800 group-hover:text-blue-700 text-center">
@@ -764,8 +764,8 @@ export default function ConfigurationPage() {
             {/* Lead Sources Tab */}
             {activeTab === "lead-sources" && (
               <div>
-                <div className="mb-6">
-                  <h2 className="text-3xl font-bold text-foreground mb-2">Lead Sources</h2>
+                <div className="mb-4">
+                  <h2 className="text-xl font-semibold text-foreground mb-1">Lead Sources</h2>
                   <p className="text-sm text-muted-foreground">Configure the lead source options available for your agency</p>
                 </div>
 
@@ -863,14 +863,14 @@ export default function ConfigurationPage() {
             {/* SMS Settings Tab */}
             {activeTab === "sms-settings" && (
               <div>
-                <div className="mb-6">
-                  <h2 className="text-3xl font-bold text-foreground mb-2">SMS Settings</h2>
+                <div className="mb-4">
+                  <h2 className="text-xl font-semibold text-foreground mb-1">SMS Settings</h2>
                   <p className="text-sm text-muted-foreground">Configure your agency's Telnyx phone number for SMS messaging</p>
                 </div>
 
                 <div className="space-y-6">
                   {/* Agency Phone Number */}
-                  <div className="bg-accent/30 rounded-xl p-6 border border-border">
+                  <div className="bg-accent/30 rounded-lg p-6 border border-border">
                     <h3 className="text-xl font-semibold text-foreground mb-4">Agency Phone Number</h3>
                     <p className="text-sm text-muted-foreground mb-4">
                       This is the phone number your agents will use to send SMS messages to clients via Telnyx.
@@ -924,7 +924,7 @@ export default function ConfigurationPage() {
                   </div>
 
                   {/* Instructions */}
-                  <div className="bg-blue-50 rounded-xl p-6 border border-blue-200">
+                  <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
                     <h3 className="text-lg font-semibold text-blue-900 mb-3">Setup Instructions</h3>
                     <ol className="space-y-2 text-sm text-blue-800">
                       <li className="flex gap-2">
@@ -952,8 +952,8 @@ export default function ConfigurationPage() {
             {/* Policy Reports Tab */}
             {activeTab === "policy-reports" && (
               <div>
-                <div className="mb-6">
-                  <h2 className="text-3xl font-bold text-foreground mb-2">Policy Reports</h2>
+                <div className="mb-4">
+                  <h2 className="text-xl font-semibold text-foreground mb-1">Policy Reports</h2>
                   <p className="text-sm text-muted-foreground">Upload CSV or Excel files for each carrier to analyze persistency rates</p>
                 </div>
 

@@ -5,16 +5,14 @@ import { Button } from "@/components/ui/button"
 import {
   DollarSign,
   Users,
-  Target,
   FileText,
   BarChart3,
   PieChart,
-  TrendingUp,
-  ChevronRight
+  Sparkles
 } from "lucide-react"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Cell, Pie } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import Link from "next/link"
-import { useState, useRef, useEffect } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
 
@@ -29,11 +27,6 @@ const productionData = [
   { month: '5-25', production: 1000, commissions: 200 },
 ]
 
-const goalData = [
-  { name: 'Achieved', value: 4509580.78, color: '#8b5cf6' },
-  { name: 'Remaining', value: 5490419.22, color: '#e5e7eb' },
-]
-
 const topProducers = [
   { rank: 1, name: 'Sharko, Steven', amount: '$17,101.08', color: 'text-yellow-500' },
   { rank: 2, name: 'Neumann, Ethan', amount: '$13,754.40', color: 'text-gray-400' },
@@ -44,10 +37,8 @@ const topProducers = [
 
 export default function Home() {
   const { user, loading: authLoading } = useAuth()
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [firstName, setFirstName] = useState<string>('')
   const [userDataLoading, setUserDataLoading] = useState(true)
-  const dropdownRefs = useRef<{ [key: string]: HTMLDivElement | null }>({})
 
   // Fetch user data from API
   useEffect(() => {
@@ -87,28 +78,6 @@ export default function Home() {
     fetchUserData()
   }, [user])
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node
-      const isOutside = Object.values(dropdownRefs.current).every(ref =>
-        ref && !ref.contains(target)
-      )
-      if (isOutside) {
-        setOpenDropdown(null)
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [])
-
-  const handleDropdownToggle = (itemName: string) => {
-    setOpenDropdown(openDropdown === itemName ? null : itemName)
-  }
-
   // Show loading screen until we have both auth and a valid firstName
   if (authLoading || userDataLoading || !firstName) {
     return (
@@ -133,7 +102,7 @@ export default function Home() {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Link href="/policies/post" className="block group">
           <Card className="professional-card p-6 text-center cursor-pointer group-hover:scale-105 transition-all duration-200">
             <div className="p-3 bg-primary/20 rounded-xl w-fit mx-auto mb-3">
@@ -155,9 +124,9 @@ export default function Home() {
         <Link href="/communications/sms" className="block group">
           <Card className="professional-card p-6 text-center cursor-pointer group-hover:scale-105 transition-all duration-200">
             <div className="p-3 bg-green-500/20 rounded-xl w-fit mx-auto mb-3">
-              <FileText className="h-6 w-6 text-green-400" />
+              <Sparkles className="h-6 w-6 text-green-400" />
             </div>
-            <h3 className="font-semibold text-foreground">Messages</h3>
+            <h3 className="font-semibold text-foreground">Communication</h3>
           </Card>
         </Link>
 
@@ -179,91 +148,25 @@ export default function Home() {
           </Card>
         </Link>
 
-        <div className="relative" ref={(el) => { dropdownRefs.current['Analytics'] = el }}>
-          <button
-            onClick={() => handleDropdownToggle('Analytics')}
-            className="w-full group"
-          >
-            <Card className="professional-card p-6 text-center cursor-pointer group-hover:scale-105 transition-all duration-200">
-              <div className="p-3 bg-indigo-500/20 rounded-xl w-fit mx-auto mb-3">
-                <PieChart className="h-6 w-6 text-indigo-400" />
-              </div>
-              <h3 className="font-semibold text-foreground">Analytics</h3>
-            </Card>
-          </button>
-
-          {/* Dropdown Menu */}
-          {openDropdown === 'Analytics' && (
-            <div className="absolute top-full left-0 mt-2 w-48 glass-effect rounded-xl shadow-2xl z-50 animate-in fade-in-0 zoom-in-95 duration-200">
-              <div className="py-2">
-                <Link
-                  href="/analytics"
-                  onClick={() => setOpenDropdown(null)}
-                  className="block px-4 py-3 text-sm text-foreground hover:text-primary hover:bg-accent/50 transition-colors rounded-lg mx-2"
-                >
-                  Overview
-                </Link>
-              </div>
+        <Link href="/analytics" className="block group">
+          <Card className="professional-card p-6 text-center cursor-pointer group-hover:scale-105 transition-all duration-200">
+            <div className="p-3 bg-indigo-500/20 rounded-xl w-fit mx-auto mb-3">
+              <PieChart className="h-6 w-6 text-indigo-400" />
             </div>
-          )}
-        </div>
+            <h3 className="font-semibold text-foreground">Analytics</h3>
+          </Card>
+        </Link>
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Annual Goal */}
-        <Card className="professional-card">
-          <CardHeader>
-            <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
-              <TrendingUp className="h-5 w-5 text-primary" />
-              <span>Annual Goal</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-48 w-48 mx-auto relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <RechartsPieChart>
-                  <Pie
-                    data={goalData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={90}
-                    startAngle={90}
-                    endAngle={450}
-                    dataKey="value"
-                  >
-                    {goalData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color === '#8b5cf6' ? 'hsl(var(--primary))' : 'hsl(var(--muted))'} />
-                    ))}
-                  </Pie>
-                </RechartsPieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="text-sm text-muted-foreground">45.1%</div>
-                </div>
-              </div>
-            </div>
-            <div className="text-center mt-4">
-              <div className="text-2xl font-bold text-primary">
-                $4,509,580.78
-              </div>
-              <div className="text-sm text-muted-foreground">
-                / $10,000,000.00
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
+      <div className="grid grid-cols-1 gap-6">
         {/* Top Producers */}
         <Card className="professional-card">
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader>
             <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
               <Users className="h-5 w-5 text-primary" />
               <span>Top Producers</span>
             </CardTitle>
-            <ChevronRight className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-sm text-muted-foreground mb-4">Week of May 19, 2025</div>

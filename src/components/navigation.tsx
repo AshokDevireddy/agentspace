@@ -1,14 +1,11 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  ChevronDown,
-  ChevronRight,
   User,
   BarChart3,
   Users,
@@ -16,54 +13,29 @@ import {
   TrendingUp,
   Settings,
   Home,
-  MessageSquare,
-  Phone,
   LogOut,
   Building2,
-  Mail
+  Sparkles,
+  ExternalLink,
+  BookOpen
 } from "lucide-react"
 import { createClient } from '@/lib/supabase/client'
 
 const navigationItems = [
   { name: "Dashboard", href: "/", icon: Home },
   { name: "Scoreboard", href: "/scoreboard", icon: BarChart3 },
-  {
-    name: "Agents",
-    href: "/agents",
-    icon: Users,
-    submenu: [
-      { name: "All Agents", href: "/agents" },
-      { name: "Contracts", href: "/agents/contracts" },
-    ]
-  },
-  {
-    name: "Policies",
-    href: "/policies",
-    icon: FileText,
-    submenu: [
-      { name: "Post a Deal", href: "/policies/post" },
-      { name: "Book of Business", href: "/policies/book" },
-    ]
-  },
-  {
-    name: "Communications",
-    href: "/communications",
-    icon: MessageSquare,
-    submenu: [
-      { name: "Email Center", href: "/communications/email" },
-      { name: "SMS Messaging", href: "/communications/sms" },
-      { name: "Call Center", href: "/communications/calls" },
-    ]
-  },
+  { name: "Agents", href: "/agents", icon: Users },
+  { name: "Post a Deal", href: "/policies/post", icon: FileText },
+  { name: "Book of Business", href: "/policies/book", icon: BookOpen },
+  { name: "AI Communication", href: "/communications/sms", icon: Sparkles },
   { name: "Analytics", href: "/analytics", icon: TrendingUp },
+  { name: "Insurance Toolkits", href: "/insurance-toolkits", icon: ExternalLink },
 ]
 
 export default function Navigation() {
   const { signOut, user } = useAuth()
   const pathname = usePathname()
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
-  const [adminLoading, setAdminLoading] = useState(true)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
   // Check if user is admin by querying the database
@@ -71,7 +43,6 @@ export default function Navigation() {
     const checkAdminStatus = async () => {
       if (!user?.id) {
         setIsAdmin(false)
-        setAdminLoading(false)
         return
       }
 
@@ -92,17 +63,11 @@ export default function Navigation() {
       } catch (error) {
         // Silently handle error - user may not exist in users table yet
         setIsAdmin(false)
-      } finally {
-        setAdminLoading(false)
       }
     }
 
     checkAdminStatus()
   }, [user])
-
-  const handleDropdownToggle = (itemName: string) => {
-    setOpenDropdown(openDropdown === itemName ? null : itemName)
-  }
 
   // Handle user logout
   const handleLogout = async () => {
@@ -113,23 +78,9 @@ export default function Navigation() {
     }
   }
 
-  // Filter submenu items based on admin status
-  const getFilteredSubmenu = (submenu: any[]) => {
-    return submenu.filter(item => !item.adminOnly || isAdmin)
-  }
-
   // Check if current path matches item
   const isActiveItem = (item: any) => {
-    if (pathname === item.href) return true
-    if (item.submenu) {
-      return item.submenu.some((subItem: any) => pathname === subItem.href) ||
-             pathname.startsWith(item.href + '/')
-    }
-    return false
-  }
-
-  const isActiveSubItem = (subItem: any) => {
-    return pathname === subItem.href
+    return pathname === item.href || pathname.startsWith(item.href + '/')
   }
 
   return (
@@ -158,60 +109,17 @@ export default function Navigation() {
       <nav className="flex-1 p-4 space-y-2">
         {navigationItems.map((item) => (
           <div key={item.name}>
-            {item.submenu ? (
-              <>
-                <button
-                  onClick={() => handleDropdownToggle(item.name)}
-                  className={cn(
-                    "sidebar-nav-item w-full rounded-xl",
-                    isActiveItem(item) && "active"
-                  )}
-                  title={isSidebarCollapsed ? item.name : undefined}
-                >
-                  {item.icon && <item.icon className="h-5 w-5 flex-shrink-0" />}
-                  {!isSidebarCollapsed && (
-                    <>
-                      <span className="flex-1 text-left">{item.name}</span>
-                      <ChevronRight className={cn(
-                        "h-4 w-4 transition-transform flex-shrink-0",
-                        openDropdown === item.name ? "rotate-90" : ""
-                      )} />
-                    </>
-                  )}
-                </button>
-
-                {/* Submenu */}
-                {openDropdown === item.name && !isSidebarCollapsed && (
-                  <div className="sidebar-submenu">
-                    {getFilteredSubmenu(item.submenu).map((subItem) => (
-                      <Link
-                        key={subItem.name}
-                        href={subItem.href}
-                        className={cn(
-                          "sidebar-submenu-item rounded-lg",
-                          isActiveSubItem(subItem) && "active"
-                        )}
-                      >
-                        <span className="w-2 h-2 rounded-full bg-current opacity-40 flex-shrink-0" />
-                        <span>{subItem.name}</span>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : (
-              <Link
-                href={item.href}
-                className={cn(
-                  "sidebar-nav-item w-full rounded-xl",
-                  isActiveItem(item) && "active"
-                )}
-                title={isSidebarCollapsed ? item.name : undefined}
-              >
-                {item.icon && <item.icon className="h-5 w-5 flex-shrink-0" />}
-                {!isSidebarCollapsed && <span className="flex-1 text-left">{item.name}</span>}
-              </Link>
-            )}
+            <Link
+              href={item.href}
+              className={cn(
+                "sidebar-nav-item w-full rounded-xl",
+                isActiveItem(item) && "active"
+              )}
+              title={isSidebarCollapsed ? item.name : undefined}
+            >
+              {item.icon && <item.icon className="h-5 w-5 flex-shrink-0" />}
+              {!isSidebarCollapsed && <span className="flex-1 text-left">{item.name}</span>}
+            </Link>
           </div>
         ))}
       </nav>
@@ -225,10 +133,10 @@ export default function Navigation() {
               "sidebar-nav-item w-full rounded-xl",
               pathname === "/configuration" && "active"
             )}
-            title={isSidebarCollapsed ? "Configuration" : undefined}
+            title={isSidebarCollapsed ? "Settings" : undefined}
           >
             <Settings className="h-5 w-5 flex-shrink-0" />
-            {!isSidebarCollapsed && <span className="flex-1 text-left">Configuration</span>}
+            {!isSidebarCollapsed && <span className="flex-1 text-left">Settings</span>}
           </Link>
         </div>
       )}

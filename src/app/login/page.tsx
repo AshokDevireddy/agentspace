@@ -39,7 +39,7 @@ export default function LoginPage() {
       if (userError) throw new Error('User profile not found')
 
       // Handle different user statuses
-      if (userData.status === 'pending') {
+      if (userData.status === 'invited') {
         await supabase.auth.signOut()
         throw new Error('Please check your email and click the invite link to complete account setup')
       }

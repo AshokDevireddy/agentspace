@@ -102,9 +102,9 @@ export default function ConfirmSession() {
         }
 
         // Handle user based on their status
-        if (user.status === 'pending') {
+        if (user.status === 'invited') {
           // First time clicking invite link - transition to onboarding
-          console.log('Transitioning user from pending to onboarding')
+          console.log('Transitioning user from invited to onboarding')
           const { error: updateError } = await supabase
             .from('users')
             .update({ status: 'onboarding', updated_at: new Date().toISOString() })

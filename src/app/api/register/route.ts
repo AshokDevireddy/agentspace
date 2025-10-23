@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (existingUser) {
-      if (existingUser.status === 'pending') {
+      if (existingUser.status === 'invited') {
         return NextResponse.json({ error: 'An invitation has already been sent to this email' }, { status: 400 })
       }
       return NextResponse.json({ error: 'A user with this email already exists' }, { status: 400 })
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: inviteError.message || 'Failed to send invitation' }, { status: 400 })
     }
 
-    // 4. Create user record with status='pending' and agency_id
+    // 4. Create user record with status='invited' and agency_id
     const { error: dbError } = await supabaseAdmin
       .from('users')
       .insert([{
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
         annual_goal: 0,
         perm_level: 'admin',
         is_admin: true,
-        status: 'pending',
+        status: 'invited',
         total_prod: 0,
         total_policies_sold: 0,
         start_date: new Date().toISOString().split('T')[0],

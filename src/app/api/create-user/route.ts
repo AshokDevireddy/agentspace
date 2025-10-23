@@ -61,7 +61,7 @@ export async function POST(request: Request) {
 
     console.log("Permission Level:", permissionLevel, permissionLevel?.trim().toLowerCase() === 'admin');
 
-    // Insert user data into users table with status='pending'
+    // Insert user data into users table with status='invited'
     const { error: insertError } = await admin
       .from('users')
       .insert([{

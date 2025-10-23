@@ -56,8 +56,8 @@ export async function middleware(req: NextRequest) {
         return res
       }
 
-      // If user is pending (hasn't clicked invite link yet), redirect to login
-      if (user.status === 'pending') {
+      // If user is invited (hasn't clicked invite link yet), redirect to login
+      if (user.status === 'invited') {
         await supabase.auth.signOut()
         return NextResponse.redirect(new URL('/login?message=check-email', req.url))
       }

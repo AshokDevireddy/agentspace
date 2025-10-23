@@ -34,7 +34,7 @@ export async function POST(request: Request) {
 
     console.log('Inviting user with agency_id:', currentUser.agency_id)
 
-    // Check if user with this email already exists (including pending invites)
+    // Check if user with this email already exists (including invited users)
     const { data: existingUser } = await supabase
       .from('users')
       .select('id, status')
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (existingUser) {
-      if (existingUser.status === 'pending') {
+      if (existingUser.status === 'invited') {
         return NextResponse.json({ error: 'An invitation has already been sent to this email' }, { status: 400 })
       }
       return NextResponse.json({ error: 'A user with this email already exists' }, { status: 400 })
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     const isAdmin = permissionLevel === 'admin'
     const role = permissionLevel === 'admin' ? 'admin' : 'agent'
 
-    // 2. Create user record with status='pending' and agency_id (using admin client to bypass RLS)
+    // 2. Create user record with status='invited' and agency_id (using admin client to bypass RLS)
     const { error: dbError } = await supabaseAdmin
       .from('users')
       .insert([{
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
         annual_goal: 0,
         perm_level: permissionLevel,
         is_admin: isAdmin,
-        status: 'pending',
+        status: 'invited',
         total_prod: 0,
         total_policies_sold: 0,
         start_date: new Date().toISOString().split('T')[0],

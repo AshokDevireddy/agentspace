@@ -21,7 +21,7 @@ export interface Agent {
   position_id: string
   upline_id?: string
   start_date: string
-  status: 'pending' | 'active' | 'inactive'
+  status: 'pre-invite' | 'invited' | 'onboarding' | 'active' | 'inactive'
   created_at: string
   updated_at: string
   user?: User

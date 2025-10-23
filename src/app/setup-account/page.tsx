@@ -16,7 +16,7 @@ interface UserData {
   role: 'admin' | 'agent' | 'client'
   perm_level: string
   is_admin: boolean
-  status: 'pending' | 'active' | 'inactive' | 'onboarding'
+  status: 'pre-invite' | 'invited' | 'onboarding' | 'active' | 'inactive'
   agency_id?: string
 }
 

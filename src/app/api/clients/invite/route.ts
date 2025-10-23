@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    // Check if client already exists (including pending invites)
+    // Check if client already exists (including invited clients)
     const { data: existingClient } = await supabase
       .from('users')
       .select('id, email, status')
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         userId: existingClient.id,
-        message: existingClient.status === 'pending' ? 'Invitation already sent' : 'Client already exists',
+        message: existingClient.status === 'invited' ? 'Invitation already sent' : 'Client already exists',
         alreadyExists: true
       })
     }
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: inviteError.message || 'Failed to send invitation' }, { status: 400 })
     }
 
-    // 2. Create user record with status='pending' and agency_id
+    // 2. Create user record with status='invited' and agency_id
     const { error: dbError } = await supabase
       .from('users')
       .insert([{

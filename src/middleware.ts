@@ -15,8 +15,8 @@ export async function middleware(req: NextRequest) {
   const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/setup-account']
   const isPublicRoute = publicRoutes.includes(req.nextUrl.pathname) || req.nextUrl.pathname.startsWith('/auth/confirm')
 
-  // Public API prefixes that should bypass auth (cron jobs, webhooks, etc.)
-  const publicApiPrefixes = ['/api/cron/', '/api/telnyx-webhook']
+  // Public API prefixes that should bypass auth (cron jobs, webhooks, registration, etc.)
+  const publicApiPrefixes = ['/api/cron/', '/api/telnyx-webhook', '/api/register']
   const isPublicApi = publicApiPrefixes.some(prefix => req.nextUrl.pathname.startsWith(prefix))
 
   // If no session and trying to access protected route
@@ -42,13 +42,24 @@ export async function middleware(req: NextRequest) {
 
     // Handle user status
     if (user) {
-      // If user is pending, only allow access to setup-account page
-      if (user.status === 'pending') {
-        if (req.nextUrl.pathname !== '/setup-account') {
-          return NextResponse.redirect(new URL('/setup-account', req.url))
+      // If user is onboarding, allow access to setup-account page and dashboard
+      // (setup-account for Phase 1 password setup, dashboard for Phase 2 onboarding)
+      if (user.status === 'onboarding') {
+        const allowedPaths = ['/setup-account', '/', '/api/']
+        const isAllowedPath = allowedPaths.some(path => req.nextUrl.pathname.startsWith(path))
+
+        if (!isAllowedPath) {
+          // Redirect to dashboard where they can complete onboarding
+          return NextResponse.redirect(new URL('/', req.url))
         }
-        // Allow access to setup-account page
+        // Allow access to allowed paths
         return res
+      }
+
+      // If user is pending (hasn't clicked invite link yet), redirect to login
+      if (user.status === 'pending') {
+        await supabase.auth.signOut()
+        return NextResponse.redirect(new URL('/login?message=check-email', req.url))
       }
 
       // If user is inactive, sign them out and redirect to login

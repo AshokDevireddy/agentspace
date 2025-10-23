@@ -13,8 +13,6 @@ export default function RegisterPage() {
 
   const [formData, setFormData] = useState({
     email: "",
-    password: "",
-    confirmPassword: "",
     firstName: "",
     lastName: "",
     phoneNumber: "",
@@ -53,22 +51,10 @@ export default function RegisterPage() {
       newErrorFields.agencyName = "Required"
     }
 
-    // Phone validation (10 digits)
+    // Phone validation (10 digits) - optional
     if (formData.phoneNumber && formData.phoneNumber.length !== 10) {
       newErrors.push("Phone number must be 10 digits")
       newErrorFields.phoneNumber = "Invalid phone format"
-    }
-
-    // Password validation
-    if (formData.password.length < 6) {
-      newErrors.push("Password must be at least 6 characters")
-      newErrorFields.password = "Password too short"
-    }
-
-    // Confirm password validation
-    if (formData.password !== formData.confirmPassword) {
-      newErrors.push("Passwords do not match")
-      newErrorFields.confirmPassword = "Passwords do not match"
     }
 
     setErrors(newErrors)
@@ -87,69 +73,39 @@ export default function RegisterPage() {
     setSubmitting(true)
 
     try {
-      // 1. Create auth user
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
+      // Call registration API (uses admin.inviteUserByEmail instead of signUp)
+      const response = await fetch('/api/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          phoneNumber: formData.phoneNumber,
+          agencyName: formData.agencyName
+        }),
       })
 
-      if (signUpError) throw signUpError
-      if (!authData.user) throw new Error('User creation failed')
+      const data = await response.json()
 
-      // 2. Create agency
-      const { data: agencyData, error: agencyError } = await supabase
-        .from('agencies')
-        .insert([{
-          name: formData.agencyName,
-          code: formData.agencyName.toLowerCase().replace(/\s+/g, '-'),
-          display_name: formData.agencyName,
-          is_active: true,
-          created_at: new Date().toISOString(),
-        }])
-        .select()
-        .single()
-
-      if (agencyError) {
-        console.error('Error creating agency:', agencyError)
-        throw new Error('Failed to create agency')
-      }
-
-      // 3. Create user profile in users table with agency_id
-      const { error: insertError } = await supabase
-        .from('users')
-        .insert([{
-          auth_user_id: authData.user.id,
-          email: formData.email,
-          first_name: formData.firstName,
-          last_name: formData.lastName,
-          phone_number: formData.phoneNumber || null,
-          role: 'admin',
-          is_admin: true,
-          status: 'active',
-          perm_level: 'admin',
-          agency_id: agencyData.id,
-          created_at: new Date().toISOString(),
-        }])
-
-      if (insertError) {
-        // If profile creation fails, we should clean up
-        console.error('Error creating user profile:', insertError)
-        throw new Error('Failed to create user profile')
+      if (!response.ok) {
+        throw new Error(data.error || 'Registration failed')
       }
 
       // Clear form
       setFormData({
         email: "",
-        password: "",
-        confirmPassword: "",
         firstName: "",
         lastName: "",
         phoneNumber: "",
         agencyName: ""
       })
 
-      // Redirect to login with success message
-      router.push('/login?message=registration-success')
+      // Show success message and redirect to login
+      alert('Registration successful! Please check your email for an invitation link to complete your account setup.')
+      router.push('/login')
     } catch (error: any) {
       console.error('Error during registration:', error)
       setErrors([error.message || 'Registration failed. Please try again.'])
@@ -277,47 +233,6 @@ export default function RegisterPage() {
               <p className="text-sm text-muted-foreground">This will be the agency you're an admin for</p>
             </div>
 
-            {/* Password Section */}
-            <div className="pt-6 border-t border-border">
-              <h3 className="text-lg font-medium text-foreground mb-4">Set Password</h3>
-
-              {/* Password */}
-              <div className="space-y-2 mb-4">
-                <label className="block text-sm font-medium text-foreground">
-                  Password <span className="text-destructive">*</span>
-                </label>
-                <Input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => handleInputChange("password", e.target.value)}
-                  className={`h-12 ${errorFields.password ? 'border-destructive' : ''}`}
-                  placeholder="Enter your password"
-                  required
-                />
-                {errorFields.password && (
-                  <p className="text-destructive text-sm">{errorFields.password}</p>
-                )}
-              </div>
-
-              {/* Confirm Password */}
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-foreground">
-                  Confirm Password <span className="text-destructive">*</span>
-                </label>
-                <Input
-                  type="password"
-                  value={formData.confirmPassword}
-                  onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                  className={`h-12 ${errorFields.confirmPassword ? 'border-destructive' : ''}`}
-                  placeholder="Confirm your password"
-                  required
-                />
-                {errorFields.confirmPassword && (
-                  <p className="text-destructive text-sm">{errorFields.confirmPassword}</p>
-                )}
-              </div>
-            </div>
-
             {/* Submit Button */}
             <div className="pt-6">
               <Button
@@ -325,8 +240,11 @@ export default function RegisterPage() {
                 disabled={submitting}
                 className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg disabled:opacity-50"
               >
-                {submitting ? 'Creating account...' : 'Create Admin Account'}
+                {submitting ? 'Sending invitation...' : 'Create Admin Account'}
               </Button>
+              <p className="text-sm text-muted-foreground text-center">
+                You'll receive an email to set your password and complete setup
+              </p>
             </div>
 
             {/* Back to Login */}

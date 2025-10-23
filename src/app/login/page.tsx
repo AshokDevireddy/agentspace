@@ -38,9 +38,31 @@ export default function LoginPage() {
 
       if (userError) throw new Error('User profile not found')
 
-      if (userData.status !== 'active') {
+      // Handle different user statuses
+      if (userData.status === 'pending') {
+        await supabase.auth.signOut()
+        throw new Error('Please check your email and click the invite link to complete account setup')
+      }
+
+      if (userData.status === 'onboarding') {
+        // User has set password but hasn't completed Phase 2 onboarding
+        // Redirect to dashboard where onboarding wizard will show
+        if (userData.role === 'client') {
+          router.push('/client/dashboard')
+        } else {
+          router.push('/')
+        }
+        return
+      }
+
+      if (userData.status === 'inactive') {
         await supabase.auth.signOut()
         throw new Error('Your account has been deactivated')
+      }
+
+      if (userData.status !== 'active') {
+        await supabase.auth.signOut()
+        throw new Error('Account status is invalid. Please contact support.')
       }
 
       // Verify user is logging in with correct tab

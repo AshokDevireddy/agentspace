@@ -135,6 +135,10 @@ export async function GET(request: Request) {
       positionHistory: processedPositionHistory,
       // Include agency_id so clients can scope queries by agency
       agency_id: userData.agency_id || null,
+      // Include status, role, and is_admin for onboarding checks
+      status: userData.status,
+      role: userData.role,
+      is_admin: userData.is_admin,
     }
 
     return NextResponse.json({

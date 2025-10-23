@@ -15,6 +15,8 @@ import Link from "next/link"
 import { useState, useEffect } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
+import OnboardingWizard from "@/components/onboarding-wizard"
+import { useRouter } from "next/navigation"
 
 // Dummy data
 const productionData = [
@@ -36,9 +38,13 @@ const topProducers = [
 ]
 
 export default function Home() {
+  const router = useRouter()
+  const supabase = createClient()
   const { user, loading: authLoading } = useAuth()
   const [firstName, setFirstName] = useState<string>('')
   const [userDataLoading, setUserDataLoading] = useState(true)
+  const [userData, setUserData] = useState<any>(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Fetch user data from API
   useEffect(() => {
@@ -59,6 +65,12 @@ export default function Home() {
 
         if (result.success) {
           setFirstName(result.data.firstName || 'User')
+          setUserData(result.data)
+
+          // Check if user is in onboarding status
+          if (result.data.status === 'onboarding') {
+            setShowOnboarding(true)
+          }
         } else {
           console.error('API Error:', result.error)
           // Fallback to auth metadata
@@ -78,12 +90,28 @@ export default function Home() {
     fetchUserData()
   }, [user])
 
+  const handleOnboardingComplete = () => {
+    // Refresh the page to show the normal dashboard
+    router.refresh()
+    window.location.reload()
+  }
+
   // Show loading screen until we have both auth and a valid firstName
   if (authLoading || userDataLoading || !firstName) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-lg">Loading...</div>
       </div>
+    )
+  }
+
+  // Show onboarding wizard if user is in onboarding status
+  if (showOnboarding && userData) {
+    return (
+      <OnboardingWizard
+        userData={userData}
+        onComplete={handleOnboardingComplete}
+      />
     )
   }
 

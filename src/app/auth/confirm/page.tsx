@@ -87,33 +87,50 @@ export default function ConfirmSession() {
 
     const routeUser = async (authUserId: string) => {
       try {
-        // Check if user is pending (new user needs to complete setup)
-        const { data: pendingUser, error: pendingError } = await supabase
+        // Get user data
+        const { data: user, error: userError } = await supabase
           .from('users')
-          .select('role, status')
+          .select('id, role, status')
           .eq('auth_user_id', authUserId)
-          .eq('status', 'pending')
           .maybeSingle()
 
-        if (pendingUser) {
-          // New user needs to complete setup
+        if (userError || !user) {
+          console.error('User not found in users table:', userError)
+          setMessage('Account not found. Redirecting to login...')
+          setTimeout(() => router.push('/login'), 2000)
+          return
+        }
+
+        // Handle user based on their status
+        if (user.status === 'pending') {
+          // First time clicking invite link - transition to onboarding
+          console.log('Transitioning user from pending to onboarding')
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({ status: 'onboarding', updated_at: new Date().toISOString() })
+            .eq('id', user.id)
+
+          if (updateError) {
+            console.error('Error updating user status:', updateError)
+            // Continue anyway, they can still proceed to setup
+          }
+
           setMessage('Setting up your account...')
           router.push('/setup-account')
           return
         }
 
-        // Check if user already exists and is active (returning user)
-        const { data: existingUser, error: userError } = await supabase
-          .from('users')
-          .select('role, status')
-          .eq('auth_user_id', authUserId)
-          .eq('status', 'active')
-          .maybeSingle()
+        if (user.status === 'onboarding') {
+          // User clicked link again but hasn't finished onboarding
+          setMessage('Continue setting up your account...')
+          router.push('/setup-account')
+          return
+        }
 
-        if (existingUser) {
+        if (user.status === 'active') {
           // User already set up, route to appropriate dashboard
           setMessage('Welcome back! Redirecting...')
-          if (existingUser.role === 'client') {
+          if (user.role === 'client') {
             router.push('/client/dashboard')
           } else {
             router.push('/')
@@ -121,9 +138,9 @@ export default function ConfirmSession() {
           return
         }
 
-        // User not found
-        console.error('User not found in users table')
-        setMessage('Account not found. Redirecting to login...')
+        // Handle inactive or other statuses
+        console.error('User has invalid status:', user.status)
+        setMessage('Account is not accessible. Please contact support.')
         setTimeout(() => router.push('/login'), 2000)
 
       } catch (err) {

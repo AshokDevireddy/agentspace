@@ -4,6 +4,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/server';
+import { normalizePhoneForStorage } from '@/lib/telnyx';
 
 interface ConversationResult {
   id: string;
@@ -30,30 +31,58 @@ interface MessageResult {
 }
 
 /**
- * Gets or creates a conversation for an agent-deal pair
+ * Gets or creates a conversation for an agent-client pair
+ * Uses client phone number to prevent duplicate conversations
  */
 export async function getOrCreateConversation(
   agentId: string,
   dealId: string,
-  agencyId: string
+  agencyId: string,
+  clientPhone?: string
 ): Promise<ConversationResult> {
   const supabase = createAdminClient();
 
-  // Try to find existing conversation
-  const { data: existing } = await supabase
-    .from('conversations')
-    .select('*')
-    .eq('agent_id', agentId)
-    .eq('deal_id', dealId)
-    .eq('type', 'sms')
-    .eq('is_active', true)
-    .single();
+  // Normalize phone number for consistent lookups (remove +1 prefix)
+  const normalizedPhone = clientPhone ? normalizePhoneForStorage(clientPhone) : null;
 
-  if (existing) {
-    return existing as ConversationResult;
+  // If client phone is provided, try to find existing conversation by phone
+  if (normalizedPhone) {
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('agent_id', agentId)
+      .eq('client_phone', normalizedPhone)
+      .eq('type', 'sms')
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (existing) {
+      // Update the deal_id if it's different (client might have multiple deals)
+      if (existing.deal_id !== dealId) {
+        await supabase
+          .from('conversations')
+          .update({ deal_id: dealId })
+          .eq('id', existing.id);
+      }
+      return existing as ConversationResult;
+    }
+  } else {
+    // Fallback: Try to find existing conversation by deal
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('agent_id', agentId)
+      .eq('deal_id', dealId)
+      .eq('type', 'sms')
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (existing) {
+      return existing as ConversationResult;
+    }
   }
 
-  // Create new conversation
+  // Create new conversation with normalized phone
   const { data: newConversation, error } = await supabase
     .from('conversations')
     .insert({
@@ -62,6 +91,7 @@ export async function getOrCreateConversation(
       agency_id: agencyId,
       type: 'sms',
       is_active: true,
+      client_phone: normalizedPhone,
     })
     .select()
     .single();

@@ -76,11 +76,12 @@ export async function POST(request: NextRequest) {
       text: message,
     });
 
-    // Get or create conversation
+    // Get or create conversation (using client phone to prevent duplicates)
     const conversation = await getOrCreateConversation(
       userData.id,
       dealId,
-      userData.agency_id
+      userData.agency_id,
+      deal.client_phone
     );
 
     // Log the message

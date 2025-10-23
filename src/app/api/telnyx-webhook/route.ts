@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { sendSMS, containsUrgentKeywords, normalizePhoneNumber } from '@/lib/telnyx';
+import { sendSMS, containsUrgentKeywords, normalizePhoneNumber, normalizePhoneForStorage } from '@/lib/telnyx';
 import {
   findDealByClientPhone,
   getOrCreateConversation,
@@ -23,10 +23,18 @@ export async function POST(request: NextRequest) {
       const toNumber = payload.to[0].phone_number;
       const messageText = payload.text;
 
-      console.log('Received inbound SMS:', { fromNumber, toNumber, messageText });
+      // Normalize phone number for storage (remove +1 prefix to match deals table format)
+      const normalizedClientPhone = normalizePhoneForStorage(fromNumber);
+
+      console.log('Received inbound SMS:', {
+        fromNumber,
+        normalizedClientPhone,
+        toNumber,
+        messageText
+      });
 
       // Find the deal associated with this client phone number
-      const deal = await findDealByClientPhone(fromNumber);
+      const deal = await findDealByClientPhone(normalizedClientPhone);
 
       if (!deal) {
         console.warn('No deal found for client phone:', fromNumber);
@@ -45,11 +53,12 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Get or create conversation
+      // Get or create conversation (using normalized phone to prevent duplicates)
       const conversation = await getOrCreateConversation(
         agent.id,
         deal.id,
-        agent.agency_id
+        agent.agency_id,
+        normalizedClientPhone
       );
 
       // Create a client_id if it exists in the deal, otherwise use null
@@ -73,7 +82,7 @@ export async function POST(request: NextRequest) {
         direction: 'inbound',
         status: 'received',
         metadata: {
-          client_phone: fromNumber,
+          client_phone: normalizedClientPhone,
           telnyx_message_id: payload.id,
         },
       });

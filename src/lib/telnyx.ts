@@ -24,7 +24,7 @@ interface TelnyxResponse {
 }
 
 /**
- * Normalizes a phone number to E.164 format (+1XXXXXXXXXX)
+ * Normalizes a phone number to E.164 format (+1XXXXXXXXXX) for sending SMS
  */
 export function normalizePhoneNumber(phone: string): string {
   // Remove all non-digit characters
@@ -47,6 +47,28 @@ export function normalizePhoneNumber(phone: string): string {
 
   // Otherwise, just return the digits with +
   return `+${digits}`;
+}
+
+/**
+ * Normalizes a phone number for database storage (10 digits, no +1 prefix)
+ * Consistent with how deals table stores phone numbers
+ */
+export function normalizePhoneForStorage(phone: string): string {
+  // Remove all non-digit characters
+  const digits = phone.replace(/\D/g, '');
+
+  // If it's 11 digits starting with 1 (e.g., +16692456363 or 16692456363), remove the leading 1
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return digits.substring(1); // Return last 10 digits
+  }
+
+  // If it's already 10 digits, return as is
+  if (digits.length === 10) {
+    return digits;
+  }
+
+  // For any other format, just return the digits (edge case)
+  return digits;
 }
 
 /**

@@ -106,11 +106,12 @@ export async function GET(request: NextRequest) {
           text: messageText,
         });
 
-        // Get or create conversation
+        // Get or create conversation (using client phone to prevent duplicates)
         const conversation = await getOrCreateConversation(
           agent.id,
           deal.id,
-          agent.agency_id
+          agent.agency_id,
+          deal.client_phone
         );
 
         // Log the message

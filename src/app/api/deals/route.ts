@@ -265,11 +265,12 @@ export async function POST(req: NextRequest) {
               text: welcomeMessage,
             })
 
-            // Create conversation and log message
+            // Create conversation and log message (using client phone to prevent duplicates)
             const conversation = await getOrCreateConversation(
               agentData.id,
               deal.id,
-              agentData.agency_id
+              agentData.agency_id,
+              deal.client_phone
             )
 
             await logMessage({

@@ -19,12 +19,14 @@ interface AgentSearchResult {
   first_name: string
   last_name: string
   email: string
+  status?: string
 }
 
 // Interface for searchable select options
 interface SearchOption {
   value: string
   label: string
+  status?: string
 }
 
 const permissionLevels = [
@@ -80,7 +82,8 @@ function useAgentSearch() {
         // Transform search results into select options
         const options: SearchOption[] = agents.map(agent => ({
           value: agent.id,
-          label: `${agent.first_name} ${agent.last_name} - ${agent.email}`
+          label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+          status: agent.status
         }))
 
         setSearchResults(options)
@@ -123,8 +126,12 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const [errorFields, setErrorFields] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [selectedPreInviteUserId, setSelectedPreInviteUserId] = useState<string | null>(null)
+  const [nameSearchTerm, setNameSearchTerm] = useState("")
+  const [nameSearchResults, setNameSearchResults] = useState<SearchOption[]>([])
+  const [isNameSearching, setIsNameSearching] = useState(false)
 
-  // Use the custom agent search hook
+  // Use the custom agent search hook for upline selection
   const {
     searchTerm,
     setSearchTerm,
@@ -132,6 +139,67 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     isSearching,
     searchError
   } = useAgentSearch()
+
+  // Name search for pre-invite users
+  useEffect(() => {
+    if (nameSearchTerm.length < 2) {
+      setNameSearchResults([])
+      return
+    }
+
+    const debounceTimer = setTimeout(async () => {
+      try {
+        setIsNameSearching(true)
+        console.log('[ADD-USER-MODAL] Starting name search for:', nameSearchTerm)
+
+        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(nameSearchTerm)}&limit=10`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include'
+        })
+
+        console.log('[ADD-USER-MODAL] Response status:', response.status, response.statusText)
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null);
+          const errorMessage = errorData?.error || `Search failed`;
+          console.error('[ADD-USER-MODAL] Name search error:', errorMessage, errorData?.detail)
+          console.error('[ADD-USER-MODAL] Full error data:', errorData)
+          // Don't throw error, just set empty results
+          setNameSearchResults([])
+          return
+        }
+
+        const agents: AgentSearchResult[] = await response.json()
+        console.log('[ADD-USER-MODAL] Received', agents?.length || 0, 'agents')
+
+        // Handle empty results gracefully
+        if (!Array.isArray(agents)) {
+          console.warn('[ADD-USER-MODAL] Search API returned non-array result:', agents);
+          setNameSearchResults([]);
+          return;
+        }
+
+        const options: SearchOption[] = agents.map(agent => ({
+          value: agent.id,
+          label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+          status: agent.status
+        }))
+
+        console.log('[ADD-USER-MODAL] Mapped to', options.length, 'options')
+        setNameSearchResults(options)
+      } catch (error) {
+        console.error('[ADD-USER-MODAL] Name search exception:', error)
+        setNameSearchResults([])
+      } finally {
+        setIsNameSearching(false)
+      }
+    }, 400)
+
+    return () => clearTimeout(debounceTimer)
+  }, [nameSearchTerm])
 
   useEffect(() => {
       if(upline && isOpen) {
@@ -235,7 +303,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     try {
       setSubmitting(true)
 
-      // Call the API to invite the agent
+      // Call the API to invite the agent (will update pre-invite if selectedPreInviteUserId is set)
       const response = await fetch('/api/agents/invite', {
         method: 'POST',
         headers: {
@@ -247,7 +315,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           lastName: formData.lastName,
           phoneNumber: formData.phoneNumber,
           permissionLevel: formData.permissionLevel,
-          uplineAgentId: formData.uplineAgentId || null
+          uplineAgentId: formData.uplineAgentId || null,
+          preInviteUserId: selectedPreInviteUserId // Include pre-invite user ID if updating
         }),
         credentials: 'include'
       })
@@ -259,7 +328,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       }
 
       // Show success message
-      alert(`Invitation sent successfully to ${formData.email}!`)
+      const message = selectedPreInviteUserId
+        ? `User ${formData.firstName} ${formData.lastName} updated and invitation sent to ${formData.email}!`
+        : `Invitation sent successfully to ${formData.email}!`
+      alert(message)
 
       setIsOpen(false)
       // Reset form
@@ -274,6 +346,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setErrors([])
       setErrorFields({})
       setSearchTerm("") // Reset search term
+      setSelectedPreInviteUserId(null)
 
       // Optionally refresh the page to show new agent
       window.location.reload()
@@ -292,6 +365,56 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   // Handle upline agent selection
   const handleUplineAgentChange = (agentId: string) => {
     setFormData({ ...formData, uplineAgentId: agentId })
+  }
+
+  // Handle pre-invite user selection
+  const handlePreInviteUserSelect = async (userId: string, selectedOption: SearchOption) => {
+    try {
+      setLoading(true)
+
+      // Fetch full user details
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (error || !user) {
+        console.error('Error fetching user:', error)
+        setErrors(['Failed to load user data'])
+        return
+      }
+
+      // Pre-fill the form with user data
+      setFormData({
+        firstName: user.first_name || "",
+        lastName: user.last_name || "",
+        email: user.email || "",
+        phoneNumber: user.phone_number || "",
+        permissionLevel: user.perm_level || "",
+        uplineAgentId: user.upline_id || ""
+      })
+
+      setSelectedPreInviteUserId(userId)
+      setNameSearchTerm(selectedOption.label)
+      setNameSearchResults([])
+
+      // If there's an upline, set the search term for upline field
+      if (user.upline_id) {
+        const uplineOption = searchResults.find(r => r.value === user.upline_id)
+        if (uplineOption) {
+          setSearchTerm(uplineOption.label)
+        }
+      }
+    } catch (error) {
+      console.error('Error selecting pre-invite user:', error)
+      setErrors(['Failed to load user data'])
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -322,6 +445,100 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Name Search for Pre-invite Users */}
+          <div className="space-y-2 p-4 bg-accent/30 rounded-lg border border-border">
+            <label className="block text-sm font-medium text-foreground">
+              Search by Name (Optional)
+            </label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Search for an existing pre-invite user to update their information, or leave blank to create a new user.
+            </p>
+            <div className="relative">
+              <Input
+                type="text"
+                value={nameSearchTerm}
+                onChange={(e) => {
+                  setNameSearchTerm(e.target.value)
+                  // Clear selection if user changes search
+                  if (selectedPreInviteUserId) {
+                    setSelectedPreInviteUserId(null)
+                    setFormData({
+                      firstName: "",
+                      lastName: "",
+                      email: "",
+                      phoneNumber: "",
+                      permissionLevel: "",
+                      uplineAgentId: ""
+                    })
+                  }
+                }}
+                className="h-12"
+                placeholder="Type name to search..."
+              />
+              {isNameSearching && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                </div>
+              )}
+            </div>
+
+            {/* Name search results dropdown */}
+            {nameSearchTerm.length >= 2 && !isNameSearching && nameSearchResults.length > 0 && (
+              <div className="border border-border rounded-lg bg-card shadow-lg max-h-60 overflow-y-auto z-10">
+                {nameSearchResults.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className="w-full text-left px-4 py-3 hover:bg-accent/50 border-b border-border last:border-b-0 transition-colors"
+                    onClick={() => handlePreInviteUserSelect(option.value, option)}
+                  >
+                    <div className="text-sm font-medium text-foreground">
+                      {option.label}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* No results message */}
+            {nameSearchTerm.length >= 2 && !isNameSearching && nameSearchResults.length === 0 && (
+              <div className="border border-border rounded-lg bg-card shadow-lg p-4 z-10">
+                <p className="text-sm text-muted-foreground text-center">
+                  No agents found matching "{nameSearchTerm}"
+                </p>
+              </div>
+            )}
+
+            {/* Selected pre-invite user indicator */}
+            {selectedPreInviteUserId && (
+              <div className="mt-2 p-2 bg-blue-500/20 rounded border border-blue-500/30">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-blue-400">
+                    Updating existing user: {formData.firstName} {formData.lastName}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPreInviteUserId(null)
+                      setNameSearchTerm("")
+                      setFormData({
+                        firstName: "",
+                        lastName: "",
+                        email: "",
+                        phoneNumber: "",
+                        permissionLevel: "",
+                        uplineAgentId: ""
+                      })
+                    }}
+                    className="text-destructive hover:text-destructive/80 text-sm transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* First name */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-foreground">
@@ -331,11 +548,16 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               type="text"
               value={formData.firstName}
               onChange={(e) => handleInputChange("firstName", e.target.value)}
-              className={`h-12 ${errorFields.firstName ? 'border-red-500' : ''}`}
+              className={`h-12 ${errorFields.firstName ? 'border-red-500' : ''} ${selectedPreInviteUserId ? 'bg-gray-100 cursor-not-allowed' : ''}`}
               required
+              readOnly={!!selectedPreInviteUserId}
+              disabled={!!selectedPreInviteUserId}
             />
             {errorFields.firstName && (
               <p className="text-red-500 text-sm">{errorFields.firstName}</p>
+            )}
+            {selectedPreInviteUserId && (
+              <p className="text-xs text-muted-foreground">Name cannot be changed for existing users</p>
             )}
           </div>
 
@@ -348,9 +570,14 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               type="text"
               value={formData.lastName}
               onChange={(e) => handleInputChange("lastName", e.target.value)}
-              className="h-12"
+              className={`h-12 ${selectedPreInviteUserId ? 'bg-gray-100 cursor-not-allowed' : ''}`}
               required
+              readOnly={!!selectedPreInviteUserId}
+              disabled={!!selectedPreInviteUserId}
             />
+            {selectedPreInviteUserId && (
+              <p className="text-xs text-muted-foreground">Name cannot be changed for existing users</p>
+            )}
           </div>
 
           {/* Email */}

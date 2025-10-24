@@ -85,6 +85,49 @@
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background-color: hsl(var(--muted-foreground));
   }
+
+  /* Horizontal scroll support for tables */
+  .custom-scrollbar::-webkit-scrollbar:horizontal {
+    height: 8px;
+  }
+
+  /* Sticky column shadows for horizontal scroll */
+  table thead th.sticky {
+    position: sticky;
+    background-color: hsl(var(--card));
+    z-index: 10;
+  }
+
+  table tbody td.sticky {
+    position: sticky;
+    background-color: hsl(var(--card));
+    z-index: 10;
+  }
+
+  /* Add shadow to sticky columns when scrolling */
+  .overflow-x-auto:not(:hover) table thead th.sticky.left-0::after,
+  .overflow-x-auto:not(:hover) table tbody td.sticky.left-0::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: -4px;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(to right, rgba(0, 0, 0, 0.1), transparent);
+    pointer-events: none;
+  }
+
+  .overflow-x-auto:not(:hover) table thead th.sticky.right-0::before,
+  .overflow-x-auto:not(:hover) table tbody td.sticky.right-0::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -4px;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(to left, rgba(0, 0, 0, 0.1), transparent);
+    pointer-events: none;
+  }
 }
 
 /* Z-index fixes */

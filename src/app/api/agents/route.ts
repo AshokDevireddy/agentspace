@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
     const { data: currentUser, error: currentUserError } = await supabase
       .from('users')
-      .select('id, first_name, last_name, agency_id')
+      .select('id, first_name, last_name, agency_id, perm_level, role')
       .eq('auth_user_id', user.id)
       .single()
 
@@ -32,7 +32,10 @@ export async function GET(request: Request) {
       }, { status: 500 })
     }
 
-    console.log('Current user:', currentUser.id, 'Agency:', currentUser.agency_id)
+    console.log('Current user:', currentUser.id, 'Agency:', currentUser.agency_id, 'Is Admin:', currentUser.perm_level === 'admin' || currentUser.role === 'admin')
+
+    // Check if user is admin
+    const isAdmin = currentUser.perm_level === 'admin' || currentUser.role === 'admin'
 
     // Fetch all users to build the hierarchy
     const { data: allUsers, error: allUsersError } = await supabase
@@ -172,9 +175,17 @@ export async function GET(request: Request) {
       return downline
     }
 
-    const downlineUsers = [currentUserNode, ...getDownline(currentUserNode)]
+    // For admins in table view, show all agency agents. For tree view or non-admins, show downline only
+    let visibleUsers: UserNode[]
+    if (isAdmin && view === 'table') {
+      // Admin sees all users in agency (including pre-invite status)
+      visibleUsers = Array.from(usersById.values())
+    } else {
+      // Non-admin or tree view: show only downline
+      visibleUsers = [currentUserNode, ...getDownline(currentUserNode)]
+    }
 
-    const uplineIds = downlineUsers
+    const uplineIds = visibleUsers
       .map(user => user.upline_id)
       .filter(id => id !== null && id !== undefined)
 
@@ -279,8 +290,8 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '20')
     const offset = (page - 1) * limit
 
-    const paginatedAgents = downlineUsers.slice(offset, offset + limit).map(transformUserToAgent)
-    const totalCount = downlineUsers.length
+    const paginatedAgents = visibleUsers.slice(offset, offset + limit).map(transformUserToAgent)
+    const totalCount = visibleUsers.length
     const totalPages = Math.ceil(totalCount / limit)
 
     return NextResponse.json({

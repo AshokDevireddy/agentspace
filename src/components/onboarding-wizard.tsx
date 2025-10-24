@@ -31,6 +31,7 @@ interface InvitedAgent {
   phoneNumber: string
   permissionLevel: string
   uplineAgentId: string | null
+  preInviteUserId?: string | null
 }
 
 interface AgentSearchResult {
@@ -38,11 +39,13 @@ interface AgentSearchResult {
   first_name: string
   last_name: string
   email: string
+  status?: string
 }
 
 interface SearchOption {
   value: string
   label: string
+  status?: string
 }
 
 const carriers = [
@@ -90,6 +93,12 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   const [agentSearchResults, setAgentSearchResults] = useState<SearchOption[]>([])
   const [isSearching, setIsSearching] = useState(false)
 
+  // Pre-invite user search state
+  const [nameSearchTerm, setNameSearchTerm] = useState("")
+  const [nameSearchResults, setNameSearchResults] = useState<SearchOption[]>([])
+  const [isNameSearching, setIsNameSearching] = useState(false)
+  const [selectedPreInviteUserId, setSelectedPreInviteUserId] = useState<string | null>(null)
+
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [currentStep, setCurrentStep] = useState(userData.is_admin ? 1 : 2) // Admins start at 1 (policy reports), agents start at 2 (team)
@@ -101,7 +110,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     }
   }, [errors])
 
-  // Agent search debounce
+  // Agent search debounce (for upline selection)
   useEffect(() => {
     if (agentSearchTerm.length < 2) {
       setAgentSearchResults([])
@@ -136,6 +145,65 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
     return () => clearTimeout(debounceTimer)
   }, [agentSearchTerm])
+
+  // Name search for pre-invite users
+  useEffect(() => {
+    if (nameSearchTerm.length < 2) {
+      setNameSearchResults([])
+      return
+    }
+
+    const debounceTimer = setTimeout(async () => {
+      try {
+        setIsNameSearching(true)
+        console.log('[ONBOARDING] Starting name search for:', nameSearchTerm)
+
+        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(nameSearchTerm)}&limit=10`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include'
+        })
+
+        console.log('[ONBOARDING] Response status:', response.status, response.statusText)
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null);
+          const errorMessage = errorData?.error || `Search failed`;
+          console.error('[ONBOARDING] Name search error:', errorMessage, errorData?.detail)
+          console.error('[ONBOARDING] Full error data:', errorData)
+          setNameSearchResults([])
+          return
+        }
+
+        const agents: AgentSearchResult[] = await response.json()
+        console.log('[ONBOARDING] Received', agents?.length || 0, 'agents')
+
+        if (!Array.isArray(agents)) {
+          console.warn('[ONBOARDING] Search API returned non-array result:', agents);
+          setNameSearchResults([]);
+          return;
+        }
+
+        const options: SearchOption[] = agents.map(agent => ({
+          value: agent.id,
+          label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+          status: agent.status
+        }))
+
+        console.log('[ONBOARDING] Mapped to', options.length, 'options')
+        setNameSearchResults(options)
+      } catch (error) {
+        console.error('[ONBOARDING] Name search exception:', error)
+        setNameSearchResults([])
+      } finally {
+        setIsNameSearching(false)
+      }
+    }, 400)
+
+    return () => clearTimeout(debounceTimer)
+  }, [nameSearchTerm])
 
   // Check for existing uploaded files when user is admin
   useEffect(() => {
@@ -220,7 +288,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       email: currentAgentForm.email,
       phoneNumber: currentAgentForm.phoneNumber,
       permissionLevel: currentAgentForm.permissionLevel,
-      uplineAgentId: currentAgentForm.uplineAgentId || null
+      uplineAgentId: currentAgentForm.uplineAgentId || null,
+      preInviteUserId: selectedPreInviteUserId
     }
 
     setInvitedAgents([...invitedAgents, newAgent])
@@ -235,12 +304,59 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       uplineAgentId: ""
     })
     setAgentSearchTerm("")
+    setNameSearchTerm("")
+    setSelectedPreInviteUserId(null)
     setShowAgentForm(false)
     setErrors([])
   }
 
   const handleRemoveAgent = (index: number) => {
     setInvitedAgents(invitedAgents.filter((_, i) => i !== index))
+  }
+
+  const handlePreInviteUserSelect = async (userId: string, selectedOption: SearchOption) => {
+    try {
+      console.log('[ONBOARDING] Selecting pre-invite user:', userId)
+
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (error || !user) {
+        console.error('[ONBOARDING] Error fetching user:', error)
+        setErrors(['Failed to load user data'])
+        return
+      }
+
+      console.log('[ONBOARDING] User data loaded:', user)
+
+      // Pre-fill the form with user data
+      setCurrentAgentForm({
+        firstName: user.first_name || "",
+        lastName: user.last_name || "",
+        email: user.email || "",
+        phoneNumber: user.phone_number || "",
+        permissionLevel: user.perm_level || "",
+        uplineAgentId: user.upline_id || ""
+      })
+
+      setSelectedPreInviteUserId(userId)
+      setNameSearchTerm(selectedOption.label)
+      setNameSearchResults([])
+
+      // If there's an upline, set the search term for upline field
+      if (user.upline_id) {
+        const uplineOption = agentSearchResults.find(r => r.value === user.upline_id)
+        if (uplineOption) {
+          setAgentSearchTerm(uplineOption.label)
+        }
+      }
+    } catch (error) {
+      console.error('[ONBOARDING] Error selecting pre-invite user:', error)
+      setErrors(['Failed to load user data'])
+    }
   }
 
   const uploadPolicyReports = async () => {
@@ -311,7 +427,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
             lastName: agent.lastName,
             phoneNumber: agent.phoneNumber,
             permissionLevel: agent.permissionLevel,
-            uplineAgentId: agent.uplineAgentId || currentUserId
+            uplineAgentId: agent.uplineAgentId || currentUserId,
+            preInviteUserId: agent.preInviteUserId // Include pre-invite user ID if updating
           }),
           credentials: 'include'
         })
@@ -319,7 +436,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         const data = await response.json()
 
         if (response.ok) {
-          results.push(`✓ ${agent.firstName} ${agent.lastName}`)
+          const action = agent.preInviteUserId ? 'updated' : 'invited'
+          results.push(`✓ ${agent.firstName} ${agent.lastName} (${action})`)
         } else {
           errors.push(`✗ ${agent.firstName} ${agent.lastName}: ${data.error}`)
         }
@@ -331,8 +449,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     return {
       success: errors.length === 0,
       message: errors.length === 0
-        ? `Successfully invited ${results.length} agent(s)!`
-        : `Invited ${results.length} agent(s), ${errors.length} failed: ${errors.join(', ')}`
+        ? `Successfully processed ${results.length} agent(s)!`
+        : `Processed ${results.length} agent(s), ${errors.length} failed: ${errors.join(', ')}`
     }
   }
 
@@ -559,6 +677,9 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                       <div>
                         <p className="font-medium text-foreground">
                           {agent.firstName} {agent.lastName}
+                          {agent.preInviteUserId && (
+                            <span className="ml-2 text-xs text-blue-500 font-normal">(Updating existing)</span>
+                          )}
                         </p>
                         <p className="text-sm text-muted-foreground">{agent.email}</p>
                         <p className="text-xs text-muted-foreground">
@@ -605,11 +726,107 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                           permissionLevel: "",
                           uplineAgentId: ""
                         })
+                        setNameSearchTerm("")
+                        setSelectedPreInviteUserId(null)
                         setErrors([])
                       }}
                     >
                       <X className="h-4 w-4" />
                     </Button>
+                  </div>
+
+                  {/* Name Search for Pre-invite Users */}
+                  <div className="space-y-2 p-3 bg-accent/20 rounded-lg border border-border">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Search by Name (Optional)
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Search for an existing pre-invite user to update their information, or leave blank to create a new user.
+                    </p>
+                    <div className="relative">
+                      <Input
+                        type="text"
+                        value={nameSearchTerm}
+                        onChange={(e) => {
+                          setNameSearchTerm(e.target.value)
+                          // Clear selection if user changes search
+                          if (selectedPreInviteUserId) {
+                            setSelectedPreInviteUserId(null)
+                            setCurrentAgentForm({
+                              firstName: "",
+                              lastName: "",
+                              email: "",
+                              phoneNumber: "",
+                              permissionLevel: "",
+                              uplineAgentId: ""
+                            })
+                          }
+                        }}
+                        className="h-10"
+                        placeholder="Type name to search..."
+                      />
+                      {isNameSearching && (
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Name search results dropdown */}
+                    {nameSearchTerm.length >= 2 && !isNameSearching && nameSearchResults.length > 0 && (
+                      <div className="border border-border rounded-lg bg-card shadow-lg max-h-40 overflow-y-auto z-10">
+                        {nameSearchResults.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className="w-full text-left px-3 py-2 hover:bg-accent/50 border-b border-border last:border-b-0 text-sm transition-colors"
+                            onClick={() => handlePreInviteUserSelect(option.value, option)}
+                          >
+                            <div className="text-sm font-medium text-foreground">
+                              {option.label}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* No results message */}
+                    {nameSearchTerm.length >= 2 && !isNameSearching && nameSearchResults.length === 0 && (
+                      <div className="border border-border rounded-lg bg-card shadow-lg p-3 z-10">
+                        <p className="text-sm text-muted-foreground text-center">
+                          No agents found matching "{nameSearchTerm}"
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Selected pre-invite user indicator */}
+                    {selectedPreInviteUserId && (
+                      <div className="mt-2 p-2 bg-blue-500/20 rounded border border-blue-500/30">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-blue-400">
+                            Updating existing user: {currentAgentForm.firstName} {currentAgentForm.lastName}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedPreInviteUserId(null)
+                              setNameSearchTerm("")
+                              setCurrentAgentForm({
+                                firstName: "",
+                                lastName: "",
+                                email: "",
+                                phoneNumber: "",
+                                permissionLevel: "",
+                                uplineAgentId: ""
+                              })
+                            }}
+                            className="text-destructive hover:text-destructive/80 text-xs"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -621,8 +838,13 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                         type="text"
                         value={currentAgentForm.firstName}
                         onChange={(e) => setCurrentAgentForm({ ...currentAgentForm, firstName: e.target.value })}
-                        className="h-10"
+                        className={`h-10 ${selectedPreInviteUserId ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        readOnly={!!selectedPreInviteUserId}
+                        disabled={!!selectedPreInviteUserId}
                       />
+                      {selectedPreInviteUserId && (
+                        <p className="text-xs text-muted-foreground">Name cannot be changed for existing users</p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -633,8 +855,13 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                         type="text"
                         value={currentAgentForm.lastName}
                         onChange={(e) => setCurrentAgentForm({ ...currentAgentForm, lastName: e.target.value })}
-                        className="h-10"
+                        className={`h-10 ${selectedPreInviteUserId ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        readOnly={!!selectedPreInviteUserId}
+                        disabled={!!selectedPreInviteUserId}
                       />
+                      {selectedPreInviteUserId && (
+                        <p className="text-xs text-muted-foreground">Name cannot be changed for existing users</p>
+                      )}
                     </div>
                   </div>
 

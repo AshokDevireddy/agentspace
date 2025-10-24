@@ -70,6 +70,18 @@ export async function GET(request: NextRequest) {
       throw messagesError;
     }
 
+    // Mark all unread inbound messages as read
+    const unreadMessageIds = messages
+      ?.filter((msg: any) => msg.direction === 'inbound' && !msg.read_at)
+      .map((msg: any) => msg.id) || [];
+
+    if (unreadMessageIds.length > 0) {
+      await supabase
+        .from('messages')
+        .update({ read_at: new Date().toISOString() })
+        .in('id', unreadMessageIds);
+    }
+
     return NextResponse.json({
       messages: messages || [],
     });

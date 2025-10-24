@@ -37,6 +37,7 @@ export default function Navigation() {
   const pathname = usePathname()
   const [isAdmin, setIsAdmin] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
 
   // Check if user is admin by querying the database
   useEffect(() => {
@@ -67,6 +68,42 @@ export default function Navigation() {
     }
 
     checkAdminStatus()
+  }, [user])
+
+  // Fetch unread message count
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      if (!user?.id) {
+        setUnreadCount(0)
+        return
+      }
+
+      try {
+        const response = await fetch('/api/sms/conversations', {
+          credentials: 'include'
+        })
+
+        if (!response.ok) {
+          setUnreadCount(0)
+          return
+        }
+
+        const data = await response.json()
+        const conversations = data.conversations || []
+        const total = conversations.reduce((sum: number, conv: any) => sum + (conv.unreadCount || 0), 0)
+        setUnreadCount(total)
+      } catch (error) {
+        console.error('Error fetching unread count:', error)
+        setUnreadCount(0)
+      }
+    }
+
+    fetchUnreadCount()
+
+    // Poll for updates every 30 seconds
+    const interval = setInterval(fetchUnreadCount, 30000)
+
+    return () => clearInterval(interval)
   }, [user])
 
   // Handle user logout
@@ -108,7 +145,7 @@ export default function Navigation() {
       {/* Navigation Items */}
       <nav className="flex-1 p-4 space-y-2">
         {navigationItems.map((item) => (
-          <div key={item.name}>
+          <div key={item.name} className="relative">
             <Link
               href={item.href}
               className={cn(
@@ -119,6 +156,11 @@ export default function Navigation() {
             >
               {item.icon && <item.icon className="h-5 w-5 flex-shrink-0" />}
               {!isSidebarCollapsed && <span className="flex-1 text-left">{item.name}</span>}
+              {item.name === "AI Communication" && unreadCount > 0 && (
+                <span className="ml-auto bg-blue-600 text-white text-xs font-bold rounded-full h-5 min-w-[20px] px-1.5 flex items-center justify-center">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
             </Link>
           </div>
         ))}

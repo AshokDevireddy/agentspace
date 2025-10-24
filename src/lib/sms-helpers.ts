@@ -117,6 +117,8 @@ export async function logMessage(params: {
 }): Promise<MessageResult> {
   const supabase = createAdminClient();
 
+  const now = new Date().toISOString();
+
   const { data, error } = await supabase
     .from('messages')
     .insert({
@@ -128,6 +130,8 @@ export async function logMessage(params: {
       message_type: 'sms',
       status: params.status || 'delivered',
       metadata: params.metadata || {},
+      // Automatically mark outbound messages as read (agent already knows what they sent)
+      read_at: params.direction === 'outbound' ? now : null,
     })
     .select()
     .single();
@@ -139,7 +143,7 @@ export async function logMessage(params: {
   // Update last_message_at in conversation
   await supabase
     .from('conversations')
-    .update({ last_message_at: new Date().toISOString() })
+    .update({ last_message_at: now })
     .eq('id', params.conversationId);
 
   return data as MessageResult;

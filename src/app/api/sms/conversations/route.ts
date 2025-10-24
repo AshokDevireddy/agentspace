@@ -49,7 +49,8 @@ export async function GET(request: NextRequest) {
           body,
           direction,
           sent_at,
-          status
+          status,
+          read_at
         )
       `)
       .eq('agent_id', userData.id)
@@ -70,6 +71,11 @@ export async function GET(request: NextRequest) {
           )[0]
         : null;
 
+      // Count unread messages (inbound messages with no read_at timestamp)
+      const unreadCount = messages.filter((msg: any) =>
+        msg.direction === 'inbound' && !msg.read_at
+      ).length;
+
       return {
         id: conv.id,
         dealId: conv.deal_id,
@@ -77,7 +83,7 @@ export async function GET(request: NextRequest) {
         clientPhone: conv.deal?.client_phone || '',
         lastMessage: lastMessage?.body || '',
         lastMessageAt: conv.last_message_at,
-        unreadCount: 0, // TODO: Implement unread tracking
+        unreadCount: unreadCount,
       };
     });
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -11,7 +11,8 @@ import {
   CheckCheck,
   Loader2,
   MessageSquare,
-  RefreshCw
+  RefreshCw,
+  GripVertical
 } from "lucide-react"
 
 interface Conversation {
@@ -36,15 +37,52 @@ interface Message {
   metadata: any
 }
 
+interface DealDetails {
+  id: string
+  client_name: string
+  client_phone: string | null
+  client_email: string | null
+  client_address: string | null
+  state: string | null
+  zipcode: string | null
+  policy_number: string | null
+  annual_premium: number
+  monthly_premium: number
+  policy_effective_date: string | null
+  billing_cycle: string | null
+  lead_source: string | null
+  status: string
+  agent: {
+    id: string
+    first_name: string
+    last_name: string
+    email: string
+  }
+  carrier: {
+    id: string
+    name: string
+  }
+  product: {
+    id: string
+    name: string
+  } | null
+}
+
 export default function SMSMessagingPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [dealDetails, setDealDetails] = useState<DealDetails | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [messageInput, setMessageInput] = useState("")
   const [loading, setLoading] = useState(true)
   const [messagesLoading, setMessagesLoading] = useState(false)
+  const [dealLoading, setDealLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(320)
+  const [rightPanelWidth, setRightPanelWidth] = useState(420)
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false)
+  const [isResizingRightPanel, setIsResizingRightPanel] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const filteredConversations = conversations.filter(conv =>
@@ -52,9 +90,56 @@ export default function SMSMessagingPage() {
     conv.clientPhone.includes(searchQuery)
   )
 
+  const totalUnreadCount = conversations.reduce((sum, conv) => sum + conv.unreadCount, 0)
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
+
+  // Resize handlers
+  const handleMouseDownSidebar = useCallback(() => {
+    setIsResizingSidebar(true)
+  }, [])
+
+  const handleMouseDownRightPanel = useCallback(() => {
+    setIsResizingRightPanel(true)
+  }, [])
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (isResizingSidebar) {
+      const newWidth = e.clientX
+      if (newWidth >= 250 && newWidth <= 500) {
+        setSidebarWidth(newWidth)
+      }
+    }
+    if (isResizingRightPanel) {
+      const newWidth = window.innerWidth - e.clientX
+      if (newWidth >= 350 && newWidth <= 600) {
+        setRightPanelWidth(newWidth)
+      }
+    }
+  }, [isResizingSidebar, isResizingRightPanel])
+
+  const handleMouseUp = useCallback(() => {
+    setIsResizingSidebar(false)
+    setIsResizingRightPanel(false)
+  }, [])
+
+  useEffect(() => {
+    if (isResizingSidebar || isResizingRightPanel) {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove)
+        document.removeEventListener('mouseup', handleMouseUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+    }
+  }, [isResizingSidebar, isResizingRightPanel, handleMouseMove, handleMouseUp])
 
   useEffect(() => {
     scrollToBottom()
@@ -107,9 +192,33 @@ export default function SMSMessagingPage() {
     }
   }
 
-  const handleConversationSelect = (conversation: Conversation) => {
+  const fetchDealDetails = async (dealId: string) => {
+    try {
+      setDealLoading(true)
+      const response = await fetch(`/api/deals/${dealId}`, {
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch deal details')
+      }
+
+      const data = await response.json()
+      setDealDetails(data.deal || null)
+    } catch (error) {
+      console.error('Error fetching deal details:', error)
+      setDealDetails(null)
+    } finally {
+      setDealLoading(false)
+    }
+  }
+
+  const handleConversationSelect = async (conversation: Conversation) => {
     setSelectedConversation(conversation)
-    fetchMessages(conversation.id)
+    await fetchMessages(conversation.id)
+    fetchDealDetails(conversation.dealId)
+    // Refresh conversations to update unread counts after messages are marked as read
+    fetchConversations()
   }
 
   const handleSendMessage = async () => {
@@ -138,11 +247,11 @@ export default function SMSMessagingPage() {
       // Clear input
       setMessageInput("")
 
-      // Refresh messages
-      await fetchMessages(selectedConversation.id)
-
-      // Refresh conversations to update last message
-      await fetchConversations()
+      // Refresh messages and conversations to update UI
+      await Promise.all([
+        fetchMessages(selectedConversation.id),
+        fetchConversations()
+      ])
     } catch (error) {
       console.error('Error sending message:', error)
       alert(error instanceof Error ? error.message : 'Failed to send message')
@@ -180,10 +289,36 @@ export default function SMSMessagingPage() {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
+  const calculateNextBillingDate = (effectiveDate: string | null, billingCycle: string | null): string => {
+    if (!effectiveDate || !billingCycle) return 'N/A'
+
+    const effective = new Date(effectiveDate)
+    const today = new Date()
+    let nextBilling = new Date(effective)
+
+    // Calculate the increment based on billing cycle
+    const incrementMonths = {
+      'monthly': 1,
+      'quarterly': 3,
+      'semi-annually': 6,
+      'annually': 12
+    }[billingCycle] || 1
+
+    // Keep adding the billing period until we get a future date
+    while (nextBilling <= today) {
+      nextBilling.setMonth(nextBilling.getMonth() + incrementMonths)
+    }
+
+    return nextBilling.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+
   return (
-    <div className="h-[calc(100vh-3rem)] flex bg-background">
+    <div className="h-[calc(100vh-3rem)] flex bg-background relative">
       {/* Conversations Sidebar */}
-      <div className="w-80 bg-card border-r border-border flex flex-col">
+      <div
+        className="bg-card border-r border-border flex flex-col"
+        style={{ width: `${sidebarWidth}px`, minWidth: '250px', maxWidth: '500px' }}
+      >
         {/* Header */}
         <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-4">
@@ -228,23 +363,34 @@ export default function SMSMessagingPage() {
                 key={conversation.id}
                 onClick={() => handleConversationSelect(conversation)}
                 className={cn(
-                  "p-4 border-b border-border cursor-pointer hover:bg-accent/50 transition-colors",
+                  "p-4 border-b border-border cursor-pointer hover:bg-accent/50 transition-colors relative",
                   selectedConversation?.id === conversation.id && "bg-accent"
                 )}
               >
                 <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center flex-shrink-0">
+                  <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center flex-shrink-0 relative">
                     <UserCircle className="h-8 w-8 text-primary" />
+                    {conversation.unreadCount > 0 && (
+                      <div className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                        {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-medium text-foreground truncate">{conversation.clientName}</h3>
+                      <h3 className={cn(
+                        "font-medium truncate",
+                        conversation.unreadCount > 0 ? "text-foreground font-semibold" : "text-foreground"
+                      )}>{conversation.clientName}</h3>
                       <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
                         {formatTimestamp(conversation.lastMessageAt)}
                       </span>
                     </div>
-                    <p className="text-sm text-muted-foreground truncate mt-1">
+                    <p className={cn(
+                      "text-sm truncate mt-1",
+                      conversation.unreadCount > 0 ? "text-foreground font-medium" : "text-muted-foreground"
+                    )}>
                       {conversation.lastMessage || 'No messages yet'}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">{conversation.clientPhone}</p>
@@ -256,8 +402,18 @@ export default function SMSMessagingPage() {
         </div>
       </div>
 
+      {/* Resize Handle for Sidebar */}
+      <div
+        className="w-1 bg-border hover:bg-primary/50 cursor-col-resize transition-colors flex-shrink-0 group relative"
+        onMouseDown={handleMouseDownSidebar}
+      >
+        <div className="absolute inset-y-0 -left-1 -right-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </div>
+      </div>
+
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {selectedConversation ? (
           <>
             {/* Chat Header */}
@@ -379,6 +535,140 @@ export default function SMSMessagingPage() {
           </div>
         )}
       </div>
+
+      {/* Resize Handle for Right Panel */}
+      {selectedConversation && (
+        <div
+          className="w-1 bg-border hover:bg-primary/50 cursor-col-resize transition-colors flex-shrink-0 group relative"
+          onMouseDown={handleMouseDownRightPanel}
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </div>
+        </div>
+      )}
+
+      {/* Deal Details Panel */}
+      {selectedConversation && (
+        <div
+          className="bg-card border-l border-border flex flex-col overflow-y-auto custom-scrollbar"
+          style={{ width: `${rightPanelWidth}px`, minWidth: '350px', maxWidth: '600px' }}
+        >
+          <div className="p-5 border-b border-border sticky top-0 bg-card z-10">
+            <h2 className="text-xl font-semibold text-foreground">Deal Information</h2>
+          </div>
+
+          {dealLoading ? (
+            <div className="flex items-center justify-center p-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : dealDetails ? (
+            <div className="p-5 space-y-7">
+              {/* Client Information */}
+              <div>
+                <h3 className="text-base font-bold text-foreground mb-4 flex items-center pb-2 border-b border-border">
+                  <UserCircle className="h-5 w-5 mr-2 text-primary" />
+                  Client Information
+                </h3>
+                <div className="space-y-3">
+                  <DetailRow label="Name" value={dealDetails.client_name} />
+                  <DetailRow label="Phone" value={dealDetails.client_phone} />
+                  <DetailRow label="Email" value={dealDetails.client_email} />
+                  <DetailRow label="Address" value={dealDetails.client_address} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <DetailRow label="State" value={dealDetails.state} />
+                    <DetailRow label="Zip" value={dealDetails.zipcode} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Policy Information */}
+              <div>
+                <h3 className="text-base font-bold text-foreground mb-4 pb-2 border-b border-border">Policy Details</h3>
+                <div className="space-y-3">
+                  <DetailRow label="Policy Number" value={dealDetails.policy_number} />
+                  <DetailRow
+                    label="Annual Premium"
+                    value={`$${dealDetails.annual_premium.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  />
+                  <DetailRow
+                    label="Monthly Premium"
+                    value={`$${dealDetails.monthly_premium.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  />
+                  <DetailRow
+                    label="Effective Date"
+                    value={dealDetails.policy_effective_date ? new Date(dealDetails.policy_effective_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                  />
+                  <DetailRow
+                    label="Next Billing Date"
+                    value={calculateNextBillingDate(dealDetails.policy_effective_date, dealDetails.billing_cycle)}
+                    highlight
+                  />
+                  <DetailRow
+                    label="Billing Cycle"
+                    value={dealDetails.billing_cycle ? dealDetails.billing_cycle.charAt(0).toUpperCase() + dealDetails.billing_cycle.slice(1) : 'N/A'}
+                  />
+                  <DetailRow
+                    label="Status"
+                    value={dealDetails.status.charAt(0).toUpperCase() + dealDetails.status.slice(1)}
+                  />
+                </div>
+              </div>
+
+              {/* Provider Information */}
+              <div>
+                <h3 className="text-base font-bold text-foreground mb-4 pb-2 border-b border-border">Provider Information</h3>
+                <div className="space-y-3">
+                  <DetailRow
+                    label="Agent"
+                    value={`${dealDetails.agent.first_name} ${dealDetails.agent.last_name}`}
+                  />
+                  <DetailRow label="Carrier" value={dealDetails.carrier.name} />
+                  <DetailRow label="Product" value={dealDetails.product?.name || 'N/A'} />
+                </div>
+              </div>
+
+              {/* Additional Information */}
+              <div>
+                <h3 className="text-base font-bold text-foreground mb-4 pb-2 border-b border-border">Additional Details</h3>
+                <div className="space-y-3">
+                  <DetailRow label="Lead Source" value={dealDetails.lead_source} />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-8 text-center">
+              <p className="text-sm text-muted-foreground">Unable to load deal information</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Helper component for displaying detail rows
+function DetailRow({
+  label,
+  value,
+  highlight = false,
+  className = ""
+}: {
+  label: string
+  value: string | null | undefined
+  highlight?: boolean
+  className?: string
+}) {
+  return (
+    <div className={cn("flex flex-col py-2 px-3 rounded-lg bg-accent/30", className)}>
+      <span className="text-xs font-medium text-muted-foreground mb-1">{label}</span>
+      <span className={cn(
+        "text-sm font-semibold",
+        highlight ? "text-primary text-base" : "text-foreground",
+        !value && "text-muted-foreground italic font-normal"
+      )}>
+        {value || 'N/A'}
+      </span>
     </div>
   )
 }

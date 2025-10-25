@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -69,6 +70,9 @@ interface DealDetails {
 }
 
 export default function SMSMessagingPage() {
+  const searchParams = useSearchParams()
+  const conversationIdFromUrl = searchParams.get('conversation')
+
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -151,6 +155,16 @@ export default function SMSMessagingPage() {
     const interval = setInterval(fetchConversations, 10000)
     return () => clearInterval(interval)
   }, [])
+
+  // Auto-select conversation from URL parameter
+  useEffect(() => {
+    if (conversationIdFromUrl && conversations.length > 0 && !selectedConversation) {
+      const conversation = conversations.find(c => c.id === conversationIdFromUrl)
+      if (conversation) {
+        handleConversationSelect(conversation)
+      }
+    }
+  }, [conversationIdFromUrl, conversations, selectedConversation])
 
   const fetchConversations = async () => {
     try {

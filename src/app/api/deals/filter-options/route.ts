@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
     const { data: currentUser, error: currentUserError } = await admin
       .from('users')
-      .select('id')
+      .select('id, agency_id')
       .eq('auth_user_id', session.user.id)
       .single();
 
@@ -91,13 +91,31 @@ export async function GET(req: NextRequest) {
       })) || [])
     ];
 
+    // Fetch unique status values from deals for this agency
+    const { data: statusData, error: statusError } = await admin
+      .from('deals')
+      .select('status')
+      .eq('agency_id', currentUser.agency_id)
+      .not('status', 'is', null);
+
+    if (statusError) {
+      console.error('Error fetching statuses:', statusError);
+    }
+
+    // Get unique statuses
+    const visibleStatuses = [...new Set((statusData || [])
+      .map(d => d.status)
+      .filter(status => status))]
+      .sort();
+
+    console.log('Found statuses for agency:', visibleStatuses);
+
     const statusOptions = [
       { value: "all", label: "Select a Status" },
-      { value: "draft", label: "Draft" },
-      { value: "pending", label: "Pending Approval" },
-      { value: "verified", label: "Verified" },
-      { value: "active", label: "Active" },
-      { value: "terminated", label: "Terminated" }
+      ...(visibleStatuses?.map(status => ({
+        value: status,
+        label: status.charAt(0).toUpperCase() + status.slice(1)
+      })) || [])
     ];
 
     const leadSourceOptions = [

@@ -1,13 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { Loader2 } from "lucide-react"
+import { PolicyDetailsModal } from "@/components/modals/policy-details-modal"
 
 // Types for the API responses
 interface Deal {
@@ -46,23 +46,39 @@ interface FilterOptions {
   hasAlertOptions: FilterOption[]
 }
 
-const statusColors = {
-  "Draft": "bg-gray-500/20 text-foreground border-gray-500/30",
-  "Pending Approval": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-  "Verified": "bg-green-500/20 text-green-400 border-green-500/30",
-  "Active": "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  "Terminated": "bg-red-500/20 text-red-400 border-red-500/30"
+// Dynamic color generator for status values - MORE VIBRANT
+const getStatusColor = (status: string) => {
+  const statusLower = status.toLowerCase();
+  if (statusLower.includes('draft')) return "bg-gray-600 text-white border-gray-700";
+  if (statusLower.includes('pending') || statusLower.includes('force')) return "bg-yellow-500 text-gray-900 border-yellow-600 font-semibold";
+  if (statusLower.includes('verified') || statusLower.includes('approve')) return "bg-green-600 text-white border-green-700";
+  if (statusLower.includes('active') || statusLower.includes('issued')) return "bg-blue-600 text-white border-blue-700";
+  if (statusLower.includes('terminated') || statusLower.includes('lapsed') || statusLower.includes('cancel')) return "bg-red-600 text-white border-red-700";
+  if (statusLower.includes('submit')) return "bg-purple-600 text-white border-purple-700";
+  if (statusLower.includes('paid')) return "bg-emerald-600 text-white border-emerald-700";
+  if (statusLower.includes('decline') || statusLower.includes('closed')) return "bg-slate-600 text-white border-slate-700";
+  return "bg-slate-500 text-white border-slate-600";
 }
 
-const leadSourceColors = {
-  "Referral": "bg-green-500/20 text-green-400 border-green-500/30",
-  "Provided": "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  "Purchased": "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  "No Lead": "bg-gray-500/20 text-foreground border-gray-500/30"
+const leadSourceColors: Record<string, string> = {
+  "referral": "bg-emerald-600 text-white border-emerald-700",
+  "provided": "bg-blue-600 text-white border-blue-700",
+  "purchased": "bg-purple-600 text-white border-purple-700",
+  "no_lead": "bg-gray-600 text-white border-gray-700",
+  "cold call": "bg-cyan-600 text-white border-cyan-700",
+  "walk-in": "bg-orange-600 text-white border-orange-700",
+  "facebook": "bg-indigo-600 text-white border-indigo-700",
+  "online lead": "bg-pink-600 text-white border-pink-700",
+}
+
+const billingCycleColors: Record<string, string> = {
+  "monthly": "bg-blue-600 text-white border-blue-700",
+  "quarterly": "bg-green-600 text-white border-green-700",
+  "semi-annually": "bg-orange-600 text-white border-orange-700",
+  "annually": "bg-purple-600 text-white border-purple-700",
 }
 
 export default function BookOfBusiness() {
-  const router = useRouter()
   const [selectedAgent, setSelectedAgent] = useState("all")
   const [selectedCarrier, setSelectedCarrier] = useState("all")
   const [policyNumberSearch, setPolicyNumberSearch] = useState("")
@@ -70,6 +86,10 @@ export default function BookOfBusiness() {
   const [selectedLeadSource, setSelectedLeadSource] = useState("all")
   const [clientSearch, setClientSearch] = useState("")
   const [selectedHasAlert, setSelectedHasAlert] = useState("all")
+
+  // Modal state
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
 
   // State for API data
   const [deals, setDeals] = useState<Deal[]>([])
@@ -79,14 +99,7 @@ export default function BookOfBusiness() {
     agents: [{ value: "all", label: "Select an Agent" }],
     carriers: [{ value: "all", label: "Select a Carrier" }],
     policyNumbers: [],
-    statuses: [
-      { value: "all", label: "Select a Status" },
-      { value: "draft", label: "Draft" },
-      { value: "pending", label: "Pending Approval" },
-      { value: "verified", label: "Verified" },
-      { value: "active", label: "Active" },
-      { value: "terminated", label: "Terminated" }
-    ],
+    statuses: [{ value: "all", label: "Select a Status" }],
     leadSources: [{ value: "all", label: "All Lead Sources" }],
     hasAlertOptions: [
       { value: "all", label: "All" },
@@ -195,7 +208,28 @@ export default function BookOfBusiness() {
   }, [selectedAgent, selectedCarrier, policyNumberSearch, selectedStatus, selectedLeadSource, clientSearch])
 
   const handleRowClick = (deal: Deal) => {
-    router.push(`/policies/${deal.carrier}/${deal.policyNumber}`)
+    setSelectedDealId(deal.id)
+    setModalOpen(true)
+  }
+
+  const handleModalClose = () => {
+    setModalOpen(false)
+    setSelectedDealId(null)
+  }
+
+  const handlePolicyUpdate = () => {
+    // Refresh the deals list after update
+    fetchDeals(true)
+  }
+
+  const getLeadSourceColor = (leadSource: string) => {
+    const normalized = leadSource.toLowerCase().trim();
+    return leadSourceColors[normalized] || "bg-slate-500 text-white border-slate-600";
+  }
+
+  const getBillingCycleColor = (cycle: string) => {
+    const normalized = cycle.toLowerCase().trim();
+    return billingCycleColors[normalized] || "bg-slate-500 text-white border-slate-600";
   }
 
   return (
@@ -353,13 +387,35 @@ export default function BookOfBusiness() {
                         <td>{deal.clientPhone}</td>
                         <td>{deal.effectiveDate}</td>
                         <td className="text-right">
-                          <span className="text-primary font-medium">{deal.annualPremium}</span>
+                          <span className="text-primary font-semibold text-base">{deal.annualPremium}</span>
                         </td>
-                        <td className="capitalize">{deal.billingCycle || 'N/A'}</td>
-                        <td>{deal.leadSource || 'N/A'}</td>
+                        <td>
+                          {deal.billingCycle ? (
+                            <Badge
+                              className={`${getBillingCycleColor(deal.billingCycle)} border capitalize`}
+                              variant="outline"
+                            >
+                              {deal.billingCycle}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">N/A</span>
+                          )}
+                        </td>
+                        <td>
+                          {deal.leadSource ? (
+                            <Badge
+                              className={`${getLeadSourceColor(deal.leadSource)} border capitalize`}
+                              variant="outline"
+                            >
+                              {deal.leadSource}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">N/A</span>
+                          )}
+                        </td>
                         <td className="text-center">
                           <Badge
-                            className={`${statusColors[deal.status as keyof typeof statusColors]} border`}
+                            className={`${getStatusColor(deal.status)} border capitalize`}
                             variant="outline"
                           >
                             {deal.status}
@@ -390,6 +446,16 @@ export default function BookOfBusiness() {
             </Button>
           </div>
         ) : null}
+
+      {/* Policy Details Modal */}
+      {selectedDealId && (
+        <PolicyDetailsModal
+          open={modalOpen}
+          onOpenChange={handleModalClose}
+          dealId={selectedDealId}
+          onUpdate={handlePolicyUpdate}
+        />
+      )}
     </div>
   )
 }

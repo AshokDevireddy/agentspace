@@ -128,10 +128,7 @@ export async function GET(req: NextRequest) {
       annualPremium: `$${Number(deal.annual_premium || 0).toFixed(2)}`,
       billingCycle: deal.billing_cycle || '',
       leadSource: deal.lead_source || '',
-      status: deal.status === 'pending' ? 'Pending Approval' :
-              deal.status === 'verified' ? 'Verified' :
-              deal.status === 'active' ? 'Active' :
-              deal.status === 'terminated' ? 'Terminated' : 'Draft'
+      status: deal.status || 'draft'
     }));
 
     // Provide next cursor for keyset pagination

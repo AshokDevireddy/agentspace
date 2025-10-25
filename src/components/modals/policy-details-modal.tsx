@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { useState, useEffect, useRef } from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, VisuallyHidden } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -32,7 +32,7 @@ interface Conversation {
   id: string
   agent_id: string
   deal_id: string
-  client_phone: string
+  client_phone: string | null
   last_message_at: string
   created_at: string
 }
@@ -62,6 +62,10 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
   const [editedData, setEditedData] = useState<any>(null)
   const [saving, setSaving] = useState(false)
 
+  // Layout refs/state to sync right column height with left widgets
+  const leftColumnRef = useRef<HTMLDivElement | null>(null)
+  const [rightColumnHeight, setRightColumnHeight] = useState<number | undefined>(undefined)
+
   // Status options state
   const [statusOptions, setStatusOptions] = useState<StatusOption[]>([
     { value: "draft", label: "Draft" },
@@ -73,6 +77,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
 
   // Conversation state
   const [conversation, setConversation] = useState<Conversation | null>(null)
+  const [existingConversation, setExistingConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [conversationLoading, setConversationLoading] = useState(false)
   const [startConversationDialogOpen, setStartConversationDialogOpen] = useState(false)
@@ -85,6 +90,22 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
       fetchStatusOptions()
     }
   }, [open, dealId])
+
+  // Keep the SMS card the same height as the left widgets to avoid blank space
+  useEffect(() => {
+    const updateHeights = () => {
+      const height = leftColumnRef.current?.offsetHeight
+      if (height && height !== rightColumnHeight) setRightColumnHeight(height)
+    }
+
+    // Run after paint to capture final sizes
+    const id = requestAnimationFrame(updateHeights)
+    window.addEventListener('resize', updateHeights)
+    return () => {
+      cancelAnimationFrame(id)
+      window.removeEventListener('resize', updateHeights)
+    }
+  }, [deal, isEditing, messages, conversationLoading])
 
   const fetchDealDetails = async () => {
     setLoading(true)
@@ -119,6 +140,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
 
       const data = await response.json()
       setConversation(data.conversation)
+      setExistingConversation(data.existingConversation)
       setMessages(data.messages || [])
     } catch (err) {
       console.error('Error fetching conversation:', err)
@@ -265,7 +287,10 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto custom-scrollbar">
+        <DialogContent className="max-w-7xl max-h-[95vh] overflow-y-auto custom-scrollbar">
+          <VisuallyHidden>
+            <DialogTitle>Policy Details</DialogTitle>
+          </VisuallyHidden>
           {/* Hero Header */}
           <div className="bg-gradient-to-br from-primary/10 via-primary/5 to-background -mx-6 -mt-6 px-8 py-6 border-b">
             <div className="flex items-start justify-between">
@@ -295,7 +320,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
               </div>
 
               {isEditing ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mr-8">
                   <Button
                     onClick={handleSave}
                     disabled={saving}
@@ -314,7 +339,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
                   </Button>
                 </div>
               ) : (
-                <Button onClick={handleEdit} className="btn-gradient">
+                <Button onClick={handleEdit} className="btn-gradient mr-8">
                   <Edit className="h-4 w-4 mr-2" />
                   Edit Policy
                 </Button>
@@ -322,9 +347,9 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-6 mt-6">
+          <div className="grid grid-cols-5 gap-6 mt-6 items-stretch">
             {/* Left Column - Client & Policy Info */}
-            <div className="col-span-2 space-y-6">
+            <div ref={leftColumnRef} className="col-span-3 space-y-6 min-h-0">
               {/* Client Information */}
               <Card className="professional-card border-l-4 border-l-primary">
                 <CardContent className="p-6">
@@ -463,12 +488,12 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
             </div>
 
             {/* Right Column - SMS Conversation */}
-            <div className="col-span-1">
+            <div className="col-span-2 min-h-0">
 
             {/* SMS Conversation Section */}
-            <Card className="professional-card border-l-4 border-l-emerald-500 h-full">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-2 mb-4">
+            <Card className="professional-card border-l-4 border-l-emerald-500 flex flex-col h-full" style={{ height: rightColumnHeight ? rightColumnHeight : undefined }}>
+              <CardContent className="p-6 flex flex-col h-full min-h-0">
+                <div className="flex items-center gap-2 mb-3">
                   <MessageSquare className="h-5 w-5 text-emerald-500" />
                   <h3 className="text-xl font-bold text-foreground">SMS Conversation</h3>
                 </div>
@@ -477,21 +502,19 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   </div>
-                ) : conversation ? (
-                  <div className="space-y-4">
-                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                      <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                        Active since {new Date(conversation.created_at).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        })}
-                      </p>
-                    </div>
+                ) : conversation || existingConversation ? (
+                  <div className="space-y-3 flex-1 flex flex-col min-h-0">
+                    <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                      Active since {new Date((conversation || existingConversation)!.created_at).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                    </p>
 
                     {messages.length > 0 ? (
-                      <div>
-                        <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                      <div className="flex-1 flex flex-col min-h-0">
+                        <div className="space-y-2 flex-1 overflow-y-auto custom-scrollbar pr-2">
                           {messages.map((message) => {
                             const isOutbound = message.direction === 'outbound'
                             const isAutomated = message.metadata?.automated
@@ -506,19 +529,19 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
                               >
                                 <div
                                   className={cn(
-                                    "max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm",
+                                    "max-w-[85%] rounded-lg px-3 py-1.5 shadow-sm",
                                     isOutbound
                                       ? "bg-blue-600 text-white"
                                       : "bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-700"
                                   )}
                                 >
                                   {isAutomated && (
-                                    <div className="text-xs opacity-75 mb-1 italic font-medium">
+                                    <div className="text-xs opacity-75 mb-0.5 italic font-medium">
                                       🤖 Automated
                                     </div>
                                   )}
-                                  <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{message.body}</p>
-                                  <div className="flex items-center justify-end mt-1.5">
+                                  <p className="text-sm whitespace-pre-wrap break-words leading-snug">{message.body}</p>
+                                  <div className="flex items-center justify-end mt-0.5">
                                     <span className={cn(
                                       "text-xs",
                                       isOutbound ? "opacity-75" : "text-gray-500"
@@ -531,10 +554,11 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
                             )
                           })}
                         </div>
-                        <div className="mt-4 pt-4 border-t">
-                          <Link href={`/communications/sms?conversation=${conversation.id}`}>
+                        <div className="mt-3 pt-3 border-t">
+                          <Link href={`/communications/sms?conversation=${(conversation || existingConversation)!.id}`}>
                             <Button variant="outline" size="sm" className="w-full">
-                              View Full Conversation →
+                              <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
+                              Open Full Conversation →
                             </Button>
                           </Link>
                         </div>
@@ -543,30 +567,58 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
                       <div className="text-center py-12 text-muted-foreground text-sm">
                         <MessageSquare className="h-10 w-10 mx-auto mb-2 opacity-50" />
                         <p>No messages yet</p>
+                        <div className="mt-4">
+                          <Link href={`/communications/sms?conversation=${(conversation || existingConversation)!.id}`}>
+                            <Button variant="outline" size="sm">
+                              <MessageSquare className="h-4 w-4 mr-2" />
+                              Start Messaging →
+                            </Button>
+                          </Link>
+                        </div>
                       </div>
                     )}
                   </div>
                 ) : (
                   <div className="text-center py-12">
                     {deal.client_phone ? (
-                      <div>
-                        <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-950/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <MessageSquare className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
+                      existingConversation ? (
+                        <div>
+                          <div className="w-20 h-20 bg-blue-100 dark:bg-blue-950/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <AlertCircle className="h-10 w-10 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <p className="text-foreground font-semibold mb-2">
+                            Conversation already exists
+                          </p>
+                          <p className="text-muted-foreground text-sm mb-6">
+                            A conversation with this client already exists for another policy
+                          </p>
+                          <Link href={`/communications/sms?conversation=${(existingConversation as Conversation).id}`}>
+                            <Button variant="outline" className="w-full">
+                              <MessageSquare className="h-4 w-4 mr-2" />
+                              View Existing Conversation →
+                            </Button>
+                          </Link>
                         </div>
-                        <p className="text-foreground font-semibold mb-2">
-                          No conversation yet
-                        </p>
-                        <p className="text-muted-foreground text-sm mb-6">
-                          Start messaging this client
-                        </p>
-                        <Button
-                          onClick={() => setStartConversationDialogOpen(true)}
-                          className="btn-gradient w-full"
-                        >
-                          <MessageSquare className="h-4 w-4 mr-2" />
-                          Start Conversation
-                        </Button>
-                      </div>
+                      ) : (
+                        <div>
+                          <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-950/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <MessageSquare className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
+                          </div>
+                          <p className="text-foreground font-semibold mb-2">
+                            No conversation yet
+                          </p>
+                          <p className="text-muted-foreground text-sm mb-6">
+                            Start messaging this client
+                          </p>
+                          <Button
+                            onClick={() => setStartConversationDialogOpen(true)}
+                            className="btn-gradient w-full"
+                          >
+                            <MessageSquare className="h-4 w-4 mr-2" />
+                            Start Conversation
+                          </Button>
+                        </div>
+                      )
                     ) : (
                       <div>
                         <div className="w-20 h-20 bg-yellow-100 dark:bg-yellow-950/30 rounded-full flex items-center justify-center mx-auto mb-4">

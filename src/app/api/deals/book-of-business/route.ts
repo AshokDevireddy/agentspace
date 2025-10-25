@@ -86,9 +86,9 @@ export async function GET(req: NextRequest) {
     // Apply filters
     if (agentId && agentId !== 'all') query = query.eq('agent_id', agentId);
     if (carrierId && carrierId !== 'all') query = query.eq('carrier_id', carrierId);
-    if (policyNumber) query = query.ilike('policy_number', `%${policyNumber}%`);
+    if (policyNumber && policyNumber.trim()) query = query.ilike('policy_number', `%${policyNumber.trim()}%`);
     if (status && status !== 'all') query = query.eq('status', status);
-    if (clientName) query = query.ilike('client_name', `%${clientName}%`);
+    if (clientName && clientName.trim()) query = query.ilike('client_name', `%${clientName.trim()}%`);
     if (leadSource && leadSource !== 'all') query = query.eq('lead_source', leadSource);
 
     // Apply cursor pagination

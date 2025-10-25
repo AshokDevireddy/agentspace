@@ -201,10 +201,14 @@ export default function BookOfBusiness() {
     }
   }
 
-  // Fetch deals when filters change
+  // Fetch deals when filters change with debounce for text inputs
   useEffect(() => {
-    setNextCursor(null)
-    fetchDeals(true)
+    const timeoutId = setTimeout(() => {
+      setNextCursor(null)
+      fetchDeals(true)
+    }, 300) // 300ms debounce for text inputs
+
+    return () => clearTimeout(timeoutId)
   }, [selectedAgent, selectedCarrier, policyNumberSearch, selectedStatus, selectedLeadSource, clientSearch])
 
   const handleRowClick = (deal: Deal) => {
@@ -350,15 +354,10 @@ export default function BookOfBusiness() {
                 <tr>
                   <th>Date</th>
                   <th>Agent</th>
-                  <th>Carrier</th>
-                  <th>Product</th>
-                  <th>Policy #</th>
-                  <th>App #</th>
-                  <th>Client Name</th>
-                  <th>Client Phone</th>
-                  <th>Effective Date</th>
-                  <th className="text-right">Annual Premium</th>
-                  <th>Billing Cycle</th>
+                  <th>Carrier / Product</th>
+                  <th>Policy / App #</th>
+                  <th>Client Info</th>
+                  <th>Premium / Effective Date</th>
                   <th>Lead Source</th>
                   <th className="text-center">Status</th>
                 </tr>
@@ -366,7 +365,7 @@ export default function BookOfBusiness() {
               <tbody>
                 {deals.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="py-8 text-center text-muted-foreground">
+                    <td colSpan={8} className="py-8 text-center text-muted-foreground">
                       No deals found matching your criteria
                     </td>
                   </tr>
@@ -377,29 +376,47 @@ export default function BookOfBusiness() {
                       className="cursor-pointer hover:bg-accent/50 transition-colors"
                       onClick={() => handleRowClick(deal)}
                     >
-                        <td>{deal.date}</td>
-                        <td>{deal.agent}</td>
-                        <td>{deal.carrier}</td>
-                        <td>{deal.product}</td>
-                        <td>{deal.policyNumber}</td>
-                        <td>{deal.appNumber}</td>
-                        <td>{deal.clientName}</td>
-                        <td>{deal.clientPhone}</td>
-                        <td>{deal.effectiveDate}</td>
-                        <td className="text-right">
-                          <span className="text-primary font-semibold text-base">{deal.annualPremium}</span>
+                        <td className="whitespace-nowrap">{deal.date}</td>
+                        <td className="whitespace-nowrap">{deal.agent}</td>
+                        <td>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-semibold text-sm">{deal.carrier}</span>
+                            <span className="text-xs text-muted-foreground">{deal.product}</span>
+                          </div>
                         </td>
                         <td>
-                          {deal.billingCycle ? (
-                            <Badge
-                              className={`${getBillingCycleColor(deal.billingCycle)} border capitalize`}
-                              variant="outline"
-                            >
-                              {deal.billingCycle}
-                            </Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">N/A</span>
-                          )}
+                          <div className="flex flex-col gap-0.5">
+                            {deal.policyNumber ? (
+                              <span className="text-sm font-medium">{deal.policyNumber}</span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground italic">No Policy #</span>
+                            )}
+                            {deal.appNumber && (
+                              <span className="text-xs text-muted-foreground">App: {deal.appNumber}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-sm font-medium">{deal.clientName}</span>
+                            {deal.clientPhone && (
+                              <span className="text-xs text-muted-foreground">{deal.clientPhone}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-primary font-bold text-base">{deal.annualPremium}</span>
+                            <span className="text-xs text-muted-foreground">{deal.effectiveDate}</span>
+                            {deal.billingCycle ? (
+                              <Badge
+                                className={`${getBillingCycleColor(deal.billingCycle)} border capitalize text-xs w-fit`}
+                                variant="outline"
+                              >
+                                {deal.billingCycle}
+                              </Badge>
+                            ) : null}
+                          </div>
                         </td>
                         <td>
                           {deal.leadSource ? (

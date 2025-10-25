@@ -42,6 +42,14 @@ const badgeColors: { [key: string]: string } = {
   "Legacy SA": "bg-red-500/20 text-red-400 border-red-500/30",
 }
 
+const statusColors: { [key: string]: string } = {
+  "pre-invite": "bg-gray-500/20 text-gray-400 border-gray-500/30",
+  "invited": "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  "onboarding": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  "active": "bg-green-500/20 text-green-400 border-green-500/30",
+  "inactive": "bg-red-500/20 text-red-400 border-red-500/30",
+}
+
 // Generate dynamic options from fetched data
 const generateAgentOptions = (agents: Agent[]) => {
   const options = [{ value: "all", label: "All Agents" }]
@@ -276,20 +284,26 @@ export default function Agents() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setView(view === 'table' ? 'tree' : 'table')}
-                className="p-2"
+                className="flex items-center gap-2"
             >
-                {view === 'table' ? <GitMerge className="h-5 w-5" /> : <List className="h-5 w-5" />}
+                {view === 'table' ? (
+                  <>
+                    <GitMerge className="h-4 w-4" />
+                    Graph View
+                  </>
+                ) : (
+                  <>
+                    <List className="h-4 w-4" />
+                    List View
+                  </>
+                )}
             </Button>
             <AddUserModal trigger={
               <Button className="btn-gradient" size="sm">
-                <Plus className="h-4 w-4" />
+                <Plus className="h-4 w-4 mr-2" />
+                Add User
               </Button>
             } />
-            <Link href="/agents/archived">
-              <Button className="btn-gradient" size="sm">
-                + Archived Agents
-              </Button>
-            </Link>
           </div>
         </div>
       </div>
@@ -413,9 +427,9 @@ export default function Agents() {
                 <tr>
                   <th>Agent</th>
                   <th>Upline</th>
+                  <th>Status</th>
                   <th>Created</th>
                   <th>Last Login</th>
-                  <th>Individual YTD (AP / Earnings)</th>
                   <th>Downlines</th>
                 </tr>
               </thead>
@@ -448,9 +462,16 @@ export default function Agents() {
                         </div>
                       </td>
                       <td>{agent.upline}</td>
+                      <td>
+                        <Badge
+                          className={`border ${statusColors[agent.status] || 'bg-muted text-muted-foreground border-border'}`}
+                          variant="outline"
+                        >
+                          {agent.status.charAt(0).toUpperCase() + agent.status.slice(1).replace('-', ' ')}
+                        </Badge>
+                      </td>
                       <td className="text-muted-foreground">{agent.created}</td>
                       <td className="text-muted-foreground">{agent.lastLogin}</td>
-                      <td className="text-primary font-medium">{agent.earnings}</td>
                       <td>
                         <div className="flex items-center space-x-2">
                           <span className="font-medium">{agent.downlines}</span>

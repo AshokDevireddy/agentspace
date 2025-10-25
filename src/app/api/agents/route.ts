@@ -216,7 +216,7 @@ export async function GET(request: Request) {
       lastLogin: string
       earnings: string
       downlines: number
-      status: 'Active' | 'Inactive'
+      status: string
       badge: string
       children: AgentDto[]
     }
@@ -262,7 +262,7 @@ export async function GET(request: Request) {
             lastLogin: lastLogin,
             earnings: earnings,
             downlines: downlines,
-            status: user.status === 'active' ? 'Active' : 'Inactive',
+            status: user.status || 'active',
             badge: positionName,
             children: user.children.map(transformUserToAgent)
         }

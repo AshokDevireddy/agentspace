@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         role: 'client',
         perm_level: 'client',
         is_admin: false,
-        status: 'pending',
+        status: 'invited',
         agency_id: currentUser.agency_id  // Inherit agency from inviter
       }])
 

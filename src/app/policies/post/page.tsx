@@ -268,6 +268,7 @@ export default function PostDeal() {
         carrier_id,
         product_id,
         client_id,
+        agency_id: agencyId,
         client_name: formData.clientName,
         client_email: formData.clientEmail || null,
         client_phone: formData.clientPhone || null,

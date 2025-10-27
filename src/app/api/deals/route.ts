@@ -257,11 +257,9 @@ export async function POST(req: NextRequest) {
             const agentName = `${agentData.first_name} ${agentData.last_name}`
             const agencyName = agentData.agency.name
             const clientFirstName = deal.client_name?.split(' ')[0] || 'there'
+            const clientEmail = deal.client_email || 'your email'
 
-            // Generate the setup link (same as in email invites)
-            const setupLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/setup-account`
-
-            const welcomeMessage = `Welcome ${clientFirstName}! Thank you for choosing ${agencyName} for your life insurance needs. Your agent ${agentName} is here to help. Complete your account setup here: ${setupLink}. If you have any questions, feel free to reply to this message!`
+            const welcomeMessage = `Welcome ${clientFirstName}! Thank you for choosing ${agencyName} for your life insurance needs. Your agent ${agentName} is here to help. You'll receive policy updates and reminders by text. Complete your account setup by clicking the invitation sent to ${clientEmail}. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`
 
             // Send SMS via Telnyx
             await sendSMS({

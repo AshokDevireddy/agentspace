@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     // Fetch deal details
     const { data: deal, error: dealError } = await admin
       .from("deals")
-      .select("id, client_name, client_phone, agent_id, agency_id")
+      .select("id, client_name, client_phone, client_email, agent_id, agency_id")
       .eq("id", dealId)
       .single();
 
@@ -60,6 +60,15 @@ export async function POST(req: NextRequest) {
     if (!agency.phone_number) {
       return NextResponse.json({ error: "Agency phone number not configured" }, { status: 400 });
     }
+
+    // Fetch agent details for welcome message
+    const { data: agentData } = await admin
+      .from('users')
+      .select('id, first_name, last_name')
+      .eq('id', deal.agent_id)
+      .single();
+
+    const agentName = agentData ? `${agentData.first_name} ${agentData.last_name}` : 'your agent';
 
     // Check if conversation already exists for this phone number in this agency
     // Use .limit(1) to get at most one result, avoiding the multiple rows error
@@ -110,7 +119,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Send welcome message
-    const welcomeMessage = `Thanks for your policy with ${agency.name}. You'll receive policy updates and reminders by text. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
+    const clientFirstName = deal.client_name?.split(' ')[0] || 'there';
+    const clientEmail = deal.client_email || 'your email';
+    const welcomeMessage = `Welcome ${clientFirstName}! Thank you for choosing ${agency.name} for your life insurance needs. Your agent ${agentName} is here to help. You'll receive policy updates and reminders by text. Complete your account setup by clicking the invitation sent to ${clientEmail}. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
 
     try {
       const telnyxResponse = await sendSMS({

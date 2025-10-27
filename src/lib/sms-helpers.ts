@@ -292,15 +292,63 @@ export async function sendWelcomeMessage(
   clientPhone: string,
   agencyId: string,
   agentId: string,
-  conversationId: string
+  conversationId: string,
+  clientName?: string,
+  clientEmail?: string,
+  agentName?: string
 ): Promise<void> {
+  const supabase = createAdminClient();
   const agency = await getAgencyDetails(agencyId);
 
   if (!agency) {
     throw new Error('Agency not found or missing phone number');
   }
 
-  const welcomeMessage = `Thanks for your policy with ${agency.name}. You'll receive policy updates and reminders by text. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
+  // If client name or agent name not provided, try to fetch from database
+  let finalClientName = clientName;
+  let finalClientEmail = clientEmail;
+  let finalAgentName = agentName;
+
+  if (!finalClientName || !finalClientEmail || !finalAgentName) {
+    // Try to get conversation to find deal
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select('deal_id')
+      .eq('id', conversationId)
+      .single();
+
+    if (conversation?.deal_id) {
+      // Fetch deal and agent details
+      const { data: deal } = await supabase
+        .from('deals')
+        .select('client_name, client_email')
+        .eq('id', conversation.deal_id)
+        .single();
+
+      if (deal) {
+        finalClientName = finalClientName || deal.client_name;
+        finalClientEmail = finalClientEmail || deal.client_email;
+      }
+    }
+
+    if (!finalAgentName) {
+      const { data: agent } = await supabase
+        .from('users')
+        .select('first_name, last_name')
+        .eq('id', agentId)
+        .single();
+
+      if (agent) {
+        finalAgentName = `${agent.first_name} ${agent.last_name}`;
+      }
+    }
+  }
+
+  const clientFirstName = finalClientName?.split(' ')[0] || 'there';
+  const displayEmail = finalClientEmail || 'your email';
+  const displayAgentName = finalAgentName || 'your agent';
+
+  const welcomeMessage = `Welcome ${clientFirstName}! Thank you for choosing ${agency.name} for your life insurance needs. Your agent ${displayAgentName} is here to help. You'll receive policy updates and reminders by text. Complete your account setup by clicking the invitation sent to ${displayEmail}. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
 
   // Send SMS via Telnyx
   await sendSMS({

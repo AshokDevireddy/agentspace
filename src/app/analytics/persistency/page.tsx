@@ -75,7 +75,7 @@ async function getUserRole(supabase: any, userId: string): Promise<string> {
 // Helper functions for data processing
 const getCarrierPersistencyData = (carrier: any) => {
   if (!carrier.timeRanges) return null
-  
+
   return [
     { period: '3 Months', persistency: carrier.timeRanges["3"]?.positivePercentage || 0 },
     { period: '6 Months', persistency: carrier.timeRanges["6"]?.positivePercentage || 0 },
@@ -86,7 +86,7 @@ const getCarrierPersistencyData = (carrier: any) => {
 
 const getCarrierPolicyData = (carrier: any) => {
   if (!carrier.timeRanges) return null
-  
+
   return [
     { period: '3 Months', active: carrier.timeRanges["3"]?.positiveCount || 0, inactive: carrier.timeRanges["3"]?.negativeCount || 0 },
     { period: '6 Months', active: carrier.timeRanges["6"]?.positiveCount || 0, inactive: carrier.timeRanges["6"]?.negativeCount || 0 },
@@ -97,10 +97,10 @@ const getCarrierPolicyData = (carrier: any) => {
 
 const getStatusBreakdownData = (carrier: any) => {
   if (!carrier.statusBreakdowns || !carrier.statusBreakdowns["All"]) return []
-  
+
   const breakdown = carrier.statusBreakdowns["All"]
   const colors = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#f97316', '#ec4899']
-  
+
   return Object.entries(breakdown).map(([status, data]: [string, any], index) => ({
     name: status,
     value: data.count || 0,
@@ -110,26 +110,26 @@ const getStatusBreakdownData = (carrier: any) => {
 
 const generateCarrierComparisonData = (persistencyData: any) => {
   if (!persistencyData?.carriers) return { activePoliciesByCarrier: [], inactivePoliciesByCarrier: [], carrierComparisonData: [] }
-  
+
   const colors = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16']
-  
+
   const activePoliciesByCarrier = persistencyData.carriers.map((carrier: any, index: number) => ({
     name: carrier.carrier,
     value: carrier.totalPolicies ? Math.round(carrier.totalPolicies * (carrier.persistencyRate / 100)) : 0,
     color: colors[index % colors.length]
   }))
-  
+
   const inactivePoliciesByCarrier = persistencyData.carriers.map((carrier: any, index: number) => ({
     name: carrier.carrier,
     value: carrier.totalPolicies ? Math.round(carrier.totalPolicies * ((100 - carrier.persistencyRate) / 100)) : 0,
     color: colors[index % colors.length]
   }))
-  
+
   const carrierComparisonData = persistencyData.carriers.map((carrier: any) => ({
     carrier: carrier.carrier,
     persistency: carrier.persistencyRate || 0
   }))
-  
+
   return {
     activePoliciesByCarrier,
     inactivePoliciesByCarrier,
@@ -144,49 +144,49 @@ export default function Persistency() {
   const [error, setError] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string>('agent')
   const router = useRouter()
-  
+
   // Dynamic persistency data from Supabase RPC
   const [persistencyData, setPersistencyData] = useState<any>(null)
-  
+
   // Fetch persistency data from Supabase RPC
   useEffect(() => {
     const fetchPersistencyData = async () => {
       try {
         setIsLoading(true)
         setError(null)
-        
+
         const supabase = createClient()
-        
+
         // Get current user
         const { data: { user }, error: authError } = await supabase.auth.getUser()
-        
+
         if (authError || !user) {
           throw new Error('User not authenticated')
         }
-        
+
         // Get user role
         const role = await getUserRole(supabase, user.id)
         setUserRole(role)
-        
+
         // Get agency ID for the user
         const agencyId = await getAgencyId(supabase, user.id)
-        
+
         // Call the RPC function
-        const { data, error: rpcError } = await supabase.rpc('analyze_persistency_for_deals', { 
-          agency_id: agencyId 
+        const { data, error: rpcError } = await supabase.rpc('analyze_persistency_for_deals', {
+          agency_id: agencyId
         })
-        
+
         if (rpcError) {
           throw new Error(`RPC Error: ${rpcError.message}`)
         }
-        
+
         if (data && data.carriers && data.carriers.length > 0) {
           setPersistencyData(data)
         } else {
           // No data returned - this is not an error, just empty state
           setPersistencyData(null)
         }
-        
+
       } catch (err) {
         console.error('Error fetching persistency data:', err)
         setError(err instanceof Error ? err.message : 'Failed to fetch persistency data')
@@ -194,7 +194,7 @@ export default function Persistency() {
         setIsLoading(false)
       }
     }
-    
+
     fetchPersistencyData()
   }, [])
 
@@ -202,7 +202,7 @@ export default function Persistency() {
     const handleScroll = () => {
       const scrollPosition = window.scrollY
       const windowHeight = window.innerHeight
-      
+
       // Show carrier comparison when user scrolls down (more sensitive trigger)
       if (scrollPosition > 200) {
         setShowCarrierComparison(true)
@@ -255,16 +255,16 @@ export default function Persistency() {
                 <FileText className="h-12 w-12 text-blue-600" />
               </div>
             </div>
-            
+
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">
               No Persistency Data Available
             </h2>
-            
+
             <p className="text-gray-600 mb-6 leading-relaxed">
-              Persistency analytics are not available because either no policy reports have been uploaded yet, 
+              Persistency analytics are not available because either no policy reports have been uploaded yet,
               or there are no deals in the database for your agency.
             </p>
-            
+
             {userRole === 'admin' ? (
               <div className="space-y-4">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -276,8 +276,8 @@ export default function Persistency() {
                     As an admin, you can upload policy reports to start generating persistency analytics.
                   </p>
                 </div>
-                
-                <Button 
+
+                <Button
                   onClick={() => router.push('/configuration?tab=policy-reports')}
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                 >
@@ -296,8 +296,8 @@ export default function Persistency() {
                     No deals exist for your agency in the database. Contact your administrator to upload policy reports.
                   </p>
                 </div>
-                
-                <Button 
+
+                <Button
                   onClick={() => router.push('/')}
                   variant="outline"
                   className="w-full"
@@ -422,22 +422,22 @@ export default function Persistency() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={overallPolicyData} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis 
-                    dataKey="period" 
+                  <XAxis
+                    dataKey="period"
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Time Period', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                     domain={['dataMin', 'dataMax']}
                     padding={{ left: 30, right: 30 }}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Number of Policies', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                   />
                   <Tooltip
-                    contentStyle={{ 
-                      backgroundColor: 'white', 
+                    contentStyle={{
+                      backgroundColor: 'white',
                       border: '1px solid #e0e0e0',
                       borderRadius: '8px',
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -466,22 +466,22 @@ export default function Persistency() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={overallPersistencyData} margin={{ top: 20, right: 30, left: 80, bottom: 40 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis 
-                    dataKey="period" 
+                  <XAxis
+                    dataKey="period"
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Time Period', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                     domain={['dataMin', 'dataMax']}
                     padding={{ left: 30, right: 30 }}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Persistency Rate (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                   />
                   <Tooltip
-                    contentStyle={{ 
-                      backgroundColor: 'white', 
+                    contentStyle={{
+                      backgroundColor: 'white',
                       border: '1px solid #e0e0e0',
                       borderRadius: '8px',
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -510,7 +510,7 @@ export default function Persistency() {
       {/* Carrier Comparison Section */}
       <div className="mt-12">
           <h2 className="text-2xl font-light text-gray-600 mb-6">Carrier Comparison</h2>
-        
+
         {/* Pie Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Active Policies Pie Chart */}
@@ -535,8 +535,8 @@ export default function Persistency() {
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -571,8 +571,8 @@ export default function Persistency() {
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -596,22 +596,22 @@ export default function Persistency() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={carrierComparisonData} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis 
-                    dataKey="carrier" 
+                  <XAxis
+                    dataKey="carrier"
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Carrier', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                     domain={['dataMin', 'dataMax']}
                     padding={{ left: 30, right: 30 }}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                   />
                   <Tooltip
-                    contentStyle={{ 
-                      backgroundColor: 'white', 
+                    contentStyle={{
+                      backgroundColor: 'white',
                       border: '1px solid #e0e0e0',
                       borderRadius: '8px',
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -632,7 +632,7 @@ export default function Persistency() {
       {/* Leads Analysis Section */}
       <div className="mt-12">
         <h2 className="text-2xl font-light text-gray-600 mb-6">Leads Analysis</h2>
-        
+
         {/* Summary Statistics */}
         <div className="mb-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -659,7 +659,7 @@ export default function Persistency() {
             </div>
           </div>
         </div>
-        
+
         {/* Pie Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Lead Distribution Pie Chart */}
@@ -692,8 +692,8 @@ export default function Persistency() {
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -736,8 +736,8 @@ export default function Persistency() {
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -767,22 +767,22 @@ export default function Persistency() {
                     { leadType: 'Third Party', placed: 38.4, notPlaced: 61.6, placedCount: 384, notPlacedCount: 616 },
                   ]} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis 
-                      dataKey="leadType" 
+                    <XAxis
+                      dataKey="leadType"
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Lead Type', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                       domain={['dataMin', 'dataMax']}
                       padding={{ left: 30, right: 30 }}
                     />
-                    <YAxis 
+                    <YAxis
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Placement Rate (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                     />
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -820,22 +820,22 @@ export default function Persistency() {
                     { leadType: 'Third Party', activeConversion: 52.1, inactiveConversion: 47.9, activeCount: 200, inactiveCount: 184 },
                   ]} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis 
-                      dataKey="leadType" 
+                    <XAxis
+                      dataKey="leadType"
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Lead Type', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                       domain={['dataMin', 'dataMax']}
                       padding={{ left: 30, right: 30 }}
                     />
-                    <YAxis 
+                    <YAxis
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Conversion Rate (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                     />
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -875,22 +875,22 @@ export default function Persistency() {
                     { leadType: 'Third Party', leadsPerCustomer: 5.00, totalLeads: 1000, activeCustomers: 200 },
                   ]} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis 
-                      dataKey="leadType" 
+                    <XAxis
+                      dataKey="leadType"
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Lead Type', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                       domain={['dataMin', 'dataMax']}
                       padding={{ left: 30, right: 30 }}
                     />
-                    <YAxis 
+                    <YAxis
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Leads Per Customer', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                     />
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -918,7 +918,7 @@ export default function Persistency() {
       {persistencyData.carriers.map((carrier: any, index: number) => (
         <div key={carrier.carrier} className="mt-12">
           <h2 className="text-2xl font-light text-gray-600 mb-6">{carrier.carrier}</h2>
-          
+
           {/* Carrier Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="border border-gray-200 rounded-lg p-6 bg-white">
@@ -975,8 +975,8 @@ export default function Persistency() {
                         ))}
                       </Pie>
                       <Tooltip
-                        contentStyle={{ 
-                          backgroundColor: 'white', 
+                        contentStyle={{
+                          backgroundColor: 'white',
                           border: '1px solid #e0e0e0',
                           borderRadius: '8px',
                           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -1000,22 +1000,22 @@ export default function Persistency() {
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={getCarrierPersistencyData(carrier) || []} margin={{ top: 20, right: 30, left: 80, bottom: 40 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis 
-                          dataKey="period" 
+                        <XAxis
+                          dataKey="period"
                           tick={{ fontSize: 12, fill: '#666' }}
                           axisLine={{ stroke: '#e0e0e0' }}
                           label={{ value: 'Time Period', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                           domain={['dataMin', 'dataMax']}
                           padding={{ left: 30, right: 30 }}
                         />
-                        <YAxis 
+                        <YAxis
                           tick={{ fontSize: 12, fill: '#666' }}
                           axisLine={{ stroke: '#e0e0e0' }}
                           label={{ value: 'Persistency Rate (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                         />
                         <Tooltip
-                          contentStyle={{ 
-                            backgroundColor: 'white', 
+                          contentStyle={{
+                            backgroundColor: 'white',
                             border: '1px solid #e0e0e0',
                             borderRadius: '8px',
                             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -1025,10 +1025,10 @@ export default function Persistency() {
                             'Persistency Rate'
                           ]}
                         />
-                        <Line 
-                          type="monotone" 
-                          dataKey="persistency" 
-                          stroke="#8b5cf6" 
+                        <Line
+                          type="monotone"
+                          dataKey="persistency"
+                          stroke="#8b5cf6"
                           strokeWidth={3}
                           dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 6 }}
                           activeDot={{ r: 8, stroke: '#8b5cf6', strokeWidth: 2 }}
@@ -1046,11 +1046,11 @@ export default function Persistency() {
 
 
       </div>
-      
+
       {/* Upload Policy Reports Modal */}
-      <UploadPolicyReportsModal 
-        isOpen={isUploadModalOpen} 
-        onClose={() => setIsUploadModalOpen(false)} 
+      <UploadPolicyReportsModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
       />
     </div>
   )

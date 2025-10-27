@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -84,7 +84,7 @@ interface DealDetails {
   } | null
 }
 
-export default function SMSMessagingPage() {
+function SMSMessagingPageContent() {
   const searchParams = useSearchParams()
   const conversationIdFromUrl = searchParams.get('conversation')
   const { user } = useAuth()
@@ -881,5 +881,13 @@ function DetailRow({
         {value || 'N/A'}
       </span>
     </div>
+  )
+}
+
+export default function SMSMessagingPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+      <SMSMessagingPageContent />
+    </Suspense>
   )
 }

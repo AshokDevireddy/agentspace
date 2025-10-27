@@ -51,14 +51,19 @@ export default function Navigation() {
 
       try {
         const supabase = createClient()
-        const { data: userData } = await supabase
+        const { data: userData, error } = await supabase
           .from('users')
           .select('is_admin')
           .eq('auth_user_id', user.id)
           .maybeSingle()
 
-        setIsAdmin(userData?.is_admin || false)
-      } catch {
+        if (error) {
+          // Silently handle error - user may not exist in users table yet (e.g., during setup)
+          setIsAdmin(false)
+        } else {
+          setIsAdmin(userData?.is_admin || false)
+        }
+      } catch (error) {
         // Silently handle error - user may not exist in users table yet
         setIsAdmin(false)
       }
@@ -87,7 +92,7 @@ export default function Navigation() {
 
         const data = await response.json()
         const conversations = data.conversations || []
-        const total = conversations.reduce((sum: number, conv: { unreadCount?: number }) => sum + (conv.unreadCount || 0), 0)
+        const total = conversations.reduce((sum: number, conv: any) => sum + (conv.unreadCount || 0), 0)
         setUnreadCount(total)
       } catch (error) {
         console.error('Error fetching unread count:', error)
@@ -113,7 +118,7 @@ export default function Navigation() {
   }
 
   // Check if current path matches item
-  const isActiveItem = (item: { href: string }) => {
+  const isActiveItem = (item: any) => {
     return pathname === item.href || pathname.startsWith(item.href + '/')
   }
 

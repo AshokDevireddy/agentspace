@@ -12,7 +12,7 @@ interface CarrierUpload {
 
 const carriers = [
   'Aetna',
-  'Aflac', 
+  'Aflac',
   'American Amicable',
   'Combined Insurance',
   'American Home Life',
@@ -53,7 +53,7 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
     try {
       // Create FormData to send files to API
       const formData = new FormData()
-      
+
       uploadedFiles.forEach((upload, index) => {
         if (upload.file) {
           // Add file with carrier name as key
@@ -78,7 +78,7 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
 
       // Handle bucket upload results
       if (bucketResult.success) {
-        const replacementMessage = bucketResult.totalFilesReplaced > 0 
+        const replacementMessage = bucketResult.totalFilesReplaced > 0
           ? ` and replaced ${bucketResult.totalFilesReplaced} existing file(s)`
           : ''
         console.log(`Successfully uploaded ${bucketResult.results.length} file(s)${replacementMessage} to ${bucketResult.bucketName} bucket!`)

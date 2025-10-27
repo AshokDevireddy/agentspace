@@ -320,7 +320,7 @@ async function getAgencyId(supabase: any, userId: string): Promise<string> {
  * Validates the uploaded file to ensure it meets requirements
  * Checks file type, size, and basic structure
  * Supports CSV files for AMAM, RNA, Combined and Excel files for AHL and Aflac
- * 
+ *
  * @param file - The uploaded file object
  * @returns Promise<boolean> - True if file is valid
  */
@@ -328,7 +328,7 @@ async function validateFile(file: File): Promise<boolean> {
   try {
     // Check file type - allow CSV files and Excel files
     const allowedTypes = ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
-    
+
     if (!allowedTypes.includes(file.type)) {
       throw new Error(`Invalid file type: ${file.type}. Only CSV and Excel files are allowed for staging.`)
     }
@@ -354,7 +354,7 @@ async function validateFile(file: File): Promise<boolean> {
 /**
  * AMAM: Validates AMAM CSV structure and checks for required columns
  * Verifies that it is a CSV file, contains data, and is an AMAM CSV file by checking Company column
- * 
+ *
  * @param headers - Array of column headers from CSV
  * @returns {isValid: boolean, error?: string}
  */
@@ -374,14 +374,14 @@ function validateAMAMCSVStructure(headers: string[]): {isValid: boolean, error?:
     'WrtPct'
   ]
 
-  const missingColumns = requiredColumns.filter(col => 
+  const missingColumns = requiredColumns.filter(col =>
     !headers.some(header => header.toLowerCase() === col.toLowerCase())
   )
 
   if (missingColumns.length > 0) {
-    return { 
-      isValid: false, 
-      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}` 
+    return {
+      isValid: false,
+      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}`
     }
   }
 
@@ -392,50 +392,50 @@ function validateAMAMCSVStructure(headers: string[]): {isValid: boolean, error?:
  * AMAM: Formats agent name from fully capitalized format to proper case
  * Handles formats like "JAMAICA/ MARY C TEMU" -> "Mary Temu Jamaica"
  * Also handles formats without slash like "CHICKEN T NUGGET" -> "Chicken Nugget"
- * 
+ *
  * @param agentName - The agent name in AMAM format (fully capitalized)
  * @returns string - Properly formatted agent name
  */
 function formatAMAMAgentName(agentName: string): string {
   if (!agentName || agentName.trim() === '') return ''
-  
+
   const trimmedName = agentName.trim()
-  
+
   // Check if name contains a slash (format: "LASTNAME/ FIRSTNAME MIDDLE")
   if (trimmedName.includes('/')) {
     const parts = trimmedName.split('/')
     if (parts.length !== 2) return trimmedName // Return original if format is unexpected
-    
+
     const lastName = parts[0].trim()
     const firstNameAndMiddle = parts[1].trim()
-    
+
     // Split first name and middle parts
     const nameParts = firstNameAndMiddle.split(' ')
     const firstName = nameParts[0] || ''
     const middleParts = nameParts.slice(1).filter(part => part.length > 1) // Only keep parts longer than 1 character
-    
+
     // Capitalize each part properly
-    const capitalizeWord = (word: string) => 
+    const capitalizeWord = (word: string) =>
       word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-    
+
     const formattedFirstName = capitalizeWord(firstName)
     const formattedMiddle = middleParts.map(capitalizeWord).join(' ')
     const formattedLastName = capitalizeWord(lastName)
-    
+
     // Combine: FirstName + Middle + LastName
     const result = [formattedFirstName, formattedMiddle, formattedLastName]
       .filter(part => part.trim() !== '')
       .join(' ')
-    
+
     return result
   } else {
     // Handle format without slash: "CHICKEN T NUGGET" -> "Chicken Nugget"
     const nameParts = trimmedName.split(' ')
     const validParts = nameParts.filter(part => part.length > 1) // Remove single character parts
-    
-    const capitalizeWord = (word: string) => 
+
+    const capitalizeWord = (word: string) =>
       word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-    
+
     return validParts.map(capitalizeWord).join(' ')
   }
 }
@@ -576,32 +576,32 @@ function normalizePaymentFrequency(mode: string): string | null {
 
 /**
  * AMAM: Processes phone number - removes dashes and converts to number
- * 
+ *
  * @param phone - Phone number string from AMAM CSV
  * @returns string | null - Cleaned phone number with only digits
  */
 function processAMAMPhoneNumber(phone: string): string | null {
   if (!phone || phone.trim() === '') return null
-  
+
   // Remove all non-numeric characters (dashes, spaces, parentheses, etc.)
   const cleanedPhone = phone.replace(/\D/g, '')
-  
+
   // Return null if no digits found
   return cleanedPhone.length > 0 ? cleanedPhone : null
 }
 
 /**
  * Standardizes phone number - removes all non-numeric characters
- * 
+ *
  * @param phone - Phone number string
  * @returns string | null - Cleaned phone number with only digits
  */
 function standardizePhoneNumber(phone: string): string | null {
   if (!phone || phone.trim() === '') return null
-  
+
   // Remove all non-numeric characters (dashes, spaces, parentheses, etc.)
   const cleanedPhone = phone.replace(/\D/g, '')
-  
+
   // Return null if no digits found
   return cleanedPhone.length > 0 ? cleanedPhone : null
 }
@@ -649,7 +649,7 @@ function cleanCSVValue(value: string): string {
 
 /**
  * AMAM: Parses AMAM CSV content and converts it to PolicyReportStaging objects
- * 
+ *
  * @param csvContent - The CSV file content as string
  * @param carrierName - The carrier name
  * @param agencyId - The agency ID
@@ -718,12 +718,12 @@ async function parseAMAMCSVToPolicyReports(
         const issueAge = calculateIssueAge(policyDate, dobDate)
 
         // Process names - capitalize first letter of each word
-        const capitalizeWord = (word: string) => 
+        const capitalizeWord = (word: string) =>
           word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-        
+
         const processedFirstName = record.FirstName.split(' ').map(capitalizeWord).join(' ')
         const processedLastName = record.LastName.split(' ').map(capitalizeWord).join(' ')
-        
+
         // Build client name: FirstName + LastName
         const clientName = `${processedFirstName} ${processedLastName}`.trim()
 
@@ -840,7 +840,7 @@ async function uploadPolicyReportsToStaging(
 
 /**
  * RNA: Validates Royal Neighbors CSV structure and checks for required columns
- * 
+ *
  * @param headers - Array of column headers from CSV
  * @returns {isValid: boolean, error?: string}
  */
@@ -853,19 +853,19 @@ function validateRNACSVStructure(headers: string[]): {isValid: boolean, error?: 
 
   // Required columns for RNA policy reports
   const requiredColumns = [
-    'Agents', 'InsuredName_Txt', 'OwnerName', 'CertificateNumber1', 
-    'Insured', 'Payor', 'CurrentContractStatusReason1', 
+    'Agents', 'InsuredName_Txt', 'OwnerName', 'CertificateNumber1',
+    'Insured', 'Payor', 'CurrentContractStatusReason1',
     'ApplicationEntryDate1', 'ActivationDate1'
   ]
 
-  const missingColumns = requiredColumns.filter(col => 
+  const missingColumns = requiredColumns.filter(col =>
     !headers.some(header => header.toLowerCase() === col.toLowerCase())
   )
 
   if (missingColumns.length > 0) {
-    return { 
-      isValid: false, 
-      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}` 
+    return {
+      isValid: false,
+      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}`
     }
   }
 
@@ -875,7 +875,7 @@ function validateRNACSVStructure(headers: string[]): {isValid: boolean, error?: 
 /**
  * RNA: Splits the Agents field into agent code and agent name
  * Expected format: "agent_code - agent_name"
- * 
+ *
  * @param agentsField - The Agents field from RNA CSV
  * @returns {agentCode: string, agentName: string}
  */
@@ -883,14 +883,14 @@ function splitRNAAgentsField(agentsField: string): {agentCode: string, agentName
   if (!agentsField || agentsField.trim() === '') {
     return { agentCode: '', agentName: '' }
   }
-  
+
   // Split by " - " to separate agent code and agent name
   const parts = agentsField.split(' - ')
   if (parts.length !== 2) {
     // If format is unexpected, return original value as agent name
     return { agentCode: '', agentName: agentsField.trim() }
   }
-  
+
   return {
     agentCode: parts[0].trim(),
     agentName: parts[1].trim()
@@ -899,13 +899,13 @@ function splitRNAAgentsField(agentsField: string): {agentCode: string, agentName
 
 /**
  * RNA: Capitalizes first letter of each word in a name (converts from fully capitalized)
- * 
+ *
  * @param name - Fully capitalized name (e.g., "JOHN DOE")
  * @returns string - Properly capitalized name (e.g., "John Doe")
  */
 function capitalizeRNAName(name: string): string {
   if (!name || name.trim() === '') return ''
-  
+
   return name.trim()
     .toLowerCase()
     .split(' ')
@@ -916,7 +916,7 @@ function capitalizeRNAName(name: string): string {
 /**
  * Cleans empty strings and converts them to null for database storage
  * Applies to all carriers - ensures empty strings are stored as null
- * 
+ *
  * @param value - Value to clean
  * @returns string | null - Cleaned value or null if empty
  */
@@ -927,15 +927,15 @@ function cleanValue(value: string): string | null {
 
 /**
  * RNA: Parses Royal Neighbors CSV content and converts it to PolicyReportStaging objects
- * 
+ *
  * @param csvContent - The CSV file content as string
  * @param carrierName - The carrier name
  * @param agencyId - The agency ID
  * @returns Promise<PolicyReportStaging[]> - Array of parsed policy reports
  */
 async function parseRNACSVToPolicyReports(
-  csvContent: string, 
-  carrierName: string, 
+  csvContent: string,
+  carrierName: string,
   agencyId: string
 ): Promise<PolicyReportStaging[]> {
   try {
@@ -971,15 +971,15 @@ async function parseRNACSVToPolicyReports(
 
     // Map RNA records to PolicyReportStaging objects
     const policyReports: PolicyReportStaging[] = []
-    
+
     for (let i = 0; i < records.length; i++) {
       const record = records[i]
-      
+
       try {
         // Check for required fields
         const requiredFields = ['InsuredName_Txt', 'CertificateNumber1', 'Agents', 'CurrentContractStatusReason1', 'ActivationDate1']
         const missingFields = requiredFields.filter(field => !record[field as keyof RNAPolicyData] || record[field as keyof RNAPolicyData].toString().trim() === '')
-        
+
         if (missingFields.length > 0) {
           console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
@@ -987,11 +987,11 @@ async function parseRNACSVToPolicyReports(
 
         // Split agent field into code and name
         const { agentCode, agentName } = splitRNAAgentsField(record.Agents)
-        
+
         // Convert dates using existing AMAM function
         const policyDate = convertDateFormat(record.ActivationDate1)
         const applicationDate = convertDateFormat(record.ApplicationEntryDate1)
-        
+
         // Capitalize names using RNA-specific function
         const clientName = capitalizeRNAName(record.InsuredName_Txt)
         const ownerName = capitalizeRNAName(record.OwnerName)
@@ -1043,7 +1043,7 @@ async function parseRNACSVToPolicyReports(
 /**
  * Combined: Validates Combined CSV structure and checks for required columns
  * Verifies that it is a CSV, contains data, and is a Combined CSV by checking for npn and owned columns
- * 
+ *
  * @param headers - Array of column headers from CSV
  * @returns {isValid: boolean, error?: string}
  */
@@ -1069,14 +1069,14 @@ function validateCombinedCSVStructure(headers: string[]): {isValid: boolean, err
     'writing_agent', 'writing_number', 'npn', 'owned'
   ]
 
-  const missingColumns = requiredColumns.filter(col => 
+  const missingColumns = requiredColumns.filter(col =>
     !headers.some(header => header.toLowerCase() === col.toLowerCase())
   )
 
   if (missingColumns.length > 0) {
-    return { 
-      isValid: false, 
-      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}` 
+    return {
+      isValid: false,
+      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}`
     }
   }
 
@@ -1086,13 +1086,13 @@ function validateCombinedCSVStructure(headers: string[]): {isValid: boolean, err
 /**
  * Combined: Capitalizes first letter of each word in a name field
  * Handles names separated by spaces - capitalizes first letter of each word, rest lowercase
- * 
+ *
  * @param name - Name field that may contain multiple words
  * @returns string - Properly capitalized name
  */
 function capitalizeCombinedName(name: string): string {
   if (!name || name.trim() === '') return ''
-  
+
   return name.trim()
     .toLowerCase()
     .split(' ')
@@ -1102,39 +1102,39 @@ function capitalizeCombinedName(name: string): string {
 
 /**
  * Combined: Processes gender field - ensures M/F format with proper capitalization
- * 
+ *
  * @param gender - Gender value from CSV (M / F format)
  * @returns string | null - Properly formatted gender (M or F) or null if invalid
  */
 function processCombinedGender(gender: string): string | null {
   if (!gender || gender.trim() === '') return null
-  
+
   const trimmedGender = gender.trim().toUpperCase()
-  
+
   // Accept M or F, with or without spaces/slashes
   if (trimmedGender === 'M' || trimmedGender === 'F') {
     return trimmedGender
   }
-  
+
   // Handle formats like "M / F" or "M/F"
   if (trimmedGender.includes('M')) return 'M'
   if (trimmedGender.includes('F')) return 'F'
-  
+
   return null
 }
 
 /**
  * Combined: Validates and converts date string to proper format
  * Dates should already be in YYYY-MM-DD format but validates and converts if needed
- * 
+ *
  * @param dateString - Date string from CSV
  * @returns string | null - Validated date in YYYY-MM-DD format or null if invalid
  */
 function validateCombinedDate(dateString: string): string | null {
   if (!dateString || dateString.trim() === '') return null
-  
+
   const trimmedDate = dateString.trim()
-  
+
   // Check if already in YYYY-MM-DD format
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
     // Validate the date
@@ -1143,7 +1143,7 @@ function validateCombinedDate(dateString: string): string | null {
       return trimmedDate
     }
   }
-  
+
   // Try to parse other common formats and convert to YYYY-MM-DD
   const date = new Date(trimmedDate)
   if (!isNaN(date.getTime())) {
@@ -1152,21 +1152,21 @@ function validateCombinedDate(dateString: string): string | null {
     const day = String(date.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
   }
-  
+
   return null
 }
 
 /**
  * Combined: Parses Combined CSV content and converts it to PolicyReportStaging objects
- * 
+ *
  * @param csvContent - The CSV file content as string
  * @param carrierName - The carrier name
  * @param agencyId - The agency ID
  * @returns Promise<PolicyReportStaging[]> - Array of parsed policy reports
  */
 async function parseCombinedCSVToPolicyReports(
-  csvContent: string, 
-  carrierName: string, 
+  csvContent: string,
+  carrierName: string,
   agencyId: string
 ): Promise<PolicyReportStaging[]> {
   try {
@@ -1202,15 +1202,15 @@ async function parseCombinedCSVToPolicyReports(
 
     // Map Combined records to PolicyReportStaging objects
     const policyReports: PolicyReportStaging[] = []
-    
+
     for (let i = 0; i < records.length; i++) {
       const record = records[i]
-      
+
       try {
         // Check for required fields
         const requiredFields = ['policy_number', 'first_name', 'last_name', 'writing_agent', 'writing_number', 'status', 'effective_date']
         const missingFields = requiredFields.filter(field => !record[field as keyof CombinedPolicyData] || record[field as keyof CombinedPolicyData].toString().trim() === '')
-        
+
         if (missingFields.length > 0) {
           console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
@@ -1220,25 +1220,25 @@ async function parseCombinedCSVToPolicyReports(
         const capitalizedFirstName = capitalizeCombinedName(record.first_name)
         const capitalizedLastName = capitalizeCombinedName(record.last_name)
         const capitalizedWritingAgent = capitalizeCombinedName(record.writing_agent)
-        
+
         // Combine first and last name for client_name
         const clientName = `${capitalizedFirstName} ${capitalizedLastName}`.trim()
-        
+
         // Process gender field
         const processedGender = processCombinedGender(record.gender)
-        
+
         // Validate and convert dates
         const effectiveDate = validateCombinedDate(record.effective_date)
         const appDate = validateCombinedDate(record.app_date)
         const issueDate = validateCombinedDate(record.issue_date)
         const terminationDate = validateCombinedDate(record.termination_date)
-        
+
         // Convert numeric fields
         const issueAge = toNumber(record.issue_age)
         const faceValue = toNumber(record.face_amount)
         const modalPremium = toNumber(record.modal_premium)
         const annualPremium = toNumber(record.annual_premium)
-        
+
         // Normalize payment frequency using existing function
         const normalizedPaymentFrequency = normalizePaymentFrequency(record.mode)
 
@@ -1288,7 +1288,7 @@ async function parseCombinedCSVToPolicyReports(
 /**
  * AHL: Validates American Home Life Excel file structure and checks for required columns
  * Verifies that it is an Excel file, contains data, and is an AHL Excel file by checking COMPANYCODE column
- * 
+ *
  * @param workbook - The Excel workbook object
  * @returns {isValid: boolean, error?: string, dataStartRow?: number}
  */
@@ -1299,31 +1299,31 @@ function validateAHLExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean, 
     if (!sheetName) {
       return { isValid: false, error: 'No worksheets found in Excel file' }
     }
-    
+
     const worksheet = workbook.Sheets[sheetName]
     if (!worksheet) {
       return { isValid: false, error: 'Unable to read worksheet' }
     }
-    
+
     // Convert worksheet to JSON to find the data
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
-    
+
     if (!jsonData || jsonData.length === 0) {
       return { isValid: false, error: 'Excel file contains no data' }
     }
-    
+
     // Find the row that contains the column headers
     let headerRowIndex = -1
     let headers: string[] = []
-    
+
     for (let i = 0; i < jsonData.length; i++) {
       const row = jsonData[i] as string[]
       if (row && row.length > 0) {
         // Look for COMPANYCODE column to identify header row
-        const companyCodeIndex = row.findIndex(cell => 
+        const companyCodeIndex = row.findIndex(cell =>
           cell && cell.toString().toUpperCase().includes('COMPANYCODE')
         )
-        
+
         if (companyCodeIndex !== -1) {
           headerRowIndex = i
           headers = row.map(cell => cell ? cell.toString().trim() : '')
@@ -1331,11 +1331,11 @@ function validateAHLExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean, 
         }
       }
     }
-    
+
     if (headerRowIndex === -1) {
       return { isValid: false, error: 'Failed to parse policy report, missing COMPANYCODE column - this does not appear to be an AHL Excel file' }
     }
-    
+
     // Required columns for AHL policy reports
     const requiredColumns = [
       'COMPANYCODE', 'POLICYNUMBER', 'STATUSCATEGORY', 'STATUSDISPLAYTEXT',
@@ -1351,18 +1351,18 @@ function validateAHLExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean, 
       'ISSUEAGE', 'AGENTNUMBER', 'AGENTCOMPLETENAME', 'SPLITLEVEL',
       'SPLIT %'
     ]
-    
-    const missingColumns = requiredColumns.filter(col => 
+
+    const missingColumns = requiredColumns.filter(col =>
       !headers.some(header => header.toUpperCase() === col.toUpperCase())
     )
-    
+
     if (missingColumns.length > 0) {
-      return { 
-        isValid: false, 
-        error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}` 
+      return {
+        isValid: false,
+        error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}`
       }
     }
-    
+
     return { isValid: true, dataStartRow: headerRowIndex + 1 }
   } catch (error) {
     return { isValid: false, error: `Error validating AHL Excel structure: ${error instanceof Error ? error.message : 'Unknown error'}` }
@@ -1371,7 +1371,7 @@ function validateAHLExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean, 
 
 /**
  * AHL: Verifies that the Excel file contains AHL data by checking COMPANYCODE values
- * 
+ *
  * @param workbook - The Excel workbook object
  * @param dataStartRow - The row where data starts (after headers)
  * @returns {isValid: boolean, error?: string}
@@ -1381,7 +1381,7 @@ function verifyAHLData(workbook: XLSX.WorkBook, dataStartRow: number): {isValid:
     const sheetName = workbook.SheetNames[0]
     const worksheet = workbook.Sheets[sheetName]
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
-    
+
     // Determine header row and COMPANYCODE column index
     const headerRowIndex = dataStartRow - 1
     const headerRow = jsonData[headerRowIndex] as string[]
@@ -1396,7 +1396,7 @@ function verifyAHLData(workbook: XLSX.WorkBook, dataStartRow: number): {isValid:
     // Check a few random rows to verify COMPANYCODE contains "AMH"
     const sampleSize = Math.min(5, jsonData.length - dataStartRow)
     let foundAMH = false
-    
+
     for (let i = 0; i < sampleSize; i++) {
       const rowIndex = dataStartRow + i
       if (rowIndex < jsonData.length) {
@@ -1412,11 +1412,11 @@ function verifyAHLData(workbook: XLSX.WorkBook, dataStartRow: number): {isValid:
         }
       }
     }
-    
+
     if (!foundAMH) {
       return { isValid: false, error: 'You uploaded the wrong company\'s policy report to the AHL section - COMPANYCODE does not contain AMH values' }
     }
-    
+
     return { isValid: true }
   } catch (error) {
     return { isValid: false, error: `Error verifying AHL data: ${error instanceof Error ? error.message : 'Unknown error'}` }
@@ -1425,7 +1425,7 @@ function verifyAHLData(workbook: XLSX.WorkBook, dataStartRow: number): {isValid:
 
 /**
  * AHL: Processes payment mode display text - converts M to Monthly, Q to Quarterly, etc.
- * 
+ *
  * @param paymentMode - Payment mode from AHL Excel (M, Q, etc.)
  * @returns string | null - Standardized payment frequency
  */
@@ -1433,9 +1433,9 @@ function processAHLPaymentMode(paymentMode: any): string | null {
   if (paymentMode == null) return null
   const modeStr = String(paymentMode)
   if (modeStr.trim() === '') return null
-  
+
   const mode = modeStr.trim().toUpperCase()
-  
+
   switch (mode) {
     case 'M':
       return 'Monthly'
@@ -1452,7 +1452,7 @@ function processAHLPaymentMode(paymentMode: any): string | null {
 
 /**
  * AHL: Processes payment method display text - converts "DIRECT BILL" to "Direct Bill"
- * 
+ *
  * @param paymentMethod - Payment method from AHL Excel
  * @returns string | null - Properly formatted payment method
  */
@@ -1460,14 +1460,14 @@ function processAHLPaymentMethod(paymentMethod: any): string | null {
   if (paymentMethod == null) return null
   const methodStr = String(paymentMethod)
   if (methodStr.trim() === '') return null
-  
+
   const method = methodStr.trim()
-  
+
   // Handle "DIRECT BILL" -> "Direct Bill"
   if (method.toUpperCase() === 'DIRECT BILL') {
     return 'Direct Bill'
   }
-  
+
   // Capitalize first letter of each word
   return method.toLowerCase()
     .split(' ')
@@ -1477,7 +1477,7 @@ function processAHLPaymentMethod(paymentMethod: any): string | null {
 
 /**
  * AHL: Processes monetary values - removes dollar signs and commas, converts to number
- * 
+ *
  * @param value - Monetary value string (e.g., "$1,234.56")
  * @returns number | null - Converted number
  */
@@ -1497,7 +1497,7 @@ function processAHLMonetaryValue(value: any): number | null {
 
 /**
  * AHL: Processes address components - capitalizes first letter of each word
- * 
+ *
  * @param addressComponent - Address component (ADDRESSLINE1, ADDRESSLINE2, etc.)
  * @returns string | null - Properly capitalized address component
  */
@@ -1505,7 +1505,7 @@ function processAHLAddressComponent(addressComponent: any): string | null {
   if (addressComponent == null) return null
   const addrStr = String(addressComponent)
   if (addrStr.trim() === '') return null
-  
+
   return addrStr.trim()
     .toLowerCase()
     .split(' ')
@@ -1515,7 +1515,7 @@ function processAHLAddressComponent(addressComponent: any): string | null {
 
 /**
  * AHL: Builds complete client address from address components
- * 
+ *
  * @param addressLine1 - First address line
  * @param addressLine2 - Second address line
  * @param addressLine3 - Third address line
@@ -1533,7 +1533,7 @@ function buildAHLClientAddress(
   postalCode: string
 ): string | null {
   const addressParts = []
-  
+
   // Process each address component
   const processedLine1 = processAHLAddressComponent(addressLine1)
   const processedLine2 = processAHLAddressComponent(addressLine2)
@@ -1541,27 +1541,27 @@ function buildAHLClientAddress(
   const processedCity = processAHLAddressComponent(city)
   const processedState = processAHLAddressComponent(state)
   const processedPostalCode = postalCode ? postalCode.trim() : ''
-  
+
   // Build address parts
   if (processedLine1) addressParts.push(processedLine1)
   if (processedLine2) addressParts.push(processedLine2)
   if (processedLine3) addressParts.push(processedLine3)
-  
+
   if (addressParts.length === 0) return null
-  
+
   // Add city, state, postal code
   const locationParts = []
   if (processedCity) locationParts.push(processedCity)
   if (processedState) locationParts.push(processedState)
   if (processedPostalCode) locationParts.push(processedPostalCode)
-  
+
   const locationString = locationParts.join(', ')
   return `${addressParts.join(' ')}, ${locationString}`
 }
 
 /**
  * AHL: Processes phone number - removes spaces, parentheses, and other non-numeric characters
- * 
+ *
  * @param phone - Phone number string
  * @returns string | null - Cleaned phone number with only digits
  */
@@ -1569,10 +1569,10 @@ function processAHLPhoneNumber(phone: any): string | null {
   if (phone == null) return null
   const phoneStr = String(phone)
   if (phoneStr.trim() === '') return null
-  
+
   // Remove all non-numeric characters (spaces, parentheses, dashes, etc.)
   const cleanedPhone = phoneStr.replace(/\D/g, '')
-  
+
   // Return null if no digits found
   return cleanedPhone.length > 0 ? cleanedPhone : null
 }
@@ -1580,7 +1580,7 @@ function processAHLPhoneNumber(phone: any): string | null {
 /**
  * AHL: Validates and converts date string to proper format
  * Dates should already be in YYYY-MM-DD format but validates and converts if needed
- * 
+ *
  * @param dateString - Date string from AHL Excel
  * @returns string | null - Validated date in YYYY-MM-DD format or null if invalid
  */
@@ -1628,81 +1628,81 @@ function validateAHLDate(dateInput: any): string | null {
 
 /**
  * AHL: Parses American Home Life Excel content and converts it to PolicyReportStaging objects
- * 
+ *
  * @param excelBuffer - The Excel file buffer
  * @param carrierName - The carrier name
  * @param agencyId - The agency ID
  * @returns Promise<PolicyReportStaging[]> - Array of parsed policy reports
  */
 async function parseAHLExcelToPolicyReports(
-  excelBuffer: Buffer, 
-  carrierName: string, 
+  excelBuffer: Buffer,
+  carrierName: string,
   agencyId: string
 ): Promise<PolicyReportStaging[]> {
   try {
     // Parse Excel file
     const workbook = XLSX.read(excelBuffer, { type: 'buffer' })
-    
+
     // Validate Excel structure
     const validation = validateAHLExcelStructure(workbook)
     if (!validation.isValid) {
       throw new Error(validation.error)
     }
-    
+
     // Verify AHL data
     const dataVerification = verifyAHLData(workbook, validation.dataStartRow!)
     if (!dataVerification.isValid) {
       throw new Error(dataVerification.error)
     }
-    
+
     // Get worksheet and convert to JSON
     const sheetName = workbook.SheetNames[0]
     const worksheet = workbook.Sheets[sheetName]
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
-    
+
     if (jsonData.length <= validation.dataStartRow!) {
       throw new Error('No data found in Excel file')
     }
-    
+
     // Get headers from the header row
     const headers = jsonData[validation.dataStartRow! - 1] as string[]
-    
+
     // Map AHL records to PolicyReportStaging objects
     const policyReports: PolicyReportStaging[] = []
-    
+
     for (let i = validation.dataStartRow!; i < jsonData.length; i++) {
       const row = jsonData[i] as string[]
-      
+
       try {
         // Create record object from headers and row data
         const record: any = {}
         headers.forEach((header, index) => {
           record[header] = row[index] || ''
         })
-        
+
         // Check for required fields
         const requiredFields = ['INSUREDNAME', 'POLICYNUMBER', 'AGENTNUMBER', 'AGENTCOMPLETENAME', 'STATUSCATEGORY', 'ORIGEFFDATE']
         const missingFields = requiredFields.filter(field => !record[field] || record[field].toString().trim() === '')
-        
+
         if (missingFields.length > 0) {
           console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
         }
-        
+
         // Process dates
         const policyEffectiveDate = validateAHLDate(record.ORIGEFFDATE)
         const birthDate = validateAHLDate(record.BIRTHDATE)
-        
+
         // Process monetary values
         const faceValue = processAHLMonetaryValue(record.FACEVALUE)
         const issuedPremium = processAHLMonetaryValue(record.ISSUEDPREMIUM)
         const currentAnnualPremium = processAHLMonetaryValue(record.CURRENTANNUALPREMIUM)
         const currentModalPremium = processAHLMonetaryValue(record.CURRENTMODALPREMIUM)
-        
+
         // Process payment information
         const paymentFrequency = processAHLPaymentMode(record.PAYMENTMODEDISPLAYTEXT)
         const paymentMethod = processAHLPaymentMethod(record.PAYMENTMETHODDISPLAYTEXT)
-        
+
         // Process address components
         const clientAddress = buildAHLClientAddress(
           record.ADDRESSLINE1,
@@ -1712,14 +1712,14 @@ async function parseAHLExcelToPolicyReports(
           record.STATE,
           record.POSTALCODE
         )
-        
+
         // Process phone and email
         const clientPhone = processAHLPhoneNumber(record.PHONE1)
         const clientEmail = record.EMAIL && record.EMAIL.trim() !== '' ? record.EMAIL.trim().toLowerCase() : null
-        
+
         // Process issue age
         const issueAge = toNumber(record.ISSUEAGE)
-        
+
         const policyReport: PolicyReportStaging = {
           client_name: cleanValue(record.INSUREDNAME),
           policy_number: cleanValue(cleanCSVValue(record.POLICYNUMBER)),
@@ -1744,14 +1744,14 @@ async function parseAHLExcelToPolicyReports(
           agency_id: agencyId,
           carrier_name: 'American Home Life Insurance Company'
         }
-        
+
         policyReports.push(policyReport)
       } catch (rowError) {
         console.error(`Error processing row ${i + 1}:`, rowError, row)
         // Continue processing other rows
       }
     }
-    
+
     return policyReports
   } catch (error) {
     console.error('AHL Excel parsing error:', error)
@@ -1766,7 +1766,7 @@ async function parseAHLExcelToPolicyReports(
 /**
  * Aflac: Validates Aflac Excel file structure and checks for required columns
  * Verifies that it is an Excel file, contains data, and is an Aflac Excel file by checking COMPANYCODE column
- * 
+ *
  * @param workbook - The Excel workbook object
  * @returns {isValid: boolean, error?: string, dataStartRow?: number}
  */
@@ -1777,31 +1777,31 @@ function validateAflacExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean
     if (!sheetName) {
       return { isValid: false, error: 'No worksheets found in Excel file' }
     }
-    
+
     const worksheet = workbook.Sheets[sheetName]
     if (!worksheet) {
       return { isValid: false, error: 'Unable to read worksheet' }
     }
-    
+
     // Convert worksheet to JSON to find the data
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
-    
+
     if (!jsonData || jsonData.length === 0) {
       return { isValid: false, error: 'Excel file contains no data' }
     }
-    
+
     // Find the row that contains the column headers
     let headerRowIndex = -1
     let headers: string[] = []
-    
+
     for (let i = 0; i < jsonData.length; i++) {
       const row = jsonData[i] as string[]
       if (row && row.length > 0) {
         // Look for COMPANYCODE column to identify header row
-        const companyCodeIndex = row.findIndex(cell => 
+        const companyCodeIndex = row.findIndex(cell =>
           cell && cell.toString().toUpperCase().includes('COMPANYCODE')
         )
-        
+
         if (companyCodeIndex !== -1) {
           headerRowIndex = i
           headers = row.map(cell => cell ? cell.toString().trim() : '')
@@ -1809,11 +1809,11 @@ function validateAflacExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean
         }
       }
     }
-    
+
     if (headerRowIndex === -1) {
       return { isValid: false, error: 'Failed to parse policy report, missing COMPANYCODE column - this does not appear to be an Aflac Excel file' }
     }
-    
+
     // Required columns for Aflac policy reports
     const requiredColumns = [
       'COMPANYCODE', 'POLICYNUMBER', 'STATUSCATEGORY', 'STATUSDISPLAYTEXT',
@@ -1829,18 +1829,18 @@ function validateAflacExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean
       'ISSUEAGE', 'AGENTNUMBER', 'AGENTCOMPLETENAME', 'SPLITLEVEL',
       'SPLIT %'
     ]
-    
-    const missingColumns = requiredColumns.filter(col => 
+
+    const missingColumns = requiredColumns.filter(col =>
       !headers.some(header => header.toUpperCase() === col.toUpperCase())
     )
-    
+
     if (missingColumns.length > 0) {
-      return { 
-        isValid: false, 
-        error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}` 
+      return {
+        isValid: false,
+        error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}`
       }
     }
-    
+
     return { isValid: true, dataStartRow: headerRowIndex + 1 }
   } catch (error) {
     return { isValid: false, error: `Error validating Aflac Excel structure: ${error instanceof Error ? error.message : 'Unknown error'}` }
@@ -1849,7 +1849,7 @@ function validateAflacExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean
 
 /**
  * Aflac: Verifies that the Excel file contains Aflac data by checking COMPANYCODE values
- * 
+ *
  * @param workbook - The Excel workbook object
  * @param dataStartRow - The row where data starts (after headers)
  * @returns {isValid: boolean, error?: string}
@@ -1859,7 +1859,7 @@ function verifyAflacData(workbook: XLSX.WorkBook, dataStartRow: number): {isVali
     const sheetName = workbook.SheetNames[0]
     const worksheet = workbook.Sheets[sheetName]
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
-    
+
     // Determine header row and COMPANYCODE column index
     const headerRowIndex = dataStartRow - 1
     const headerRow = jsonData[headerRowIndex] as string[]
@@ -1874,7 +1874,7 @@ function verifyAflacData(workbook: XLSX.WorkBook, dataStartRow: number): {isVali
     // Check a few random rows to verify COMPANYCODE contains "TIER"
     const sampleSize = Math.min(5, jsonData.length - dataStartRow)
     let foundTIER = false
-    
+
     for (let i = 0; i < sampleSize; i++) {
       const rowIndex = dataStartRow + i
       if (rowIndex < jsonData.length) {
@@ -1890,11 +1890,11 @@ function verifyAflacData(workbook: XLSX.WorkBook, dataStartRow: number): {isVali
         }
       }
     }
-    
+
     if (!foundTIER) {
       return { isValid: false, error: 'You uploaded the wrong company\'s policy report to the Aflac section - COMPANYCODE does not contain TIER values' }
     }
-    
+
     return { isValid: true }
   } catch (error) {
     return { isValid: false, error: `Error verifying Aflac data: ${error instanceof Error ? error.message : 'Unknown error'}` }
@@ -1903,7 +1903,7 @@ function verifyAflacData(workbook: XLSX.WorkBook, dataStartRow: number): {isVali
 
 /**
  * Aflac: Processes payment mode display text - converts M to Monthly, Q to Quarterly, etc.
- * 
+ *
  * @param paymentMode - Payment mode from Aflac Excel (M, Q, etc.)
  * @returns string | null - Standardized payment frequency
  */
@@ -1911,9 +1911,9 @@ function processAflacPaymentMode(paymentMode: any): string | null {
   if (paymentMode == null) return null
   const modeStr = String(paymentMode)
   if (modeStr.trim() === '') return null
-  
+
   const mode = modeStr.trim().toUpperCase()
-  
+
   switch (mode) {
     case 'M':
       return 'Monthly'
@@ -1930,7 +1930,7 @@ function processAflacPaymentMode(paymentMode: any): string | null {
 
 /**
  * Aflac: Processes payment method display text - converts "DIRECT BILL" to "Direct Bill"
- * 
+ *
  * @param paymentMethod - Payment method from Aflac Excel
  * @returns string | null - Properly formatted payment method
  */
@@ -1938,14 +1938,14 @@ function processAflacPaymentMethod(paymentMethod: any): string | null {
   if (paymentMethod == null) return null
   const methodStr = String(paymentMethod)
   if (methodStr.trim() === '') return null
-  
+
   const method = methodStr.trim()
-  
+
   // Handle "DIRECT BILL" -> "Direct Bill"
   if (method.toUpperCase() === 'DIRECT BILL') {
     return 'Direct Bill'
   }
-  
+
   // Capitalize first letter of each word
   return method.toLowerCase()
     .split(' ')
@@ -1955,7 +1955,7 @@ function processAflacPaymentMethod(paymentMethod: any): string | null {
 
 /**
  * Aflac: Processes monetary values - removes dollar signs and commas, converts to number
- * 
+ *
  * @param value - Monetary value string (e.g., "$1,234.56")
  * @returns number | null - Converted number
  */
@@ -1975,7 +1975,7 @@ function processAflacMonetaryValue(value: any): number | null {
 
 /**
  * Aflac: Processes address components - capitalizes first letter of each word
- * 
+ *
  * @param addressComponent - Address component (ADDRESSLINE1, ADDRESSLINE2, etc.)
  * @returns string | null - Properly capitalized address component
  */
@@ -1983,7 +1983,7 @@ function processAflacAddressComponent(addressComponent: any): string | null {
   if (addressComponent == null) return null
   const addrStr = String(addressComponent)
   if (addrStr.trim() === '') return null
-  
+
   return addrStr.trim()
     .toLowerCase()
     .split(' ')
@@ -1993,7 +1993,7 @@ function processAflacAddressComponent(addressComponent: any): string | null {
 
 /**
  * Aflac: Builds complete client address from address components
- * 
+ *
  * @param addressLine1 - First address line
  * @param addressLine2 - Second address line
  * @param addressLine3 - Third address line
@@ -2011,7 +2011,7 @@ function buildAflacClientAddress(
   postalCode: string
 ): string | null {
   const addressParts = []
-  
+
   // Process each address component
   const processedLine1 = processAflacAddressComponent(addressLine1)
   const processedLine2 = processAflacAddressComponent(addressLine2)
@@ -2019,27 +2019,27 @@ function buildAflacClientAddress(
   const processedCity = processAflacAddressComponent(city)
   const processedState = processAflacAddressComponent(state)
   const processedPostalCode = postalCode ? postalCode.trim() : ''
-  
+
   // Build address parts
   if (processedLine1) addressParts.push(processedLine1)
   if (processedLine2) addressParts.push(processedLine2)
   if (processedLine3) addressParts.push(processedLine3)
-  
+
   if (addressParts.length === 0) return null
-  
+
   // Add city, state, postal code
   const locationParts = []
   if (processedCity) locationParts.push(processedCity)
   if (processedState) locationParts.push(processedState)
   if (processedPostalCode) locationParts.push(processedPostalCode)
-  
+
   const locationString = locationParts.join(', ')
   return `${addressParts.join(' ')}, ${locationString}`
 }
 
 /**
  * Aflac: Processes phone number - removes spaces, parentheses, and other non-numeric characters
- * 
+ *
  * @param phone - Phone number string
  * @returns string | null - Cleaned phone number with only digits
  */
@@ -2047,10 +2047,10 @@ function processAflacPhoneNumber(phone: any): string | null {
   if (phone == null) return null
   const phoneStr = String(phone)
   if (phoneStr.trim() === '') return null
-  
+
   // Remove all non-numeric characters (spaces, parentheses, dashes, etc.)
   const cleanedPhone = phoneStr.replace(/\D/g, '')
-  
+
   // Return null if no digits found
   return cleanedPhone.length > 0 ? cleanedPhone : null
 }
@@ -2058,7 +2058,7 @@ function processAflacPhoneNumber(phone: any): string | null {
 /**
  * Aflac: Validates and converts date string to proper format
  * Dates should already be in YYYY-MM-DD format but validates and converts if needed
- * 
+ *
  * @param dateString - Date string from Aflac Excel
  * @returns string | null - Validated date in YYYY-MM-DD format or null if invalid
  */
@@ -2106,81 +2106,81 @@ function validateAflacDate(dateInput: any): string | null {
 
 /**
  * Aflac: Parses Aflac Excel content and converts it to PolicyReportStaging objects
- * 
+ *
  * @param excelBuffer - The Excel file buffer
  * @param carrierName - The carrier name
  * @param agencyId - The agency ID
  * @returns Promise<PolicyReportStaging[]> - Array of parsed policy reports
  */
 async function parseAflacExcelToPolicyReports(
-  excelBuffer: Buffer, 
-  carrierName: string, 
+  excelBuffer: Buffer,
+  carrierName: string,
   agencyId: string
 ): Promise<PolicyReportStaging[]> {
   try {
     // Parse Excel file
     const workbook = XLSX.read(excelBuffer, { type: 'buffer' })
-    
+
     // Validate Excel structure
     const validation = validateAflacExcelStructure(workbook)
     if (!validation.isValid) {
       throw new Error(validation.error)
     }
-    
+
     // Verify Aflac data
     const dataVerification = verifyAflacData(workbook, validation.dataStartRow!)
     if (!dataVerification.isValid) {
       throw new Error(dataVerification.error)
     }
-    
+
     // Get worksheet and convert to JSON
     const sheetName = workbook.SheetNames[0]
     const worksheet = workbook.Sheets[sheetName]
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
-    
+
     if (jsonData.length <= validation.dataStartRow!) {
       throw new Error('No data found in Excel file')
     }
-    
+
     // Get headers from the header row
     const headers = jsonData[validation.dataStartRow! - 1] as string[]
-    
+
     // Map Aflac records to PolicyReportStaging objects
     const policyReports: PolicyReportStaging[] = []
-    
+
     for (let i = validation.dataStartRow!; i < jsonData.length; i++) {
       const row = jsonData[i] as string[]
-      
+
       try {
         // Create record object from headers and row data
         const record: any = {}
         headers.forEach((header, index) => {
           record[header] = row[index] || ''
         })
-        
+
         // Check for required fields
         const requiredFields = ['INSUREDNAME', 'POLICYNUMBER', 'AGENTNUMBER', 'AGENTCOMPLETENAME', 'STATUSCATEGORY', 'ORIGEFFDATE']
         const missingFields = requiredFields.filter(field => !record[field] || record[field].toString().trim() === '')
-        
+
         if (missingFields.length > 0) {
           console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
         }
-        
+
         // Process dates
         const policyEffectiveDate = validateAflacDate(record.ORIGEFFDATE)
         const birthDate = validateAflacDate(record.BIRTHDATE)
-        
+
         // Process monetary values
         const faceValue = processAflacMonetaryValue(record.FACEVALUE)
         const issuedPremium = processAflacMonetaryValue(record.ISSUEDPREMIUM)
         const currentAnnualPremium = processAflacMonetaryValue(record.CURRENTANNUALPREMIUM)
         const currentModalPremium = processAflacMonetaryValue(record.CURRENTMODALPREMIUM)
-        
+
         // Process payment information
         const paymentFrequency = processAflacPaymentMode(record.PAYMENTMODEDISPLAYTEXT)
         const paymentMethod = processAflacPaymentMethod(record.PAYMENTMETHODDISPLAYTEXT)
-        
+
         // Process address components
         const clientAddress = buildAflacClientAddress(
           record.ADDRESSLINE1,
@@ -2190,14 +2190,14 @@ async function parseAflacExcelToPolicyReports(
           record.STATE,
           record.POSTALCODE
         )
-        
+
         // Process phone and email
         const clientPhone = processAflacPhoneNumber(record.PHONE1)
         const clientEmail = record.EMAIL && record.EMAIL.trim() !== '' ? record.EMAIL.trim().toLowerCase() : null
-        
+
         // Process issue age
         const issueAge = toNumber(record.ISSUEAGE)
-        
+
         const policyReport: PolicyReportStaging = {
           client_name: cleanValue(record.INSUREDNAME),
           policy_number: cleanValue(cleanCSVValue(record.POLICYNUMBER)),
@@ -2222,14 +2222,14 @@ async function parseAflacExcelToPolicyReports(
           agency_id: agencyId,
           carrier_name: 'Aflac'
         }
-        
+
         policyReports.push(policyReport)
       } catch (rowError) {
         console.error(`Error processing row ${i + 1}:`, rowError, row)
         // Continue processing other rows
       }
     }
-    
+
     return policyReports
   } catch (error) {
     console.error('Aflac Excel parsing error:', error)
@@ -2244,7 +2244,7 @@ async function parseAflacExcelToPolicyReports(
 /**
  * Aetna: Validates Aetna Excel file structure and checks for required columns
  * Verifies that it is an Excel file, contains data, and is an Aetna Excel file by checking COMPANYCODE column
- * 
+ *
  * @param workbook - The Excel workbook object
  * @returns {isValid: boolean, error?: string, dataStartRow?: number}
  */
@@ -2255,31 +2255,31 @@ function validateAetnaExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean
     if (!sheetName) {
       return { isValid: false, error: 'No worksheets found in Excel file' }
     }
-    
+
     const worksheet = workbook.Sheets[sheetName]
     if (!worksheet) {
       return { isValid: false, error: 'Unable to read worksheet' }
     }
-    
+
     // Convert worksheet to JSON to find the data
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
-    
+
     if (!jsonData || jsonData.length === 0) {
       return { isValid: false, error: 'Excel file contains no data' }
     }
-    
+
     // Find the row that contains the column headers
     let headerRowIndex = -1
     let headers: string[] = []
-    
+
     for (let i = 0; i < jsonData.length; i++) {
       const row = jsonData[i] as string[]
       if (row && row.length > 0) {
         // Look for COMPANYCODE column to identify header row
-        const companyCodeIndex = row.findIndex(cell => 
+        const companyCodeIndex = row.findIndex(cell =>
           cell && cell.toString().toUpperCase().includes('COMPANYCODE')
         )
-        
+
         if (companyCodeIndex !== -1) {
           headerRowIndex = i
           headers = row.map(cell => cell ? cell.toString().trim() : '')
@@ -2287,11 +2287,11 @@ function validateAetnaExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean
         }
       }
     }
-    
+
     if (headerRowIndex === -1) {
       return { isValid: false, error: 'Failed to parse policy report, missing COMPANYCODE column - this does not appear to be an Aetna Excel file' }
     }
-    
+
     // Required columns for Aetna policy reports
     const requiredColumns = [
       'COMPANYCODE', 'POLICYNUMBER', 'STATUSCATEGORY', 'STATUSDISPLAYTEXT',
@@ -2307,18 +2307,18 @@ function validateAetnaExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean
       'ISSUEAGE', 'AGENTNUMBER', 'AGENTCOMPLETENAME', 'SPLITLEVEL',
       'SPLIT %'
     ]
-    
-    const missingColumns = requiredColumns.filter(col => 
+
+    const missingColumns = requiredColumns.filter(col =>
       !headers.some(header => header.toUpperCase() === col.toUpperCase())
     )
-    
+
     if (missingColumns.length > 0) {
-      return { 
-        isValid: false, 
-        error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}` 
+      return {
+        isValid: false,
+        error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}`
       }
     }
-    
+
     return { isValid: true, dataStartRow: headerRowIndex + 1 }
   } catch (error) {
     return { isValid: false, error: `Error validating Aetna Excel structure: ${error instanceof Error ? error.message : 'Unknown error'}` }
@@ -2327,7 +2327,7 @@ function validateAetnaExcelStructure(workbook: XLSX.WorkBook): {isValid: boolean
 
 /**
  * Aetna: Verifies that the Excel file contains Aetna data by checking COMPANYCODE values
- * 
+ *
  * @param workbook - The Excel workbook object
  * @param dataStartRow - The row where data starts (after headers)
  * @returns {isValid: boolean, error?: string}
@@ -2337,7 +2337,7 @@ function verifyAetnaData(workbook: XLSX.WorkBook, dataStartRow: number): {isVali
     const sheetName = workbook.SheetNames[0]
     const worksheet = workbook.Sheets[sheetName]
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
-    
+
     // Determine header row and COMPANYCODE column index
     const headerRowIndex = dataStartRow - 1
     const headerRow = jsonData[headerRowIndex] as string[]
@@ -2352,7 +2352,7 @@ function verifyAetnaData(workbook: XLSX.WorkBook, dataStartRow: number): {isVali
     // Check a few random rows to verify COMPANYCODE contains "ACC"
     const sampleSize = Math.min(5, jsonData.length - dataStartRow)
     let foundACC = false
-    
+
     for (let i = 0; i < sampleSize; i++) {
       const rowIndex = dataStartRow + i
       if (rowIndex < jsonData.length) {
@@ -2368,11 +2368,11 @@ function verifyAetnaData(workbook: XLSX.WorkBook, dataStartRow: number): {isVali
         }
       }
     }
-    
+
     if (!foundACC) {
       return { isValid: false, error: 'You uploaded the wrong company\'s policy report to the Aetna section - COMPANYCODE does not contain ACC values' }
     }
-    
+
     return { isValid: true }
   } catch (error) {
     return { isValid: false, error: `Error verifying Aetna data: ${error instanceof Error ? error.message : 'Unknown error'}` }
@@ -2381,7 +2381,7 @@ function verifyAetnaData(workbook: XLSX.WorkBook, dataStartRow: number): {isVali
 
 /**
  * Aetna: Processes payment mode display text - converts M to Monthly, Q to Quarterly, etc.
- * 
+ *
  * @param paymentMode - Payment mode from Aetna Excel (M, Q, etc.)
  * @returns string | null - Standardized payment frequency
  */
@@ -2389,9 +2389,9 @@ function processAetnaPaymentMode(paymentMode: any): string | null {
   if (paymentMode == null) return null
   const modeStr = String(paymentMode)
   if (modeStr.trim() === '') return null
-  
+
   const mode = modeStr.trim().toUpperCase()
-  
+
   switch (mode) {
     case 'M':
       return 'Monthly'
@@ -2408,7 +2408,7 @@ function processAetnaPaymentMode(paymentMode: any): string | null {
 
 /**
  * Aetna: Processes payment method display text - converts "DIRECT BILL" to "Direct Bill"
- * 
+ *
  * @param paymentMethod - Payment method from Aetna Excel
  * @returns string | null - Properly formatted payment method
  */
@@ -2416,14 +2416,14 @@ function processAetnaPaymentMethod(paymentMethod: any): string | null {
   if (paymentMethod == null) return null
   const methodStr = String(paymentMethod)
   if (methodStr.trim() === '') return null
-  
+
   const method = methodStr.trim()
-  
+
   // Handle "DIRECT BILL" -> "Direct Bill"
   if (method.toUpperCase() === 'DIRECT BILL') {
     return 'Direct Bill'
   }
-  
+
   // Capitalize first letter of each word
   return method.toLowerCase()
     .split(' ')
@@ -2433,7 +2433,7 @@ function processAetnaPaymentMethod(paymentMethod: any): string | null {
 
 /**
  * Aetna: Processes monetary values - removes dollar signs and commas, converts to number
- * 
+ *
  * @param value - Monetary value string (e.g., "$1,234.56")
  * @returns number | null - Converted number
  */
@@ -2453,7 +2453,7 @@ function processAetnaMonetaryValue(value: any): number | null {
 
 /**
  * Aetna: Processes address components - capitalizes first letter of each word
- * 
+ *
  * @param addressComponent - Address component (ADDRESSLINE1, ADDRESSLINE2, etc.)
  * @returns string | null - Properly capitalized address component
  */
@@ -2461,7 +2461,7 @@ function processAetnaAddressComponent(addressComponent: any): string | null {
   if (addressComponent == null) return null
   const addrStr = String(addressComponent)
   if (addrStr.trim() === '') return null
-  
+
   return addrStr.trim()
     .toLowerCase()
     .split(' ')
@@ -2471,7 +2471,7 @@ function processAetnaAddressComponent(addressComponent: any): string | null {
 
 /**
  * Aetna: Builds complete client address from address components
- * 
+ *
  * @param addressLine1 - First address line
  * @param addressLine2 - Second address line
  * @param addressLine3 - Third address line
@@ -2489,7 +2489,7 @@ function buildAetnaClientAddress(
   postalCode: string
 ): string | null {
   const addressParts = []
-  
+
   // Process each address component
   const processedLine1 = processAetnaAddressComponent(addressLine1)
   const processedLine2 = processAetnaAddressComponent(addressLine2)
@@ -2497,27 +2497,27 @@ function buildAetnaClientAddress(
   const processedCity = processAetnaAddressComponent(city)
   const processedState = processAetnaAddressComponent(state)
   const processedPostalCode = postalCode ? postalCode.trim() : ''
-  
+
   // Build address parts - skip empty address lines
   if (processedLine1) addressParts.push(processedLine1)
   if (processedLine2) addressParts.push(processedLine2)
   if (processedLine3) addressParts.push(processedLine3)
-  
+
   if (addressParts.length === 0) return null
-  
+
   // Add city, state, postal code
   const locationParts = []
   if (processedCity) locationParts.push(processedCity)
   if (processedState) locationParts.push(processedState)
   if (processedPostalCode) locationParts.push(processedPostalCode)
-  
+
   const locationString = locationParts.join(', ')
   return `${addressParts.join(' ')}, ${locationString}`
 }
 
 /**
  * Aetna: Processes phone number - removes spaces, parentheses, and other non-numeric characters
- * 
+ *
  * @param phone - Phone number string
  * @returns string | null - Cleaned phone number with only digits
  */
@@ -2525,10 +2525,10 @@ function processAetnaPhoneNumber(phone: any): string | null {
   if (phone == null) return null
   const phoneStr = String(phone)
   if (phoneStr.trim() === '') return null
-  
+
   // Remove all non-numeric characters (spaces, parentheses, dashes, etc.)
   const cleanedPhone = phoneStr.replace(/\D/g, '')
-  
+
   // Return null if no digits found
   return cleanedPhone.length > 0 ? cleanedPhone : null
 }
@@ -2536,7 +2536,7 @@ function processAetnaPhoneNumber(phone: any): string | null {
 /**
  * Aetna: Validates and converts date string to proper format
  * Dates should already be in YYYY-MM-DD format but validates and converts if needed
- * 
+ *
  * @param dateString - Date string from Aetna Excel
  * @returns string | null - Validated date in YYYY-MM-DD format or null if invalid
  */
@@ -2584,81 +2584,81 @@ function validateAetnaDate(dateInput: any): string | null {
 
 /**
  * Aetna: Parses Aetna Excel content and converts it to PolicyReportStaging objects
- * 
+ *
  * @param excelBuffer - The Excel file buffer
  * @param carrierName - The carrier name
  * @param agencyId - The agency ID
  * @returns Promise<PolicyReportStaging[]> - Array of parsed policy reports
  */
 async function parseAetnaExcelToPolicyReports(
-  excelBuffer: Buffer, 
-  carrierName: string, 
+  excelBuffer: Buffer,
+  carrierName: string,
   agencyId: string
 ): Promise<PolicyReportStaging[]> {
   try {
     // Parse Excel file
     const workbook = XLSX.read(excelBuffer, { type: 'buffer' })
-    
+
     // Validate Excel structure
     const validation = validateAetnaExcelStructure(workbook)
     if (!validation.isValid) {
       throw new Error(validation.error)
     }
-    
+
     // Verify Aetna data
     const dataVerification = verifyAetnaData(workbook, validation.dataStartRow!)
     if (!dataVerification.isValid) {
       throw new Error(dataVerification.error)
     }
-    
+
     // Get worksheet and convert to JSON
     const sheetName = workbook.SheetNames[0]
     const worksheet = workbook.Sheets[sheetName]
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
-    
+
     if (jsonData.length <= validation.dataStartRow!) {
       throw new Error('No data found in Excel file')
     }
-    
+
     // Get headers from the header row
     const headers = jsonData[validation.dataStartRow! - 1] as string[]
-    
+
     // Map Aetna records to PolicyReportStaging objects
     const policyReports: PolicyReportStaging[] = []
-    
+
     for (let i = validation.dataStartRow!; i < jsonData.length; i++) {
       const row = jsonData[i] as string[]
-      
+
       try {
         // Create record object from headers and row data
         const record: any = {}
         headers.forEach((header, index) => {
           record[header] = row[index] || ''
         })
-        
+
         // Check for required fields
         const requiredFields = ['INSUREDNAME', 'POLICYNUMBER', 'AGENTNUMBER', 'AGENTCOMPLETENAME', 'STATUSCATEGORY', 'ORIGEFFDATE']
         const missingFields = requiredFields.filter(field => !record[field] || record[field].toString().trim() === '')
-        
+
         if (missingFields.length > 0) {
           console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
         }
-        
+
         // Process dates
         const policyEffectiveDate = validateAetnaDate(record.ORIGEFFDATE)
         const birthDate = validateAetnaDate(record.BIRTHDATE)
-        
+
         // Process monetary values
         const faceValue = processAetnaMonetaryValue(record.FACEVALUE)
         const issuedPremium = processAetnaMonetaryValue(record.ISSUEDPREMIUM)
         const currentAnnualPremium = processAetnaMonetaryValue(record.CURRENTANNUALPREMIUM)
         const currentModalPremium = processAetnaMonetaryValue(record.CURRENTMODALPREMIUM)
-        
+
         // Process payment information
         const paymentFrequency = processAetnaPaymentMode(record.PAYMENTMODEDISPLAYTEXT)
         const paymentMethod = processAetnaPaymentMethod(record.PAYMENTMETHODDISPLAYTEXT)
-        
+
         // Process address components
         const clientAddress = buildAetnaClientAddress(
           record.ADDRESSLINE1,
@@ -2668,14 +2668,14 @@ async function parseAetnaExcelToPolicyReports(
           record.STATE,
           record.POSTALCODE
         )
-        
+
         // Process phone and email
         const clientPhone = processAetnaPhoneNumber(record.PHONE1)
         const clientEmail = record.EMAIL && record.EMAIL.trim() !== '' ? record.EMAIL.trim().toLowerCase() : null
-        
+
         // Process issue age
         const issueAge = toNumber(record.ISSUEAGE)
-        
+
         const policyReport: PolicyReportStaging = {
           client_name: cleanValue(record.INSUREDNAME),
           policy_number: cleanValue(cleanCSVValue(record.POLICYNUMBER)),
@@ -2700,14 +2700,14 @@ async function parseAetnaExcelToPolicyReports(
           agency_id: agencyId,
           carrier_name: 'Aetna'
         }
-        
+
         policyReports.push(policyReport)
       } catch (rowError) {
         console.error(`Error processing row ${i + 1}:`, rowError, row)
         // Continue processing other rows
       }
     }
-    
+
     return policyReports
   } catch (error) {
     console.error('Aetna Excel parsing error:', error)
@@ -2722,7 +2722,7 @@ async function parseAetnaExcelToPolicyReports(
 /**
  * LBL: Validates LBL CSV structure and checks for required columns
  * Verifies that it is a CSV file, contains data, and is an LBL CSV file by checking Textbox16 column
- * 
+ *
  * @param headers - Array of column headers from CSV
  * @returns {isValid: boolean, error?: string}
  */
@@ -2743,14 +2743,14 @@ function validateLBLCSVStructure(headers: string[]): {isValid: boolean, error?: 
     'Is_Issued', 'Is_Unpaid', 'Is_Nottaken', 'Is_Cancelled1'
   ]
 
-  const missingColumns = requiredColumns.filter(col => 
+  const missingColumns = requiredColumns.filter(col =>
     !headers.some(header => header.toLowerCase() === col.toLowerCase())
   )
 
   if (missingColumns.length > 0) {
-    return { 
-      isValid: false, 
-      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}` 
+    return {
+      isValid: false,
+      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}`
     }
   }
 
@@ -2761,21 +2761,21 @@ function validateLBLCSVStructure(headers: string[]): {isValid: boolean, error?: 
  * LBL: Processes Mode field - standardizes payment frequency values
  * Mode field contains values like "1" where 1 corresponds to monthly
  * Converts numeric mode values to standardized text format
- * 
+ *
  * @param modeValue - Mode value from LBL CSV (e.g., "1")
  * @returns string | null - Standardized payment frequency or null if invalid
  */
 function processLBLMode(modeValue: string): string | null {
   if (!modeValue || modeValue.trim() === '') return null
-  
+
   const trimmedMode = modeValue.trim()
-  
+
   // LBL mode values: 1 = Monthly
   // Can be extended for other modes if needed
   if (trimmedMode === '1' || trimmedMode.toLowerCase() === 'monthly') {
     return 'Monthly'
   }
-  
+
   // Return original value capitalized if not a known mode
   return trimmedMode.charAt(0).toUpperCase() + trimmedMode.slice(1).toLowerCase()
 }
@@ -2786,18 +2786,18 @@ function processLBLMode(modeValue: string): string | null {
  * Handles formats like "CHICKEN, POTATO THOMAS" -> "Potato Thomas Chicken"
  * Essentially reverses LAST, FIRST order and capitalizes properly
  * Note: Single token middle names (like "T") are removed, multi-word first names are kept
- * 
+ *
  * @param agentName - The agent name in LBL format (fully capitalized, LastName, FirstName)
  * @returns string - Properly formatted agent name
  */
 function formatLBLAgentName(agentName: string): string {
   if (!agentName || agentName.trim() === '') return ''
-  
+
   // Split by comma to separate last name from first name
   const parts = agentName.trim().split(',').map(p => p.trim())
-  
+
   if (parts.length === 0) return ''
-  
+
   // If no comma, just capitalize properly
   if (parts.length === 1) {
     return parts[0].toLowerCase()
@@ -2805,16 +2805,16 @@ function formatLBLAgentName(agentName: string): string {
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ')
   }
-  
+
   // Has comma - format: "LAST, FIRST M" -> "First M Last" (but only if MiddleInitial is multi-word)
   const lastName = parts[0].toLowerCase()
     .split(' ')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
-  
+
   // Split first name part by spaces
   const firstNameParts = parts[1].toLowerCase().split(' ')
-  
+
   // Determine which parts to keep
   // If there are exactly 2 tokens and the second is a single character, keep only first token
   if (firstNameParts.length >= 2 && firstNameParts[1].length === 1) {
@@ -2825,11 +2825,11 @@ function formatLBLAgentName(agentName: string): string {
     firstNameParts.splice(2)
   }
   // Otherwise keep all tokens (e.g., "POTATO THOMAS" stays as is)
-  
+
   const firstName = firstNameParts
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
-  
+
   // Return as "FirstName LastName"
   return `${firstName} ${lastName}`.trim()
 }
@@ -2838,16 +2838,16 @@ function formatLBLAgentName(agentName: string): string {
  * LBL: Capitalizes first letter of each word in a fully capitalized name
  * Also adds spaces between words if missing
  * Converts formats like "JOHN DOE" -> "John Doe"
- * 
+ *
  * @param name - Fully capitalized name (e.g., "JOHN DOE")
  * @returns string - Properly capitalized name with spaces (e.g., "John Doe")
  */
 function capitalizeLBLName(name: string): string {
   if (!name || name.trim() === '') return ''
-  
+
   // Remove extra spaces and convert to lowercase
   const cleaned = name.trim().toLowerCase()
-  
+
   // Capitalize first letter of each word
   return cleaned
     .split(' ')
@@ -2858,20 +2858,20 @@ function capitalizeLBLName(name: string): string {
 /**
  * LBL: Converts dates from MM/DD/YYYY format to YYYY-MM-DD format
  * Handles the date format conversion required for LBL date fields
- * 
+ *
  * @param dateString - Date in MM/DD/YYYY format
  * @returns string - Date in YYYY-MM-DD format or empty string if invalid
  */
 function convertLBLDateFormat(dateString: string): string {
   if (!dateString || dateString.trim() === '') return ''
-  
+
   // Use existing convertDateFormat function for MM/DD/YYYY to YYYY-MM-DD conversion
   return convertDateFormat(dateString)
 }
 
 /**
  * LBL: Parses Liberty Bankers Life CSV content and converts it to PolicyReportStaging objects
- * 
+ *
  * @param csvContent - The CSV file content as string
  * @param carrierName - The carrier name
  * @param agencyId - The agency ID
@@ -2918,12 +2918,12 @@ async function parseLBLCSVToPolicyReports(
 
     for (let i = 0; i < records.length; i++) {
       const record = records[i]
-      
+
       try {
         // Check for required fields
         const requiredFields = ['InsuredName', 'PolicyNumber1', 'WritingAgentID', 'WritingAgentName', 'StatusDescription']
         const missingFields = requiredFields.filter(field => !record[field as keyof LBLPolicyData] || record[field as keyof LBLPolicyData].toString().trim() === '')
-        
+
         if (missingFields.length > 0) {
           console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
@@ -2931,18 +2931,18 @@ async function parseLBLCSVToPolicyReports(
 
         // Process agent name - format from fully capitalized LastName, FirstName format
         const formattedAgentName = formatLBLAgentName(record.WritingAgentName)
-        
+
         // Capitalize insured name
         const clientName = capitalizeLBLName(record.InsuredName)
-        
+
         // Convert dates from MM/DD/YYYY to YYYY-MM-DD
         const policyEffectiveDate = convertLBLDateFormat(record.IssuedDate)
         const submitDate = convertLBLDateFormat(record.SubmitDate)
         const statusDate = convertLBLDateFormat(record.StatusDate)
-        
+
         // Process mode field - standardize payment frequency
         const paymentFrequency = processLBLMode(record.Mode)
-        
+
         // Parse modal premium and annualized premium as numbers
         const modalPremium = record.ModalPremium ? parseFloat(record.ModalPremium) : null
         const annualizedPremium = record.AnnualizedPremium ? parseFloat(record.AnnualizedPremium) : null
@@ -2990,7 +2990,7 @@ async function parseLBLCSVToPolicyReports(
 /**
  * Processes CSV files and uploads them to the staging table
  * Supports AMAM (American Amicable), RNA (Royal Neighbors), Combined, AHL (American Home Life), Aflac, Aetna, and LBL (Liberty Bankers Life) policy reports
- * 
+ *
  * @param supabase - Supabase client instance
  * @param agencyId - The agency ID
  * @param uploads - Array of carrier upload objects
@@ -3008,113 +3008,113 @@ async function processCSVUploads(
     try {
       // Validate file
       await validateFile(upload.file)
-      
+
       // Determine carrier type and process accordingly
       const carrierLower = upload.carrier.toLowerCase()
       let policyReports: PolicyReportStaging[] = []
-      
+
       // Add detailed logging for debugging carrier matching
       console.log(`Processing upload - Original carrier: "${upload.carrier}", Lowercase: "${carrierLower}", File: "${upload.file.name}"`)
-      
+
       if (carrierLower === 'american amicable' || carrierLower === 'amam') {
         // Read CSV file content for AMAM
         const csvContent = await upload.file.text()
         // Parse AMAM CSV to policy reports
         policyReports = await parseAMAMCSVToPolicyReports(csvContent, upload.carrier, agencyId)
-        
+
         if (policyReports.length === 0) {
           errors.push(`${upload.carrier}: No valid records found in CSV`)
           continue
         }
-        
+
         console.log(`Successfully processed ${policyReports.length} AMAM records for carrier ${upload.carrier}`)
-        
+
       } else if (carrierLower === 'royal neighbors' || carrierLower === 'rna') {
         // Read CSV file content for RNA
         const csvContent = await upload.file.text()
         // Parse RNA CSV to policy reports
         policyReports = await parseRNACSVToPolicyReports(csvContent, upload.carrier, agencyId)
-        
+
         if (policyReports.length === 0) {
           errors.push(`${upload.carrier}: No valid records found in CSV`)
           continue
         }
-        
+
         console.log(`Successfully processed ${policyReports.length} RNA records for carrier ${upload.carrier}`)
-        
+
       } else if (carrierLower === 'combined' || carrierLower.includes('combined')) {
         // Read CSV file content for Combined
         const csvContent = await upload.file.text()
         // Parse Combined CSV to policy reports
         console.log(`Matched Combined carrier: "${upload.carrier}"`)
         policyReports = await parseCombinedCSVToPolicyReports(csvContent, upload.carrier, agencyId)
-        
+
         if (policyReports.length === 0) {
           errors.push(`${upload.carrier}: No valid records found in CSV`)
           continue
         }
-        
+
         console.log(`Successfully processed ${policyReports.length} Combined records for carrier ${upload.carrier}`)
-        
+
       } else if (carrierLower === 'american home life' || carrierLower === 'ahl') {
         // Parse AHL Excel to policy reports
         console.log(`Matched AHL carrier: "${upload.carrier}"`)
-        
+
         // Convert file to buffer for Excel processing
         const excelBuffer = Buffer.from(await upload.file.arrayBuffer())
         policyReports = await parseAHLExcelToPolicyReports(excelBuffer, upload.carrier, agencyId)
-        
+
         if (policyReports.length === 0) {
           errors.push(`${upload.carrier}: No valid records found in Excel file`)
           continue
         }
-        
+
         console.log(`Successfully processed ${policyReports.length} AHL records for carrier ${upload.carrier}`)
-        
+
       } else if (carrierLower === 'aflac') {
         // Parse Aflac Excel to policy reports
         console.log(`Matched Aflac carrier: "${upload.carrier}"`)
-        
+
         // Convert file to buffer for Excel processing
         const excelBuffer = Buffer.from(await upload.file.arrayBuffer())
         policyReports = await parseAflacExcelToPolicyReports(excelBuffer, upload.carrier, agencyId)
-        
+
         if (policyReports.length === 0) {
           errors.push(`${upload.carrier}: No valid records found in Excel file`)
           continue
         }
-        
+
         console.log(`Successfully processed ${policyReports.length} Aflac records for carrier ${upload.carrier}`)
-        
+
       } else if (carrierLower === 'aetna') {
         // Parse Aetna Excel to policy reports
         console.log(`Matched Aetna carrier: "${upload.carrier}"`)
-        
+
         // Convert file to buffer for Excel processing
         const excelBuffer = Buffer.from(await upload.file.arrayBuffer())
         policyReports = await parseAetnaExcelToPolicyReports(excelBuffer, upload.carrier, agencyId)
-        
+
         if (policyReports.length === 0) {
           errors.push(`${upload.carrier}: No valid records found in Excel file`)
           continue
         }
-        
+
         console.log(`Successfully processed ${policyReports.length} Aetna records for carrier ${upload.carrier}`)
-        
+
       } else if (carrierLower === 'liberty bankers life' || carrierLower === 'lbl' || carrierLower.includes('liberty bankers')) {
         // Read CSV file content for LBL
         console.log(`Matched LBL carrier: "${upload.carrier}"`)
         const csvContent = await upload.file.text()
         // Parse LBL CSV to policy reports
         policyReports = await parseLBLCSVToPolicyReports(csvContent, upload.carrier, agencyId)
-        
+
         if (policyReports.length === 0) {
           errors.push(`${upload.carrier}: No valid records found in CSV`)
           continue
         }
-        
+
         console.log(`Successfully processed ${policyReports.length} LBL records for carrier ${upload.carrier}`)
-        
+
       } else {
         console.log(`No carrier match found for: "${upload.carrier}" (lowercase: "${carrierLower}")`)
         errors.push(`${upload.carrier}: Only American Amicable (AMAM), Royal Neighbors (RNA), Combined, American Home Life (AHL), Aflac, Aetna, and Liberty Bankers Life (LBL) policy reports are currently supported for staging`)
@@ -3193,9 +3193,9 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-    
+
     console.log(`Found ${uploads.length} uploads:`, uploads.map(u => ({ carrier: u.carrier, fileName: u.file.name })))
-    
+
     // Check if any files were uploaded
     if (uploads.length === 0) {
       return NextResponse.json(
@@ -3210,18 +3210,18 @@ export async function POST(request: NextRequest) {
     // Calculate total records processed
     const totalRecordsProcessed = uploadResults.results.reduce((sum, result) => sum + result.recordsProcessed, 0)
     const totalRecordsInserted = uploadResults.results.reduce((sum, result) => sum + result.recordsInserted, 0)
-    
+
     // Trigger orchestrate_policy_report_ingest_with_agency_id RPC function AFTER staging is fully complete
     let orchestrationResult = null
     if (totalRecordsInserted > 0) {
       try {
         console.log(`Triggering orchestrate_policy_report_ingest_with_agency_id RPC function for agency ${agencyId} with ${totalRecordsInserted} records`)
-        
+
         const { data: orchestrationData, error: orchestrationError } = await supabase
           .rpc('orchestrate_policy_report_ingest_with_agency_id', {
             p_agency_id: agencyId
           })
-        
+
         if (orchestrationError) {
           console.error('Error calling orchestrate_policy_report_ingest_with_agency_id RPC:', orchestrationError)
           orchestrationResult = {
@@ -3245,7 +3245,7 @@ export async function POST(request: NextRequest) {
     } else {
       console.log('Skipping orchestrate_policy_report_ingest_with_agency_id RPC - no successful uploads or no records inserted')
     }
-    
+
     // Prepare response
     const response = {
       success: uploadResults.success,

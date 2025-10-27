@@ -8,7 +8,7 @@ import { createServerClient } from '@/lib/supabase/server';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createServerClient();
@@ -22,7 +22,7 @@ export async function POST(
       );
     }
 
-    const dealId = params.id;
+    const { id: dealId } = await params;
 
     // Get the deal to check current status
     const { data: deal, error: dealError } = await supabase

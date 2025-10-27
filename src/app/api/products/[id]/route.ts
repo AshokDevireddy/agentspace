@@ -8,19 +8,19 @@ import { NextResponse } from 'next/server'
 
 export async function PUT(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params;
     const supabase = createAdminClient()
     const body = await request.json()
-    
+
     const { name, product_code, is_active } = body
     const productId = id
 
     // Validate required fields
     if (!name) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Missing required fields',
         detail: 'name is required'
       }, { status: 400 })
@@ -28,9 +28,9 @@ export async function PUT(
 
     // Get the authorization header
     const authHeader = request.headers.get('authorization')
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Unauthorized',
         detail: 'No valid token provided'
       }, { status: 401 })
@@ -42,7 +42,7 @@ export async function PUT(
     const { data: { user }, error: userError } = await supabase.auth.getUser(token)
 
     if (userError || !user) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Unauthorized',
         detail: 'Invalid token'
       }, { status: 401 })
@@ -56,7 +56,7 @@ export async function PUT(
       .single()
 
     if (userDataError || !userData) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'User not found',
         detail: 'Failed to fetch user information'
       }, { status: 404 })
@@ -65,7 +65,7 @@ export async function PUT(
     const userAgencyId = userData.agency_id
 
     if (!userAgencyId) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'User not associated with an agency',
         detail: 'User must be associated with an agency to modify products'
       }, { status: 403 })
@@ -79,14 +79,14 @@ export async function PUT(
       .single()
 
     if (productCheckError || !existingProduct) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Product not found',
         detail: 'The specified product does not exist'
       }, { status: 404 })
     }
 
     if (existingProduct.agency_id !== userAgencyId) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Access denied',
         detail: 'You can only modify products from your own agency'
       }, { status: 403 })
@@ -107,7 +107,7 @@ export async function PUT(
 
     if (error) {
       console.error('Product update error:', error)
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Failed to update product',
         detail: 'Database update encountered an error'
       }, { status: 500 })
@@ -117,7 +117,7 @@ export async function PUT(
 
   } catch (error) {
     console.error('API Error in product update:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Internal Server Error',
       detail: 'An unexpected error occurred while updating product'
     }, { status: 500 })
@@ -126,7 +126,7 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params;
@@ -135,9 +135,9 @@ export async function DELETE(
 
     // Get the authorization header
     const authHeader = request.headers.get('authorization')
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Unauthorized',
         detail: 'No valid token provided'
       }, { status: 401 })
@@ -149,7 +149,7 @@ export async function DELETE(
     const { data: { user }, error: userError } = await supabase.auth.getUser(token)
 
     if (userError || !user) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Unauthorized',
         detail: 'Invalid token'
       }, { status: 401 })
@@ -163,7 +163,7 @@ export async function DELETE(
       .single()
 
     if (userDataError || !userData) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'User not found',
         detail: 'Failed to fetch user information'
       }, { status: 404 })
@@ -172,7 +172,7 @@ export async function DELETE(
     const userAgencyId = userData.agency_id
 
     if (!userAgencyId) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'User not associated with an agency',
         detail: 'User must be associated with an agency to delete products'
       }, { status: 403 })
@@ -186,14 +186,14 @@ export async function DELETE(
       .single()
 
     if (productCheckError || !existingProduct) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Product not found',
         detail: 'The specified product does not exist'
       }, { status: 404 })
     }
 
     if (existingProduct.agency_id !== userAgencyId) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Access denied',
         detail: 'You can only delete products from your own agency'
       }, { status: 403 })
@@ -207,7 +207,7 @@ export async function DELETE(
 
     if (error) {
       console.error('Product deletion error:', error)
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Failed to delete product',
         detail: 'Database delete encountered an error'
       }, { status: 500 })
@@ -217,9 +217,9 @@ export async function DELETE(
 
   } catch (error) {
     console.error('API Error in product deletion:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Internal Server Error',
       detail: 'An unexpected error occurred while deleting product'
     }, { status: 500 })
   }
-} 
+}

@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 
     if (fetchError) {
       console.error('Carriers fetch error:', fetchError)
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'Failed to fetch carriers',
         detail: 'Database query encountered an error'
       }, { status: 500 })
@@ -35,9 +35,9 @@ export async function GET(request: Request) {
 
   } catch (error) {
     console.error('API Error in carriers:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Internal Server Error',
       detail: 'An unexpected error occurred while fetching carriers'
     }, { status: 500 })
   }
-} 
+}

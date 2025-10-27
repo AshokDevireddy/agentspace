@@ -109,11 +109,7 @@ export async function sendSMS({ from, to, text }: SendSMSParams): Promise<Telnyx
 /**
  * Verifies Telnyx webhook signature (optional but recommended)
  */
-export function verifyWebhookSignature(
-  _payload: string,
-  _signature: string,
-  _timestamp: string
-): boolean {
+export function verifyWebhookSignature(): boolean {
   const webhookSecret = process.env.TELNYX_WEBHOOK_SECRET;
 
   if (!webhookSecret) {

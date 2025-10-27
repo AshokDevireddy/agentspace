@@ -1,12 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Upload, Users, Loader2, X, FileText, Plus, CheckCircle2 } from "lucide-react"
+import { Upload, Loader2, X, FileText, Plus, CheckCircle2 } from "lucide-react"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 
 interface UserData {
@@ -70,13 +69,12 @@ interface OnboardingWizardProps {
 
 export default function OnboardingWizard({ userData, onComplete }: OnboardingWizardProps) {
   const supabase = createClient()
-  const router = useRouter()
 
   // Policy reports upload state
   const [uploads, setUploads] = useState<CarrierUpload[]>(
     carriers.map(carrier => ({ carrier, file: null }))
   )
-  const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
+  const [uploadedFilesInfo, setUploadedFilesInfo] = useState<Array<{ name: string; size: number }>>([])
   const [checkingExistingFiles, setCheckingExistingFiles] = useState(false)
 
   // Downline invitation state
@@ -208,33 +206,33 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
   // Check for existing uploaded files when user is admin
   useEffect(() => {
+    const checkExistingFiles = async () => {
+      if (!userData.agency_id) return
+
+      try {
+        setCheckingExistingFiles(true)
+        const response = await fetch('/api/upload-policy-reports/bucket', {
+          method: 'GET',
+          credentials: 'include'
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.files && data.files.length > 0) {
+            setUploadedFilesInfo(data.files)
+          }
+        }
+      } catch (error) {
+        console.error('Error checking existing files:', error)
+      } finally {
+        setCheckingExistingFiles(false)
+      }
+    }
+
     if (userData.is_admin && currentStep === 1) {
       checkExistingFiles()
     }
-  }, [userData, currentStep])
-
-  const checkExistingFiles = async () => {
-    if (!userData.agency_id) return
-
-    try {
-      setCheckingExistingFiles(true)
-      const response = await fetch('/api/upload-policy-reports/bucket', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.files && data.files.length > 0) {
-          setUploadedFilesInfo(data.files)
-        }
-      }
-    } catch (error) {
-      console.error('Error checking existing files:', error)
-    } finally {
-      setCheckingExistingFiles(false)
-    }
-  }
+  }, [userData, currentStep, userData.agency_id])
 
   const validateAgentForm = () => {
     const newErrors: string[] = []
@@ -442,7 +440,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         } else {
           errors.push(`✗ ${agent.firstName} ${agent.lastName}: ${data.error}`)
         }
-      } catch (error) {
+      } catch {
         errors.push(`✗ ${agent.firstName} ${agent.lastName}: Network error`)
       }
     }
@@ -795,7 +793,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                     {nameSearchTerm.length >= 2 && !isNameSearching && nameSearchResults.length === 0 && (
                       <div className="border border-border rounded-lg bg-card shadow-lg p-3 z-10">
                         <p className="text-sm text-muted-foreground text-center">
-                          No agents found matching "{nameSearchTerm}"
+                          No agents found matching &quot;{nameSearchTerm}&quot;
                         </p>
                       </div>
                     )}

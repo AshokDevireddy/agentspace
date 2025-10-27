@@ -2899,7 +2899,7 @@ export async function POST(request: NextRequest) {
     
     // Trigger orchestrate_policy_report_ingest_with_agency_id RPC function AFTER staging is fully complete
     let orchestrationResult = null
-    if (uploadResults.success && totalRecordsInserted > 0) {
+    if (totalRecordsInserted > 0) {
       try {
         console.log(`Triggering orchestrate_policy_report_ingest_with_agency_id RPC function for agency ${agencyId} with ${totalRecordsInserted} records`)
         

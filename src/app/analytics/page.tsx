@@ -1,6 +1,5 @@
 "use client"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -10,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts'
-import { Calendar, Download, Filter, Upload } from "lucide-react"
+import { Upload, FileText } from "lucide-react"
 import { useState, useEffect } from 'react'
 import UploadPolicyReportsModal from '@/components/modals/upload-policy-reports-modal'
 import { createClient } from '@/lib/supabase/client'
@@ -22,7 +21,7 @@ import { createClient } from '@/lib/supabase/client'
  * @param userId - The authenticated user's ID (auth_user_id)
  * @returns Promise<string> - The agency ID
  */
-async function getAgencyId(supabase: any, userId: string): Promise<string> {
+async function getAgencyId(supabase: ReturnType<typeof createClient>, userId: string): Promise<string> {
   try {
     const { data: user, error } = await supabase
       .from('users')
@@ -1031,71 +1030,89 @@ async function getAgencyId(supabase: any, userId: string): Promise<string> {
 // }
 
 // Helper functions to process data
-const getCarrierPersistencyData = (carrier: any) => {
-  if (!carrier.timeRanges || carrier.timeRanges["3"].positiveCount === null) {
+const getCarrierPersistencyData = (carrier: { timeRanges?: Record<string, { positivePercentage?: number; positiveCount?: number | null }> }) => {
+  if (!carrier.timeRanges || !carrier.timeRanges["3"] || carrier.timeRanges["3"].positiveCount === null) {
     return null
   }
-  
+
   return [
-    { period: '3 Months', persistency: carrier.timeRanges["3"].positivePercentage },
-    { period: '6 Months', persistency: carrier.timeRanges["6"].positivePercentage },
-    { period: '9 Months', persistency: carrier.timeRanges["9"].positivePercentage },
-    { period: 'All Time', persistency: carrier.timeRanges["All"].positivePercentage },
+    { period: '3 Months', persistency: carrier.timeRanges["3"]?.positivePercentage || 0 },
+    { period: '6 Months', persistency: carrier.timeRanges["6"]?.positivePercentage || 0 },
+    { period: '9 Months', persistency: carrier.timeRanges["9"]?.positivePercentage || 0 },
+    { period: 'All Time', persistency: carrier.timeRanges["All"]?.positivePercentage || 0 },
   ]
 }
 
-const getCarrierPolicyData = (carrier: any) => {
-  if (!carrier.timeRanges || carrier.timeRanges["3"].positiveCount === null) {
-    return null
-  }
-  
-  return [
-    { period: '3 Months', active: carrier.timeRanges["3"].positiveCount, inactive: carrier.timeRanges["3"].negativeCount },
-    { period: '6 Months', active: carrier.timeRanges["6"].positiveCount, inactive: carrier.timeRanges["6"].negativeCount },
-    { period: '9 Months', active: carrier.timeRanges["9"].positiveCount, inactive: carrier.timeRanges["9"].negativeCount },
-    { period: 'All Time', active: carrier.timeRanges["All"].positiveCount, inactive: carrier.timeRanges["All"].negativeCount },
-  ]
-}
+// Helper function for carrier policy data (currently unused but kept for future use)
+// const getCarrierPolicyData = (carrier: { timeRanges?: Record<string, { positiveCount?: number | null; negativeCount?: number }> }) => {
+//   if (!carrier.timeRanges || !carrier.timeRanges["3"] || carrier.timeRanges["3"].positiveCount === null) {
+//     return null
+//   }
+//
+//   return [
+//     { period: '3 Months', active: carrier.timeRanges["3"]?.positiveCount || 0, inactive: carrier.timeRanges["3"]?.negativeCount || 0 },
+//     { period: '6 Months', active: carrier.timeRanges["6"]?.positiveCount || 0, inactive: carrier.timeRanges["6"]?.negativeCount || 0 },
+//     { period: '9 Months', active: carrier.timeRanges["9"]?.positiveCount || 0, inactive: carrier.timeRanges["9"]?.negativeCount || 0 },
+//     { period: 'All Time', active: carrier.timeRanges["All"]?.positiveCount || 0, inactive: carrier.timeRanges["All"]?.negativeCount || 0 },
+//   ]
+// }
 
-const getStatusBreakdownData = (carrier: any, timeRange: string = "All") => {
-  const breakdown = carrier.statusBreakdowns[timeRange]
+const getStatusBreakdownData = (carrier: { statusBreakdowns?: Record<string, Record<string, { count?: number; percentage?: number }>> }, timeRange: string = "All") => {
+  const breakdown = carrier.statusBreakdowns?.[timeRange]
   if (!breakdown) return []
-  
+
   const colors = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#84cc16', '#06b6d4', '#f97316', '#ec4899']
-  
+
   return Object.entries(breakdown)
-    .filter(([key, value]: [string, any]) => value && value.count !== null && value.count > 0)
-    .map(([key, value]: [string, any], index) => ({
+    .filter(([, value]) => value && value.count !== null && value.count !== undefined && value.count > 0)
+    .map(([key, value], index) => ({
       name: key,
-      value: value.count,
-      percentage: value.percentage,
+      value: value.count || 0,
+      percentage: value.percentage || 0,
       color: colors[index % colors.length]
     }))
 }
 
 // Function to generate carrier comparison data
-const generateCarrierComparisonData = (persistencyData: any) => {
-  const activePoliciesByCarrier = Object.entries(persistencyData.carrier_comparison.activeShareByCarrier)
-    .filter(([carrier, share]: [string, any]) => share !== null && share > 0)
-    .map(([carrier, share]: [string, any], index) => ({
+const generateCarrierComparisonData = (persistencyData: {
+  carrier_comparison?: {
+    activeShareByCarrier?: Record<string, number | null>;
+    inactiveShareByCarrier?: Record<string, number | null>;
+  };
+  overall_analytics?: {
+    activeCount?: number | null;
+    inactiveCount?: number | null;
+  };
+  carriers?: Array<{ carrier: string; persistencyRate?: number }>;
+}) => {
+  if (!persistencyData?.carrier_comparison || !persistencyData?.overall_analytics) {
+    return { activePoliciesByCarrier: [], inactivePoliciesByCarrier: [], carrierComparisonData: [] }
+  }
+
+  const activeCount = persistencyData.overall_analytics.activeCount || 0
+  const inactiveCount = persistencyData.overall_analytics.inactiveCount || 0
+
+  const activePoliciesByCarrier = Object.entries(persistencyData.carrier_comparison.activeShareByCarrier || {})
+    .filter(([, share]) => share !== null && share !== undefined && share > 0)
+    .map(([carrier, share], index) => ({
       name: carrier,
-      value: Math.round((share / 100) * persistencyData.overall_analytics.activeCount),
+      value: Math.round(((share as number) / 100) * activeCount),
       color: ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#84cc16', '#06b6d4'][index % 6]
     }))
 
-  const inactivePoliciesByCarrier = Object.entries(persistencyData.carrier_comparison.inactiveShareByCarrier)
-    .filter(([carrier, share]: [string, any]) => share !== null && share > 0)
-    .map(([carrier, share]: [string, any], index) => ({
+  const inactivePoliciesByCarrier = Object.entries(persistencyData.carrier_comparison.inactiveShareByCarrier || {})
+    .filter(([, share]) => share !== null && share !== undefined && share > 0)
+    .map(([carrier, share], index) => ({
       name: carrier,
-      value: Math.round((share / 100) * persistencyData.overall_analytics.inactiveCount),
+      value: Math.round(((share as number) / 100) * inactiveCount),
       color: ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#84cc16', '#06b6d4'][index % 6]
     }))
 
-  const carrierComparisonData = persistencyData.carriers
-    .filter((carrier: any) => carrier.persistencyRate > 0)
-    .map((carrier: any) => ({
+  const carrierComparisonData = (persistencyData.carriers || [])
+    .filter(carrier => (carrier.persistencyRate || 0) > 0)
+    .map(carrier => ({
       carrier: carrier.carrier,
-      persistency: carrier.persistencyRate
+      persistency: carrier.persistencyRate || 0
     }))
 
   return {
@@ -1107,79 +1124,80 @@ const generateCarrierComparisonData = (persistencyData: any) => {
 
 
 export default function Persistency() {
-  const [showCarrierComparison, setShowCarrierComparison] = useState(false)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  
+
   // Dynamic persistency data from Supabase RPC
-  const [persistencyData, setPersistencyData] = useState<any>(null)
-  
+  const [persistencyData, setPersistencyData] = useState<{
+    overall_analytics?: {
+      timeRanges?: Record<string, { activePercentage?: number; activeCount?: number | null; inactiveCount?: number | null }>;
+      overallPersistency?: number;
+      activeCount?: number | null;
+      inactiveCount?: number | null;
+    };
+    carriers?: Array<{
+      carrier: string;
+      persistencyRate?: number;
+      totalPolicies?: number;
+      timeRanges?: Record<string, { positiveCount?: number | null; negativeCount?: number; positivePercentage?: number }>;
+      statusBreakdowns?: Record<string, Record<string, { count?: number; percentage?: number }>>;
+    }>;
+    carrier_comparison?: {
+      activeShareByCarrier?: Record<string, number | null>;
+      inactiveShareByCarrier?: Record<string, number | null>;
+    };
+  } | null>(null)
+
   // Fetch persistency data from Supabase RPC
   useEffect(() => {
     const fetchPersistencyData = async () => {
       try {
         setIsLoading(true)
         setError(null)
-        
+
         const supabase = createClient()
-        
+
         // Get current user
         const { data: { user }, error: authError } = await supabase.auth.getUser()
-        
+
         if (authError || !user) {
           throw new Error('User not authenticated')
         }
-        
+
         // Get agency ID for the user
         const agencyId = await getAgencyId(supabase, user.id)
-        
+
         // Call the RPC function
-        const { data, error: rpcError } = await supabase.rpc('analyze_persistency_for_deals', { 
-          p_agency_id: agencyId 
+        const { data, error: rpcError } = await supabase.rpc('analyze_persistency_for_deals', {
+          p_agency_id: agencyId
         })
-        
+
         if (rpcError) {
           throw new Error(`RPC Error: ${rpcError.message}`)
         }
-        
-        if (data) {
+
+        if (data && typeof data === 'object' && 'carriers' in data && Array.isArray(data.carriers) && data.carriers.length > 0) {
           setPersistencyData(data)
         } else {
-          throw new Error('No data returned from RPC function')
+          // No data - empty state
+          setPersistencyData(null)
         }
-        
+
       } catch (err) {
         console.error('Error fetching persistency data:', err)
         setError(err instanceof Error ? err.message : 'Failed to fetch persistency data')
-        // No fallback data available - user will see error state
       } finally {
         setIsLoading(false)
       }
     }
-    
+
     fetchPersistencyData()
   }, [])
 
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollPosition = window.scrollY
-      const windowHeight = window.innerHeight
-      
-      // Show carrier comparison when user scrolls down (more sensitive trigger)
-      if (scrollPosition > 200) {
-        setShowCarrierComparison(true)
-      } else {
-        setShowCarrierComparison(false)
-      }
-    }
-
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
 
   // Show loading state
-  if (isLoading || !persistencyData) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -1207,19 +1225,53 @@ export default function Persistency() {
     )
   }
 
+  // Show empty state if no data
+  if (!persistencyData || !persistencyData.overall_analytics) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-2xl mx-auto p-6">
+          <div className="bg-white border border-gray-200 rounded-lg p-8 shadow-sm">
+            <div className="flex justify-center mb-6">
+              <div className="bg-blue-50 rounded-full p-4">
+                <FileText className="h-12 w-12 text-blue-600" />
+              </div>
+            </div>
+
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              No Persistency Data Available
+            </h2>
+
+            <p className="text-gray-600 mb-6 leading-relaxed">
+              Persistency analytics are not available because no policy reports have been uploaded yet,
+              or there are no deals in the database for your agency.
+            </p>
+
+            <Button
+              onClick={() => setIsUploadModalOpen(true)}
+              className="bg-black text-white hover:bg-gray-800"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Upload Policy Reports
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // Generate dynamic data based on current persistency data (only after data is loaded)
   const overallPersistencyData = [
-    { period: '3 Months', persistency: persistencyData.overall_analytics.timeRanges["3"].activePercentage },
-    { period: '6 Months', persistency: persistencyData.overall_analytics.timeRanges["6"].activePercentage },
-    { period: '9 Months', persistency: persistencyData.overall_analytics.timeRanges["9"].activePercentage },
-    { period: 'All Time', persistency: persistencyData.overall_analytics.timeRanges["All"].activePercentage },
+    { period: '3 Months', persistency: persistencyData.overall_analytics.timeRanges?.["3"]?.activePercentage || 0 },
+    { period: '6 Months', persistency: persistencyData.overall_analytics.timeRanges?.["6"]?.activePercentage || 0 },
+    { period: '9 Months', persistency: persistencyData.overall_analytics.timeRanges?.["9"]?.activePercentage || 0 },
+    { period: 'All Time', persistency: persistencyData.overall_analytics.timeRanges?.["All"]?.activePercentage || 0 },
   ]
 
   const overallPolicyData = [
-    { period: '3 Months', active: persistencyData.overall_analytics.timeRanges["3"].activeCount, inactive: persistencyData.overall_analytics.timeRanges["3"].inactiveCount },
-    { period: '6 Months', active: persistencyData.overall_analytics.timeRanges["6"].activeCount, inactive: persistencyData.overall_analytics.timeRanges["6"].inactiveCount },
-    { period: '9 Months', active: persistencyData.overall_analytics.timeRanges["9"].activeCount, inactive: persistencyData.overall_analytics.timeRanges["9"].inactiveCount },
-    { period: 'All Time', active: persistencyData.overall_analytics.timeRanges["All"].activeCount, inactive: persistencyData.overall_analytics.timeRanges["All"].inactiveCount },
+    { period: '3 Months', active: persistencyData.overall_analytics.timeRanges?.["3"]?.activeCount || 0, inactive: persistencyData.overall_analytics.timeRanges?.["3"]?.inactiveCount || 0 },
+    { period: '6 Months', active: persistencyData.overall_analytics.timeRanges?.["6"]?.activeCount || 0, inactive: persistencyData.overall_analytics.timeRanges?.["6"]?.inactiveCount || 0 },
+    { period: '9 Months', active: persistencyData.overall_analytics.timeRanges?.["9"]?.activeCount || 0, inactive: persistencyData.overall_analytics.timeRanges?.["9"]?.inactiveCount || 0 },
+    { period: 'All Time', active: persistencyData.overall_analytics.timeRanges?.["All"]?.activeCount || 0, inactive: persistencyData.overall_analytics.timeRanges?.["All"]?.inactiveCount || 0 },
   ]
 
   const { activePoliciesByCarrier, inactivePoliciesByCarrier, carrierComparisonData } = generateCarrierComparisonData(persistencyData)
@@ -1266,9 +1318,9 @@ export default function Persistency() {
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-gray-500">All Time</span>
             </div>
-            <p className="text-3xl font-bold text-gray-900">{persistencyData.overall_analytics.overallPersistency}%</p>
+            <p className="text-3xl font-bold text-gray-900">{persistencyData.overall_analytics.overallPersistency || 0}%</p>
             <p className="text-sm text-gray-600">All Carriers Combined</p>
-            <p className="text-xs text-gray-500">Total Policies: {persistencyData.overall_analytics.activeCount + persistencyData.overall_analytics.inactiveCount}</p>
+            <p className="text-xs text-gray-500">Total Policies: {((persistencyData.overall_analytics.activeCount || 0) + (persistencyData.overall_analytics.inactiveCount || 0)).toLocaleString()}</p>
           </div>
         </div>
 
@@ -1276,7 +1328,7 @@ export default function Persistency() {
         <div className="border border-gray-200 rounded-lg p-6 bg-white">
           <div className="space-y-2">
             <h3 className="text-sm font-medium text-gray-600">Active Policies</h3>
-            <p className="text-3xl font-bold text-gray-900">{persistencyData.overall_analytics.activeCount.toLocaleString()}</p>
+            <p className="text-3xl font-bold text-gray-900">{(persistencyData.overall_analytics.activeCount || 0).toLocaleString()}</p>
             <p className="text-sm text-gray-600">Persisting Across All Carriers</p>
           </div>
         </div>
@@ -1285,7 +1337,7 @@ export default function Persistency() {
         <div className="border border-gray-200 rounded-lg p-6 bg-white">
           <div className="space-y-2">
             <h3 className="text-sm font-medium text-gray-600">Inactive Policies</h3>
-            <p className="text-3xl font-bold text-gray-900">{persistencyData.overall_analytics.inactiveCount.toLocaleString()}</p>
+            <p className="text-3xl font-bold text-gray-900">{(persistencyData.overall_analytics.inactiveCount || 0).toLocaleString()}</p>
             <p className="text-sm text-gray-600">Persisting Across All Carriers</p>
           </div>
         </div>
@@ -1294,7 +1346,7 @@ export default function Persistency() {
         <div className="border border-gray-200 rounded-lg p-6 bg-white">
           <div className="space-y-2">
             <h3 className="text-sm font-medium text-gray-600">Total Policies</h3>
-            <p className="text-3xl font-bold text-gray-900">{(persistencyData.overall_analytics.activeCount + persistencyData.overall_analytics.inactiveCount).toLocaleString()}</p>
+            <p className="text-3xl font-bold text-gray-900">{((persistencyData.overall_analytics.activeCount || 0) + (persistencyData.overall_analytics.inactiveCount || 0)).toLocaleString()}</p>
             <p className="text-sm text-gray-600">All Carriers Combined</p>
           </div>
         </div>
@@ -1311,22 +1363,22 @@ export default function Persistency() {
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={overallPolicyData} margin={{ top: 20, right: 30, left: 80, bottom: 40 }}>
-                  <XAxis 
-                    dataKey="period" 
+                  <XAxis
+                    dataKey="period"
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Date Range', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                     domain={['dataMin', 'dataMax']}
                     padding={{ left: 30, right: 30 }}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Number of Policies', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                   />
                   <Tooltip
-                    contentStyle={{ 
-                      backgroundColor: 'white', 
+                    contentStyle={{
+                      backgroundColor: 'white',
                       border: '1px solid #e0e0e0',
                       borderRadius: '8px',
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -1355,27 +1407,27 @@ export default function Persistency() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={overallPersistencyData} margin={{ top: 20, right: 30, left: 80, bottom: 40 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis 
-                    dataKey="period" 
+                  <XAxis
+                    dataKey="period"
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Date Range', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                     domain={['dataMin', 'dataMax']}
                     padding={{ left: 30, right: 30 }}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                   />
                   <Tooltip
-                    contentStyle={{ 
-                      backgroundColor: 'white', 
+                    contentStyle={{
+                      backgroundColor: 'white',
                       border: '1px solid #e0e0e0',
                       borderRadius: '8px',
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                     }}
-                    formatter={(value, name) => [
+                    formatter={(value) => [
                       `${value}%`,
                       'Persistency Rate'
                     ]}
@@ -1400,7 +1452,7 @@ export default function Persistency() {
       {/* Carrier Comparison Section */}
       <div className="mt-12">
           <h2 className="text-2xl font-light text-gray-600 mb-6">Carrier Comparison</h2>
-        
+
         {/* Pie Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Active Policies Pie Chart */}
@@ -1425,13 +1477,13 @@ export default function Persistency() {
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                       }}
-                      formatter={(value, name) => [value, 'Active Policies']}
+                      formatter={(value) => [value, 'Active Policies']}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -1461,13 +1513,13 @@ export default function Persistency() {
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                       }}
-                      formatter={(value, name) => [value, 'Inactive Policies']}
+                      formatter={(value) => [value, 'Inactive Policies']}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -1486,27 +1538,27 @@ export default function Persistency() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={carrierComparisonData} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis 
-                    dataKey="carrier" 
+                  <XAxis
+                    dataKey="carrier"
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Carrier', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                     domain={['dataMin', 'dataMax']}
                     padding={{ left: 30, right: 30 }}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
                     label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                   />
                   <Tooltip
-                    contentStyle={{ 
-                      backgroundColor: 'white', 
+                    contentStyle={{
+                      backgroundColor: 'white',
                       border: '1px solid #e0e0e0',
                       borderRadius: '8px',
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                     }}
-                    formatter={(value, name) => [
+                    formatter={(value) => [
                       `${value}%`,
                       'Persistency Rate'
                     ]}
@@ -1522,7 +1574,7 @@ export default function Persistency() {
       {/* Leads Analysis Section */}
       <div className="mt-12">
         <h2 className="text-2xl font-light text-gray-600 mb-6">Leads Analysis</h2>
-        
+
         {/* Summary Statistics */}
         <div className="mb-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1549,7 +1601,7 @@ export default function Persistency() {
             </div>
           </div>
         </div>
-        
+
         {/* Pie Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Lead Distribution Pie Chart */}
@@ -1582,13 +1634,13 @@ export default function Persistency() {
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                       }}
-                      formatter={(value, name) => [value, 'Leads']}
+                      formatter={(value) => [value, 'Leads']}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -1626,13 +1678,13 @@ export default function Persistency() {
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                       }}
-                      formatter={(value, name) => [`${value}%`, 'Placement Rate']}
+                      formatter={(value) => [`${value}%`, 'Placement Rate']}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -1657,22 +1709,22 @@ export default function Persistency() {
                     { leadType: 'Third Party', placed: 38.4, notPlaced: 61.6, placedCount: 384, notPlacedCount: 616 },
                   ]} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis 
-                      dataKey="leadType" 
+                    <XAxis
+                      dataKey="leadType"
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Lead Type', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                       domain={['dataMin', 'dataMax']}
                       padding={{ left: 30, right: 30 }}
                     />
-                    <YAxis 
+                    <YAxis
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Placement Rate (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                     />
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -1710,22 +1762,22 @@ export default function Persistency() {
                     { leadType: 'Third Party', activeConversion: 52.1, inactiveConversion: 47.9, activeCount: 200, inactiveCount: 184 },
                   ]} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis 
-                      dataKey="leadType" 
+                    <XAxis
+                      dataKey="leadType"
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Lead Type', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                       domain={['dataMin', 'dataMax']}
                       padding={{ left: 30, right: 30 }}
                     />
-                    <YAxis 
+                    <YAxis
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Conversion Rate (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                     />
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -1765,22 +1817,22 @@ export default function Persistency() {
                     { leadType: 'Third Party', leadsPerCustomer: 5.00, totalLeads: 1000, activeCustomers: 200 },
                   ]} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis 
-                      dataKey="leadType" 
+                    <XAxis
+                      dataKey="leadType"
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Lead Type', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                       domain={['dataMin', 'dataMax']}
                       padding={{ left: 30, right: 30 }}
                     />
-                    <YAxis 
+                    <YAxis
                       tick={{ fontSize: 12, fill: '#666' }}
                       axisLine={{ stroke: '#e0e0e0' }}
                       label={{ value: 'Leads Per Customer', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                     />
                     <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: 'white', 
+                      contentStyle={{
+                        backgroundColor: 'white',
                         border: '1px solid #e0e0e0',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -1805,23 +1857,23 @@ export default function Persistency() {
       </div>
 
       {/* Individual Carrier Sections */}
-      {persistencyData.carriers.map((carrier: any, index: number) => (
+      {(persistencyData.carriers || []).map((carrier) => (
         <div key={carrier.carrier} className="mt-12">
           <h2 className="text-2xl font-light text-gray-600 mb-6">{carrier.carrier}</h2>
-          
+
           {/* Carrier Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="border border-gray-200 rounded-lg p-6 bg-white">
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-gray-600">Persistency Rate</h3>
-                <p className="text-3xl font-bold text-gray-900">{carrier.persistencyRate}%</p>
+                <p className="text-3xl font-bold text-gray-900">{carrier.persistencyRate || 0}%</p>
                 <p className="text-sm text-gray-600">All Time</p>
               </div>
             </div>
             <div className="border border-gray-200 rounded-lg p-6 bg-white">
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-gray-600">Total Policies</h3>
-                <p className="text-3xl font-bold text-gray-900">{carrier.totalPolicies.toLocaleString()}</p>
+                <p className="text-3xl font-bold text-gray-900">{(carrier.totalPolicies || 0).toLocaleString()}</p>
                 <p className="text-sm text-gray-600">All Time</p>
               </div>
             </div>
@@ -1829,7 +1881,7 @@ export default function Persistency() {
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-gray-600">Active Policies</h3>
                 <p className="text-3xl font-bold text-gray-900">
-                  {carrier.timeRanges.All?.positiveCount ? carrier.timeRanges.All.positiveCount.toLocaleString() : 'N/A'}
+                  {(carrier.timeRanges?.All?.positiveCount || 0).toLocaleString()}
                 </p>
                 <p className="text-sm text-gray-600">All Time</p>
               </div>
@@ -1838,7 +1890,7 @@ export default function Persistency() {
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-gray-600">Inactive Policies</h3>
                 <p className="text-3xl font-bold text-gray-900">
-                  {carrier.timeRanges.All?.negativeCount ? carrier.timeRanges.All.negativeCount.toLocaleString() : 'N/A'}
+                  {(carrier.timeRanges?.All?.negativeCount || 0).toLocaleString()}
                 </p>
                 <p className="text-sm text-gray-600">All Time</p>
               </div>
@@ -1869,13 +1921,13 @@ export default function Persistency() {
                         ))}
                       </Pie>
                       <Tooltip
-                        contentStyle={{ 
-                          backgroundColor: 'white', 
+                        contentStyle={{
+                          backgroundColor: 'white',
                           border: '1px solid #e0e0e0',
                           borderRadius: '8px',
                           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                         }}
-                        formatter={(value, name) => [value, 'Policies']}
+                        formatter={(value) => [value, 'Policies']}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -1894,25 +1946,25 @@ export default function Persistency() {
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={getCarrierPersistencyData(carrier) || []} margin={{ top: 20, right: 30, left: 80, bottom: 40 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis 
-                          dataKey="period" 
+                        <XAxis
+                          dataKey="period"
                           tick={{ fontSize: 12, fill: '#666' }}
                           axisLine={{ stroke: '#e0e0e0' }}
                           label={{ value: 'Date Range', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                         />
-                        <YAxis 
+                        <YAxis
                           tick={{ fontSize: 12, fill: '#666' }}
                           axisLine={{ stroke: '#e0e0e0' }}
                           label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                         />
                         <Tooltip
-                          contentStyle={{ 
-                            backgroundColor: 'white', 
+                          contentStyle={{
+                            backgroundColor: 'white',
                             border: '1px solid #e0e0e0',
                             borderRadius: '8px',
                             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                           }}
-                          formatter={(value, name) => [
+                          formatter={(value) => [
                             `${value}%`,
                             'Persistency Rate'
                           ]}
@@ -1938,11 +1990,11 @@ export default function Persistency() {
 
 
       </div>
-      
+
       {/* Upload Policy Reports Modal */}
-      <UploadPolicyReportsModal 
-        isOpen={isUploadModalOpen} 
-        onClose={() => setIsUploadModalOpen(false)} 
+      <UploadPolicyReportsModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
       />
     </div>
   )

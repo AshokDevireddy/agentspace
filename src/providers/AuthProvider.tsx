@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
+  }, [supabase.auth])
 
   const signIn = async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
     const { data, error } = await supabase.auth.signInWithPassword({

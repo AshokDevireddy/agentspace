@@ -31,7 +31,7 @@ interface MessageResult {
   message_type: string;
   sent_at: string;
   status: string;
-  metadata: any;
+  metadata: Record<string, unknown>;
 }
 
 /**
@@ -130,7 +130,7 @@ export async function logMessage(params: {
   body: string;
   direction: 'inbound' | 'outbound';
   status?: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
 }): Promise<MessageResult> {
   const supabase = createAdminClient();
 

@@ -49,7 +49,7 @@ export async function getVisibleAgents(currentUserId: string, isAdmin: boolean) 
   } else {
     // Regular users can only see their downline + themselves
     const downline = await getUserDownline(currentUserId)
-    const visibleUserIds = [currentUserId, ...downline.map((u: any) => u.id)]
+    const visibleUserIds = [currentUserId, ...downline.map((u: { id: string }) => u.id)]
 
     const { data, error } = await supabase
       .from('users')
@@ -180,7 +180,7 @@ export async function createPosition(position: {
     .insert({
       ...position,
       created_by: currentUser?.id,
-      agency_id: (currentUser as any)?.agency_id
+      agency_id: (currentUser as { agency_id?: string })?.agency_id
     })
     .select()
     .single()

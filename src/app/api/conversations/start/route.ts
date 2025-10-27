@@ -44,50 +44,61 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No phone number on file for this client" }, { status: 400 });
     }
 
-    // Check if conversation already exists for this phone number with this agent
-    const { data: existingConversation, error: existingError } = await admin
+    // Fetch agency details for welcome message
+    const agencyId = deal.agency_id || currentUser.agency_id;
+    const { data: agency, error: agencyError } = await admin
+      .from("agencies")
+      .select("name, phone_number")
+      .eq("id", agencyId)
+      .single();
+
+    if (agencyError || !agency) {
+      console.error('Error fetching agency:', agencyError);
+      return NextResponse.json({ error: "Failed to fetch agency details" }, { status: 400 });
+    }
+
+    if (!agency.phone_number) {
+      return NextResponse.json({ error: "Agency phone number not configured" }, { status: 400 });
+    }
+
+    // Check if conversation already exists for this phone number in this agency
+    // Use .limit(1) to get at most one result, avoiding the multiple rows error
+    const { data: existingConversations, error: existingError } = await admin
       .from("conversations")
-      .select("id")
-      .eq("agent_id", deal.agent_id)
+      .select("id, agent_id, deal_id")
+      .eq("agency_id", agencyId)
       .eq("client_phone", deal.client_phone)
       .eq("type", "sms")
       .eq("is_active", true)
-      .maybeSingle();
+      .limit(1);
 
     if (existingError) {
       console.error('Error checking existing conversation:', existingError);
       return NextResponse.json({ error: existingError.message }, { status: 400 });
     }
 
-    if (existingConversation) {
+    if (existingConversations && existingConversations.length > 0) {
+      const existingConversation = existingConversations[0];
+      console.log('Conversation already exists for this phone number:', deal.client_phone);
+
       return NextResponse.json({
-        conversation: existingConversation,
-        message: "Conversation already exists for this client"
-      }, { status: 200 });
+        error: 'A conversation with this phone number already exists. Each client can only have one active SMS conversation per agency.',
+        existingConversation: existingConversation
+      }, { status: 409 }); // 409 Conflict
     }
 
-    // Fetch agency name for opt-in message
-    const { data: agency, error: agencyError } = await admin
-      .from("agencies")
-      .select("name")
-      .eq("id", deal.agency_id || currentUser.agency_id)
-      .single();
-
-    if (agencyError) {
-      console.error('Error fetching agency:', agencyError);
-      return NextResponse.json({ error: "Failed to fetch agency details" }, { status: 400 });
-    }
-
-    // Create conversation
+    // Create conversation with auto opt-in
     const { data: conversation, error: conversationError } = await admin
       .from("conversations")
       .insert({
         agent_id: deal.agent_id,
         deal_id: deal.id,
-        agency_id: deal.agency_id || currentUser.agency_id,
+        agency_id: agencyId,
         client_phone: deal.client_phone,
         type: "sms",
         is_active: true,
+        sms_opt_in_status: "opted_in", // Auto opt-in for informational messages
+        opted_in_at: new Date().toISOString(),
         last_message_at: new Date().toISOString()
       })
       .select()
@@ -98,13 +109,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: conversationError.message }, { status: 400 });
     }
 
-    // Send opt-in message
-    const optInMessage = `Thanks for your policy with ${agency.name}. You can get billing reminders and policy updates by text. Reply START to receive updates. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
+    // Send welcome message
+    const welcomeMessage = `Thanks for your policy with ${agency.name}. You'll receive policy updates and reminders by text. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
 
     try {
       const telnyxResponse = await sendSMS({
+        from: agency.phone_number,
         to: deal.client_phone,
-        message: optInMessage
+        text: welcomeMessage
       });
 
       // Save message to database
@@ -113,27 +125,30 @@ export async function POST(req: NextRequest) {
         .insert({
           conversation_id: conversation.id,
           sender_id: deal.agent_id,
-          receiver_id: null,
-          body: optInMessage,
+          receiver_id: deal.agent_id, // Placeholder
+          body: welcomeMessage,
           direction: "outbound",
           sent_at: new Date().toISOString(),
           status: "sent",
+          message_type: "sms",
           metadata: {
             automated: true,
-            type: "opt_in",
-            telnyx_message_id: telnyxResponse.id
+            type: "welcome_message",
+            telnyx_message_id: telnyxResponse.data?.id
           }
         });
 
+      console.log(`Welcome message sent to ${deal.client_phone}`);
+
     } catch (smsError: any) {
-      console.error('Error sending opt-in SMS:', smsError);
+      console.error('Error sending welcome SMS:', smsError);
       // Don't fail the whole request if SMS fails
       // The conversation is already created
     }
 
     return NextResponse.json({
       conversation,
-      message: "Conversation started and opt-in message sent"
+      message: "Conversation started and welcome message sent"
     }, { status: 200 });
 
   } catch (err: any) {

@@ -4,7 +4,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/server';
-import { normalizePhoneForStorage } from '@/lib/telnyx';
+import { normalizePhoneForStorage, sendSMS } from '@/lib/telnyx';
 
 interface ConversationResult {
   id: string;
@@ -15,6 +15,10 @@ interface ConversationResult {
   last_message_at: string;
   is_active: boolean;
   created_at: string;
+  client_phone?: string;
+  sms_opt_in_status?: string;
+  opted_in_at?: string;
+  opted_out_at?: string;
 }
 
 interface MessageResult {
@@ -45,44 +49,39 @@ export async function getOrCreateConversation(
   // Normalize phone number for consistent lookups (remove +1 prefix)
   const normalizedPhone = clientPhone ? normalizePhoneForStorage(clientPhone) : null;
 
-  // If client phone is provided, try to find existing conversation by phone
+  // First, check if conversation exists for this specific agent-deal pair (matches unique constraint)
+  const { data: existingByDeal } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('agent_id', agentId)
+    .eq('deal_id', dealId)
+    .eq('type', 'sms')
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (existingByDeal) {
+    return existingByDeal as ConversationResult;
+  }
+
+  // If not found by deal, check if conversation exists for this phone number
+  // (to handle case where client has multiple deals but we want one conversation)
   if (normalizedPhone) {
-    const { data: existing } = await supabase
+    const { data: existingByPhone } = await supabase
       .from('conversations')
       .select('*')
-      .eq('agent_id', agentId)
+      .eq('agency_id', agencyId)
       .eq('client_phone', normalizedPhone)
       .eq('type', 'sms')
       .eq('is_active', true)
       .maybeSingle();
 
-    if (existing) {
-      // Update the deal_id if it's different (client might have multiple deals)
-      if (existing.deal_id !== dealId) {
-        await supabase
-          .from('conversations')
-          .update({ deal_id: dealId })
-          .eq('id', existing.id);
-      }
-      return existing as ConversationResult;
-    }
-  } else {
-    // Fallback: Try to find existing conversation by deal
-    const { data: existing } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('agent_id', agentId)
-      .eq('deal_id', dealId)
-      .eq('type', 'sms')
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (existing) {
-      return existing as ConversationResult;
+    if (existingByPhone) {
+      return existingByPhone as ConversationResult;
     }
   }
 
   // Create new conversation with normalized phone
+  // Auto-opt-in for informational messages (billing, birthday reminders, etc.)
   const { data: newConversation, error } = await supabase
     .from('conversations')
     .insert({
@@ -92,12 +91,30 @@ export async function getOrCreateConversation(
       type: 'sms',
       is_active: true,
       client_phone: normalizedPhone,
+      sms_opt_in_status: 'opted_in', // Auto-opt-in for informational messages
+      opted_in_at: new Date().toISOString(), // Set opt-in timestamp
     })
     .select()
     .single();
 
   if (error) {
     throw new Error(`Failed to create conversation: ${error.message}`);
+  }
+
+  // Send welcome message when conversation is created
+  if (normalizedPhone) {
+    try {
+      await sendWelcomeMessage(
+        normalizedPhone,
+        agencyId,
+        agentId,
+        newConversation.id
+      );
+      console.log(`Sent welcome message to ${normalizedPhone}`);
+    } catch (error) {
+      console.error('Failed to send welcome message:', error);
+      // Don't throw - conversation was created successfully
+    }
   }
 
   return newConversation as ConversationResult;
@@ -186,6 +203,8 @@ export async function findDealByClientPhone(clientPhone: string) {
   // Normalize phone number for comparison (remove all non-digits)
   const normalizedSearch = clientPhone.replace(/\D/g, '');
 
+  console.log('🔍 Searching for deal with phone:', normalizedSearch);
+
   const { data: deals, error } = await supabase
     .from('deals')
     .select(`
@@ -204,11 +223,26 @@ export async function findDealByClientPhone(clientPhone: string) {
     throw new Error(`Failed to search deals: ${error.message}`);
   }
 
-  // Find deal where client phone matches (compare normalized versions)
+  console.log(`📊 Found ${deals?.length || 0} deals with phone numbers to check`);
+
+  // Find deal where client phone matches (exact match on normalized versions)
   const matchingDeal = deals?.find(deal => {
     const dealPhone = (deal.client_phone || '').replace(/\D/g, '');
-    return dealPhone.includes(normalizedSearch) || normalizedSearch.includes(dealPhone);
+    const matches = dealPhone === normalizedSearch;
+
+    if (matches) {
+      console.log(`✅ Match found: ${deal.client_name} (${deal.client_phone})`);
+    }
+
+    return matches;
   });
+
+  if (!matchingDeal) {
+    console.log('❌ No matching deal found');
+    if (deals && deals.length > 0) {
+      console.log('📋 Available phones in database:', deals.map(d => d.client_phone).filter(Boolean).join(', '));
+    }
+  }
 
   return matchingDeal || null;
 }
@@ -230,5 +264,64 @@ export async function getAgencyPhoneNumber(agencyId: string): Promise<string | n
   }
 
   return data.phone_number;
+}
+
+/**
+ * Gets agency details (name and phone number)
+ */
+export async function getAgencyDetails(agencyId: string): Promise<{ name: string; phone_number: string } | null> {
+  const supabase = createAdminClient();
+
+  const { data, error } = await supabase
+    .from('agencies')
+    .select('name, phone_number')
+    .eq('id', agencyId)
+    .single();
+
+  if (error || !data?.phone_number || !data?.name) {
+    return null;
+  }
+
+  return data;
+}
+
+/**
+ * Sends the initial welcome message to a client
+ */
+export async function sendWelcomeMessage(
+  clientPhone: string,
+  agencyId: string,
+  agentId: string,
+  conversationId: string
+): Promise<void> {
+  const agency = await getAgencyDetails(agencyId);
+
+  if (!agency) {
+    throw new Error('Agency not found or missing phone number');
+  }
+
+  const welcomeMessage = `Thanks for your policy with ${agency.name}. You'll receive policy updates and reminders by text. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
+
+  // Send SMS via Telnyx
+  await sendSMS({
+    from: agency.phone_number,
+    to: clientPhone,
+    text: welcomeMessage,
+  });
+
+  // Log the message
+  await logMessage({
+    conversationId,
+    senderId: agentId,
+    receiverId: agentId, // Placeholder
+    body: welcomeMessage,
+    direction: 'outbound',
+    status: 'sent',
+    metadata: {
+      automated: true,
+      type: 'welcome_message',
+      client_phone: normalizePhoneForStorage(clientPhone),
+    },
+  });
 }
 

@@ -9,7 +9,133 @@ import {
   findDealByClientPhone,
   getOrCreateConversation,
   logMessage,
+  getAgencyDetails,
 } from '@/lib/sms-helpers';
+import { createAdminClient } from '@/lib/supabase/server';
+
+/**
+ * Checks if message is an opt-out/help/opt-in keyword
+ */
+function getComplianceKeyword(messageText: string): 'STOP' | 'HELP' | 'START' | null {
+  const text = messageText.trim().toUpperCase();
+  if (text === 'STOP' || text === 'UNSUBSCRIBE') return 'STOP';
+  if (text === 'START' || text === 'UNSTOP' || text === 'SUBSCRIBE') return 'START';
+  if (text === 'HELP' || text === 'INFO') return 'HELP';
+  return null;
+}
+
+/**
+ * Handles opt-out (STOP) response
+ */
+async function handleOptOut(conversationId: string, agentId: string, clientPhone: string, toNumber: string) {
+  const supabase = createAdminClient();
+
+  // Update conversation status to opted_out
+  await supabase
+    .from('conversations')
+    .update({
+      sms_opt_in_status: 'opted_out',
+      opted_out_at: new Date().toISOString(),
+    })
+    .eq('id', conversationId);
+
+  // Send unsubscribe confirmation
+  const unsubscribeMessage = `AgentSpace: You have been unsubscribed and will receive no further messages. For assistance, contact ashok@useagentspace.com.`;
+
+  await sendSMS({
+    from: toNumber,
+    to: clientPhone,
+    text: unsubscribeMessage,
+  });
+
+  // Log the unsubscribe message
+  await logMessage({
+    conversationId,
+    senderId: agentId,
+    receiverId: agentId,
+    body: unsubscribeMessage,
+    direction: 'outbound',
+    status: 'sent',
+    metadata: {
+      automated: true,
+      type: 'opt_out_confirmation',
+      client_phone: normalizePhoneForStorage(clientPhone),
+    },
+  });
+}
+
+/**
+ * Handles help (HELP) response
+ */
+async function handleHelp(conversationId: string, agentId: string, clientPhone: string, toNumber: string) {
+  // Send help message
+  const helpMessage = `AgentSpace: For assistance, email ashok@useagentspace.com. Visit useagentspace.com/privacy for our privacy policy and useagentspace.com/terms for terms & conditions.`;
+
+  await sendSMS({
+    from: toNumber,
+    to: clientPhone,
+    text: helpMessage,
+  });
+
+  // Log the help message
+  await logMessage({
+    conversationId,
+    senderId: agentId,
+    receiverId: agentId,
+    body: helpMessage,
+    direction: 'outbound',
+    status: 'sent',
+    metadata: {
+      automated: true,
+      type: 'help_response',
+      client_phone: normalizePhoneForStorage(clientPhone),
+    },
+  });
+}
+
+/**
+ * Handles opt-in (START) response - re-subscribes client
+ */
+async function handleOptIn(conversationId: string, agentId: string, agencyId: string, clientPhone: string, toNumber: string) {
+  const supabase = createAdminClient();
+
+  // Update conversation status to opted_in
+  await supabase
+    .from('conversations')
+    .update({
+      sms_opt_in_status: 'opted_in',
+      opted_in_at: new Date().toISOString(),
+      opted_out_at: null,
+    })
+    .eq('id', conversationId);
+
+  // Get agency details for welcome message
+  const agency = await getAgencyDetails(agencyId);
+
+  // Send welcome message again
+  const welcomeMessage = `Thanks for re-subscribing! You'll receive policy updates and reminders from ${agency?.name || 'AgentSpace'} by text. Reply STOP to opt out anytime.`;
+
+  await sendSMS({
+    from: toNumber,
+    to: clientPhone,
+    text: welcomeMessage,
+  });
+
+  // Log the welcome message
+  await logMessage({
+    conversationId,
+    senderId: agentId,
+    receiverId: agentId,
+    body: welcomeMessage,
+    direction: 'outbound',
+    status: 'sent',
+    metadata: {
+      automated: true,
+      type: 'opt_in_welcome',
+      client_phone: normalizePhoneForStorage(clientPhone),
+    },
+  });
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,7 +163,7 @@ export async function POST(request: NextRequest) {
       const deal = await findDealByClientPhone(normalizedClientPhone);
 
       if (!deal) {
-        console.warn('No deal found for client phone:', fromNumber);
+        console.warn('No deal found for normalized client phone:', normalizedClientPhone, '(original:', fromNumber + ')');
         return NextResponse.json({
           success: false,
           message: 'Client not found'
@@ -61,19 +187,43 @@ export async function POST(request: NextRequest) {
         normalizedClientPhone
       );
 
-      // Create a client_id if it exists in the deal, otherwise use null
-      // For messages, we need sender to be the client (but clients may not have user records)
-      // We'll use the agent as sender for automated messages, and create a placeholder for client messages
-      // For now, we'll use agent.id as both sender and receiver, and track direction
+      // Check if message is a compliance keyword (STOP/HELP/START)
+      const complianceKeyword = getComplianceKeyword(messageText);
 
-      // Actually, let's handle this differently:
-      // If client_id exists in deal, use it. Otherwise, skip sender_id requirement
-      // But the schema requires sender_id and receiver_id
-      // Let's use agent.id for receiver and agent.id for sender temporarily
-      // This is a limitation - ideally clients should have user records
+      if (complianceKeyword) {
+        console.log(`Received compliance keyword: ${complianceKeyword}`);
 
-      // For now, let's use the agent_id as a placeholder since the schema requires it
-      // In the metadata, we'll store the actual client phone
+        // Log the incoming message first
+        await logMessage({
+          conversationId: conversation.id,
+          senderId: agent.id,
+          receiverId: agent.id,
+          body: messageText,
+          direction: 'inbound',
+          status: 'received',
+          metadata: {
+            client_phone: normalizedClientPhone,
+            telnyx_message_id: payload.id,
+            compliance_keyword: complianceKeyword,
+          },
+        });
+
+        // Handle the compliance keyword
+        if (complianceKeyword === 'STOP') {
+          await handleOptOut(conversation.id, agent.id, fromNumber, toNumber);
+        } else if (complianceKeyword === 'START') {
+          await handleOptIn(conversation.id, agent.id, agent.agency_id, fromNumber, toNumber);
+        } else if (complianceKeyword === 'HELP') {
+          await handleHelp(conversation.id, agent.id, fromNumber, toNumber);
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: 'Compliance keyword processed'
+        });
+      }
+
+      // Log regular inbound message
       await logMessage({
         conversationId: conversation.id,
         senderId: agent.id, // Placeholder - using agent as sender

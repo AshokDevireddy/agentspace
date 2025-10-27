@@ -182,6 +182,13 @@ export default function PostDeal() {
         return
       }
 
+      // Ensure agency_id is loaded
+      if (!agencyId) {
+        setError("Agency information not loaded. Please refresh the page and try again.")
+        setSubmitting(false)
+        return
+      }
+
       // Get the user's agent_id from the users table
       const { data: userData, error: userError } = await supabase
         .from('users')
@@ -285,6 +292,7 @@ export default function PostDeal() {
       }
 
       console.log('[PostDeal] Submitting payload to /api/deals', payload)
+      console.log('[PostDeal] Agency ID being sent:', agencyId)
       const res = await fetch("/api/deals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

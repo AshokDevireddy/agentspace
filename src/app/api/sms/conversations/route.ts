@@ -1,6 +1,6 @@
 /**
  * Get SMS Conversations API Route
- * Returns all conversations for the authenticated agent
+ * Returns conversations based on view mode (self, downlines, all)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -9,6 +9,8 @@ import { createServerClient } from '@/lib/supabase/server';
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createServerClient();
+    const { searchParams } = new URL(request.url);
+    const view = searchParams.get('view') || 'downlines'; // 'all', 'self', 'downlines'
 
     // Get current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -19,11 +21,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user details
+    // Get user details including admin status
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('id')
-      .eq('auth_user_id', user.id)
+      .select('id, agency_id, is_admin')
+      .eq('auth_user_id', user.id as any)
       .single();
 
     if (userError || !userData) {
@@ -33,37 +35,123 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get all conversations for this agent
-    const { data: conversations, error: convError } = await supabase
-      .from('conversations')
-      .select(`
-        *,
-        deal:deal_id (
-          id,
-          client_name,
-          client_phone,
-          status
-        ),
-        messages (
-          id,
-          body,
-          direction,
-          sent_at,
-          status,
-          read_at
-        )
-      `)
-      .eq('agent_id', userData.id)
-      .eq('type', 'sms')
-      .eq('is_active', true)
-      .order('last_message_at', { ascending: false });
+    // Fetch conversations based on view mode
+
+    let conversations;
+    let convError;
+
+    if (view === 'all' && (userData as any).is_admin) {
+      // Admin viewing all conversations in agency - filter by agency_id directly
+
+      const result = await supabase
+        .from('conversations')
+        .select(`
+          *,
+          deal:deal_id (
+            id,
+            client_name,
+            client_phone,
+            status,
+            status_standardized
+          ),
+          messages (
+            id,
+            body,
+            direction,
+            sent_at,
+            status,
+            read_at
+          )
+        `)
+        .eq('agency_id', (userData as any).agency_id)
+        .eq('type', 'sms' as any)
+        .eq('is_active', true as any)
+        .order('last_message_at', { ascending: false });
+
+      conversations = result.data;
+      convError = result.error;
+    } else if (view === 'self') {
+      // Show only conversations where current user is the agent
+
+      const result = await supabase
+        .from('conversations')
+        .select(`
+          *,
+          deal:deal_id (
+            id,
+            client_name,
+            client_phone,
+            status,
+            status_standardized
+          ),
+          messages (
+            id,
+            body,
+            direction,
+            sent_at,
+            status,
+            read_at
+          )
+        `)
+        .eq('agent_id', (userData as any).id)
+        .eq('type', 'sms' as any)
+        .eq('is_active', true as any)
+        .order('last_message_at', { ascending: false });
+
+      conversations = result.data;
+      convError = result.error;
+    } else {
+      // Downlines only (default)
+      const { data: downlineAgents, error: downlineError } = await supabase
+        .rpc('get_agent_downline', { agent_id: (userData as any).id });
+
+      if (downlineError) {
+        throw downlineError;
+      }
+
+      const agentIds = ((downlineAgents || []) as any[]).map((a: any) => a.id);
+
+      if (agentIds.length === 0) {
+        return NextResponse.json({
+          conversations: [],
+        });
+      }
+
+      const result = await supabase
+        .from('conversations')
+        .select(`
+          *,
+          deal:deal_id (
+            id,
+            client_name,
+            client_phone,
+            status,
+            status_standardized
+          ),
+          messages (
+            id,
+            body,
+            direction,
+            sent_at,
+            status,
+            read_at
+          )
+        `)
+        .in('agent_id', agentIds as any)
+        .eq('type', 'sms' as any)
+        .eq('is_active', true as any)
+        .order('last_message_at', { ascending: false });
+
+      conversations = result.data;
+      convError = result.error;
+    }
 
     if (convError) {
       throw convError;
     }
 
     // Format conversations with last message
-    const formattedConversations = conversations?.map(conv => {
+    const formattedConversations = (conversations as any[])?.map((conv: any) => {
       const messages = Array.isArray(conv.messages) ? conv.messages : [];
       const lastMessage = messages.length > 0
         ? messages.sort((a: any, b: any) =>
@@ -84,6 +172,10 @@ export async function GET(request: NextRequest) {
         lastMessage: lastMessage?.body || '',
         lastMessageAt: conv.last_message_at,
         unreadCount: unreadCount,
+        smsOptInStatus: conv.sms_opt_in_status,
+        optedInAt: conv.opted_in_at,
+        optedOutAt: conv.opted_out_at,
+        statusStandardized: conv.deal?.status_standardized,
       };
     });
 

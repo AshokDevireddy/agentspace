@@ -83,6 +83,8 @@ export async function POST(req: NextRequest) {
     const data = await req.json();
     console.log('[Deals API] POST /api/deals payload (sanitized)', {
       hasAgentId: !!data?.agent_id,
+      hasAgencyId: !!data?.agency_id,
+      agencyId: data?.agency_id,
       hasCarrierId: !!data?.carrier_id,
       hasProductId: !!data?.product_id,
       policy_number: data?.policy_number,
@@ -92,6 +94,7 @@ export async function POST(req: NextRequest) {
     // Destructure all possible fields
     const {
       agent_id,
+      agency_id,
       carrier_id,
       product_id,
       client_id,
@@ -136,6 +139,7 @@ export async function POST(req: NextRequest) {
       // but post a deal can fill in missing fields
       dealData = {
         // Fields that post a deal can update (commission reports don't provide these)
+        agency_id: agency_id || existingDeal.agency_id,
         client_id: client_id || existingDeal.client_id,
         client_email: client_email || existingDeal.client_email,
         client_phone: client_phone || existingDeal.client_phone,
@@ -187,6 +191,7 @@ export async function POST(req: NextRequest) {
       // Create new deal
       dealData = {
         agent_id,
+        agency_id,
         carrier_id,
         product_id,
         client_id,

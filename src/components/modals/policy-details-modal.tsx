@@ -237,12 +237,21 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
         body: JSON.stringify({ dealId: deal.id })
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to start conversation')
+        // Handle 409 Conflict - conversation already exists
+        if (response.status === 409 && data.existingConversation) {
+          // Close the dialog and refresh to show the existing conversation
+          setStartConversationDialogOpen(false)
+          await fetchConversation()
+          alert('A conversation with this phone number already exists. Showing existing conversation.')
+          return
+        }
+
+        throw new Error(data.error || 'Failed to start conversation')
       }
 
-      const data = await response.json()
       setConversation(data.conversation)
       setStartConversationDialogOpen(false)
 
@@ -650,15 +659,15 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
               <DialogTitle>Start SMS Conversation</DialogTitle>
             </div>
             <DialogDescription>
-              Starting a conversation will automatically send an opt-in message to the client.
+              Starting a conversation will automatically send a welcome message to the client.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <div className="p-4 bg-accent/30 rounded-lg border border-border">
-              <p className="text-sm font-medium text-foreground mb-2">Opt-in Message Preview:</p>
+              <p className="text-sm font-medium text-foreground mb-2">Welcome Message Preview:</p>
               <p className="text-sm text-muted-foreground italic">
-                "Thanks for your policy with [Agency Name]. You can get billing reminders and policy updates by text.
-                Reply START to receive updates. Message frequency may vary. Msg&data rates may apply.
+                "Thanks for your policy with [Agency Name]. You'll receive policy updates and reminders by text.
+                Message frequency may vary. Msg&data rates may apply.
                 Reply STOP to opt out. Reply HELP for help."
               </p>
             </div>
@@ -679,7 +688,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
               disabled={startingConversation}
               className="btn-gradient"
             >
-              {startingConversation ? 'Starting...' : 'Send Opt-in & Start'}
+              {startingConversation ? 'Starting...' : 'Send Welcome & Start'}
             </Button>
           </div>
         </DialogContent>

@@ -24,7 +24,20 @@ BEGIN
     DELETE FROM deals
     WHERE policy_number LIKE 'POL-TEST-%'
        OR application_number LIKE 'APP-TEST-%'
-       OR client_email LIKE '%@test.com';
+       OR client_email LIKE '%@test.com'
+       OR product_id IN (
+           SELECT id FROM products
+           WHERE product_code LIKE 'NAL-%'
+              OR product_code LIKE 'AETNA-%'
+              OR product_code LIKE 'TRIN-%'
+              OR product_code LIKE 'AFLAC-%'
+              OR product_code LIKE 'LBL-%'
+              OR product_code LIKE 'TRANS-%'
+              OR product_code LIKE 'MOO-%'
+              OR product_code LIKE 'KCL-%'
+              OR product_code LIKE 'AMER-%'
+              OR product_code LIKE 'SBLI-%'
+       );
 
     GET DIAGNOSTICS deals_deleted = ROW_COUNT;
     RAISE NOTICE '  ✓ Deleted % deals', deals_deleted;

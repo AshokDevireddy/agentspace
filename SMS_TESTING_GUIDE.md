@@ -1,539 +1,579 @@
-# SMS Testing Guide - Step by Step
+# SMS Testing Guide - Complete Flow Testing
 
-## ✅ Prerequisites Checklist
+## Overview
+This guide walks through comprehensive testing of the entire SMS communication system using test data that covers all scenarios with your phone number: **6692456363**
 
-Before testing, ensure you have:
-- [x] Run database migration SQL (creates `conversations` and `messages` tables)
-- [x] Added `TELNYX_API_KEY` to `.env.local`
-- [x] Configured agency phone number in Configuration → SMS Settings
-- [x] Telnyx phone number is active and configured for messaging
-- [x] Dev server running: `npm run dev`
+## 📋 Prerequisites
 
-## 📱 All SMS Messages Currently Implemented
+1. **Database Migration Applied:**
+   ```bash
+   # Run this in Supabase SQL Editor
+   sms_compliance_migration.sql
+   ```
 
-### 1. **Welcome Message** (NEW! ✨)
-- **Trigger**: When a new deal is created
-- **Message**:
-  ```
-  Welcome {client_first_name}! Thank you for choosing {agency_name} for your life insurance needs.
-  Your agent {agent_name} is here to help. Complete your account setup here: {setup_link}.
-  If you have any questions, feel free to reply to this message!
-  ```
+2. **Environment Variables Set:**
+   - `TELNYX_API_KEY` - Your Telnyx API key
+   - `CRON_SECRET` - Secret for cron job authentication
 
-### 2. **Birthday Message**
-- **Trigger**: Client's date_of_birth matches today (month & day)
-- **Message**:
-  ```
-  Happy Birthday, {first_name}! Wishing you a great year ahead from your friends at {agency_name}.
-  ```
+3. **Agency Phone Number Configured:**
+   - Your agency must have a phone number in the database
+   - This is the "from" number for all SMS messages
 
-### 3. **Lapse Reminder**
-- **Trigger**: Deal status = 'lapse_pending'
-- **Message**:
-  ```
-  Hi {client_name}, your life insurance policy is pending lapse.
-  Your agent {agent_name} will reach out soon.
-  If you'd like to speak with them now, call {agent_phone}.
-  ```
+## 🧪 Setup Test Data
 
-### 4. **Billing Reminder**
-- **Trigger**: 3 days before next billing date
-- **Message**:
-  ```
-  Hi {first_name}, this is a friendly reminder that your insurance premium is due soon.
-  Please ensure funds are available for your scheduled payment. Thank you!
-  ```
-
-### 5. **Manual Agent Message**
-- **Trigger**: Agent sends from SMS page
-- **Message**: Custom text from agent
-
-### 6. **Urgent Reply Forwarding**
-- **Trigger**: Client replies with urgent keywords
-- **Message**: Forwards to agent's phone
-
----
-
-## 🧪 Testing Each Message Type
-
-### Test 1: Welcome Message (After Deal Creation)
-
-**Setup:**
-1. Make sure you have a client with a phone number
-2. Make sure the agent has an agency_id with phone_number configured
-
-**Steps:**
-```bash
-# 1. Create a new deal via API or UI
-# If using API:
-curl -X POST http://localhost:3000/api/deals \
-  -H "Content-Type: application/json" \
-  -H "Cookie: YOUR_SESSION_COOKIE" \
-  -d '{
-    "agent_id": "your-agent-id",
-    "carrier_id": "your-carrier-id",
-    "product_id": "your-product-id",
-    "client_name": "John Doe",
-    "client_phone": "+15551234567",
-    "client_email": "john@example.com",
-    "policy_number": "POL123456",
-    "monthly_premium": 100,
-    "annual_premium": 1200,
-    "status": "pending"
-  }'
-
-# 2. Check your terminal/console logs for:
-# "[Deals API] Sending welcome SMS to client"
-# "[Deals API] Welcome SMS sent successfully"
-
-# 3. Client should receive SMS immediately
-# 4. Check SMS page at /communications/sms - conversation should appear
-```
-
-**What to verify:**
-- ✅ Client receives SMS
-- ✅ Message includes agent name, agency name, and setup link
-- ✅ Conversation appears in SMS dashboard
-- ✅ Message is logged in database
-
----
-
-### Test 2: Birthday Message
-
-**Setup:**
-1. Create or update a deal with `date_of_birth` = today's date (but any year)
-
-**Steps:**
-```bash
-# 1. Update a deal to have today's birthday
-# In your database or via Supabase dashboard:
-UPDATE deals
-SET date_of_birth = '1990-12-25'  -- Use today's month-day
-WHERE id = 'your-deal-id';
-
-# 2. Manually trigger the cron job
-curl http://localhost:3000/api/cron/birthday-messages
-
-# 3. Check response:
-{
-  "success": true,
-  "sent": 1,
-  "failed": 0,
-  "total": 1
-}
-
-# 4. Client should receive SMS
-# 5. Check SMS page - message should appear
-```
-
-**Quick Database Setup:**
+### Step 1: Load Test Data
 ```sql
--- Find a deal and set birthday to today
-UPDATE deals
-SET date_of_birth = CURRENT_DATE
-WHERE client_phone IS NOT NULL
-LIMIT 1;
+-- Run in Supabase SQL Editor
+-- This creates 10 test deals with 1 agent, all using your phone
+\i seed_sms_test_data.sql
 ```
 
-**What to verify:**
-- ✅ Returns success with count of messages sent
-- ✅ Client receives birthday message
-- ✅ Message appears in SMS dashboard
-- ✅ Check console logs for processing details
-
----
-
-### Test 3: Lapse Reminder
-
-**Setup:**
-1. Create or update a deal with status = 'lapse_pending'
-
-**Steps:**
-```bash
-# 1. Update a deal to lapse_pending status
-# In your database:
-UPDATE deals
-SET status = 'lapse_pending'
-WHERE id = 'your-deal-id'
-AND client_phone IS NOT NULL;
-
-# 2. Manually trigger the cron job
-curl http://localhost:3000/api/cron/lapse-reminders
-
-# 3. Check response:
-{
-  "success": true,
-  "sent": 1,
-  "failed": 0,
-  "total": 1
-}
-
-# 4. Deal status should update to 'lapse_notified'
-# 5. Client receives SMS
-# 6. Check SMS page
-```
-
-**Quick Database Setup:**
+### Step 2: Verify Test Data Created
 ```sql
--- Set a deal to lapse_pending
-UPDATE deals
-SET status = 'lapse_pending'
-WHERE client_phone IS NOT NULL
-LIMIT 1;
-```
-
-**What to verify:**
-- ✅ Client receives lapse reminder
-- ✅ Deal status changes to 'lapse_notified'
-- ✅ Message includes agent name and phone
-- ✅ Message logged in database
-
----
-
-### Test 4: Billing Reminder
-
-**Setup:**
-1. Create/update a deal with billing cycle and effective date set so next billing is in 3 days
-
-**Steps:**
-```bash
-# 1. Set up a deal with billing date in 3 days
-# Calculate: If today is Dec 25, and billing cycle is monthly,
-# set policy_effective_date to Dec 28 (so next billing is Dec 28)
-
-# In your database:
-UPDATE deals
-SET
-  billing_cycle = 'monthly',
-  policy_effective_date = (CURRENT_DATE + INTERVAL '3 days'),
-  status = 'active'
-WHERE id = 'your-deal-id'
-AND client_phone IS NOT NULL;
-
-# 2. Manually trigger the cron job
-curl http://localhost:3000/api/cron/billing-reminders
-
-# 3. Check response:
-{
-  "success": true,
-  "sent": 1,
-  "failed": 0,
-  "skipped": 0,
-  "total": 1
-}
-```
-
-**Quick Database Setup:**
-```sql
--- Set billing to trigger in 3 days
-UPDATE deals
-SET
-  billing_cycle = 'monthly',
-  policy_effective_date = (CURRENT_DATE + INTERVAL '3 days'),
-  status = 'active'
-WHERE client_phone IS NOT NULL
-LIMIT 1;
-```
-
-**What to verify:**
-- ✅ Returns sent count
-- ✅ Client receives billing reminder
-- ✅ Message appears in dashboard
-- ✅ Console shows billing date calculation
-
----
-
-### Test 5: Manual Agent Message
-
-**Steps:**
-```bash
-# 1. Go to http://localhost:3000/communications/sms
-
-# 2. You should see existing conversations (if any)
-# If no conversations, create a deal first (Test 1)
-
-# 3. Click on a conversation
-
-# 4. Type a message and send
-
-# 5. Check:
-# - Message appears in chat
-# - Client receives SMS (if using real Telnyx)
-# - Message is right-aligned (outbound)
-```
-
-**API Testing:**
-```bash
-# Send via API
-curl -X POST http://localhost:3000/api/sms/send \
-  -H "Content-Type: application/json" \
-  -H "Cookie: YOUR_SESSION_COOKIE" \
-  -d '{
-    "dealId": "your-deal-id",
-    "message": "Hi! This is a test message from your agent."
-  }'
-```
-
-**What to verify:**
-- ✅ Message sends successfully
-- ✅ Returns conversation ID
-- ✅ Message appears in UI
-- ✅ Client receives SMS
-
----
-
-### Test 6: Inbound Messages & Urgent Forwarding
-
-**Setup:**
-1. Configure Telnyx webhook (requires ngrok for local testing)
-
-**Steps:**
-```bash
-# 1. Start ngrok (in a separate terminal)
-ngrok http 3000
-
-# 2. Copy the ngrok URL (e.g., https://abc123.ngrok.io)
-
-# 3. Configure Telnyx webhook:
-# - Go to portal.telnyx.com
-# - Messaging → Webhooks
-# - Set webhook URL: https://abc123.ngrok.io/api/telnyx-webhook
-
-# 4. Have the client text your Telnyx number
-# Test with: "Hi, I can't pay this month"
-
-# 5. Check:
-# - Your terminal shows webhook received
-# - Message appears in SMS dashboard (left-aligned)
-# - If urgent keywords detected, agent's phone receives forwarded message
-```
-
-**Test Webhook Locally:**
-```bash
-# Simulate webhook call
-curl -X POST http://localhost:3000/api/telnyx-webhook \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": {
-      "event_type": "message.received",
-      "payload": {
-        "from": {
-          "phone_number": "+15551234567"
-        },
-        "to": [
-          {
-            "phone_number": "+15559876543"
-          }
-        ],
-        "text": "I cannot pay my premium this month",
-        "id": "test-message-id"
-      }
-    }
-  }'
-```
-
-**Urgent Keywords to Test:**
-- "don't have money"
-- "can't pay"
-- "call me"
-- "need help"
-- "emergency"
-- "urgent"
-
-**What to verify:**
-- ✅ Inbound message appears (left-aligned)
-- ✅ Urgent messages forward to agent phone
-- ✅ All messages logged in database
-- ✅ Conversation updates last_message_at
-
----
-
-## 🔍 How to Check Results
-
-### 1. Check Console Logs
-```bash
-# Look for these log messages:
-[Deals API] Sending welcome SMS to client
-[Deals API] Welcome SMS sent successfully
-Running birthday messages cron for 12/25
-Sent birthday message to John Doe
-```
-
-### 2. Check Database
-```sql
--- View all conversations
-SELECT * FROM conversations ORDER BY last_message_at DESC;
-
--- View all messages
+-- Check deals were created
 SELECT
-  m.*,
-  c.agent_id,
-  d.client_name
+    client_name,
+    policy_number,
+    status_standardized,
+    date_of_birth,
+    policy_effective_date
+FROM deals
+WHERE policy_number LIKE 'SMS-%'
+ORDER BY policy_number;
+
+-- Check conversations were created
+SELECT
+    c.id,
+    d.client_name,
+    c.sms_opt_in_status,
+    c.opted_in_at,
+    c.opted_out_at
+FROM conversations c
+JOIN deals d ON c.deal_id = d.id
+WHERE c.client_phone = '6692456363'
+ORDER BY d.policy_number;
+```
+
+## 🎯 Test Scenarios
+
+### Scenario 1: Birthday Reminders ✅
+
+**Expected:** Receive 1 birthday message (Scenario 1 only)
+
+```bash
+# Run birthday cron job
+curl -X GET "http://localhost:3000/api/cron/birthday-messages" \
+     -H "Authorization: Bearer YOUR_CRON_SECRET"
+```
+
+**What to Check:**
+- ✅ Receive SMS for "Birthday Client (Opted In)"
+- ❌ Do NOT receive for "Birthday Client (Opted Out)"
+- ❌ Do NOT receive for "Pending Opt-in Client" (has birthday but not opted in)
+
+**Expected Message:**
+```
+Happy Birthday, Birthday Client! Wishing you a great year ahead from your friends at [Agency Name].
+```
+
+**Verify in Database:**
+```sql
+-- Should show 1 birthday message sent
+SELECT
+    d.client_name,
+    m.body,
+    m.sent_at,
+    c.sms_opt_in_status
 FROM messages m
 JOIN conversations c ON m.conversation_id = c.id
 JOIN deals d ON c.deal_id = d.id
+WHERE m.metadata->>'type' = 'birthday'
 ORDER BY m.sent_at DESC;
+```
 
--- Check automated messages
-SELECT * FROM messages WHERE metadata->>'automated' = 'true';
+---
 
--- Check message types
+### Scenario 2: Billing Reminders ✅
+
+**Expected:** Receive 1 billing reminder (Scenario 3 only)
+
+```bash
+# Run billing reminders cron job
+curl -X GET "http://localhost:3000/api/cron/billing-reminders" \
+     -H "Authorization: Bearer YOUR_CRON_SECRET"
+```
+
+**What to Check:**
+- ✅ Receive SMS for "Billing Due Client (Opted In)"
+- ❌ Do NOT receive for "Billing Due Client (Opted Out)"
+
+**Expected Message:**
+```
+Hi Billing Due, this is a friendly reminder that your insurance premium is due soon.
+Please ensure funds are available for your scheduled payment. Thank you!
+```
+
+**Verify in Database:**
+```sql
+-- Should show 1 billing reminder sent
 SELECT
-  metadata->>'type' as message_type,
-  COUNT(*)
-FROM messages
-GROUP BY metadata->>'type';
-```
-
-### 3. Check SMS Dashboard
-```
-1. Go to http://localhost:3000/communications/sms
-2. Should see all conversations
-3. Click to view messages
-4. Blue messages (right) = outbound from agent
-5. White messages (left) = inbound from client
-6. Automated messages show "Automated message" label
-```
-
-### 4. Check Telnyx Portal
-```
-1. Go to portal.telnyx.com
-2. Messaging → Message History
-3. See all sent/received SMS
-4. Check status and delivery info
+    d.client_name,
+    m.body,
+    m.sent_at,
+    c.sms_opt_in_status,
+    m.metadata->>'next_billing_date' as next_billing_date
+FROM messages m
+JOIN conversations c ON m.conversation_id = c.id
+JOIN deals d ON c.deal_id = d.id
+WHERE m.metadata->>'type' = 'billing_reminder'
+ORDER BY m.sent_at DESC;
 ```
 
 ---
 
-## 🐛 Troubleshooting
+### Scenario 3: Lapse Reminders 🟡
 
-### Message Not Sending
-```bash
-# Check these in order:
-
-# 1. Is TELNYX_API_KEY set?
-echo $TELNYX_API_KEY
-
-# 2. Is agency phone configured?
-SELECT phone_number FROM agencies WHERE id = 'your-agency-id';
-
-# 3. Is client phone valid?
-SELECT client_phone FROM deals WHERE id = 'your-deal-id';
-
-# 4. Check console for errors
-# Look for: "TELNYX_API_KEY is not configured"
-#           "Agency phone number not configured"
-```
-
-### Conversation Not Appearing
-```bash
-# 1. Check if deal exists
-SELECT * FROM deals WHERE id = 'your-deal-id';
-
-# 2. Check if conversation created
-SELECT * FROM conversations WHERE deal_id = 'your-deal-id';
-
-# 3. Check if agent matches logged-in user
-SELECT agent_id FROM deals WHERE id = 'your-deal-id';
-```
-
-### Webhook Not Working
-```bash
-# 1. Verify ngrok is running
-curl https://your-ngrok-url.ngrok.io/api/telnyx-webhook
-
-# 2. Check webhook URL in Telnyx portal matches ngrok URL
-
-# 3. Test webhook locally
-curl -X POST http://localhost:3000/api/telnyx-webhook \
-  -H "Content-Type: application/json" \
-  -d '{"data":{"event_type":"message.received","payload":{"from":{"phone_number":"+15551234567"},"to":[{"phone_number":"+15559876543"}],"text":"test","id":"123"}}}'
-```
-
----
-
-## 📊 Test Checklist
-
-Use this to track your testing:
-
-- [ ] **Welcome Message**: Create deal → SMS sent → Appears in dashboard
-- [ ] **Birthday Message**: Set DOB to today → Run cron → SMS sent
-- [ ] **Lapse Reminder**: Set status to lapse_pending → Run cron → SMS sent
-- [ ] **Billing Reminder**: Set billing in 3 days → Run cron → SMS sent
-- [ ] **Manual Message**: Send from UI → Client receives → Logged
-- [ ] **Inbound Message**: Client texts → Shows in dashboard → Left-aligned
-- [ ] **Urgent Forward**: Client texts urgent keyword → Agent phone receives
-- [ ] **Database Check**: All messages in `messages` table
-- [ ] **Conversation Check**: Conversations update `last_message_at`
-- [ ] **Telnyx Portal**: Messages show in message history
-
----
-
-## 🚀 Quick Test Script
-
-Run this in your terminal to test all crons at once:
+**Expected:** Receive 1 lapse message, status updates to lapse_notified
 
 ```bash
-#!/bin/bash
-echo "Testing Birthday Messages..."
-curl -s http://localhost:3000/api/cron/birthday-messages | jq
-
-echo "\nTesting Lapse Reminders..."
-curl -s http://localhost:3000/api/cron/lapse-reminders | jq
-
-echo "\nTesting Billing Reminders..."
-curl -s http://localhost:3000/api/cron/billing-reminders | jq
-
-echo "\nDone!"
+# Run lapse reminders cron job
+curl -X GET "http://localhost:3000/api/cron/lapse-reminders" \
+     -H "Authorization: Bearer YOUR_CRON_SECRET"
 ```
 
-Save as `test-sms.sh`, make executable with `chmod +x test-sms.sh`, and run with `./test-sms.sh`
+**What to Check:**
+- ✅ Receive SMS for "Lapse Pending Client"
+- ✅ Deal status changes from `lapse_pending` to `lapse_notified`
+- ❌ Do NOT receive for "Lapse Notified Client" (already notified)
 
----
-
-## 📝 Summary of All Endpoints
-
+**Expected Message:**
 ```
-# Manual SMS Operations (require auth)
-POST   /api/sms/send                     # Send SMS to client
-GET    /api/sms/conversations            # Get all conversations
-GET    /api/sms/messages?conversationId= # Get messages
+Hi Lapse Pending Client, your life insurance policy is pending lapse.
+Your agent SMS Test Agent will reach out soon.
+If you'd like to speak with them now, call [agent phone].
+```
 
-# Automated Cron Jobs (no auth for local testing)
-GET    /api/cron/birthday-messages       # Birthday wishes
-GET    /api/cron/lapse-reminders         # Lapse notifications
-GET    /api/cron/billing-reminders       # Billing reminders
+**Verify Status Updated:**
+```sql
+-- Should show status changed to lapse_notified
+SELECT
+    client_name,
+    policy_number,
+    status_standardized,
+    updated_at
+FROM deals
+WHERE policy_number IN ('SMS-LAPSE-PEND-001', 'SMS-LAPSE-NOT-001')
+ORDER BY policy_number;
 
-# Webhook (called by Telnyx)
-POST   /api/telnyx-webhook               # Receive inbound SMS
-
-# Deal Creation (triggers welcome message)
-POST   /api/deals                        # Create deal (sends welcome SMS)
+-- Expected:
+-- SMS-LAPSE-PEND-001: lapse_notified (changed from lapse_pending)
+-- SMS-LAPSE-NOT-001: lapse_notified (unchanged)
 ```
 
 ---
 
-## ✨ Pro Tips
+### Scenario 4: Needs More Info Notifications 🔵
 
-1. **Testing Without Real SMS**: Set `TELNYX_API_KEY` to empty string and check console logs - everything will run except actual SMS sending
+**Expected:** No SMS sent, but status updates to needs_more_info_notified
 
-2. **Quick Database Resets**:
+```bash
+# Run needs more info cron job
+curl -X GET "http://localhost:3000/api/cron/needs-more-info-notifications" \
+     -H "Authorization: Bearer YOUR_CRON_SECRET"
+```
+
+**What to Check:**
+- ❌ No SMS sent (this notification type doesn't send messages)
+- ✅ Status changes from `needs_more_info` to `needs_more_info_notified`
+
+**Verify Status Updated:**
+```sql
+-- Should show status changed to needs_more_info_notified
+SELECT
+    client_name,
+    policy_number,
+    status_standardized,
+    updated_at
+FROM deals
+WHERE policy_number IN ('SMS-INFO-PEND-001', 'SMS-INFO-NOT-001')
+ORDER BY policy_number;
+
+-- Expected:
+-- SMS-INFO-PEND-001: needs_more_info_notified (changed from needs_more_info)
+-- SMS-INFO-NOT-001: needs_more_info_notified (unchanged)
+```
+
+---
+
+### Scenario 5: UI Testing - Resolve Buttons 🔘
+
+#### Test Lapse Notification (Yellow Banner)
+
+1. **Navigate to SMS Page:**
+   - Go to `/communications/sms`
+
+2. **Find Conversation:**
+   - Look for "Lapse Notified Client" or "Lapse Pending Client"
+   - Click on the conversation
+
+3. **Check Yellow Banner:**
+   - Should see yellow notification alert
+   - Text: "This policy is pending lapse. Client has been notified."
+   - Resolve button should be visible
+
+4. **Click Resolve:**
+   - Click the "Resolve" button
+   - Banner should disappear
+   - Verify in database:
    ```sql
-   DELETE FROM messages;
-   DELETE FROM conversations;
+   SELECT status_standardized
+   FROM deals
+   WHERE client_name LIKE '%Lapse%Notified%';
+   -- Should be NULL after resolving
    ```
 
-3. **Test with Multiple Clients**: Create multiple deals with different scenarios (birthdays, lapse, billing) and run all crons at once
+#### Test Needs More Info (Blue Banner)
 
-4. **Check Message Metadata**: All automated messages have `metadata.automated = true` and `metadata.type` set
+1. **Find Conversation:**
+   - Look for "Needs Info Notified Client" or "Needs Info Client"
 
-5. **Use ngrok for Webhooks**: Essential for testing inbound messages locally
-   ```bash
-   ngrok http 3000
-   # Then update Telnyx webhook URL
+2. **Check Blue Banner:**
+   - Should see blue notification alert
+   - Text: "Additional information required for this policy."
+   - Resolve button should be visible
+
+3. **Click Resolve:**
+   - Click the "Resolve" button
+   - Banner should disappear
+   - Verify in database:
+   ```sql
+   SELECT status_standardized
+   FROM deals
+   WHERE client_name LIKE '%Needs Info%Notified%';
+   -- Should be NULL after resolving
    ```
 
 ---
 
-Happy Testing! 🎉
+### Scenario 6: Opt-Out Testing ❌
+
+**Test STOP keyword:**
+
+1. **Send STOP Message:**
+   - Reply "STOP" to any message from your phone
+
+2. **Expected Response:**
+   ```
+   AgentSpace: You have been unsubscribed and will receive no further messages.
+   For assistance, contact ashok@useagentspace.com.
+   ```
+
+3. **Verify Opt-Out Status:**
+   ```sql
+   SELECT
+       d.client_name,
+       c.sms_opt_in_status,
+       c.opted_out_at
+   FROM conversations c
+   JOIN deals d ON c.deal_id = d.id
+   WHERE c.client_phone = '6692456363'
+   AND c.sms_opt_in_status = 'opted_out';
+   ```
+
+4. **Check UI Shows Badge:**
+   - Go to SMS page
+   - Select the conversation
+   - Should see RED badge: "Client has opted out of SMS messages"
+
+5. **Try to Send Message:**
+   - Attempt to send a message via UI
+   - Should be blocked with error: "Client has opted out of SMS messages"
+
+---
+
+### Scenario 7: HELP Keyword Testing ℹ️
+
+**Test HELP keyword:**
+
+1. **Send HELP Message:**
+   - Reply "HELP" to any message from your phone
+
+2. **Expected Response:**
+   ```
+   AgentSpace: For assistance, email ashok@useagentspace.com.
+   Visit useagentspace.com/privacy for our privacy policy and
+   useagentspace.com/terms for terms & conditions.
+   ```
+
+3. **Verify in Messages:**
+   ```sql
+   SELECT
+       body,
+       sent_at,
+       metadata
+   FROM messages
+   WHERE metadata->>'type' = 'help_response'
+   ORDER BY sent_at DESC
+   LIMIT 1;
+   ```
+
+---
+
+### Scenario 8: Start New Conversation 💬
+
+**Test starting conversation from policy details:**
+
+1. **Navigate to Book of Business:**
+   - Go to `/policies/book`
+
+2. **Click on Fresh Deal:**
+   - Find policy "SMS-FRESH-001" (Fresh Deal Client)
+   - Click to open policy details modal
+
+3. **Check "Start Conversation" Button:**
+   - Should see "No conversation yet" message
+   - "Start Conversation" button should be visible
+
+4. **Click Start Conversation:**
+   - Click the button
+   - Modal should show:
+     - Title: "Start SMS Conversation"
+     - Preview: "Thanks for your policy with [Agency Name]. You'll receive policy updates..."
+     - Button: "Send Welcome & Start"
+
+5. **Send Welcome Message:**
+   - Click "Send Welcome & Start"
+   - You should receive SMS immediately:
+   ```
+   Thanks for your policy with [Agency Name]. You'll receive policy updates and
+   reminders by text. Message frequency may vary. Msg&data rates may apply.
+   Reply STOP to opt out. Reply HELP for help.
+   ```
+
+6. **Verify Conversation Created:**
+   ```sql
+   SELECT
+       c.id,
+       c.sms_opt_in_status,
+       c.opted_in_at,
+       d.client_name
+   FROM conversations c
+   JOIN deals d ON c.deal_id = d.id
+   WHERE d.policy_number = 'SMS-FRESH-001';
+
+   -- Should show:
+   -- sms_opt_in_status: 'opted_in'
+   -- opted_in_at: (timestamp)
+   ```
+
+---
+
+### Scenario 9: Pending Opt-In Blocking ⏳
+
+**Verify pending opt-in blocks messages:**
+
+1. **Check Conversation Status:**
+   ```sql
+   SELECT
+       d.client_name,
+       c.sms_opt_in_status,
+       c.opted_in_at
+   FROM conversations c
+   JOIN deals d ON c.deal_id = d.id
+   WHERE d.policy_number = 'SMS-PEND-001';
+
+   -- Should show:
+   -- sms_opt_in_status: 'pending'
+   -- opted_in_at: NULL
+   ```
+
+2. **Run Birthday Cron (has birthday today):**
+   ```bash
+   curl -X GET "http://localhost:3000/api/cron/birthday-messages" \
+        -H "Authorization: Bearer YOUR_CRON_SECRET"
+   ```
+
+3. **Verify NO Message Sent:**
+   - Should NOT receive SMS
+   - Check logs should show "Skipping deal: Client has not opted in"
+
+4. **Try Manual Message:**
+   - Go to SMS page
+   - Try to send message to "Pending Opt-in Client"
+   - Should be blocked with error
+
+---
+
+### Scenario 10: Duplicate Prevention 🚫
+
+**Test that same phone number doesn't create multiple conversations:**
+
+1. **Create Another Deal with Same Phone:**
+   ```sql
+   INSERT INTO deals (
+       agent_id, carrier_id, product_id, agency_id,
+       client_name, client_phone, client_email,
+       policy_number, monthly_premium, annual_premium,
+       status, policy_effective_date, billing_cycle
+   )
+   SELECT
+       agent_id, carrier_id, product_id, agency_id,
+       'Duplicate Test Client',
+       '6692456363',
+       'duplicate@smstest.com',
+       'SMS-DUP-001',
+       100.00, 1200.00,
+       'active',
+       CURRENT_DATE,
+       'monthly'
+   FROM deals
+   WHERE policy_number = 'SMS-FRESH-001'
+   LIMIT 1;
+   ```
+
+2. **Try to Start Conversation:**
+   - Go to policy details for "SMS-DUP-001"
+   - Click "Start Conversation"
+   - Should show: "Conversation already exists for this client"
+   - Should redirect to existing conversation
+
+3. **Verify No Duplicate Created:**
+   ```sql
+   SELECT COUNT(*) as conversation_count
+   FROM conversations
+   WHERE client_phone = '6692456363'
+   AND agency_id = (SELECT id FROM agencies WHERE code = 'agentspace' LIMIT 1);
+
+   -- Should still be same count as before (9 or 10)
+   ```
+
+---
+
+## 📊 Complete Test Results Matrix
+
+After running all tests, you should have these results:
+
+| Scenario | SMS Sent | Status Change | UI Update | Expected Result |
+|----------|----------|---------------|-----------|-----------------|
+| 1. Birthday (Opted In) | ✅ | - | - | Message received |
+| 2. Birthday (Opted Out) | ❌ | - | Red badge | Blocked |
+| 3. Billing (Opted In) | ✅ | - | - | Message received |
+| 4. Billing (Opted Out) | ❌ | - | Red badge | Blocked |
+| 5. Lapse Pending | ✅ | → lapse_notified | Yellow banner | Message + status change |
+| 6. Lapse Notified | ❌ | No change | Yellow banner + Resolve | Already notified |
+| 7. Needs Info | ❌ | → needs_more_info_notified | Blue banner | Status change only |
+| 8. Needs Info Notified | ❌ | No change | Blue banner + Resolve | Already notified |
+| 9. Fresh Deal | ✅ | Conversation created | Shows conversation | Welcome sent |
+| 10. Pending Opt-in | ❌ | - | - | All blocked |
+
+**Total SMS Messages Expected: 4**
+1. Birthday (Scenario 1)
+2. Billing (Scenario 3)
+3. Lapse (Scenario 5)
+4. Welcome (Scenario 9)
+
+---
+
+## 🧹 Cleanup After Testing
+
+```sql
+-- Run cleanup script in Supabase SQL Editor
+\i cleanup_sms_test_data.sql
+```
+
+This removes:
+- All test messages
+- All test conversations
+- All test deals
+- Test agent
+- Test products (if created)
+
+---
+
+## 🔍 Troubleshooting
+
+### No SMS Received
+
+1. **Check Telnyx API Key:**
+   ```bash
+   echo $TELNYX_API_KEY
+   ```
+
+2. **Check Agency Phone Number:**
+   ```sql
+   SELECT name, phone_number
+   FROM agencies
+   WHERE code = 'agentspace';
+   ```
+
+3. **Check Telnyx Logs:**
+   - Go to Telnyx dashboard
+   - Check message logs
+   - Verify number is provisioned
+
+4. **Check Application Logs:**
+   ```bash
+   # Look for SMS sending errors
+   grep "Error sending" logs/*.log
+   ```
+
+### Cron Jobs Not Running
+
+1. **Check CRON_SECRET:**
+   ```bash
+   echo $CRON_SECRET
+   ```
+
+2. **Run with Correct Header:**
+   ```bash
+   curl -X GET "http://localhost:3000/api/cron/birthday-messages" \
+        -H "Authorization: Bearer YOUR_ACTUAL_CRON_SECRET" \
+        -v
+   ```
+
+3. **Check Response:**
+   - Should return 200 status
+   - Check `sent`, `failed`, `skipped` counts
+
+### Conversations Not Creating
+
+1. **Check for Errors:**
+   ```sql
+   -- Look for constraint violations
+   SELECT * FROM conversations
+   WHERE client_phone = '6692456363'
+   ORDER BY created_at DESC;
+   ```
+
+2. **Verify Agency ID:**
+   ```sql
+   SELECT id FROM agencies WHERE code = 'agentspace';
+   ```
+
+---
+
+## ✅ Success Criteria
+
+All tests pass when:
+
+- ✅ Receive exactly 4 SMS messages (birthday, billing, lapse, welcome)
+- ✅ Opted-out scenarios send NO messages
+- ✅ Pending opt-in blocks all messages
+- ✅ Status changes work (lapse_pending → lapse_notified)
+- ✅ Resolve buttons clear notifications
+- ✅ STOP keyword opts out and blocks future messages
+- ✅ HELP keyword sends help message
+- ✅ Duplicate conversations prevented
+- ✅ Fresh conversation sends welcome message
+- ✅ UI shows correct badges and notifications
+
+---
+
+## 📞 Support
+
+If issues persist:
+1. Check `SMS_COMPLIANCE_IMPLEMENTATION.md` for system overview
+2. Check `CONVERSATION_FIXES.md` for recent fixes
+3. Review console logs for detailed error messages
+4. Verify database schema matches migration
 

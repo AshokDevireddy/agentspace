@@ -29,14 +29,14 @@ export async function GET(request: NextRequest) {
 
     console.log('Running lapse reminders cron');
 
-    // Query deals with status = 'lapse_pending'
+    // Query deals with status_standardized = 'lapse_pending'
     const { data: deals, error: dealsError } = await supabase
       .from('deals')
       .select(`
         id,
         client_name,
         client_phone,
-        status,
+        status_standardized,
         agent_id,
         agent:agent_id (
           id,
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
           )
         )
       `)
-      .eq('status', 'lapse_pending')
+      .eq('status_standardized', 'lapse_pending')
       .not('client_phone', 'is', null);
 
     if (dealsError) {
@@ -84,18 +84,6 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        const agentName = `${agent.first_name} ${agent.last_name}`;
-        const agentPhone = agent.phone_number || 'your agent';
-
-        const messageText = `Hi ${deal.client_name}, your life insurance policy is pending lapse. Your agent ${agentName} will reach out soon. If you'd like to speak with them now, call ${agentPhone}.`;
-
-        // Send SMS
-        await sendSMS({
-          from: agency.phone_number,
-          to: deal.client_phone,
-          text: messageText,
-        });
-
         // Get or create conversation (using client phone to prevent duplicates)
         const conversation = await getOrCreateConversation(
           agent.id,
@@ -103,6 +91,26 @@ export async function GET(request: NextRequest) {
           agent.agency_id,
           deal.client_phone
         );
+
+        // Check opt-in status - only send to opted-in clients
+        if (conversation.sms_opt_in_status !== 'opted_in') {
+          console.log(`Skipping deal ${deal.id}: Client has not opted in (status: ${conversation.sms_opt_in_status})`);
+          errorCount++;
+          continue;
+        }
+
+        const agentName = `${agent.first_name} ${agent.last_name}`;
+        const agentPhone = agent.phone_number || 'your agent';
+        const clientFirstName = deal.client_name.split(' ')[0]; // Extract first name
+
+        const messageText = `Hi ${clientFirstName}, your policy is pending lapse. Your agent ${agentName} will reach out shortly at this number: ${agentPhone}`;
+
+        // Send SMS
+        await sendSMS({
+          from: agency.phone_number,
+          to: deal.client_phone,
+          text: messageText,
+        });
 
         // Log the message
         await logMessage({
@@ -120,10 +128,10 @@ export async function GET(request: NextRequest) {
           },
         });
 
-        // Update deal status to 'lapse_notified' (optional)
+        // Update deal status_standardized to 'lapse_notified'
         await supabase
           .from('deals')
-          .update({ status: 'lapse_notified' })
+          .update({ status_standardized: 'lapse_notified' })
           .eq('id', deal.id);
 
         successCount++;

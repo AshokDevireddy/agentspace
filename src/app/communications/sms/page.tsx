@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/providers/AuthProvider"
+import { createClient } from "@/lib/supabase/client"
 import {
   Search,
   Send,
@@ -12,9 +14,16 @@ import {
   CheckCheck,
   Loader2,
   MessageSquare,
-  RefreshCw,
-  GripVertical
+  GripVertical,
+  Filter
 } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 interface Conversation {
   id: string
@@ -24,6 +33,11 @@ interface Conversation {
   lastMessage: string
   lastMessageAt: string
   unreadCount: number
+  smsOptInStatus?: string
+  optedInAt?: string
+  optedOutAt?: string
+  statusStandardized?: string | null
+  hasNotification?: boolean
 }
 
 interface Message {
@@ -53,6 +67,7 @@ interface DealDetails {
   billing_cycle: string | null
   lead_source: string | null
   status: string
+  status_standardized: string | null
   agent: {
     id: string
     first_name: string
@@ -72,6 +87,8 @@ interface DealDetails {
 export default function SMSMessagingPage() {
   const searchParams = useSearchParams()
   const conversationIdFromUrl = searchParams.get('conversation')
+  const { user } = useAuth()
+  const supabase = createClient()
 
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
@@ -83,16 +100,31 @@ export default function SMSMessagingPage() {
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [dealLoading, setDealLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [resolving, setResolving] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(320)
   const [rightPanelWidth, setRightPanelWidth] = useState(420)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const [isResizingRightPanel, setIsResizingRightPanel] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [viewMode, setViewMode] = useState<'downlines' | 'self' | 'all'>('downlines')
+  const [notificationFilter, setNotificationFilter] = useState<'all' | 'lapse' | 'needs_info'>('all')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const filteredConversations = conversations.filter(conv =>
-    conv.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    conv.clientPhone.includes(searchQuery)
-  )
+  const filteredConversations = conversations.filter(conv => {
+    const matchesSearch = conv.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      conv.clientPhone.includes(searchQuery);
+
+    if (!matchesSearch) return false;
+
+    // Apply notification filter
+    if (notificationFilter === 'lapse') {
+      return conv.statusStandardized === 'lapse_notified';
+    } else if (notificationFilter === 'needs_info') {
+      return conv.statusStandardized === 'needs_more_info_notified';
+    }
+
+    return true; // 'all' shows everything
+  })
 
   const totalUnreadCount = conversations.reduce((sum, conv) => sum + conv.unreadCount, 0)
 
@@ -145,6 +177,34 @@ export default function SMSMessagingPage() {
     }
   }, [isResizingSidebar, isResizingRightPanel, handleMouseMove, handleMouseUp])
 
+  // Check if user is admin
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (!user?.id) {
+        console.log('⚠️  No user ID found')
+        return
+      }
+
+      console.log('👤 Checking admin status for user:', user.id)
+
+      const { data: userData, error } = await supabase
+        .from('users')
+        .select('is_admin')
+        .eq('auth_user_id', user.id)
+        .single()
+
+      if (error) {
+        console.error('❌ Error checking admin status:', error)
+      }
+
+      const adminStatus = userData?.is_admin || false
+      console.log('🔐 Admin status:', adminStatus)
+      setIsAdmin(adminStatus)
+    }
+
+    checkAdminStatus()
+  }, [user?.id])
+
   useEffect(() => {
     scrollToBottom()
   }, [messages])
@@ -154,7 +214,7 @@ export default function SMSMessagingPage() {
     // Poll for new messages every 10 seconds
     const interval = setInterval(fetchConversations, 10000)
     return () => clearInterval(interval)
-  }, [])
+  }, [viewMode])
 
   // Auto-select conversation from URL parameter
   useEffect(() => {
@@ -168,18 +228,27 @@ export default function SMSMessagingPage() {
 
   const fetchConversations = async () => {
     try {
-      const response = await fetch('/api/sms/conversations', {
+      console.log('🔄 Fetching conversations with view mode:', viewMode)
+
+      const response = await fetch(`/api/sms/conversations?view=${viewMode}`, {
         credentials: 'include'
       })
 
       if (!response.ok) {
+        console.error('❌ Response not OK:', response.status, response.statusText)
         throw new Error('Failed to fetch conversations')
       }
 
       const data = await response.json()
+      console.log('✅ Received conversations:', data.conversations?.length || 0)
+
+      if (data.conversations?.length > 0) {
+        console.log('📝 Sample conversation:', data.conversations[0])
+      }
+
       setConversations(data.conversations || [])
     } catch (error) {
-      console.error('Error fetching conversations:', error)
+      console.error('❌ Error fetching conversations:', error)
     } finally {
       setLoading(false)
     }
@@ -281,6 +350,37 @@ export default function SMSMessagingPage() {
     }
   }
 
+  const handleResolveNotification = async () => {
+    if (!dealDetails || resolving) return
+
+    try {
+      setResolving(true)
+
+      const response = await fetch(`/api/deals/${dealDetails.id}/resolve-notification`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to resolve notification')
+      }
+
+      // Refresh deal details and conversations to update UI and remove yellow indicator
+      await Promise.all([
+        fetchDealDetails(dealDetails.id),
+        fetchConversations()
+      ])
+
+      alert('Notification resolved successfully')
+    } catch (error) {
+      console.error('Error resolving notification:', error)
+      alert(error instanceof Error ? error.message : 'Failed to resolve notification')
+    } finally {
+      setResolving(false)
+    }
+  }
+
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp)
     const now = new Date()
@@ -337,13 +437,56 @@ export default function SMSMessagingPage() {
         <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-xl font-semibold text-foreground">SMS Messages</h1>
+            {/* Filter Dropdown */}
+            <Select value={notificationFilter} onValueChange={(value: 'all' | 'lapse' | 'needs_info') => setNotificationFilter(value)}>
+              <SelectTrigger className="w-[160px] h-8 text-xs">
+                <Filter className="h-3 w-3 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Messages</SelectItem>
+                <SelectItem value="lapse">Lapse Notifications</SelectItem>
+                <SelectItem value="needs_info">Needs More Info</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center space-x-2 mb-4">
+            {isAdmin && (
+              <Button
+                variant={viewMode === 'all' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewMode('all')}
+                className={cn(
+                  "text-xs h-8",
+                  viewMode === 'all' && 'btn-gradient'
+                )}
+              >
+                Everyone
+              </Button>
+            )}
             <Button
+              variant={viewMode === 'self' ? 'default' : 'outline'}
               size="sm"
-              variant="outline"
-              onClick={fetchConversations}
-              disabled={loading}
+              onClick={() => setViewMode('self')}
+              className={cn(
+                "text-xs h-8",
+                viewMode === 'self' && 'btn-gradient'
+              )}
             >
-              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+              Just Me
+            </Button>
+            <Button
+              variant={viewMode === 'downlines' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setViewMode('downlines')}
+              className={cn(
+                "text-xs h-8",
+                viewMode === 'downlines' && 'btn-gradient'
+              )}
+            >
+              Downlines
             </Button>
           </div>
 
@@ -388,6 +531,9 @@ export default function SMSMessagingPage() {
                       <div className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
                         {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
                       </div>
+                    )}
+                    {(conversation.statusStandardized === 'lapse_notified' || conversation.statusStandardized === 'needs_more_info_notified') && (
+                      <div className="absolute -bottom-1 -right-1 bg-yellow-500 rounded-full h-3 w-3 border-2 border-white"></div>
                     )}
                   </div>
 
@@ -578,6 +724,57 @@ export default function SMSMessagingPage() {
             </div>
           ) : dealDetails ? (
             <div className="p-5 space-y-7">
+              {/* Notification Alert */}
+              {dealDetails.status_standardized === 'lapse_notified' && (
+                <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-yellow-800">Lapse Notification</h4>
+                      <p className="text-xs text-yellow-700 mt-1">This policy is pending lapse. Client has been notified.</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleResolveNotification}
+                      disabled={resolving}
+                      className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                    >
+                      {resolving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Resolve'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {dealDetails.status_standardized === 'needs_more_info_notified' && (
+                <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-yellow-800">Needs More Info</h4>
+                      <p className="text-xs text-yellow-700 mt-1">Additional information required for this policy.</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleResolveNotification}
+                      disabled={resolving}
+                      className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                    >
+                      {resolving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Resolve'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* SMS Opt-out Status - Only show if client has opted out */}
+              {selectedConversation && selectedConversation.smsOptInStatus === 'opted_out' && (
+                <div className="border-l-4 p-4 rounded bg-red-50 border-red-400">
+                  <h4 className="text-sm font-semibold mb-1 text-red-800">
+                    SMS Status
+                  </h4>
+                  <p className="text-xs text-red-700">
+                    Client has opted out of SMS messages. They will not receive any automated messages.
+                  </p>
+                </div>
+              )}
+
               {/* Client Information */}
               <div>
                 <h3 className="text-base font-bold text-foreground mb-4 flex items-center pb-2 border-b border-border">

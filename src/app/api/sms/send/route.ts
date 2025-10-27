@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { createServerClient, createAdminClient } from '@/lib/supabase/server';
 import { sendSMS } from '@/lib/telnyx';
 import {
   getDealWithDetails,
@@ -69,13 +69,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Send SMS via Telnyx
-    const telnyxResponse = await sendSMS({
-      from: agencyPhone,
-      to: deal.client_phone,
-      text: message,
-    });
-
     // Get or create conversation (using client phone to prevent duplicates)
     const conversation = await getOrCreateConversation(
       userData.id,
@@ -84,26 +77,91 @@ export async function POST(request: NextRequest) {
       deal.client_phone
     );
 
-    // Log the message
-    await logMessage({
-      conversationId: conversation.id,
-      senderId: userData.id,
-      receiverId: userData.id, // Placeholder since client may not have user record
-      body: message,
-      direction: 'outbound',
-      status: 'sent',
-      metadata: {
-        telnyx_message_id: telnyxResponse.data.id,
-        client_phone: deal.client_phone,
-        client_name: deal.client_name,
-      },
-    });
+    // Check opt-out status before sending
+    if (conversation.sms_opt_in_status === 'opted_out') {
+      return NextResponse.json(
+        { error: 'Client has opted out of SMS messages. Cannot send message.' },
+        { status: 403 }
+      );
+    }
 
-    return NextResponse.json({
-      success: true,
-      message: 'SMS sent successfully',
-      conversationId: conversation.id,
-    });
+    // Note: Pending status still blocks sends, but new conversations are auto-opted-in
+    if (conversation.sms_opt_in_status === 'pending') {
+      return NextResponse.json(
+        { error: 'Cannot send message to this conversation. Contact support if this persists.' },
+        { status: 403 }
+      );
+    }
+
+    // Send SMS via Telnyx
+    try {
+      const telnyxResponse = await sendSMS({
+        from: agencyPhone,
+        to: deal.client_phone,
+        text: message,
+      });
+
+      // Log the message
+      await logMessage({
+        conversationId: conversation.id,
+        senderId: userData.id,
+        receiverId: userData.id, // Placeholder since client may not have user record
+        body: message,
+        direction: 'outbound',
+        status: 'sent',
+        metadata: {
+          telnyx_message_id: telnyxResponse.data.id,
+          client_phone: deal.client_phone,
+          client_name: deal.client_name,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'SMS sent successfully',
+        conversationId: conversation.id,
+      });
+
+    } catch (telnyxError: any) {
+      console.error('Telnyx SMS error:', telnyxError);
+
+      // Check if this is a STOP block error (40300)
+      if (telnyxError.message && telnyxError.message.includes('40300')) {
+        // Mark conversation as opted out
+        const supabase = createAdminClient();
+        await supabase
+          .from('conversations')
+          .update({
+            sms_opt_in_status: 'opted_out',
+            opted_out_at: new Date().toISOString(),
+          })
+          .eq('id', conversation.id);
+
+        // Log the failed message
+        await logMessage({
+          conversationId: conversation.id,
+          senderId: userData.id,
+          receiverId: userData.id,
+          body: message,
+          direction: 'outbound',
+          status: 'failed',
+          metadata: {
+            error: 'Client has blocked messages (STOP)',
+            error_code: '40300',
+            client_phone: deal.client_phone,
+            client_name: deal.client_name,
+          },
+        });
+
+        return NextResponse.json(
+          { error: 'Client has blocked messages. They previously sent STOP to unsubscribe.' },
+          { status: 403 }
+        );
+      }
+
+      // For other Telnyx errors, throw to be caught by outer handler
+      throw telnyxError;
+    }
 
   } catch (error) {
     console.error('Send SMS error:', error);

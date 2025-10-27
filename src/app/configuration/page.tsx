@@ -64,7 +64,8 @@ export default function ConfigurationPage() {
     { carrier: 'American Amicable', file: null },
     { carrier: 'Combined Insurance', file: null },
     { carrier: 'American Home Life', file: null },
-    { carrier: 'Royal Neighbors', file: null }
+    { carrier: 'Royal Neighbors', file: null },
+    { carrier: 'Liberty Bankers Life', file: null }
   ])
   const [uploadingReports, setUploadingReports] = useState(false)
   const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
@@ -1054,7 +1055,6 @@ export default function ConfigurationPage() {
                     <li>Upload CSV or Excel files containing your policy data for each carrier</li>
                     <li>Files will be processed to calculate persistency rates and track policy status</li>
                     <li>New uploads will replace any existing files for the same carrier</li>
-                    <li>Only American Amicable (AMAM) policy reports are currently supported for staging</li>
                   </ul>
                 </div>
               </div>

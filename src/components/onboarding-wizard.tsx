@@ -54,7 +54,8 @@ const carriers = [
   'American Amicable',
   'Combined Insurance',
   'American Home Life',
-  'Royal Neighbors'
+  'Royal Neighbors',
+  'Liberty Bankers Life'
 ]
 
 const permissionLevels = [

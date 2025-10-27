@@ -1,6 +1,6 @@
 // API ROUTE: /api/upload-policy-reports/staging
 // This endpoint handles parsing CSV files and uploading them to the policy_report_staging table
-// Supports AMAM (American Amicable), RNA (Royal Neighbors), Combined policy reports, AHL (American Home Life) Excel files, Aflac Excel files, and Aetna Excel files
+// Supports AMAM (American Amicable), RNA (Royal Neighbors), Combined, AHL (American Home Life), Aflac, Aetna, and LBL (Liberty Bankers Life) policy reports
 
 import { createServerClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
@@ -256,6 +256,34 @@ interface AetnaPolicyData {
   AGENTCOMPLETENAME: string;
   SPLITLEVEL: string;
   'SPLIT %': string;
+}
+
+// LBL-specific CSV structure interface (Liberty Bankers Life)
+interface LBLPolicyData {
+  Textbox16: string;
+  ProductLine: string;
+  PolicyNumber1: string;
+  WritingAgentID: string;
+  WritingAgentName: string;
+  InsuredName: string;
+  OwnerName: string;
+  PayorName: string;
+  SubmitDate: string;
+  IssuedDate: string;
+  StatusDate: string;
+  StatusDescription: string;
+  PlanDescription: string;
+  ModalPremium: string;
+  Mode: string;
+  AnnualizedPremium: string;
+  CurrentFaceAmount: string;
+  Is_Submitted: string;
+  Is_Declined: string;
+  Is_Pending: string;
+  Is_Issued: string;
+  Is_Unpaid: string;
+  Is_Nottaken: string;
+  Is_Cancelled1: string;
 }
 
 /**
@@ -2687,9 +2715,281 @@ async function parseAetnaExcelToPolicyReports(
   }
 }
 
+// ============================================================================
+// LBL SPECIFIC FUNCTIONS (Liberty Bankers Life)
+// ============================================================================
+
+/**
+ * LBL: Validates LBL CSV structure and checks for required columns
+ * Verifies that it is a CSV file, contains data, and is an LBL CSV file by checking Textbox16 column
+ * 
+ * @param headers - Array of column headers from CSV
+ * @returns {isValid: boolean, error?: string}
+ */
+function validateLBLCSVStructure(headers: string[]): {isValid: boolean, error?: string} {
+  // Check if Textbox16 column exists (required for LBL identification)
+  const textbox16Index = headers.findIndex(h => h.toLowerCase().includes('textbox16'))
+  if (textbox16Index === -1) {
+    return { isValid: false, error: 'Failed to parse policy report, missing Textbox16 column - this does not appear to be a Liberty Bankers Life CSV' }
+  }
+
+  // Required columns for LBL policy reports
+  const requiredColumns = [
+    'Textbox16', 'ProductLine', 'PolicyNumber1', 'WritingAgentID',
+    'WritingAgentName', 'InsuredName', 'OwnerName', 'PayorName',
+    'SubmitDate', 'IssuedDate', 'StatusDate', 'StatusDescription',
+    'PlanDescription', 'ModalPremium', 'Mode', 'AnnualizedPremium',
+    'CurrentFaceAmount', 'Is_Submitted', 'Is_Declined', 'Is_Pending',
+    'Is_Issued', 'Is_Unpaid', 'Is_Nottaken', 'Is_Cancelled1'
+  ]
+
+  const missingColumns = requiredColumns.filter(col => 
+    !headers.some(header => header.toLowerCase() === col.toLowerCase())
+  )
+
+  if (missingColumns.length > 0) {
+    return { 
+      isValid: false, 
+      error: `Failed to parse policy report, missing columns: ${missingColumns.join(', ')}` 
+    }
+  }
+
+  return { isValid: true }
+}
+
+/**
+ * LBL: Processes Mode field - standardizes payment frequency values
+ * Mode field contains values like "1" where 1 corresponds to monthly
+ * Converts numeric mode values to standardized text format
+ * 
+ * @param modeValue - Mode value from LBL CSV (e.g., "1")
+ * @returns string | null - Standardized payment frequency or null if invalid
+ */
+function processLBLMode(modeValue: string): string | null {
+  if (!modeValue || modeValue.trim() === '') return null
+  
+  const trimmedMode = modeValue.trim()
+  
+  // LBL mode values: 1 = Monthly
+  // Can be extended for other modes if needed
+  if (trimmedMode === '1' || trimmedMode.toLowerCase() === 'monthly') {
+    return 'Monthly'
+  }
+  
+  // Return original value capitalized if not a known mode
+  return trimmedMode.charAt(0).toUpperCase() + trimmedMode.slice(1).toLowerCase()
+}
+
+/**
+ * LBL: Formats agent name from fully capitalized format to proper case
+ * Handles formats like "CHICKEN, POTATO T" -> "Potato Chicken"
+ * Handles formats like "CHICKEN, POTATO THOMAS" -> "Potato Thomas Chicken"
+ * Essentially reverses LAST, FIRST order and capitalizes properly
+ * Note: Single token middle names (like "T") are removed, multi-word first names are kept
+ * 
+ * @param agentName - The agent name in LBL format (fully capitalized, LastName, FirstName)
+ * @returns string - Properly formatted agent name
+ */
+function formatLBLAgentName(agentName: string): string {
+  if (!agentName || agentName.trim() === '') return ''
+  
+  // Split by comma to separate last name from first name
+  const parts = agentName.trim().split(',').map(p => p.trim())
+  
+  if (parts.length === 0) return ''
+  
+  // If no comma, just capitalize properly
+  if (parts.length === 1) {
+    return parts[0].toLowerCase()
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+  }
+  
+  // Has comma - format: "LAST, FIRST M" -> "First M Last" (but only if MiddleInitial is multi-word)
+  const lastName = parts[0].toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+  
+  // Split first name part by spaces
+  const firstNameParts = parts[1].toLowerCase().split(' ')
+  
+  // Determine which parts to keep
+  // If there are exactly 2 tokens and the second is a single character, keep only first token
+  if (firstNameParts.length >= 2 && firstNameParts[1].length === 1) {
+    // Format: "POTATO T" -> only keep "Potato"
+    firstNameParts.splice(1) // Remove single-character middle initial
+  } else if (firstNameParts.length > 2) {
+    // Format: "POTATO THOMAS M" -> keep only first 2 tokens
+    firstNameParts.splice(2)
+  }
+  // Otherwise keep all tokens (e.g., "POTATO THOMAS" stays as is)
+  
+  const firstName = firstNameParts
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+  
+  // Return as "FirstName LastName"
+  return `${firstName} ${lastName}`.trim()
+}
+
+/**
+ * LBL: Capitalizes first letter of each word in a fully capitalized name
+ * Also adds spaces between words if missing
+ * Converts formats like "JOHN DOE" -> "John Doe"
+ * 
+ * @param name - Fully capitalized name (e.g., "JOHN DOE")
+ * @returns string - Properly capitalized name with spaces (e.g., "John Doe")
+ */
+function capitalizeLBLName(name: string): string {
+  if (!name || name.trim() === '') return ''
+  
+  // Remove extra spaces and convert to lowercase
+  const cleaned = name.trim().toLowerCase()
+  
+  // Capitalize first letter of each word
+  return cleaned
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+/**
+ * LBL: Converts dates from MM/DD/YYYY format to YYYY-MM-DD format
+ * Handles the date format conversion required for LBL date fields
+ * 
+ * @param dateString - Date in MM/DD/YYYY format
+ * @returns string - Date in YYYY-MM-DD format or empty string if invalid
+ */
+function convertLBLDateFormat(dateString: string): string {
+  if (!dateString || dateString.trim() === '') return ''
+  
+  // Use existing convertDateFormat function for MM/DD/YYYY to YYYY-MM-DD conversion
+  return convertDateFormat(dateString)
+}
+
+/**
+ * LBL: Parses Liberty Bankers Life CSV content and converts it to PolicyReportStaging objects
+ * 
+ * @param csvContent - The CSV file content as string
+ * @param carrierName - The carrier name
+ * @param agencyId - The agency ID
+ * @returns Promise<PolicyReportStaging[]> - Array of parsed policy reports
+ */
+async function parseLBLCSVToPolicyReports(
+  csvContent: string,
+  carrierName: string,
+  agencyId: string
+): Promise<PolicyReportStaging[]> {
+  try {
+    // Parse CSV content using Papa Parse
+    const parseResult = Papa.parse<LBLPolicyData>(csvContent, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (header) => header.trim()
+    })
+
+    if (parseResult.errors && parseResult.errors.length > 0) {
+      console.error('Papa Parse errors:', parseResult.errors)
+      throw new Error(`CSV parsing errors: ${parseResult.errors.map((e: any) => e.message).join(', ')}`)
+    }
+
+    const records = parseResult.data
+    if (records.length === 0) {
+      throw new Error('No data found in CSV file')
+    }
+
+    // Validate CSV structure
+    const headers = Object.keys(records[0])
+    const validation = validateLBLCSVStructure(headers)
+    if (!validation.isValid) {
+      throw new Error(validation.error)
+    }
+
+    // Check if this is actually LBL data by verifying Textbox16 column exists
+    const firstRecord = records[0]
+    if (!firstRecord.Textbox16) {
+      throw new Error('You uploaded the wrong company\'s policy report to the Liberty Bankers Life section')
+    }
+
+    // Map LBL records to PolicyReportStaging objects
+    const policyReports: PolicyReportStaging[] = []
+
+    for (let i = 0; i < records.length; i++) {
+      const record = records[i]
+      
+      try {
+        // Check for required fields
+        const requiredFields = ['InsuredName', 'PolicyNumber1', 'WritingAgentID', 'WritingAgentName', 'StatusDescription']
+        const missingFields = requiredFields.filter(field => !record[field as keyof LBLPolicyData] || record[field as keyof LBLPolicyData].toString().trim() === '')
+        
+        if (missingFields.length > 0) {
+          console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
+          continue // Skip this row but continue processing others
+        }
+
+        // Process agent name - format from fully capitalized LastName, FirstName format
+        const formattedAgentName = formatLBLAgentName(record.WritingAgentName)
+        
+        // Capitalize insured name
+        const clientName = capitalizeLBLName(record.InsuredName)
+        
+        // Convert dates from MM/DD/YYYY to YYYY-MM-DD
+        const policyEffectiveDate = convertLBLDateFormat(record.IssuedDate)
+        const submitDate = convertLBLDateFormat(record.SubmitDate)
+        const statusDate = convertLBLDateFormat(record.StatusDate)
+        
+        // Process mode field - standardize payment frequency
+        const paymentFrequency = processLBLMode(record.Mode)
+        
+        // Parse modal premium and annualized premium as numbers
+        const modalPremium = record.ModalPremium ? parseFloat(record.ModalPremium) : null
+        const annualizedPremium = record.AnnualizedPremium ? parseFloat(record.AnnualizedPremium) : null
+        const faceValue = record.CurrentFaceAmount ? parseFloat(record.CurrentFaceAmount) : null
+
+        const policyReport: PolicyReportStaging = {
+          client_name: cleanValue(clientName),
+          policy_number: cleanValue(record.PolicyNumber1),
+          writing_agent_number: cleanValue(record.WritingAgentID),
+          agent_name: cleanValue(formattedAgentName),
+          status: cleanValue(record.StatusDescription),
+          policy_effective_date: cleanValue(policyEffectiveDate),
+          product: cleanValue(record.PlanDescription),
+          date_of_birth: null, // No DOB data in LBL
+          issue_age: null, // No issue age data in LBL
+          face_value: faceValue,
+          payment_method: null, // No payment method data in LBL
+          payment_frequency: paymentFrequency,
+          payment_cycle_premium: modalPremium,
+          client_address: null, // No address data in LBL
+          client_phone: null, // No phone data in LBL
+          client_email: null, // No email data in LBL
+          state: null, // No state data in LBL
+          zipcode: null, // No zipcode data in LBL
+          annual_premium: annualizedPremium,
+          client_gender: null, // No gender data in LBL
+          agency_id: agencyId,
+          carrier_name: 'Liberty Bankers Life (LBL)'
+        }
+
+        policyReports.push(policyReport)
+      } catch (rowError) {
+        console.error(`Error processing row ${i + 1}:`, rowError, record)
+        // Continue processing other rows
+      }
+    }
+
+    return policyReports
+  } catch (error) {
+    console.error('LBL CSV parsing error:', error)
+    throw new Error(`Failed to parse LBL CSV: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
 /**
  * Processes CSV files and uploads them to the staging table
- * Supports AMAM (American Amicable), RNA (Royal Neighbors), Combined, AHL (American Home Life), Aflac, and Aetna policy reports
+ * Supports AMAM (American Amicable), RNA (Royal Neighbors), Combined, AHL (American Home Life), Aflac, Aetna, and LBL (Liberty Bankers Life) policy reports
  * 
  * @param supabase - Supabase client instance
  * @param agencyId - The agency ID
@@ -2801,9 +3101,23 @@ async function processCSVUploads(
         
         console.log(`Successfully processed ${policyReports.length} Aetna records for carrier ${upload.carrier}`)
         
+      } else if (carrierLower === 'liberty bankers life' || carrierLower === 'lbl' || carrierLower.includes('liberty bankers')) {
+        // Read CSV file content for LBL
+        console.log(`Matched LBL carrier: "${upload.carrier}"`)
+        const csvContent = await upload.file.text()
+        // Parse LBL CSV to policy reports
+        policyReports = await parseLBLCSVToPolicyReports(csvContent, upload.carrier, agencyId)
+        
+        if (policyReports.length === 0) {
+          errors.push(`${upload.carrier}: No valid records found in CSV`)
+          continue
+        }
+        
+        console.log(`Successfully processed ${policyReports.length} LBL records for carrier ${upload.carrier}`)
+        
       } else {
         console.log(`No carrier match found for: "${upload.carrier}" (lowercase: "${carrierLower}")`)
-        errors.push(`${upload.carrier}: Only American Amicable (AMAM), Royal Neighbors (RNA), Combined, American Home Life (AHL), Aflac, and Aetna policy reports are currently supported for staging`)
+        errors.push(`${upload.carrier}: Only American Amicable (AMAM), Royal Neighbors (RNA), Combined, American Home Life (AHL), Aflac, Aetna, and Liberty Bankers Life (LBL) policy reports are currently supported for staging`)
         continue
       }
 

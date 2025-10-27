@@ -2897,37 +2897,39 @@ export async function POST(request: NextRequest) {
     const totalRecordsProcessed = uploadResults.results.reduce((sum, result) => sum + result.recordsProcessed, 0)
     const totalRecordsInserted = uploadResults.results.reduce((sum, result) => sum + result.recordsInserted, 0)
     
-    // Trigger orchestrate_policy_report_ingest RPC function AFTER staging is fully complete
+    // Trigger orchestrate_policy_report_ingest_with_agency_id RPC function AFTER staging is fully complete
     let orchestrationResult = null
     if (uploadResults.success && totalRecordsInserted > 0) {
       try {
-        console.log(`Triggering orchestrate_policy_report_ingest RPC function for agency ${agencyId} with ${totalRecordsInserted} records`)
+        console.log(`Triggering orchestrate_policy_report_ingest_with_agency_id RPC function for agency ${agencyId} with ${totalRecordsInserted} records`)
         
         const { data: orchestrationData, error: orchestrationError } = await supabase
-          .rpc('orchestrate_policy_report_ingest')
+          .rpc('orchestrate_policy_report_ingest_with_agency_id', {
+            p_agency_id: agencyId
+          })
         
         if (orchestrationError) {
-          console.error('Error calling orchestrate_policy_report_ingest RPC:', orchestrationError)
+          console.error('Error calling orchestrate_policy_report_ingest_with_agency_id RPC:', orchestrationError)
           orchestrationResult = {
             success: false,
             error: orchestrationError.message
           }
         } else {
-          console.log('Successfully executed orchestrate_policy_report_ingest RPC:', orchestrationData)
+          console.log('Successfully executed orchestrate_policy_report_ingest_with_agency_id RPC:', orchestrationData)
           orchestrationResult = {
             success: true,
             data: orchestrationData
           }
         }
       } catch (rpcError) {
-        console.error('Exception calling orchestrate_policy_report_ingest RPC:', rpcError)
+        console.error('Exception calling orchestrate_policy_report_ingest_with_agency_id RPC:', rpcError)
         orchestrationResult = {
           success: false,
           error: rpcError instanceof Error ? rpcError.message : 'Unknown RPC error'
         }
       }
     } else {
-      console.log('Skipping orchestrate_policy_report_ingest RPC - no successful uploads or no records inserted')
+      console.log('Skipping orchestrate_policy_report_ingest_with_agency_id RPC - no successful uploads or no records inserted')
     }
     
     // Prepare response

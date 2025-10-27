@@ -10,10 +10,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts'
-import { Calendar, Download, Filter, Upload } from "lucide-react"
+import { Calendar, Download, Filter, Upload, FileText, AlertCircle } from "lucide-react"
 import { useState, useEffect } from 'react'
 import UploadPolicyReportsModal from '@/components/modals/upload-policy-reports-modal'
 import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
 
 /**
  * Retrieves the agency ID for the current user
@@ -45,1059 +46,90 @@ async function getAgencyId(supabase: any, userId: string): Promise<string> {
   }
 }
 
-// // Persistency data structure - fallback data for when RPC fails
-// const PERSISTENCY_DATA = {
-//   "carriers": [
-//     {
-//       "carrier": "Aetna",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 314,
-//           "positiveCount": 269,
-//           "negativePercentage": 53.86,
-//           "positivePercentage": 46.14
-//         },
-//         "6": {
-//           "negativeCount": 1757,
-//           "positiveCount": 841,
-//           "negativePercentage": 67.63,
-//           "positivePercentage": 32.37
-//         },
-//         "9": {
-//           "negativeCount": 2925,
-//           "positiveCount": 1227,
-//           "negativePercentage": 70.45,
-//           "positivePercentage": 29.55
-//         },
-//         "All": {
-//           "negativeCount": 5788,
-//           "positiveCount": 2208,
-//           "negativePercentage": 72.39,
-//           "positivePercentage": 27.61
-//         }
-//       },
-//       "totalPolicies": 13574,
-//       "persistencyRate": 27.61,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": 44,
-//             "percentage": 4.4
-//           },
-//           "Active": {
-//             "count": 269,
-//             "percentage": 26.87
-//           },
-//           "Closed": {
-//             "count": 49,
-//             "percentage": 4.9
-//           },
-//           "Lapsed": {
-//             "count": 177,
-//             "percentage": 17.68
-//           },
-//           "Decline": {
-//             "count": 315,
-//             "percentage": 31.47
-//           },
-//           "Pending": {
-//             "count": 33,
-//             "percentage": 3.3
-//           },
-//           "Withdrawn": {
-//             "count": 64,
-//             "percentage": 6.39
-//           },
-//           "Issued Not In Force": {
-//             "count": 50,
-//             "percentage": 5
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": 84,
-//             "percentage": 2.18
-//           },
-//           "Active": {
-//             "count": 841,
-//             "percentage": 21.8
-//           },
-//           "Closed": {
-//             "count": 219,
-//             "percentage": 5.68
-//           },
-//           "Lapsed": {
-//             "count": 1112,
-//             "percentage": 28.83
-//           },
-//           "Decline": {
-//             "count": 1080,
-//             "percentage": 28
-//           },
-//           "Not Taken": {
-//             "count": 95,
-//             "percentage": 2.46
-//           },
-//           "Withdrawn": {
-//             "count": 269,
-//             "percentage": 6.97
-//           },
-//           "Terminated": {
-//             "count": 157,
-//             "percentage": 4.07
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": 88,
-//             "percentage": 1.42
-//           },
-//           "Active": {
-//             "count": 1224,
-//             "percentage": 19.7
-//           },
-//           "Closed": {
-//             "count": 336,
-//             "percentage": 5.41
-//           },
-//           "Lapsed": {
-//             "count": 1931,
-//             "percentage": 31.08
-//           },
-//           "Decline": {
-//             "count": 1774,
-//             "percentage": 28.55
-//           },
-//           "Not Taken": {
-//             "count": 202,
-//             "percentage": 3.25
-//           },
-//           "Withdrawn": {
-//             "count": 448,
-//             "percentage": 7.21
-//           },
-//           "Terminated": {
-//             "count": 210,
-//             "percentage": 3.38
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": 333,
-//             "percentage": 2.45
-//           },
-//           "Active": {
-//             "count": 2199,
-//             "percentage": 16.2
-//           },
-//           "Closed": {
-//             "count": 690,
-//             "percentage": 5.08
-//           },
-//           "Lapsed": {
-//             "count": 3906,
-//             "percentage": 28.78
-//           },
-//           "Decline": {
-//             "count": 4583,
-//             "percentage": 33.76
-//           },
-//           "Not Taken": {
-//             "count": 675,
-//             "percentage": 4.97
-//           },
-//           "Withdrawn": {
-//             "count": 737,
-//             "percentage": 5.43
-//           },
-//           "Terminated": {
-//             "count": 451,
-//             "percentage": 3.32
-//           }
-//         }
-//       }
-//     },
-//     {
-//       "carrier": "Aflac",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 280,
-//           "positiveCount": 226,
-//           "negativePercentage": 55.34,
-//           "positivePercentage": 44.66
-//         },
-//         "6": {
-//           "negativeCount": 1595,
-//           "positiveCount": 762,
-//           "negativePercentage": 67.67,
-//           "positivePercentage": 32.33
-//         },
-//         "9": {
-//           "negativeCount": 3477,
-//           "positiveCount": 1318,
-//           "negativePercentage": 72.51,
-//           "positivePercentage": 27.49
-//         },
-//         "All": {
-//           "negativeCount": 8112,
-//           "positiveCount": 2737,
-//           "negativePercentage": 74.77,
-//           "positivePercentage": 25.23
-//         }
-//       },
-//       "totalPolicies": 16823,
-//       "persistencyRate": 25.23,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": 38,
-//             "percentage": 4.39
-//           },
-//           "Active": {
-//             "count": 226,
-//             "percentage": 26.13
-//           },
-//           "Closed": {
-//             "count": 41,
-//             "percentage": 4.74
-//           },
-//           "Lapsed": {
-//             "count": 150,
-//             "percentage": 17.34
-//           },
-//           "Decline": {
-//             "count": 254,
-//             "percentage": 29.36
-//           },
-//           "Not Taken": {
-//             "count": 27,
-//             "percentage": 3.12
-//           },
-//           "Withdrawn": {
-//             "count": 68,
-//             "percentage": 7.86
-//           },
-//           "Issued Not In Force": {
-//             "count": 61,
-//             "percentage": 7.05
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": 81,
-//             "percentage": 2.39
-//           },
-//           "Active": {
-//             "count": 761,
-//             "percentage": 22.47
-//           },
-//           "Closed": {
-//             "count": 173,
-//             "percentage": 5.11
-//           },
-//           "Lapsed": {
-//             "count": 1046,
-//             "percentage": 30.89
-//           },
-//           "Decline": {
-//             "count": 840,
-//             "percentage": 24.81
-//           },
-//           "Not Taken": {
-//             "count": 109,
-//             "percentage": 3.22
-//           },
-//           "Withdrawn": {
-//             "count": 258,
-//             "percentage": 7.62
-//           },
-//           "Terminated": {
-//             "count": 118,
-//             "percentage": 3.48
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": 81,
-//             "percentage": 1.17
-//           },
-//           "Active": {
-//             "count": 1317,
-//             "percentage": 19.09
-//           },
-//           "Closed": {
-//             "count": 353,
-//             "percentage": 5.12
-//           },
-//           "Lapsed": {
-//             "count": 2406,
-//             "percentage": 34.88
-//           },
-//           "Decline": {
-//             "count": 1752,
-//             "percentage": 25.4
-//           },
-//           "Not Taken": {
-//             "count": 271,
-//             "percentage": 3.93
-//           },
-//           "Withdrawn": {
-//             "count": 493,
-//             "percentage": 7.15
-//           },
-//           "Terminated": {
-//             "count": 225,
-//             "percentage": 3.26
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": 465,
-//             "percentage": 2.76
-//           },
-//           "Active": {
-//             "count": 2731,
-//             "percentage": 16.23
-//           },
-//           "Closed": {
-//             "count": 907,
-//             "percentage": 5.39
-//           },
-//           "Lapsed": {
-//             "count": 5569,
-//             "percentage": 33.1
-//           },
-//           "Decline": {
-//             "count": 4379,
-//             "percentage": 26.03
-//           },
-//           "Not Taken": {
-//             "count": 1138,
-//             "percentage": 6.76
-//           },
-//           "Withdrawn": {
-//             "count": 1113,
-//             "percentage": 6.62
-//           },
-//           "Terminated": {
-//             "count": 521,
-//             "percentage": 3.1
-//           }
-//         }
-//       }
-//     },
-//     {
-//       "carrier": "American Amicable / Occidental",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 554,
-//           "positiveCount": 160,
-//           "negativePercentage": 77.59,
-//           "positivePercentage": 22.41
-//         },
-//         "6": {
-//           "negativeCount": 2203,
-//           "positiveCount": 514,
-//           "negativePercentage": 81.08,
-//           "positivePercentage": 18.92
-//         },
-//         "9": {
-//           "negativeCount": 3462,
-//           "positiveCount": 729,
-//           "negativePercentage": 82.61,
-//           "positivePercentage": 17.39
-//         },
-//         "All": {
-//           "negativeCount": 5819,
-//           "positiveCount": 1278,
-//           "negativePercentage": 81.99,
-//           "positivePercentage": 18.01
-//         }
-//       },
-//       "totalPolicies": 7097,
-//       "persistencyRate": 18.01,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": 78,
-//             "percentage": 10.92
-//           },
-//           "Active": {
-//             "count": 160,
-//             "percentage": 22.41
-//           },
-//           "Declined": {
-//             "count": 205,
-//             "percentage": 28.71
-//           },
-//           "NotTaken": {
-//             "count": 75,
-//             "percentage": 10.5
-//           },
-//           "Withdrawn": {
-//             "count": 71,
-//             "percentage": 9.94
-//           },
-//           "IssNotPaid": {
-//             "count": 33,
-//             "percentage": 4.62
-//           },
-//           "Act-Pastdue": {
-//             "count": 36,
-//             "percentage": 5.04
-//           },
-//           "InfNotTaken": {
-//             "count": 56,
-//             "percentage": 7.84
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": 164,
-//             "percentage": 6.04
-//           },
-//           "Active": {
-//             "count": 514,
-//             "percentage": 18.92
-//           },
-//           "Declined": {
-//             "count": 744,
-//             "percentage": 27.38
-//           },
-//           "NotTaken": {
-//             "count": 304,
-//             "percentage": 11.19
-//           },
-//           "Withdrawn": {
-//             "count": 274,
-//             "percentage": 10.08
-//           },
-//           "Incomplete": {
-//             "count": 163,
-//             "percentage": 6
-//           },
-//           "Terminated": {
-//             "count": 109,
-//             "percentage": 4.01
-//           },
-//           "InfNotTaken": {
-//             "count": 445,
-//             "percentage": 16.38
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": 187,
-//             "percentage": 4.46
-//           },
-//           "Active": {
-//             "count": 728,
-//             "percentage": 17.37
-//           },
-//           "Declined": {
-//             "count": 1093,
-//             "percentage": 26.08
-//           },
-//           "NotTaken": {
-//             "count": 489,
-//             "percentage": 11.67
-//           },
-//           "Withdrawn": {
-//             "count": 421,
-//             "percentage": 10.05
-//           },
-//           "Incomplete": {
-//             "count": 245,
-//             "percentage": 5.85
-//           },
-//           "Terminated": {
-//             "count": 253,
-//             "percentage": 6.04
-//           },
-//           "InfNotTaken": {
-//             "count": 775,
-//             "percentage": 18.49
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": 274,
-//             "percentage": 3.86
-//           },
-//           "Active": {
-//             "count": 1270,
-//             "percentage": 17.89
-//           },
-//           "Declined": {
-//             "count": 1687,
-//             "percentage": 23.77
-//           },
-//           "NotTaken": {
-//             "count": 851,
-//             "percentage": 11.99
-//           },
-//           "Withdrawn": {
-//             "count": 597,
-//             "percentage": 8.41
-//           },
-//           "Incomplete": {
-//             "count": 364,
-//             "percentage": 5.13
-//           },
-//           "Terminated": {
-//             "count": 770,
-//             "percentage": 10.85
-//           },
-//           "InfNotTaken": {
-//             "count": 1284,
-//             "percentage": 18.09
-//           }
-//         }
-//       }
-//     },
-//     {
-//       "carrier": "American Home Life Insurance Company",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 4,
-//           "positiveCount": 15,
-//           "negativePercentage": 21.05,
-//           "positivePercentage": 78.95
-//         },
-//         "6": {
-//           "negativeCount": 5,
-//           "positiveCount": 17,
-//           "negativePercentage": 22.73,
-//           "positivePercentage": 77.27
-//         },
-//         "9": {
-//           "negativeCount": 19,
-//           "positiveCount": 19,
-//           "negativePercentage": 50,
-//           "positivePercentage": 50
-//         },
-//         "All": {
-//           "negativeCount": 361,
-//           "positiveCount": 131,
-//           "negativePercentage": 73.37,
-//           "positivePercentage": 26.63
-//         }
-//       },
-//       "totalPolicies": 1070,
-//       "persistencyRate": 26.63,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Active": {
-//             "count": 15,
-//             "percentage": 44.12
-//           },
-//           "Lapsed": {
-//             "count": 1,
-//             "percentage": 2.94
-//           },
-//           "Decline": {
-//             "count": 9,
-//             "percentage": 26.47
-//           },
-//           "Pending": {
-//             "count": 1,
-//             "percentage": 2.94
-//           },
-//           "Not Taken": {
-//             "count": 1,
-//             "percentage": 2.94
-//           },
-//           "Withdrawn": {
-//             "count": 3,
-//             "percentage": 8.82
-//           },
-//           "Issued Not In Force": {
-//             "count": 4,
-//             "percentage": 11.76
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Active": {
-//             "count": 17,
-//             "percentage": 35.42
-//           },
-//           "Lapsed": {
-//             "count": 2,
-//             "percentage": 4.17
-//           },
-//           "Decline": {
-//             "count": 20,
-//             "percentage": 41.67
-//           },
-//           "Pending": {
-//             "count": 1,
-//             "percentage": 2.08
-//           },
-//           "Not Taken": {
-//             "count": 1,
-//             "percentage": 2.08
-//           },
-//           "Withdrawn": {
-//             "count": 3,
-//             "percentage": 6.25
-//           },
-//           "Issued Not In Force": {
-//             "count": 4,
-//             "percentage": 8.33
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Active": {
-//             "count": 19,
-//             "percentage": 22.35
-//           },
-//           "Lapsed": {
-//             "count": 10,
-//             "percentage": 11.76
-//           },
-//           "Decline": {
-//             "count": 40,
-//             "percentage": 47.06
-//           },
-//           "Pending": {
-//             "count": 1,
-//             "percentage": 1.18
-//           },
-//           "Not Taken": {
-//             "count": 2,
-//             "percentage": 2.35
-//           },
-//           "Withdrawn": {
-//             "count": 9,
-//             "percentage": 10.59
-//           },
-//           "Issued Not In Force": {
-//             "count": 4,
-//             "percentage": 4.71
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": 20,
-//             "percentage": 1.87
-//           },
-//           "Active": {
-//             "count": 131,
-//             "percentage": 12.24
-//           },
-//           "Closed": {
-//             "count": 20,
-//             "percentage": 1.87
-//           },
-//           "Lapsed": {
-//             "count": 249,
-//             "percentage": 23.27
-//           },
-//           "Decline": {
-//             "count": 442,
-//             "percentage": 41.31
-//           },
-//           "Not Taken": {
-//             "count": 87,
-//             "percentage": 8.13
-//           },
-//           "Withdrawn": {
-//             "count": 77,
-//             "percentage": 7.2
-//           },
-//           "LM App Decline": {
-//             "count": 44,
-//             "percentage": 4.11
-//           }
-//         }
-//       }
-//     },
-//     {
-//       "carrier": "Combined",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 2774,
-//           "positiveCount": 6304,
-//           "negativePercentage": 30.56,
-//           "positivePercentage": 69.44
-//         },
-//         "6": {
-//           "negativeCount": 3296,
-//           "positiveCount": 6646,
-//           "negativePercentage": 33.15,
-//           "positivePercentage": 66.85
-//         },
-//         "9": {
-//           "negativeCount": 3296,
-//           "positiveCount": 6646,
-//           "negativePercentage": 33.15,
-//           "positivePercentage": 66.85
-//         },
-//         "All": {
-//           "negativeCount": 3296,
-//           "positiveCount": 6646,
-//           "negativePercentage": 33.15,
-//           "positivePercentage": 66.85
-//         }
-//       },
-//       "totalPolicies": 9942,
-//       "persistencyRate": 66.85,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Issued": {
-//             "count": 1914,
-//             "percentage": 21.08
-//           },
-//           "In-Force": {
-//             "count": 4390,
-//             "percentage": 48.36
-//           },
-//           "Terminated": {
-//             "count": 2755,
-//             "percentage": 30.35
-//           },
-//           "Lapse-Pending": {
-//             "count": 19,
-//             "percentage": 0.21
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Issued": {
-//             "count": 1923,
-//             "percentage": 19.34
-//           },
-//           "In-Force": {
-//             "count": 4723,
-//             "percentage": 47.51
-//           },
-//           "Terminated": {
-//             "count": 3270,
-//             "percentage": 32.89
-//           },
-//           "Lapse-Pending": {
-//             "count": 26,
-//             "percentage": 0.26
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Issued": {
-//             "count": 1923,
-//             "percentage": 19.34
-//           },
-//           "In-Force": {
-//             "count": 4723,
-//             "percentage": 47.51
-//           },
-//           "Terminated": {
-//             "count": 3270,
-//             "percentage": 32.89
-//           },
-//           "Lapse-Pending": {
-//             "count": 26,
-//             "percentage": 0.26
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Issued": {
-//             "count": 1923,
-//             "percentage": 19.34
-//           },
-//           "In-Force": {
-//             "count": 4723,
-//             "percentage": 47.51
-//           },
-//           "Terminated": {
-//             "count": 3270,
-//             "percentage": 32.89
-//           },
-//           "Lapse-Pending": {
-//             "count": 26,
-//             "percentage": 0.26
-//           }
-//         }
-//       }
-//     },
-//     {
-//       "carrier": "RNA",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 0,
-//           "positiveCount": 5,
-//           "negativePercentage": 0,
-//           "positivePercentage": 100
-//         },
-//         "6": {
-//           "negativeCount": 6,
-//           "positiveCount": 13,
-//           "negativePercentage": 31.58,
-//           "positivePercentage": 68.42
-//         },
-//         "9": {
-//           "negativeCount": 45,
-//           "positiveCount": 25,
-//           "negativePercentage": 64.29,
-//           "positivePercentage": 35.71
-//         },
-//         "All": {
-//           "negativeCount": 1976,
-//           "positiveCount": 384,
-//           "negativePercentage": 83.73,
-//           "positivePercentage": 16.27
-//         }
-//       },
-//       "totalPolicies": 2771,
-//       "persistencyRate": 16.27,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "CONTRACT ACTIVE": {
-//             "count": 5,
-//             "percentage": 50
-//           },
-//           "CON SUS HOME OFFICE": {
-//             "count": 1,
-//             "percentage": 10
-//           },
-//           "CON SUS RETURNED EFT": {
-//             "count": 4,
-//             "percentage": 40
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "CON TERM LAPSED": {
-//             "count": 3,
-//             "percentage": 11.54
-//           },
-//           "CONTRACT ACTIVE": {
-//             "count": 13,
-//             "percentage": 50
-//           },
-//           "CON TERM NT NO PAY": {
-//             "count": 3,
-//             "percentage": 11.54
-//           },
-//           "CON SUS HOME OFFICE": {
-//             "count": 3,
-//             "percentage": 11.54
-//           },
-//           "CON SUS RETURNED EFT": {
-//             "count": 4,
-//             "percentage": 15.38
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "CON TERM LAPSED": {
-//             "count": 23,
-//             "percentage": 29.87
-//           },
-//           "CONTRACT ACTIVE": {
-//             "count": 25,
-//             "percentage": 32.47
-//           },
-//           "CON TERM NT NO PAY": {
-//             "count": 22,
-//             "percentage": 28.57
-//           },
-//           "CON SUS HOME OFFICE": {
-//             "count": 3,
-//             "percentage": 3.9
-//           },
-//           "CON SUS RETURNED EFT": {
-//             "count": 4,
-//             "percentage": 5.19
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": 211,
-//             "percentage": 7.61
-//           },
-//           "CON TERM LAPSED": {
-//             "count": 379,
-//             "percentage": 13.68
-//           },
-//           "CONTRACT ACTIVE": {
-//             "count": 327,
-//             "percentage": 11.8
-//           },
-//           "CON TERM DECLINED": {
-//             "count": 138,
-//             "percentage": 4.98
-//           },
-//           "CON TERM NT NO PAY": {
-//             "count": 694,
-//             "percentage": 25.05
-//           },
-//           "CON TERM WITHDRAWN": {
-//             "count": 436,
-//             "percentage": 15.73
-//           },
-//           "CON TERM INCOMPLETE": {
-//             "count": 467,
-//             "percentage": 16.85
-//           },
-//           "CON TERM NOT ISSUED": {
-//             "count": 119,
-//             "percentage": 4.29
-//           }
-//         }
-//       }
-//     }
-//   ],
-//   "overall_analytics": {
-//     "timeRanges": {
-//       "3": {
-//         "activeCount": 6979,
-//         "inactiveCount": 3926,
-//         "activePercentage": 64
-//       },
-//       "6": {
-//         "activeCount": 8793,
-//         "inactiveCount": 8862,
-//         "activePercentage": 49.8
-//       },
-//       "9": {
-//         "activeCount": 9964,
-//         "inactiveCount": 13224,
-//         "activePercentage": 42.97
-//       },
-//       "All": {
-//         "activeCount": 13384,
-//         "inactiveCount": 25352,
-//         "activePercentage": 34.55
-//       }
-//     },
-//     "activeCount": 13384,
-//     "inactiveCount": 25352,
-//     "overallPersistency": 34.55
-//   },
-//   "carrier_comparison": {
-//     "activeShareByCarrier": {
-//       "RNA": 2.87,
-//       "Aetna": 16.5,
-//       "Aflac": 20.45,
-//       "Combined": 49.66,
-//       "American Amicable / Occidental": 9.55,
-//       "American Home Life Insurance Company": 0.98
-//     },
-//     "inactiveShareByCarrier": {
-//       "RNA": 7.79,
-//       "Aetna": 22.83,
-//       "Aflac": 32,
-//       "Combined": 13,
-//       "American Amicable / Occidental": 22.95,
-//       "American Home Life Insurance Company": 1.42
-//     }
-//   }
-// }
+/**
+ * Retrieves the user's role from the users table
+ *
+ * @param supabase - Supabase client instance
+ * @param userId - The authenticated user's ID (auth_user_id)
+ * @returns Promise<string> - The user's role
+ */
+async function getUserRole(supabase: any, userId: string): Promise<string> {
+  try {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('role')
+      .eq('auth_user_id', userId)
+      .single()
 
-// Helper functions to process data
-const getCarrierPersistencyData = (carrier: any) => {
-  if (!carrier.timeRanges || carrier.timeRanges["3"].positiveCount === null) {
-    return null
+    if (error || !user) {
+      throw new Error('Failed to fetch user role')
+    }
+
+    return user.role || 'agent'
+  } catch (error) {
+    console.error('Error fetching user role:', error)
+    return 'agent' // Default to agent if role fetch fails
   }
+}
+
+// Helper functions for data processing
+const getCarrierPersistencyData = (carrier: any) => {
+  if (!carrier.timeRanges) return null
   
   return [
-    { period: '3 Months', persistency: carrier.timeRanges["3"].positivePercentage },
-    { period: '6 Months', persistency: carrier.timeRanges["6"].positivePercentage },
-    { period: '9 Months', persistency: carrier.timeRanges["9"].positivePercentage },
-    { period: 'All Time', persistency: carrier.timeRanges["All"].positivePercentage },
+    { period: '3 Months', persistency: carrier.timeRanges["3"]?.positivePercentage || 0 },
+    { period: '6 Months', persistency: carrier.timeRanges["6"]?.positivePercentage || 0 },
+    { period: '9 Months', persistency: carrier.timeRanges["9"]?.positivePercentage || 0 },
+    { period: 'All Time', persistency: carrier.timeRanges["All"]?.positivePercentage || 0 },
   ]
 }
 
 const getCarrierPolicyData = (carrier: any) => {
-  if (!carrier.timeRanges || carrier.timeRanges["3"].positiveCount === null) {
-    return null
-  }
+  if (!carrier.timeRanges) return null
   
   return [
-    { period: '3 Months', active: carrier.timeRanges["3"].positiveCount, inactive: carrier.timeRanges["3"].negativeCount },
-    { period: '6 Months', active: carrier.timeRanges["6"].positiveCount, inactive: carrier.timeRanges["6"].negativeCount },
-    { period: '9 Months', active: carrier.timeRanges["9"].positiveCount, inactive: carrier.timeRanges["9"].negativeCount },
-    { period: 'All Time', active: carrier.timeRanges["All"].positiveCount, inactive: carrier.timeRanges["All"].negativeCount },
+    { period: '3 Months', active: carrier.timeRanges["3"]?.positiveCount || 0, inactive: carrier.timeRanges["3"]?.negativeCount || 0 },
+    { period: '6 Months', active: carrier.timeRanges["6"]?.positiveCount || 0, inactive: carrier.timeRanges["6"]?.negativeCount || 0 },
+    { period: '9 Months', active: carrier.timeRanges["9"]?.positiveCount || 0, inactive: carrier.timeRanges["9"]?.negativeCount || 0 },
+    { period: 'All Time', active: carrier.timeRanges["All"]?.positiveCount || 0, inactive: carrier.timeRanges["All"]?.negativeCount || 0 },
   ]
 }
 
-const getStatusBreakdownData = (carrier: any, timeRange: string = "All") => {
-  const breakdown = carrier.statusBreakdowns[timeRange]
-  if (!breakdown) return []
+const getStatusBreakdownData = (carrier: any) => {
+  if (!carrier.statusBreakdowns || !carrier.statusBreakdowns["All"]) return []
   
-  const colors = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#84cc16', '#06b6d4', '#f97316', '#ec4899']
+  const breakdown = carrier.statusBreakdowns["All"]
+  const colors = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#f97316', '#ec4899']
   
-  return Object.entries(breakdown)
-    .filter(([key, value]: [string, any]) => value && value.count !== null && value.count > 0)
-    .map(([key, value]: [string, any], index) => ({
-      name: key,
-      value: value.count,
-      percentage: value.percentage,
-      color: colors[index % colors.length]
-    }))
+  return Object.entries(breakdown).map(([status, data]: [string, any], index) => ({
+    name: status,
+    value: data.count || 0,
+    color: colors[index % colors.length]
+  })).filter(item => item.value > 0)
 }
 
-// Function to generate carrier comparison data
 const generateCarrierComparisonData = (persistencyData: any) => {
-  const activePoliciesByCarrier = Object.entries(persistencyData.carrier_comparison.activeShareByCarrier)
-    .filter(([carrier, share]: [string, any]) => share !== null && share > 0)
-    .map(([carrier, share]: [string, any], index) => ({
-      name: carrier,
-      value: Math.round((share / 100) * persistencyData.overall_analytics.activeCount),
-      color: ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#84cc16', '#06b6d4'][index % 6]
-    }))
-
-  const inactivePoliciesByCarrier = Object.entries(persistencyData.carrier_comparison.inactiveShareByCarrier)
-    .filter(([carrier, share]: [string, any]) => share !== null && share > 0)
-    .map(([carrier, share]: [string, any], index) => ({
-      name: carrier,
-      value: Math.round((share / 100) * persistencyData.overall_analytics.inactiveCount),
-      color: ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#84cc16', '#06b6d4'][index % 6]
-    }))
-
-  const carrierComparisonData = persistencyData.carriers
-    .filter((carrier: any) => carrier.persistencyRate > 0)
-    .map((carrier: any) => ({
-      carrier: carrier.carrier,
-      persistency: carrier.persistencyRate
-    }))
-
+  if (!persistencyData?.carriers) return { activePoliciesByCarrier: [], inactivePoliciesByCarrier: [], carrierComparisonData: [] }
+  
+  const colors = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16']
+  
+  const activePoliciesByCarrier = persistencyData.carriers.map((carrier: any, index: number) => ({
+    name: carrier.carrier,
+    value: carrier.totalPolicies ? Math.round(carrier.totalPolicies * (carrier.persistencyRate / 100)) : 0,
+    color: colors[index % colors.length]
+  }))
+  
+  const inactivePoliciesByCarrier = persistencyData.carriers.map((carrier: any, index: number) => ({
+    name: carrier.carrier,
+    value: carrier.totalPolicies ? Math.round(carrier.totalPolicies * ((100 - carrier.persistencyRate) / 100)) : 0,
+    color: colors[index % colors.length]
+  }))
+  
+  const carrierComparisonData = persistencyData.carriers.map((carrier: any) => ({
+    carrier: carrier.carrier,
+    persistency: carrier.persistencyRate || 0
+  }))
+  
   return {
     activePoliciesByCarrier,
     inactivePoliciesByCarrier,
@@ -1105,12 +137,13 @@ const generateCarrierComparisonData = (persistencyData: any) => {
   }
 }
 
-
 export default function Persistency() {
   const [showCarrierComparison, setShowCarrierComparison] = useState(false)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string>('agent')
+  const router = useRouter()
   
   // Dynamic persistency data from Supabase RPC
   const [persistencyData, setPersistencyData] = useState<any>(null)
@@ -1131,28 +164,32 @@ export default function Persistency() {
           throw new Error('User not authenticated')
         }
         
+        // Get user role
+        const role = await getUserRole(supabase, user.id)
+        setUserRole(role)
+        
         // Get agency ID for the user
         const agencyId = await getAgencyId(supabase, user.id)
         
         // Call the RPC function
         const { data, error: rpcError } = await supabase.rpc('analyze_persistency_for_deals', { 
-          p_agency_id: agencyId 
+          agency_id: agencyId 
         })
         
         if (rpcError) {
           throw new Error(`RPC Error: ${rpcError.message}`)
         }
         
-        if (data) {
+        if (data && data.carriers && data.carriers.length > 0) {
           setPersistencyData(data)
         } else {
-          throw new Error('No data returned from RPC function')
+          // No data returned - this is not an error, just empty state
+          setPersistencyData(null)
         }
         
       } catch (err) {
         console.error('Error fetching persistency data:', err)
         setError(err instanceof Error ? err.message : 'Failed to fetch persistency data')
-        // No fallback data available - user will see error state
       } finally {
         setIsLoading(false)
       }
@@ -1179,7 +216,7 @@ export default function Persistency() {
   }, [])
 
   // Show loading state
-  if (isLoading || !persistencyData) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -1201,6 +238,74 @@ export default function Persistency() {
             <p className="text-sm text-gray-600">
               Please check your connection and try refreshing the page.
             </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show empty state - no persistency data available
+  if (!persistencyData) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-2xl mx-auto p-6">
+          <div className="bg-white border border-gray-200 rounded-lg p-8 shadow-sm">
+            <div className="flex justify-center mb-6">
+              <div className="bg-blue-50 rounded-full p-4">
+                <FileText className="h-12 w-12 text-blue-600" />
+              </div>
+            </div>
+            
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              No Persistency Data Available
+            </h2>
+            
+            <p className="text-gray-600 mb-6 leading-relaxed">
+              Persistency analytics are not available because either no policy reports have been uploaded yet, 
+              or there are no deals in the database for your agency.
+            </p>
+            
+            {userRole === 'admin' ? (
+              <div className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center mb-2">
+                    <AlertCircle className="h-5 w-5 text-blue-600 mr-2" />
+                    <h3 className="font-medium text-blue-900">Admin Access</h3>
+                  </div>
+                  <p className="text-blue-700 text-sm">
+                    As an admin, you can upload policy reports to start generating persistency analytics.
+                  </p>
+                </div>
+                
+                <Button 
+                  onClick={() => router.push('/configuration?tab=policy-reports')}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Go to Policy Reports Upload
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-center mb-2">
+                    <AlertCircle className="h-5 w-5 text-amber-600 mr-2" />
+                    <h3 className="font-medium text-amber-900">No Data Available</h3>
+                  </div>
+                  <p className="text-amber-700 text-sm">
+                    No deals exist for your agency in the database. Contact your administrator to upload policy reports.
+                  </p>
+                </div>
+                
+                <Button 
+                  onClick={() => router.push('/')}
+                  variant="outline"
+                  className="w-full"
+                >
+                  Return to Dashboard
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1247,11 +352,16 @@ export default function Persistency() {
               </SelectContent>
             </Select>
             <Button
+              variant="outline"
               onClick={() => setIsUploadModalOpen(true)}
-              className="bg-black text-white hover:bg-gray-800 px-4 py-2"
+              className="flex items-center space-x-2"
             >
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Policy Reports
+              <Upload className="h-4 w-4" />
+              <span>Upload Reports</span>
+            </Button>
+            <Button variant="outline" className="flex items-center space-x-2">
+              <Download className="h-4 w-4" />
+              <span>Export Data</span>
             </Button>
           </div>
         </div>
@@ -1300,9 +410,9 @@ export default function Persistency() {
         </div>
       </div>
 
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bar Chart - Active/Inactive Policies */}
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Active and Inactive Policies */}
         <div className="border border-gray-200 rounded-lg bg-white">
           <div className="p-6 pb-4">
             <h3 className="text-lg font-semibold text-gray-900">Active and Inactive Policies</h3>
@@ -1310,12 +420,13 @@ export default function Persistency() {
           <div className="px-6 pb-6">
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={overallPolicyData} margin={{ top: 20, right: 30, left: 80, bottom: 40 }}>
+                <BarChart data={overallPolicyData} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis 
                     dataKey="period" 
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
-                    label={{ value: 'Date Range', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
+                    label={{ value: 'Time Period', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                     domain={['dataMin', 'dataMax']}
                     padding={{ left: 30, right: 30 }}
                   />
@@ -1332,7 +443,7 @@ export default function Persistency() {
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                     }}
                     formatter={(value, name) => [
-                      value,
+                      value.toLocaleString(),
                       name === 'active' ? 'Active Policies' : 'Inactive Policies'
                     ]}
                   />
@@ -1345,7 +456,7 @@ export default function Persistency() {
           </div>
         </div>
 
-        {/* Line Chart - Persistency Trends */}
+        {/* Persistency Trends */}
         <div className="border border-gray-200 rounded-lg bg-white">
           <div className="p-6 pb-4">
             <h3 className="text-lg font-semibold text-gray-900">Persistency Trends</h3>
@@ -1359,14 +470,14 @@ export default function Persistency() {
                     dataKey="period" 
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
-                    label={{ value: 'Date Range', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
+                    label={{ value: 'Time Period', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
                     domain={['dataMin', 'dataMax']}
                     padding={{ left: 30, right: 30 }}
                   />
                   <YAxis 
                     tick={{ fontSize: 12, fill: '#666' }}
                     axisLine={{ stroke: '#e0e0e0' }}
-                    label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
+                    label={{ value: 'Persistency Rate (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                   />
                   <Tooltip
                     contentStyle={{ 
@@ -1380,14 +491,13 @@ export default function Persistency() {
                       'Persistency Rate'
                     ]}
                   />
-                  <Legend align="right" verticalAlign="top" wrapperStyle={{ paddingBottom: '20px' }} />
                   <Line
                     type="monotone"
                     dataKey="persistency"
                     stroke="#8b5cf6"
-                    strokeWidth={2}
-                    dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 3 }}
-                    activeDot={{ r: 5, stroke: '#8b5cf6', strokeWidth: 2 }}
+                    strokeWidth={3}
+                    dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 6 }}
+                    activeDot={{ r: 8, stroke: '#8b5cf6', strokeWidth: 2 }}
                     name="Persistency Rate"
                   />
                 </LineChart>
@@ -1420,7 +530,7 @@ export default function Persistency() {
                       dataKey="value"
                       label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                     >
-                      {activePoliciesByCarrier.map((entry, index) => (
+                      {activePoliciesByCarrier.map((entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
@@ -1456,7 +566,7 @@ export default function Persistency() {
                       dataKey="value"
                       label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                     >
-                      {inactivePoliciesByCarrier.map((entry, index) => (
+                      {inactivePoliciesByCarrier.map((entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
@@ -1814,32 +924,28 @@ export default function Persistency() {
             <div className="border border-gray-200 rounded-lg p-6 bg-white">
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-gray-600">Persistency Rate</h3>
-                <p className="text-3xl font-bold text-gray-900">{carrier.persistencyRate}%</p>
+                <p className="text-3xl font-bold text-gray-900">{carrier.persistencyRate || 'N/A'}%</p>
                 <p className="text-sm text-gray-600">All Time</p>
               </div>
             </div>
             <div className="border border-gray-200 rounded-lg p-6 bg-white">
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-gray-600">Total Policies</h3>
-                <p className="text-3xl font-bold text-gray-900">{carrier.totalPolicies.toLocaleString()}</p>
+                <p className="text-3xl font-bold text-gray-900">{carrier.totalPolicies?.toLocaleString() || 'N/A'}</p>
                 <p className="text-sm text-gray-600">All Time</p>
               </div>
             </div>
             <div className="border border-gray-200 rounded-lg p-6 bg-white">
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-gray-600">Active Policies</h3>
-                <p className="text-3xl font-bold text-gray-900">
-                  {carrier.timeRanges.All?.positiveCount ? carrier.timeRanges.All.positiveCount.toLocaleString() : 'N/A'}
-                </p>
+                <p className="text-3xl font-bold text-gray-900">{carrier.timeRanges?.["All"]?.positiveCount?.toLocaleString() || 'N/A'}</p>
                 <p className="text-sm text-gray-600">All Time</p>
               </div>
             </div>
             <div className="border border-gray-200 rounded-lg p-6 bg-white">
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-gray-600">Inactive Policies</h3>
-                <p className="text-3xl font-bold text-gray-900">
-                  {carrier.timeRanges.All?.negativeCount ? carrier.timeRanges.All.negativeCount.toLocaleString() : 'N/A'}
-                </p>
+                <p className="text-3xl font-bold text-gray-900">{carrier.timeRanges?.["All"]?.negativeCount?.toLocaleString() || 'N/A'}</p>
                 <p className="text-sm text-gray-600">All Time</p>
               </div>
             </div>
@@ -1847,7 +953,7 @@ export default function Persistency() {
 
           {/* Carrier Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Status Breakdown Pie Chart */}
+            {/* Status Breakdown */}
             <div className="border border-gray-200 rounded-lg bg-white">
               <div className="p-6 pb-4">
                 <h3 className="text-lg font-semibold text-gray-900">Status Breakdown</h3>
@@ -1857,14 +963,14 @@ export default function Persistency() {
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={getStatusBreakdownData(carrier, "All")}
+                        data={getStatusBreakdownData(carrier)}
                         cx="50%"
                         cy="50%"
                         outerRadius={80}
                         dataKey="value"
                         label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                       >
-                        {getStatusBreakdownData(carrier, "All").map((entry, index) => (
+                        {getStatusBreakdownData(carrier).map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
@@ -1898,12 +1004,14 @@ export default function Persistency() {
                           dataKey="period" 
                           tick={{ fontSize: 12, fill: '#666' }}
                           axisLine={{ stroke: '#e0e0e0' }}
-                          label={{ value: 'Date Range', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
+                          label={{ value: 'Time Period', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
+                          domain={['dataMin', 'dataMax']}
+                          padding={{ left: 30, right: 30 }}
                         />
                         <YAxis 
                           tick={{ fontSize: 12, fill: '#666' }}
                           axisLine={{ stroke: '#e0e0e0' }}
-                          label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
+                          label={{ value: 'Persistency Rate (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
                         />
                         <Tooltip
                           contentStyle={{ 
@@ -1917,13 +1025,13 @@ export default function Persistency() {
                             'Persistency Rate'
                           ]}
                         />
-                        <Line
-                          type="monotone"
-                          dataKey="persistency"
-                          stroke="#8b5cf6"
-                          strokeWidth={2}
-                          dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 3 }}
-                          activeDot={{ r: 5, stroke: '#8b5cf6', strokeWidth: 2 }}
+                        <Line 
+                          type="monotone" 
+                          dataKey="persistency" 
+                          stroke="#8b5cf6" 
+                          strokeWidth={3}
+                          dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 6 }}
+                          activeDot={{ r: 8, stroke: '#8b5cf6', strokeWidth: 2 }}
                           name="Persistency Rate"
                         />
                       </LineChart>

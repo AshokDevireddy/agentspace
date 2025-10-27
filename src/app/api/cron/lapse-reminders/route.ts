@@ -47,7 +47,8 @@ export async function GET(request: NextRequest) {
           agency:agency_id (
             id,
             name,
-            phone_number
+            phone_number,
+            messaging_enabled
           )
         )
       `)
@@ -80,6 +81,13 @@ export async function GET(request: NextRequest) {
 
         if (!agent || !agency?.phone_number) {
           console.warn(`Skipping deal ${deal.id}: Missing agent or agency phone`);
+          errorCount++;
+          continue;
+        }
+
+        // Check if messaging is enabled for this agency
+        if (!agency.messaging_enabled) {
+          console.log(`Skipping deal ${deal.id}: Messaging is disabled for agency ${agency.name}`);
           errorCount++;
           continue;
         }

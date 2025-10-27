@@ -130,7 +130,8 @@ export async function GET(request: NextRequest) {
           agency:agency_id (
             id,
             name,
-            phone_number
+            phone_number,
+            messaging_enabled
           )
         )
       `)
@@ -201,6 +202,14 @@ export async function GET(request: NextRequest) {
 
         console.log(`    Agent: ${agent.first_name} ${agent.last_name} (ID: ${agent.id})`);
         console.log(`    Agency: ${agency.name} (Phone: ${agency.phone_number})`);
+
+        // Check if messaging is enabled for this agency
+        if (!agency.messaging_enabled) {
+          console.log(`    ⚠️  SKIPPED: Messaging is disabled for agency ${agency.name}`);
+          skippedCount++;
+          dueInThreeDaysCount--;
+          continue;
+        }
 
         // Get or create conversation (using client phone to prevent duplicates)
         console.log(`    🔍 Getting/creating conversation...`);

@@ -36,12 +36,13 @@ interface Agency {
   name: string
   lead_sources?: string[]
   phone_number?: string
+  messaging_enabled?: boolean
 }
 
 export default function ConfigurationPage() {
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<"carriers" | "lead-sources" | "sms-settings" | "policy-reports">("carriers")
+  const [activeTab, setActiveTab] = useState<"carriers" | "lead-sources" | "messaging" | "policy-reports">("carriers")
 
   // Lead Sources state
   const [agency, setAgency] = useState<Agency | null>(null)
@@ -56,6 +57,10 @@ export default function ConfigurationPage() {
   const [editingPhoneNumber, setEditingPhoneNumber] = useState(false)
   const [phoneNumberValue, setPhoneNumberValue] = useState("")
   const [savingPhoneNumber, setSavingPhoneNumber] = useState(false)
+
+  // Messaging Settings state
+  const [messagingEnabled, setMessagingEnabled] = useState<boolean>(false)
+  const [savingMessagingEnabled, setSavingMessagingEnabled] = useState(false)
 
   // Policy Reports state
   const [uploads, setUploads] = useState<Array<{carrier: string, file: File | null}>>([
@@ -153,7 +158,7 @@ export default function ConfigurationPage() {
         if (userData?.agency_id) {
           const { data: agencyInfo } = await supabase
             .from('agencies')
-            .select('id, name, lead_sources, phone_number')
+            .select('id, name, lead_sources, phone_number, messaging_enabled')
             .eq('id', userData.agency_id)
             .single()
 
@@ -162,6 +167,7 @@ export default function ConfigurationPage() {
             setAgency(agencyInfo)
             setLeadSources(agencyInfo.lead_sources || [])
             setAgencyPhoneNumber(agencyInfo.phone_number || "")
+            setMessagingEnabled(agencyInfo.messaging_enabled || false)
           }
         }
       }
@@ -569,6 +575,32 @@ export default function ConfigurationPage() {
     setPhoneNumberValue("")
   }
 
+  // Messaging Settings Management Functions
+  const handleToggleMessaging = async (enabled: boolean) => {
+    if (!agency) return
+
+    try {
+      setSavingMessagingEnabled(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ messaging_enabled: enabled })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setMessagingEnabled(enabled)
+    } catch (error) {
+      console.error('Error updating messaging settings:', error)
+      alert('Failed to update messaging settings')
+      // Revert the toggle on error
+      setMessagingEnabled(!enabled)
+    } finally {
+      setSavingMessagingEnabled(false)
+    }
+  }
+
   // Policy Reports Management Functions
   const checkExistingPolicyFiles = async () => {
     try {
@@ -701,15 +733,15 @@ export default function ConfigurationPage() {
                 Lead Sources
               </button>
               <button
-                onClick={() => setActiveTab("sms-settings")}
+                onClick={() => setActiveTab("messaging")}
                 className={cn(
                   "flex-1 px-4 py-3 text-sm font-medium transition-all",
-                  activeTab === "sms-settings"
+                  activeTab === "messaging"
                     ? "bg-blue-50 text-blue-700 border-b-2 border-blue-600"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 )}
               >
-                SMS Settings
+                Messaging
               </button>
               <button
                 onClick={() => setActiveTab("policy-reports")}
@@ -861,12 +893,12 @@ export default function ConfigurationPage() {
               </div>
             )}
 
-            {/* SMS Settings Tab */}
-            {activeTab === "sms-settings" && (
+            {/* Messaging Tab (Combined SMS Settings + Messaging) */}
+            {activeTab === "messaging" && (
               <div>
                 <div className="mb-4">
-                  <h2 className="text-xl font-semibold text-foreground mb-1">SMS Settings</h2>
-                  <p className="text-sm text-muted-foreground">Configure your agency's Telnyx phone number for SMS messaging</p>
+                  <h2 className="text-xl font-semibold text-foreground mb-1">Messaging</h2>
+                  <p className="text-sm text-muted-foreground">Configure SMS settings and control automated messaging for your agency</p>
                 </div>
 
                 <div className="space-y-6">
@@ -924,28 +956,96 @@ export default function ConfigurationPage() {
                     )}
                   </div>
 
-                  {/* Instructions */}
+                  {/* Setup Instructions */}
                   <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
                     <h3 className="text-lg font-semibold text-blue-900 mb-3">Setup Instructions</h3>
                     <ol className="space-y-2 text-sm text-blue-800">
                       <li className="flex gap-2">
                         <span className="font-bold">1.</span>
-                        <span>Purchase a phone number from your Telnyx account at portal.telnyx.com</span>
+                        <span>Contact <a href="mailto:ashok@useagentspace.com" className="underline hover:text-blue-900">ashok@useagentspace.com</a> to get a phone number</span>
                       </li>
                       <li className="flex gap-2">
                         <span className="font-bold">2.</span>
-                        <span>Enable messaging for the phone number in Telnyx</span>
-                      </li>
-                      <li className="flex gap-2">
-                        <span className="font-bold">3.</span>
                         <span>Copy the phone number in E.164 format (e.g., +12345678900)</span>
                       </li>
                       <li className="flex gap-2">
-                        <span className="font-bold">4.</span>
+                        <span className="font-bold">3.</span>
                         <span>Paste it above and save</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="font-bold">4.</span>
+                        <span>Enable automated messaging below</span>
                       </li>
                     </ol>
                   </div>
+
+                  {/* Messaging Toggle */}
+                  <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <h3 className="text-xl font-semibold text-foreground mb-2">Enable Automated Messaging</h3>
+                        <p className="text-sm text-muted-foreground">
+                          When enabled, automated messages will be sent for birthdays, billing reminders, and lapse notifications.
+                          When disabled, no automated messages will be sent to your clients.
+                        </p>
+                        {!agencyPhoneNumber && (
+                          <p className="text-sm text-amber-700 mt-2 font-medium">
+                            ⚠️ You must configure a phone number above before enabling automated messaging.
+                          </p>
+                        )}
+                      </div>
+                      <div className="ml-6">
+                        <button
+                          onClick={() => handleToggleMessaging(!messagingEnabled)}
+                          disabled={savingMessagingEnabled || !agencyPhoneNumber}
+                          className={cn(
+                            "relative inline-flex h-12 w-24 items-center rounded-full transition-colors duration-200",
+                            messagingEnabled ? "bg-green-600" : "bg-gray-300",
+                            (savingMessagingEnabled || !agencyPhoneNumber) && "opacity-50 cursor-not-allowed"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "inline-block h-10 w-10 transform rounded-full bg-white shadow-lg transition-transform duration-200",
+                              messagingEnabled ? "translate-x-12" : "translate-x-1"
+                            )}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <p className="text-base font-medium text-foreground">
+                        Status: <span className={cn("font-bold", messagingEnabled ? "text-green-600" : "text-gray-500")}>
+                          {messagingEnabled ? "Enabled" : "Disabled"}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Information Box */}
+                  <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
+                    <h3 className="text-lg font-semibold text-blue-900 mb-3">About Automated Messaging</h3>
+                    <p className="text-sm text-blue-800 mb-3">
+                      Automated messages include:
+                    </p>
+                    <ul className="space-y-2 text-sm text-blue-800 list-disc list-inside">
+                      <li><strong>Birthday Messages:</strong> Sent daily at 9 AM to clients with birthdays</li>
+                      <li><strong>Billing Reminders:</strong> Sent daily at 8 AM, 3 days before premium payments are due</li>
+                      <li><strong>Lapse Reminders:</strong> Sent every 2 hours to notify clients about pending policy lapses</li>
+                    </ul>
+                    <p className="text-sm text-blue-800 mt-3">
+                      <strong>Note:</strong> Messages are only sent to clients who have not opted out of SMS communications.
+                    </p>
+                  </div>
+
+                  {!messagingEnabled && agencyPhoneNumber && (
+                    <div className="bg-amber-50 rounded-lg p-6 border border-amber-200">
+                      <h3 className="text-lg font-semibold text-amber-900 mb-2">⚠️ Messaging Currently Disabled</h3>
+                      <p className="text-sm text-amber-800">
+                        Your clients will not receive any automated messages until you enable messaging above.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

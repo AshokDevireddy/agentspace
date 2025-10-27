@@ -14,21 +14,21 @@ import { NextRequest, NextResponse } from 'next/server'
  */
 async function getAgencyId(supabase: any, userId: string): Promise<string> {
   try {
-    // const { data: user, error } = await supabase
-    //   .from('users')
-    //   .select('agency_id')
-    //   .eq('auth_user_id', userId)
-    //   .single()
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('agency_id')
+      .eq('auth_user_id', userId)
+      .single()
 
-    // if (error || !user) {
-    //   throw new Error('Failed to fetch user agency')
-    // }
+    if (error || !user) {
+      throw new Error('Failed to fetch user agency')
+    }
 
-    // if (!user.agency_id) {
-    //   throw new Error('User is not associated with an agency')
-    // }
+    if (!user.agency_id) {
+      throw new Error('User is not associated with an agency')
+    }
 
-    return '5de80280-2d95-4241-bf17-2cedcd665388'
+    return user.agency_id
   } catch (error) {
     console.error('Error fetching agency ID:', error)
     throw error instanceof Error ? error : new Error('Failed to retrieve agency ID')

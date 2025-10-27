@@ -15,7 +15,7 @@ import {
   Home,
   LogOut,
   Building2,
-  Sparkles,
+  MessageSquare,
   ExternalLink,
   BookOpen,
   UserCheck
@@ -29,7 +29,7 @@ const navigationItems = [
   { name: "Clients", href: "/clients", icon: UserCheck },
   { name: "Post a Deal", href: "/policies/post", icon: FileText },
   { name: "Book of Business", href: "/policies/book", icon: BookOpen },
-  { name: "AI Communication", href: "/communications/sms", icon: Sparkles },
+  { name: "Communication", href: "/communications/sms", icon: MessageSquare },
   { name: "Analytics", href: "/analytics", icon: TrendingUp },
   { name: "Insurance Toolkits", href: "/insurance-toolkits", icon: ExternalLink },
 ]
@@ -158,7 +158,7 @@ export default function Navigation() {
             >
               {item.icon && <item.icon className="h-5 w-5 flex-shrink-0" />}
               {!isSidebarCollapsed && <span className="flex-1 text-left">{item.name}</span>}
-              {item.name === "AI Communication" && unreadCount > 0 && (
+              {item.name === "Communication" && unreadCount > 0 && (
                 <span className="ml-auto bg-blue-600 text-white text-xs font-bold rounded-full h-5 min-w-[20px] px-1.5 flex items-center justify-center">
                   {unreadCount > 99 ? '99+' : unreadCount}
                 </span>

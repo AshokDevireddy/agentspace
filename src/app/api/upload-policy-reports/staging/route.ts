@@ -3204,71 +3204,47 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Process CSV uploads - FAKE VERSION (Sleep 30s and return fake results)
-    console.log('FAKE MODE: Sleeping for 30 seconds instead of parsing CSVs...')
-    await new Promise(resolve => setTimeout(resolve, 30000))
-    console.log('FAKE MODE: Sleep complete, returning fake results...')
-    
-    // Create fake results that sum to exactly 51247
-    const recordsPerFile = Math.floor(51247 / uploads.length)
-    const remainder = 51247 % uploads.length
-    
-    const uploadResults = {
-      success: true,
-      results: uploads.map((upload, index) => {
-        // Add the remainder to the first file to ensure exact total
-        const records = index === 0 ? recordsPerFile + remainder : recordsPerFile
-        return {
-          carrier: upload.carrier,
-          fileName: upload.file.name,
-          recordsProcessed: records,
-          recordsInserted: records,
-          success: true
-        }
-      }),
-      errors: []
-    }
+    // Process CSV uploads
+    const uploadResults = await processCSVUploads(supabase, agencyId, uploads)
 
-    // Calculate total records processed (should be exactly 51247)
+    // Calculate total records processed
     const totalRecordsProcessed = uploadResults.results.reduce((sum, result) => sum + result.recordsProcessed, 0)
     const totalRecordsInserted = uploadResults.results.reduce((sum, result) => sum + result.recordsInserted, 0)
-    
-    console.log(`FAKE MODE: Total records processed = ${totalRecordsProcessed}`)
 
     // Trigger orchestrate_policy_report_ingest_with_agency_id RPC function AFTER staging is fully complete
     let orchestrationResult = null
-    // if (totalRecordsInserted > 0) {
-    //   try {
-    //     console.log(`Triggering orchestrate_policy_report_ingest_with_agency_id RPC function for agency ${agencyId} with ${totalRecordsInserted} records`)
+    if (totalRecordsInserted > 0) {
+      try {
+        console.log(`Triggering orchestrate_policy_report_ingest_with_agency_id RPC function for agency ${agencyId} with ${totalRecordsInserted} records`)
 
-    //     const { data: orchestrationData, error: orchestrationError } = await supabase
-    //       .rpc('orchestrate_policy_report_ingest_with_agency_id', {
-    //         p_agency_id: agencyId
-    //       })
+        const { data: orchestrationData, error: orchestrationError } = await supabase
+          .rpc('orchestrate_policy_report_ingest_with_agency_id', {
+            p_agency_id: agencyId
+          })
 
-    //     if (orchestrationError) {
-    //       console.error('Error calling orchestrate_policy_report_ingest_with_agency_id RPC:', orchestrationError)
-    //       orchestrationResult = {
-    //         success: false,
-    //         error: orchestrationError.message
-    //       }
-    //     } else {
-    //       console.log('Successfully executed orchestrate_policy_report_ingest_with_agency_id RPC:', orchestrationData)
-    //       orchestrationResult = {
-    //         success: true,
-    //         data: orchestrationData
-    //       }
-    //     }
-    //   } catch (rpcError) {
-    //     console.error('Exception calling orchestrate_policy_report_ingest_with_agency_id RPC:', rpcError)
-    //     orchestrationResult = {
-    //       success: false,
-    //       error: rpcError instanceof Error ? rpcError.message : 'Unknown RPC error'
-    //     }
-    //   }
-    // } else {
-    //   console.log('Skipping orchestrate_policy_report_ingest_with_agency_id RPC - no successful uploads or no records inserted')
-    // }
+        if (orchestrationError) {
+          console.error('Error calling orchestrate_policy_report_ingest_with_agency_id RPC:', orchestrationError)
+          orchestrationResult = {
+            success: false,
+            error: orchestrationError.message
+          }
+        } else {
+          console.log('Successfully executed orchestrate_policy_report_ingest_with_agency_id RPC:', orchestrationData)
+          orchestrationResult = {
+            success: true,
+            data: orchestrationData
+          }
+        }
+      } catch (rpcError) {
+        console.error('Exception calling orchestrate_policy_report_ingest_with_agency_id RPC:', rpcError)
+        orchestrationResult = {
+          success: false,
+          error: rpcError instanceof Error ? rpcError.message : 'Unknown RPC error'
+        }
+      }
+    } else {
+      console.log('Skipping orchestrate_policy_report_ingest_with_agency_id RPC - no successful uploads or no records inserted')
+    }
 
     // Prepare response
     const response = {

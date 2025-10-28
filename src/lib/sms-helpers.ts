@@ -195,21 +195,65 @@ export async function getDealWithDetails(dealId: string) {
 }
 
 /**
- * Finds a deal by client phone number
+ * Finds a deal by client phone number within a specific agency
+ * Uses database-level filtering to handle large datasets efficiently
  */
-export async function findDealByClientPhone(clientPhone: string) {
+export async function findDealByClientPhone(clientPhone: string, agencyId: string) {
   const supabase = createAdminClient();
 
   // Normalize phone number for comparison (remove all non-digits)
   const normalizedSearch = clientPhone.replace(/\D/g, '');
 
-  console.log('🔍 Searching for deal with phone:', normalizedSearch);
+  console.log('🔍 Searching for deal with phone:', normalizedSearch, 'in agency:', agencyId);
 
-  const { data: deals, error } = await supabase
+  // Try multiple phone format variations to match against database
+  const phoneVariations = [
+    normalizedSearch,                    // e.g., "6692456363"
+    `+1${normalizedSearch}`,             // e.g., "+16692456363"
+    `1${normalizedSearch}`,              // e.g., "16692456363"
+    `(${normalizedSearch.slice(0, 3)}) ${normalizedSearch.slice(3, 6)}-${normalizedSearch.slice(6)}`, // e.g., "(669) 245-6363"
+    `${normalizedSearch.slice(0, 3)}-${normalizedSearch.slice(3, 6)}-${normalizedSearch.slice(6)}`, // e.g., "669-245-6363"
+  ];
+
+  // Try to find deal with exact match on any variation within the agency
+  for (const variation of phoneVariations) {
+    const { data: deal, error } = await supabase
+      .from('deals')
+      .select(`
+        *,
+        agent:agent_id!inner (
+          id,
+          first_name,
+          last_name,
+          phone_number,
+          agency_id
+        )
+      `)
+      .eq('client_phone', variation)
+      .eq('agent.agency_id', agencyId)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`Error searching with variation ${variation}:`, error);
+      continue;
+    }
+
+    if (deal) {
+      console.log(`✅ Match found with variation "${variation}": ${deal.client_name} (${deal.client_phone}) in agency ${agencyId}`);
+      return deal;
+    }
+  }
+
+  // If no exact match found, try pattern matching using ilike
+  // This searches for the phone number anywhere in the client_phone field
+  console.log('🔄 No exact match, trying pattern matching...');
+
+  const { data: deals, error: patternError } = await supabase
     .from('deals')
     .select(`
       *,
-      agent:agent_id (
+      agent:agent_id!inner (
         id,
         first_name,
         last_name,
@@ -217,34 +261,37 @@ export async function findDealByClientPhone(clientPhone: string) {
         agency_id
       )
     `)
-    .not('client_phone', 'is', null);
+    .ilike('client_phone', `%${normalizedSearch}%`)
+    .eq('agent.agency_id', agencyId)
+    .limit(10); // Get up to 10 potential matches
 
-  if (error) {
-    throw new Error(`Failed to search deals: ${error.message}`);
+  if (patternError) {
+    console.error('Pattern matching error:', patternError);
+    throw new Error(`Failed to search deals: ${patternError.message}`);
   }
 
-  console.log(`📊 Found ${deals?.length || 0} deals with phone numbers to check`);
+  if (deals && deals.length > 0) {
+    console.log(`📊 Found ${deals.length} potential matches with pattern matching in agency ${agencyId}`);
 
-  // Find deal where client phone matches (exact match on normalized versions)
-  const matchingDeal = deals?.find(deal => {
-    const dealPhone = (deal.client_phone || '').replace(/\D/g, '');
-    const matches = dealPhone === normalizedSearch;
+    // Find the best match by normalizing and comparing
+    const matchingDeal = deals.find(deal => {
+      const dealPhone = (deal.client_phone || '').replace(/\D/g, '');
+      const matches = dealPhone === normalizedSearch;
 
-    if (matches) {
-      console.log(`✅ Match found: ${deal.client_name} (${deal.client_phone})`);
-    }
+      if (matches) {
+        console.log(`✅ Best match found: ${deal.client_name} (${deal.client_phone}) in agency ${agencyId}`);
+      }
 
-    return matches;
-  });
+      return matches;
+    });
 
-  if (!matchingDeal) {
-    console.log('❌ No matching deal found');
-    if (deals && deals.length > 0) {
-      console.log('📋 Available phones in database:', deals.map(d => d.client_phone).filter(Boolean).join(', '));
+    if (matchingDeal) {
+      return matchingDeal;
     }
   }
 
-  return matchingDeal || null;
+  console.log('❌ No matching deal found for phone:', normalizedSearch, 'in agency:', agencyId);
+  return null;
 }
 
 /**
@@ -264,6 +311,44 @@ export async function getAgencyPhoneNumber(agencyId: string): Promise<string | n
   }
 
   return data.phone_number;
+}
+
+/**
+ * Finds agency by phone number
+ */
+export async function findAgencyByPhoneNumber(phoneNumber: string): Promise<{ id: string; name: string; phone_number: string } | null> {
+  const supabase = createAdminClient();
+
+  // Normalize phone number for comparison
+  const normalizedPhone = normalizePhoneForStorage(phoneNumber);
+
+  // Try multiple variations
+  const phoneVariations = [
+    phoneNumber,           // Original format
+    normalizedPhone,       // Without +1
+    `+1${normalizedPhone}`, // With +1
+  ];
+
+  for (const variation of phoneVariations) {
+    const { data, error } = await supabase
+      .from('agencies')
+      .select('id, name, phone_number')
+      .eq('phone_number', variation)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`Error searching agency with phone ${variation}:`, error);
+      continue;
+    }
+
+    if (data) {
+      console.log(`✅ Found agency: ${data.name} (${data.phone_number})`);
+      return data;
+    }
+  }
+
+  console.log('❌ No agency found for phone number:', phoneNumber);
+  return null;
 }
 
 /**

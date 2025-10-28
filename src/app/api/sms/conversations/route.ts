@@ -53,14 +53,6 @@ export async function GET(request: NextRequest) {
             client_phone,
             status,
             status_standardized
-          ),
-          messages (
-            id,
-            body,
-            direction,
-            sent_at,
-            status,
-            read_at
           )
         `)
         .eq('agency_id', (userData as any).agency_id)
@@ -83,14 +75,6 @@ export async function GET(request: NextRequest) {
             client_phone,
             status,
             status_standardized
-          ),
-          messages (
-            id,
-            body,
-            direction,
-            sent_at,
-            status,
-            read_at
           )
         `)
         .eq('agent_id', (userData as any).id)
@@ -127,14 +111,6 @@ export async function GET(request: NextRequest) {
             client_phone,
             status,
             status_standardized
-          ),
-          messages (
-            id,
-            body,
-            direction,
-            sent_at,
-            status,
-            read_at
           )
         `)
         .in('agent_id', agentIds as any)
@@ -150,19 +126,46 @@ export async function GET(request: NextRequest) {
       throw convError;
     }
 
+    // Batch fetch last messages and unread counts for all conversations
+    const conversationIds = (conversations as any[])?.map((c: any) => c.id) || [];
+
+    if (conversationIds.length === 0) {
+      return NextResponse.json({ conversations: [] });
+    }
+
+    // Get last message for each conversation (much faster than loading all messages)
+    const { data: lastMessages } = await supabase
+      .from('messages')
+      .select('conversation_id, body, sent_at')
+      .in('conversation_id', conversationIds)
+      .order('sent_at', { ascending: false });
+
+    // Get unread counts efficiently
+    const { data: unreadCounts } = await supabase
+      .from('messages')
+      .select('conversation_id')
+      .in('conversation_id', conversationIds)
+      .eq('direction', 'inbound' as any)
+      .is('read_at', null);
+
+    // Create lookup maps for O(1) access
+    const lastMessageMap = new Map<string, any>();
+    (lastMessages || []).forEach((msg: any) => {
+      if (!lastMessageMap.has(msg.conversation_id)) {
+        lastMessageMap.set(msg.conversation_id, msg);
+      }
+    });
+
+    const unreadCountMap = new Map<string, number>();
+    (unreadCounts || []).forEach((msg: any) => {
+      const current = unreadCountMap.get(msg.conversation_id) || 0;
+      unreadCountMap.set(msg.conversation_id, current + 1);
+    });
+
     // Format conversations with last message
     const formattedConversations = (conversations as any[])?.map((conv: any) => {
-      const messages = Array.isArray(conv.messages) ? conv.messages : [];
-      const lastMessage = messages.length > 0
-        ? messages.sort((a: any, b: any) =>
-            new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
-          )[0]
-        : null;
-
-      // Count unread messages (inbound messages with no read_at timestamp)
-      const unreadCount = messages.filter((msg: any) =>
-        msg.direction === 'inbound' && !msg.read_at
-      ).length;
+      const lastMessage = lastMessageMap.get(conv.id);
+      const unreadCount = unreadCountMap.get(conv.id) || 0;
 
       return {
         id: conv.id,

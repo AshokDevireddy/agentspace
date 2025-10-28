@@ -10,6 +10,7 @@ import {
   getOrCreateConversation,
   logMessage,
   getAgencyDetails,
+  findAgencyByPhoneNumber,
 } from '@/lib/sms-helpers';
 import { createAdminClient } from '@/lib/supabase/server';
 
@@ -159,14 +160,27 @@ export async function POST(request: NextRequest) {
         messageText
       });
 
-      // Find the deal associated with this client phone number
-      const deal = await findDealByClientPhone(normalizedClientPhone);
+      // First, find which agency this message is for (based on the receiving phone number)
+      const agency = await findAgencyByPhoneNumber(toNumber);
 
-      if (!deal) {
-        console.warn('No deal found for normalized client phone:', normalizedClientPhone, '(original:', fromNumber + ')');
+      if (!agency) {
+        console.warn('No agency found for phone number:', toNumber);
         return NextResponse.json({
           success: false,
-          message: 'Client not found'
+          message: 'Agency not found'
+        });
+      }
+
+      console.log(`📞 Message received for agency: ${agency.name} (${agency.id})`);
+
+      // Find the deal associated with this client phone number within the agency
+      const deal = await findDealByClientPhone(normalizedClientPhone, agency.id);
+
+      if (!deal) {
+        console.warn('No deal found for normalized client phone:', normalizedClientPhone, '(original:', fromNumber + ')', 'in agency:', agency.id);
+        return NextResponse.json({
+          success: false,
+          message: 'Client not found in this agency'
         });
       }
 

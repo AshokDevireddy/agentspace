@@ -173,10 +173,10 @@ export default function Home() {
       try {
         // Create Supabase client
         const supabase = createClient()
-        
+
         // Get the agency ID for the current user
         const agencyId = await getAgencyId(supabase, user.id)
-        
+
         // Call the RPC function to get dashboard data
         const { data, error } = await supabase.rpc('get_dashboard_data_with_agency_id', {
           p_agency_id: agencyId
@@ -252,9 +252,9 @@ export default function Home() {
   // Format carriers data for pie chart
   const getPieChartData = () => {
     if (!dashboardData?.carriers_active) return []
-    
+
     const totalPolicies = dashboardData.carriers_active.reduce((sum: number, carrier: any) => sum + carrier.active_policies, 0)
-    
+
     return dashboardData.carriers_active.map((carrier: any, index: number) => ({
       name: carrier.carrier,
       value: carrier.active_policies,
@@ -266,7 +266,7 @@ export default function Home() {
   // Custom label renderer that wraps long names
   const renderCustomLabel = (entry: any) => {
     const { name, percentage, fill, cx, cy, midAngle, innerRadius, outerRadius, x, y } = entry
-    
+
     // Helper function to split name at the middle if too long
     const splitName = (text: string) => {
       if (text.length <= 12) return { line1: text, line2: '' }
@@ -284,9 +284,9 @@ export default function Home() {
     const textAnchor = x > cx ? 'start' : 'end'
 
     return (
-      <text 
-        x={x} 
-        y={line2 ? y - 10 : y} 
+      <text
+        x={x}
+        y={line2 ? y - 10 : y}
         textAnchor={textAnchor}
         fontSize={12}
         fill={fill || '#333'}
@@ -384,7 +384,7 @@ export default function Home() {
                     <p className="text-sm font-medium text-muted-foreground">Active Policies</p>
                   </div>
                   <p className="text-4xl font-bold text-foreground">
-                    {dashboardData.totals.active_policies.toLocaleString()}
+                    {(dashboardData.totals.active_policies ?? 0).toLocaleString()}
                   </p>
                   <div className="flex items-center gap-1 mt-4 text-green-600">
                     <TrendingUp className="h-4 w-4" />
@@ -405,7 +405,7 @@ export default function Home() {
                     <p className="text-sm font-medium text-muted-foreground">Monthly Commissions</p>
                   </div>
                   <p className="text-4xl font-bold text-foreground">
-                    ${dashboardData.totals.monthly_commissions.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${(dashboardData.totals.monthly_commissions ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                   <div className="flex items-center gap-1 mt-4 text-green-600">
                     <TrendingUp className="h-4 w-4" />
@@ -426,7 +426,7 @@ export default function Home() {
                     <p className="text-sm font-medium text-muted-foreground">New Policies (Last Month)</p>
                   </div>
                   <p className="text-4xl font-bold text-foreground">
-                    {dashboardData.totals.new_policies_last_month.toLocaleString()}
+                    {(dashboardData.totals.new_policies_last_month ?? 0).toLocaleString()}
                   </p>
                   <div className="flex items-center gap-1 mt-4 text-green-600">
                     <TrendingUp className="h-4 w-4" />
@@ -447,7 +447,7 @@ export default function Home() {
                     <p className="text-sm font-medium text-muted-foreground">Total Clients</p>
                   </div>
                   <p className="text-4xl font-bold text-foreground">
-                    {dashboardData.totals.clients_count.toLocaleString()}
+                    {(dashboardData.totals.clients_count ?? 0).toLocaleString()}
                   </p>
                   <div className="flex items-center gap-1 mt-4 text-green-600">
                     <TrendingUp className="h-4 w-4" />

@@ -106,9 +106,10 @@ function SMSMessagingPageContent() {
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const [isResizingRightPanel, setIsResizingRightPanel] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
-  const [viewMode, setViewMode] = useState<'downlines' | 'self' | 'all'>('downlines')
+  const [viewMode, setViewMode] = useState<'downlines' | 'self' | 'all'>('self')
   const [notificationFilter, setNotificationFilter] = useState<'all' | 'lapse' | 'needs_info'>('all')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const hasSetInitialViewMode = useRef(false)
 
   const filteredConversations = conversations.filter(conv => {
     const matchesSearch = conv.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -205,16 +206,78 @@ function SMSMessagingPageContent() {
     checkAdminStatus()
   }, [user?.id])
 
+  // Set initial view mode based on admin status
+  useEffect(() => {
+    if (!hasSetInitialViewMode.current && user?.id) {
+      if (isAdmin) {
+        setViewMode('all')
+      }
+      hasSetInitialViewMode.current = true
+    }
+  }, [isAdmin, user?.id])
+
   useEffect(() => {
     scrollToBottom()
   }, [messages])
 
   useEffect(() => {
     fetchConversations()
-    // Poll for new messages every 10 seconds
-    const interval = setInterval(fetchConversations, 10000)
-    return () => clearInterval(interval)
   }, [viewMode])
+
+  // Subscribe to real-time conversation updates
+  useEffect(() => {
+    if (!user?.id) return
+
+    console.log('🔔 Setting up real-time subscriptions...')
+
+    // Subscribe to conversations table for updates
+    const conversationsChannel = supabase
+      .channel('conversations-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+        },
+        (payload) => {
+          console.log('🔄 Conversation change detected:', payload)
+          // Refresh conversations list
+          fetchConversations()
+        }
+      )
+      .subscribe()
+
+    // Subscribe to messages table for new messages
+    const messagesChannel = supabase
+      .channel('messages-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          console.log('📨 New message detected:', payload)
+
+          // If we're viewing the conversation this message belongs to, refresh messages
+          if (selectedConversation && payload.new.conversation_id === selectedConversation.id) {
+            fetchMessages(selectedConversation.id)
+          }
+
+          // Always refresh conversations to update last message and unread counts
+          fetchConversations()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      console.log('🔕 Cleaning up real-time subscriptions')
+      supabase.removeChannel(conversationsChannel)
+      supabase.removeChannel(messagesChannel)
+    }
+  }, [user?.id, selectedConversation?.id])
 
   // Auto-select conversation from URL parameter
   useEffect(() => {
@@ -307,8 +370,27 @@ function SMSMessagingPageContent() {
   const handleSendMessage = async () => {
     if (!messageInput.trim() || !selectedConversation || sending) return
 
+    const messageText = messageInput.trim()
+    const tempId = `temp-${Date.now()}`
+
     try {
       setSending(true)
+
+      // Optimistically add message to UI immediately
+      const optimisticMessage: Message = {
+        id: tempId,
+        conversation_id: selectedConversation.id,
+        sender_id: user?.id || '',
+        receiver_id: user?.id || '',
+        body: messageText,
+        direction: 'outbound',
+        sent_at: new Date().toISOString(),
+        status: 'sending',
+        metadata: {},
+      }
+
+      setMessages(prev => [...prev, optimisticMessage])
+      setMessageInput("")
 
       const response = await fetch('/api/sms/send', {
         method: 'POST',
@@ -318,26 +400,24 @@ function SMSMessagingPageContent() {
         credentials: 'include',
         body: JSON.stringify({
           dealId: selectedConversation.dealId,
-          message: messageInput.trim(),
+          message: messageText,
         }),
       })
 
       if (!response.ok) {
         const error = await response.json()
+        // Remove optimistic message on error
+        setMessages(prev => prev.filter(m => m.id !== tempId))
         throw new Error(error.error || 'Failed to send message')
       }
 
-      // Clear input
-      setMessageInput("")
-
-      // Refresh messages and conversations to update UI
-      await Promise.all([
-        fetchMessages(selectedConversation.id),
-        fetchConversations()
-      ])
+      // Real-time subscription will handle updating with the actual message
+      // Just refresh conversations to update last message
+      fetchConversations()
     } catch (error) {
       console.error('Error sending message:', error)
       alert(error instanceof Error ? error.message : 'Failed to send message')
+      setMessageInput(messageText) // Restore message input on error
     } finally {
       setSending(false)
     }

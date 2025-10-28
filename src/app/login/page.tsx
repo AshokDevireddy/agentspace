@@ -48,9 +48,9 @@ export default function LoginPage() {
         // User has set password but hasn't completed Phase 2 onboarding
         // Redirect to dashboard where onboarding wizard will show
         if (userData.role === 'client') {
-          router.push('/client/dashboard')
+          window.location.href = '/client/dashboard'
         } else {
-          router.push('/')
+          window.location.href = '/'
         }
         return
       }
@@ -72,13 +72,12 @@ export default function LoginPage() {
       }
 
       // Route based on role
-      // Refresh router to ensure middleware runs with new auth state
-      router.refresh()
-
+      // Use window.location.href to force a full page reload with the new auth state
+      // This ensures cookies are properly set before the redirect on Vercel
       if (userData.role === 'client') {
-        router.push('/client/dashboard')
+        window.location.href = '/client/dashboard'
       } else {
-        router.push('/')
+        window.location.href = '/'
       }
     } catch (err: any) {
       setError(err.message || "Login failed")

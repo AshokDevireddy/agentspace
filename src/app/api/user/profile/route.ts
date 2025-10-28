@@ -39,87 +39,116 @@ export async function GET(request: Request) {
       )
     }
 
-    // Fetch position name using position_id from userData
-    let positionName = "Unknown Position"
-    if (userData.position_id) {
-      const { data: positionData, error: positionError } = await supabase
-        .from('positions')
-        .select('name')
-        .eq('id', userData.position_id)
-        .single()
-
-      if (!positionError && positionData) {
-        positionName = positionData.name
-      }
-    }
-
-    // Fetch position history with position details
-    // console.log('Fetching position history for user ID:', userId)
-
-    const { data: positionData, error: positionError } = await supabase
-      .from('position_history')
-      .select(`
-        *,
-        positions (
-          name
-        )
-      `)
+    // Fetch all deals for this user to calculate real-time production and policies sold
+    const { data: dealsData, error: dealsError } = await supabase
+      .from('deals')
+      .select('agent_id, carrier_id, annual_premium, billing_cycle, policy_effective_date, status')
       .eq('agent_id', userData.id)
-      .order('effective_date', { ascending: true })
+      .not('policy_effective_date', 'is', null)
 
-    // console.log('Position history query result:', { positionData, positionError })
+    let totalProduction = 0
+    let totalPoliciesSold = 0
 
-    if (positionError) {
-      console.error('Error fetching position history:', positionError)
-      // Continue without position history rather than failing completely
-    }
+    if (!dealsError && dealsData) {
+      // Get all unique carrier_ids and statuses
+      const carrierIds = new Set<string>()
+      const rawStatuses = new Set<string>()
 
-    // Process position history data
-    let processedPositionHistory = []
-
-    // console.log('Processing position history. Data exists:', !!positionData, 'Length:', positionData?.length || 0)
-
-    if (positionData && positionData.length > 0) {
-      // console.log('Position data found, processing...')
-      processedPositionHistory = positionData.map((position, index) => {
-        // console.log(`Processing position ${index}:`, position)
-        return {
-          id: position.id,
-          date: index === 0
-            ? new Date(userData.created_at).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })
-            : new Date(position.effective_date).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              }),
-          title: position.positions?.name || 'Unknown Position',
-          effectiveDate: position.effective_date,
-          endDate: position.end_date,
-          reason: position.reason
+      dealsData.forEach(deal => {
+        if (deal.carrier_id && deal.status) {
+          carrierIds.add(deal.carrier_id)
+          rawStatuses.add(deal.status)
         }
       })
-      // console.log('Processed position history:', processedPositionHistory)
-    } else {
-      console.log('No position history found, using fallback')
-      // Fallback if no position history exists
-      processedPositionHistory = [
-        {
-          id: 'fallback',
-          date: new Date(userData.created_at).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-          }),
-          title: positionName,
-          effectiveDate: userData.created_at,
-          endDate: null,
-          reason: null
+
+      // Fetch status mappings to filter for positive impact deals
+      const { data: statusMappings, error: mappingError } = await supabase
+        .from('status_mapping')
+        .select('carrier_id, raw_status, impact')
+        .in('carrier_id', Array.from(carrierIds))
+        .in('raw_status', Array.from(rawStatuses))
+
+      if (mappingError) {
+        console.error('Error fetching status mappings:', mappingError)
+      }
+
+      // Create impact map
+      const impactMap = new Map<string, string>()
+      statusMappings?.forEach((mapping: any) => {
+        const key = `${mapping.carrier_id}|${mapping.raw_status}`
+        impactMap.set(key, mapping.impact)
+      })
+
+      // Filter deals to only include positive impact deals
+      const positiveDeals = dealsData.filter(deal => {
+        if (!deal.carrier_id || !deal.status) return false
+        const key = `${deal.carrier_id}|${deal.status}`
+        const impact = impactMap.get(key)
+        return impact === 'positive'
+      })
+
+      // Get today's date for limiting calculations
+      const today = new Date()
+      today.setHours(23, 59, 59, 999)
+
+      // Calculate production using the same logic as scoreboard
+      positiveDeals.forEach(deal => {
+        const annualPremium = Number(deal.annual_premium) || 0
+        if (annualPremium === 0) return
+
+        const billingCycle = deal.billing_cycle || 'monthly'
+        const effectiveDate = deal.policy_effective_date
+        if (!effectiveDate) return
+
+        // Calculate payment amount and frequency based on billing cycle
+        let paymentAmount: number
+        let monthsInterval: number
+
+        switch (billingCycle.toLowerCase()) {
+          case 'monthly':
+            paymentAmount = annualPremium / 12
+            monthsInterval = 1
+            break
+          case 'quarterly':
+            paymentAmount = annualPremium / 4
+            monthsInterval = 3
+            break
+          case 'semi-annually':
+            paymentAmount = annualPremium / 2
+            monthsInterval = 6
+            break
+          case 'annually':
+            paymentAmount = annualPremium
+            monthsInterval = 12
+            break
+          default:
+            paymentAmount = annualPremium / 12
+            monthsInterval = 1
         }
-      ]
+
+        const effective = new Date(effectiveDate + 'T00:00:00')
+        let hasPayment = false
+
+        // Generate payment dates up to today (not future dates)
+        for (let i = 0; i < 120; i++) { // Max 10 years of payments
+          const paymentDate = new Date(effective)
+          paymentDate.setMonth(effective.getMonth() + (i * monthsInterval))
+
+          // Only count payments that have occurred (up to today)
+          if (paymentDate <= today) {
+            totalProduction += paymentAmount
+            hasPayment = true
+          } else {
+            // Stop once we hit future dates
+            break
+          }
+        }
+
+        // Count this policy if it had at least one payment
+        if (hasPayment) {
+          totalPoliciesSold += 1
+        }
+      })
     }
 
     // Return sanitized user profile data
@@ -128,11 +157,9 @@ export async function GET(request: Request) {
       firstName: userData.first_name,
       lastName: userData.last_name,
       fullName: `${userData.first_name} ${userData.last_name}`,
-      position: positionName,
       createdAt: userData.created_at,
-      totalProduction: Number(userData.total_prod) || 0,
-      totalPoliciesSold: Number(userData.total_policies_sold) || 0,
-      positionHistory: processedPositionHistory,
+      totalProduction: totalProduction,
+      totalPoliciesSold: totalPoliciesSold,
       // Include agency_id so clients can scope queries by agency
       agency_id: userData.agency_id || null,
       // Include status, role, and is_admin for onboarding checks

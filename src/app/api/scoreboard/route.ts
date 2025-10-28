@@ -196,6 +196,10 @@ export async function GET(request: NextRequest) {
       })
     })
 
+    // Get today's date to exclude future dates
+    const today = new Date()
+    today.setHours(23, 59, 59, 999)
+
     deals?.forEach(deal => {
       const agentStat = agentStats.get(deal.agent_id)
       if (!agentStat) return
@@ -238,6 +242,9 @@ export async function GET(request: NextRequest) {
       const rangeEnd = new Date(endDate + 'T00:00:00')
       const effective = new Date(effectiveDate + 'T00:00:00')
 
+      // Use the earlier of rangeEnd or today to prevent counting future dates
+      const calculationEnd = rangeEnd < today ? rangeEnd : today
+
       let hasPaymentInRange = false
 
       // Generate payment dates for up to 12 payments (1 year)
@@ -245,8 +252,8 @@ export async function GET(request: NextRequest) {
         const paymentDate = new Date(effective)
         paymentDate.setMonth(effective.getMonth() + (i * monthsInterval))
 
-        // Check if payment date is within the selected range
-        if (paymentDate >= rangeStart && paymentDate <= rangeEnd) {
+        // Check if payment date is within the selected range AND not in the future
+        if (paymentDate >= rangeStart && paymentDate <= calculationEnd) {
           const paymentDateStr = paymentDate.toISOString().split('T')[0]
 
           if (!agentStat.dailyBreakdown[paymentDateStr]) {
@@ -257,8 +264,8 @@ export async function GET(request: NextRequest) {
           hasPaymentInRange = true
         }
 
-        // Stop if we've gone past the range end
-        if (paymentDate > rangeEnd) break
+        // Stop if we've gone past the calculation end (which is limited by today)
+        if (paymentDate > calculationEnd) break
       }
 
       // Count this deal only if it contributed any payments in the range

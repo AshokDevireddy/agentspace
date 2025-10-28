@@ -72,6 +72,9 @@ export default function LoginPage() {
       }
 
       // Route based on role
+      // Refresh router to ensure middleware runs with new auth state
+      router.refresh()
+
       if (userData.role === 'client') {
         router.push('/client/dashboard')
       } else {

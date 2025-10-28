@@ -10,7 +10,6 @@ interface ProfileData {
   firstName: string;
   lastName: string;
   fullName: string;
-  position: string;
   createdAt: string;
   totalProduction: number;
   totalPoliciesSold: number;
@@ -99,7 +98,6 @@ export default function ProfilePage() {
   // Prepare user object with API data
   const user_profile = {
     name: profileData.fullName,
-    title: profileData.position || "No Position Assigned",
     avatarUrl: "", // Keep as empty for now
     tenure: calculateTenure(profileData.createdAt),
     allTimeProduction: profileData.totalProduction,
@@ -134,8 +132,7 @@ export default function ProfilePage() {
           {/* Info */}
           <div>
             <h1 className="text-4xl font-extrabold text-foreground mb-1">{user_profile.name}</h1>
-            <div className="text-xl text-muted-foreground mb-3">{user_profile.title}</div>
-            <div className="flex items-center mb-4">
+            <div className="flex items-center mb-4 mt-3">
               <FaRegClock className="text-muted-foreground mr-2" />
               <span className="text-foreground text-sm">{user_profile.tenure}</span>
             </div>

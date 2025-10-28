@@ -185,6 +185,9 @@ export default function SetupAccount() {
       // Success! Redirect to dashboard (Phase 2 onboarding will show there)
       alert('Password set successfully! Redirecting to complete your account setup...')
 
+      // Refresh router to ensure middleware runs with new auth state
+      router.refresh()
+
       if (userData?.role === 'client') {
         router.push('/client/dashboard')
       } else {

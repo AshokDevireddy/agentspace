@@ -66,11 +66,11 @@ export default function Clients() {
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
   const [isAdmin, setIsAdmin] = useState(false)
-  const [viewMode, setViewMode] = useState<'downlines' | 'self' | 'all'>('downlines')
+  const [viewMode, setViewMode] = useState<'downlines' | 'self' | 'all'>('self')
   const { user } = useAuth()
   const supabase = createClient()
 
-  // Check if user is admin
+  // Check if user is admin and set default view mode
   useEffect(() => {
     const checkAdminStatus = async () => {
       if (!user?.id) return
@@ -81,7 +81,11 @@ export default function Clients() {
         .eq('auth_user_id', user.id)
         .single()
 
-      setIsAdmin(userData?.is_admin || false)
+      const adminStatus = userData?.is_admin || false
+      setIsAdmin(adminStatus)
+
+      // Set default view mode based on admin status
+      setViewMode(adminStatus ? 'all' : 'self')
     }
 
     checkAdminStatus()

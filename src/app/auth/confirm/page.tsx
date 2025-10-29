@@ -17,12 +17,12 @@ export default function ConfirmSession() {
         console.log('Search params:', window.location.search)
         console.log('Hash params:', window.location.hash)
 
-        // First, check if we already have a session (user clicked link while logged in)
-        const { data: { session: existingSession } } = await supabase.auth.getSession()
+        // First, check if we already have an authenticated user (user clicked link while logged in)
+        const { data: { user: existingUser } } = await supabase.auth.getUser()
 
-        if (existingSession?.user) {
-          console.log('Found existing session, routing user:', existingSession.user.id)
-          await routeUser(existingSession.user.id)
+        if (existingUser) {
+          console.log('Found existing authenticated user, routing user:', existingUser.id)
+          await routeUser(existingUser.id)
           return
         }
 

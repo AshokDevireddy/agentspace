@@ -8,10 +8,10 @@ export async function GET(req: NextRequest) {
   try {
     // Identify current user and compute visible agent IDs (self + downline)
     const {
-      data: { session },
-    } = await server.auth.getSession();
+      data: { user },
+    } = await server.auth.getUser();
 
-    if (!session?.user?.id) {
+    if (!user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const { data: currentUser, error: currentUserError } = await admin
       .from('users')
       .select('id, agency_id, perm_level, role')
-      .eq('auth_user_id', session.user.id)
+      .eq('auth_user_id', user.id)
       .single();
 
     if (currentUserError || !currentUser) {

@@ -69,8 +69,9 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
         return
       }
 
-      // Get the current session to get the access token
-      const { data: { session } } = await createClient().auth.getSession()
+      // Get the session to get the access token (using getSession for token only, not authentication)
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
 
       if (!accessToken) {

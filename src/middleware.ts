@@ -1,15 +1,32 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
+import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
-  const supabase = createMiddlewareClient({ req, res })
 
-  // Get user session
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => req.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value, options }) =>
+            res.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+
+  // Get user
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+  } = await supabase.auth.getUser()
 
   // Public routes that don't require authentication
   const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/setup-account']
@@ -19,8 +36,8 @@ export async function middleware(req: NextRequest) {
   const publicApiPrefixes = ['/api/cron/', '/api/telnyx-webhook', '/api/register']
   const isPublicApi = publicApiPrefixes.some(prefix => req.nextUrl.pathname.startsWith(prefix))
 
-  // If no session and trying to access protected route
-  if (!session && !isPublicRoute && !isPublicApi) {
+  // If no user and trying to access protected route
+  if (!user && !isPublicRoute && !isPublicApi) {
     // For API routes, return 401 instead of redirecting
     if (req.nextUrl.pathname.startsWith('/api/')) {
       return NextResponse.json(
@@ -32,19 +49,19 @@ export async function middleware(req: NextRequest) {
   }
 
   // If user is authenticated, check role-based access
-  if (session) {
+  if (user) {
     // Get user profile to check role
-    const { data: user } = await supabase
+    const { data: userProfile } = await supabase
       .from('users')
       .select('role, is_admin, status')
-      .eq('auth_user_id', session.user.id)
+      .eq('auth_user_id', user.id)
       .maybeSingle()
 
     // Handle user status
-    if (user) {
+    if (userProfile) {
       // If user is onboarding, allow access to setup-account page and dashboard
       // (setup-account for Phase 1 password setup, dashboard for Phase 2 onboarding)
-      if (user.status === 'onboarding') {
+      if (userProfile.status === 'onboarding') {
         const allowedPaths = ['/setup-account', '/', '/api/']
         const isAllowedPath = allowedPaths.some(path => req.nextUrl.pathname.startsWith(path))
 
@@ -57,13 +74,13 @@ export async function middleware(req: NextRequest) {
       }
 
       // If user is invited (hasn't clicked invite link yet), redirect to login
-      if (user.status === 'invited') {
+      if (userProfile.status === 'invited') {
         await supabase.auth.signOut()
         return NextResponse.redirect(new URL('/login?message=check-email', req.url))
       }
 
       // If user is inactive, sign them out and redirect to login
-      if (user.status === 'inactive') {
+      if (userProfile.status === 'inactive') {
         await supabase.auth.signOut()
         return NextResponse.redirect(new URL('/login?message=account-deactivated', req.url))
       }
@@ -71,14 +88,14 @@ export async function middleware(req: NextRequest) {
 
     // Client-specific routes
     if (req.nextUrl.pathname.startsWith('/client/')) {
-      if (!user || user.role !== 'client') {
+      if (!userProfile || userProfile.role !== 'client') {
         return NextResponse.redirect(new URL('/unauthorized', req.url))
       }
       return res
     }
 
     // If client tries to access non-client routes (except public routes and logout)
-    if (user && user.role === 'client' && !isPublicRoute && !req.nextUrl.pathname.startsWith('/client/')) {
+    if (userProfile && userProfile.role === 'client' && !isPublicRoute && !req.nextUrl.pathname.startsWith('/client/')) {
       return NextResponse.redirect(new URL('/client/dashboard', req.url))
     }
   }
@@ -87,15 +104,15 @@ export async function middleware(req: NextRequest) {
   const adminRoutes = ['/configuration', '/api/create-user', '/api/setup-account', '/api/search-agent', '/api/carriers/agency']
   const isAdminRoute = adminRoutes.some(route => req.nextUrl.pathname.startsWith(route))
 
-  if (isAdminRoute && session) {
+  if (isAdminRoute && user) {
     // Get user profile to check admin status
-    const { data: user } = await supabase
+    const { data: adminCheckUser } = await supabase
       .from('users')
       .select('is_admin, role')
-      .eq('auth_user_id', session.user.id)
+      .eq('auth_user_id', user.id)
       .maybeSingle()
 
-    if (!user?.is_admin) {
+    if (!adminCheckUser?.is_admin) {
       const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
       if (isApiRoute) {
         return NextResponse.json(

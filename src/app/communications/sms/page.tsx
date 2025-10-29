@@ -88,7 +88,9 @@ function SMSMessagingPageContent() {
   const searchParams = useSearchParams()
   const conversationIdFromUrl = searchParams.get('conversation')
   const { user } = useAuth()
-  const supabase = createClient()
+  // Create stable supabase client instance
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
 
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
@@ -102,7 +104,7 @@ function SMSMessagingPageContent() {
   const [sending, setSending] = useState(false)
   const [resolving, setResolving] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(320)
-  const [rightPanelWidth, setRightPanelWidth] = useState(420)
+  const [rightPanelWidth, setRightPanelWidth] = useState(350)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const [isResizingRightPanel, setIsResizingRightPanel] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -110,6 +112,7 @@ function SMSMessagingPageContent() {
   const [notificationFilter, setNotificationFilter] = useState<'all' | 'lapse' | 'needs_info'>('all')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const hasSetInitialViewMode = useRef(false)
+  const conversationRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const filteredConversations = conversations.filter(conv => {
     const matchesSearch = conv.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -151,7 +154,7 @@ function SMSMessagingPageContent() {
     }
     if (isResizingRightPanel) {
       const newWidth = window.innerWidth - e.clientX
-      if (newWidth >= 350 && newWidth <= 600) {
+      if (newWidth >= 280 && newWidth <= 600) {
         setRightPanelWidth(newWidth)
       }
     }
@@ -210,7 +213,7 @@ function SMSMessagingPageContent() {
   useEffect(() => {
     if (!hasSetInitialViewMode.current && user?.id) {
       if (isAdmin) {
-        setViewMode('all')
+        setViewMode('downlines') // Admins start with downlines which fetches all for them
       }
       hasSetInitialViewMode.current = true
     }
@@ -220,80 +223,13 @@ function SMSMessagingPageContent() {
     scrollToBottom()
   }, [messages])
 
-  useEffect(() => {
-    fetchConversations()
-  }, [viewMode])
-
-  // Subscribe to real-time conversation updates
-  useEffect(() => {
-    if (!user?.id) return
-
-    console.log('🔔 Setting up real-time subscriptions...')
-
-    // Subscribe to conversations table for updates
-    const conversationsChannel = supabase
-      .channel('conversations-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'conversations',
-        },
-        (payload) => {
-          console.log('🔄 Conversation change detected:', payload)
-          // Refresh conversations list
-          fetchConversations()
-        }
-      )
-      .subscribe()
-
-    // Subscribe to messages table for new messages
-    const messagesChannel = supabase
-      .channel('messages-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-        },
-        (payload) => {
-          console.log('📨 New message detected:', payload)
-
-          // If we're viewing the conversation this message belongs to, refresh messages
-          if (selectedConversation && payload.new.conversation_id === selectedConversation.id) {
-            fetchMessages(selectedConversation.id)
-          }
-
-          // Always refresh conversations to update last message and unread counts
-          fetchConversations()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      console.log('🔕 Cleaning up real-time subscriptions')
-      supabase.removeChannel(conversationsChannel)
-      supabase.removeChannel(messagesChannel)
-    }
-  }, [user?.id, selectedConversation?.id])
-
-  // Auto-select conversation from URL parameter
-  useEffect(() => {
-    if (conversationIdFromUrl && conversations.length > 0 && !selectedConversation) {
-      const conversation = conversations.find(c => c.id === conversationIdFromUrl)
-      if (conversation) {
-        handleConversationSelect(conversation)
-      }
-    }
-  }, [conversationIdFromUrl, conversations, selectedConversation])
-
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     try {
-      console.log('🔄 Fetching conversations with view mode:', viewMode)
+      // For admins viewing "downlines", we actually fetch "all"
+      const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
+      console.log('🔄 Fetching conversations with view mode:', effectiveViewMode)
 
-      const response = await fetch(`/api/sms/conversations?view=${viewMode}`, {
+      const response = await fetch(`/api/sms/conversations?view=${effectiveViewMode}`, {
         credentials: 'include'
       })
 
@@ -315,7 +251,21 @@ function SMSMessagingPageContent() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [isAdmin, viewMode])
+
+  useEffect(() => {
+    fetchConversations()
+  }, [fetchConversations])
+
+  // Debounced conversation refresh to avoid hammering the API
+  const debouncedRefreshConversations = useCallback(() => {
+    if (conversationRefreshTimeoutRef.current) {
+      clearTimeout(conversationRefreshTimeoutRef.current)
+    }
+    conversationRefreshTimeoutRef.current = setTimeout(() => {
+      fetchConversations()
+    }, 500) // Wait 500ms before refreshing
+  }, [fetchConversations])
 
   const fetchMessages = async (conversationId: string) => {
     try {
@@ -359,13 +309,151 @@ function SMSMessagingPageContent() {
     }
   }
 
-  const handleConversationSelect = async (conversation: Conversation) => {
+  const handleConversationSelect = useCallback(async (conversation: Conversation) => {
     setSelectedConversation(conversation)
     await fetchMessages(conversation.id)
     fetchDealDetails(conversation.dealId)
     // Refresh conversations to update unread counts after messages are marked as read
     fetchConversations()
-  }
+  }, [fetchConversations])
+
+  // Subscribe to real-time updates - Only when a conversation is selected
+  useEffect(() => {
+    if (!user?.id || !selectedConversation) {
+      console.log('⚠️ Skipping real-time setup - no user or conversation selected')
+      return
+    }
+
+    console.log('🔔 Setting up real-time subscriptions for conversation:', selectedConversation.id)
+
+    // Create a unique channel name based on user ID and conversation ID
+    const channelName = `realtime-sms-${user.id}-${selectedConversation.id}`
+
+    const channel = supabase
+      .channel(channelName, {
+        config: {
+          broadcast: { self: false },
+        },
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${selectedConversation.id}`,
+        },
+        (payload) => {
+          console.log('📨 New message received via real-time:', payload.new)
+          const newMessage = payload.new as Message
+
+          console.log('✅ Message belongs to current conversation - adding to UI')
+
+          setMessages(prev => {
+            // Check if message already exists (avoid duplicates)
+            const exists = prev.some(m => m.id === newMessage.id)
+            if (exists) {
+              console.log('⚠️ Message already exists - skipping')
+              return prev
+            }
+
+            // Add new message and sort by sent_at
+            const updated = [...prev, newMessage].sort((a, b) =>
+              new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
+            )
+            console.log('✅ Added message to UI, total messages:', updated.length)
+            return updated
+          })
+
+          // If it's an inbound message, mark it as read after a short delay
+          if (newMessage.direction === 'inbound') {
+            setTimeout(async () => {
+              try {
+                await supabase
+                  .from('messages')
+                  .update({ read_at: new Date().toISOString() })
+                  .eq('id', newMessage.id)
+                  .is('read_at', null)
+                console.log('✅ Marked message as read')
+              } catch (error) {
+                console.error('❌ Error marking message as read:', error)
+              }
+            }, 1000)
+          }
+
+          // Debounced refresh of conversations list
+          debouncedRefreshConversations()
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${selectedConversation.id}`,
+        },
+        (payload) => {
+          console.log('📝 Message updated:', payload.new)
+          const updatedMessage = payload.new as Message
+
+          // Update the message in the current view if it's visible
+          setMessages(prev => {
+            const index = prev.findIndex(m => m.id === updatedMessage.id)
+            if (index !== -1) {
+              const updated = [...prev]
+              updated[index] = updatedMessage
+              return updated
+            }
+            return prev
+          })
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+        },
+        (payload) => {
+          console.log('🔄 Conversation updated:', payload)
+          // Refresh conversations list when any conversation changes
+          debouncedRefreshConversations()
+        }
+      )
+      .subscribe((status, err) => {
+        console.log('🔌 Real-time channel status:', status)
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to real-time updates!')
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Channel error:', err)
+        } else if (status === 'TIMED_OUT') {
+          console.error('⏱️ Channel subscription timed out')
+        } else if (status === 'CLOSED') {
+          console.log('🔒 Channel closed')
+        }
+      })
+
+    // Cleanup on unmount or conversation change
+    return () => {
+      console.log('🔕 Cleaning up real-time subscription')
+      if (conversationRefreshTimeoutRef.current) {
+        clearTimeout(conversationRefreshTimeoutRef.current)
+      }
+      supabase.removeChannel(channel)
+    }
+  }, [user?.id, selectedConversation?.id, debouncedRefreshConversations])
+
+  // Auto-select conversation from URL parameter
+  useEffect(() => {
+    if (conversationIdFromUrl && conversations.length > 0 && !selectedConversation) {
+      const conversation = conversations.find(c => c.id === conversationIdFromUrl)
+      if (conversation) {
+        handleConversationSelect(conversation)
+      }
+    }
+  }, [conversationIdFromUrl, conversations, selectedConversation, handleConversationSelect])
 
   const handleSendMessage = async () => {
     if (!messageInput.trim() || !selectedConversation || sending) return
@@ -531,43 +619,41 @@ function SMSMessagingPageContent() {
             </Select>
           </div>
 
-          {/* View Mode Toggle */}
-          <div className="flex items-center space-x-2 mb-4">
-            {isAdmin && (
-              <Button
-                variant={viewMode === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setViewMode('all')}
+          {/* View Mode Toggle with Slider */}
+          <div className="relative bg-accent/30 rounded-lg p-1 mb-4">
+            <div className="grid grid-cols-2 gap-1 relative">
+              {/* Animated slider background */}
+              <div
                 className={cn(
-                  "text-xs h-8",
-                  viewMode === 'all' && 'btn-gradient'
+                  "absolute h-[calc(100%-8px)] bg-gradient-to-r from-blue-600 to-blue-500 rounded-md transition-all duration-300 ease-in-out top-1 shadow-md",
+                  viewMode === 'self' ? 'left-1 right-[calc(50%+2px)]' : 'left-[calc(50%+2px)] right-1'
+                )}
+              />
+
+              {/* Buttons */}
+              <button
+                onClick={() => setViewMode('self')}
+                className={cn(
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
+                  viewMode === 'self'
+                    ? 'text-white'
+                    : 'text-muted-foreground hover:text-foreground'
                 )}
               >
-                Everyone
-              </Button>
-            )}
-            <Button
-              variant={viewMode === 'self' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setViewMode('self')}
-              className={cn(
-                "text-xs h-8",
-                viewMode === 'self' && 'btn-gradient'
-              )}
-            >
-              Just Me
-            </Button>
-            <Button
-              variant={viewMode === 'downlines' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setViewMode('downlines')}
-              className={cn(
-                "text-xs h-8",
-                viewMode === 'downlines' && 'btn-gradient'
-              )}
-            >
-              Downlines
-            </Button>
+                Just Me
+              </button>
+              <button
+                onClick={() => setViewMode('downlines')}
+                className={cn(
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
+                  viewMode === 'downlines'
+                    ? 'text-white'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {isAdmin ? 'Everyone' : 'Downlines'}
+              </button>
+            </div>
           </div>
 
           {/* Search */}
@@ -792,7 +878,7 @@ function SMSMessagingPageContent() {
       {selectedConversation && (
         <div
           className="bg-card border-l border-border flex flex-col overflow-y-auto custom-scrollbar"
-          style={{ width: `${rightPanelWidth}px`, minWidth: '350px', maxWidth: '600px' }}
+          style={{ width: `${rightPanelWidth}px`, minWidth: '280px', maxWidth: '600px' }}
         >
           <div className="p-5 border-b border-border sticky top-0 bg-card z-10">
             <h2 className="text-xl font-semibold text-foreground">Deal Information</h2>

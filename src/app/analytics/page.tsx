@@ -13,6 +13,7 @@ import { Upload, FileText } from "lucide-react"
 import { useState, useEffect } from 'react'
 import UploadPolicyReportsModal from '@/components/modals/upload-policy-reports-modal'
 import { createClient } from '@/lib/supabase/client'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 /**
  * Retrieves the agency ID for the current user
@@ -1127,6 +1128,7 @@ export default function Persistency() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedCarrier, setSelectedCarrier] = useState<string>('')
 
   // Dynamic persistency data from Supabase RPC
   const [persistencyData, setPersistencyData] = useState<{
@@ -1284,7 +1286,7 @@ export default function Persistency() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Persistency</h1>
-            <h2 className="text-2xl font-light text-gray-600 mt-2">Overall Analytics</h2>
+            {/* <h2 className="text-2xl font-light text-gray-600 mt-2">Overall Analytics</h2> */}
           </div>
           <div className="flex items-center space-x-4">
             <Select defaultValue="3months">
@@ -1309,8 +1311,25 @@ export default function Persistency() {
         </div>
       </div>
 
-      {/* Key Metrics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <Tabs defaultValue="overall" className="w-full">
+        <TabsList className="grid w-full grid-cols-4 bg-gray-100 mb-6">
+          <TabsTrigger value="overall" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            Overall Analytics
+          </TabsTrigger>
+          <TabsTrigger value="comparison" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            Carrier Comparison
+          </TabsTrigger>
+          <TabsTrigger value="leads" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            Leads Analysis
+          </TabsTrigger>
+          <TabsTrigger value="individual" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            Individual Carrier
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overall" className="mt-6">
+          {/* Key Metrics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         {/* Overall Persistency */}
         <div className="border border-gray-200 rounded-lg p-6 bg-white">
           <div className="space-y-2">
@@ -1448,12 +1467,11 @@ export default function Persistency() {
           </div>
         </div>
       </div>
+        </TabsContent>
 
-      {/* Carrier Comparison Section */}
-      <div className="mt-12">
-          <h2 className="text-2xl font-light text-gray-600 mb-6">Carrier Comparison</h2>
-
-        {/* Pie Charts Row */}
+        <TabsContent value="comparison" className="mt-6">
+          {/* Carrier Comparison Section */}
+          {/* Pie Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Active Policies Pie Chart */}
           <div className="border border-gray-200 rounded-lg bg-white">
@@ -1569,11 +1587,10 @@ export default function Persistency() {
             </div>
           </div>
         </div>
-      </div>
+        </TabsContent>
 
-      {/* Leads Analysis Section */}
-      <div className="mt-12">
-        <h2 className="text-2xl font-light text-gray-600 mb-6">Leads Analysis</h2>
+        <TabsContent value="leads" className="mt-6">
+          {/* Leads Analysis Section */}
 
         {/* Summary Statistics */}
         <div className="mb-8">
@@ -1854,13 +1871,29 @@ export default function Persistency() {
             </div>
           </div>
         </div>
-      </div>
+        </TabsContent>
 
-      {/* Individual Carrier Sections */}
-      {(persistencyData.carriers || []).map((carrier) => (
-        <div key={carrier.carrier} className="mt-12">
-          <h2 className="text-2xl font-light text-gray-600 mb-6">{carrier.carrier}</h2>
+        <TabsContent value="individual" className="mt-6">
+          {/* Individual Carrier Section */}
+          <div className="mb-6">
+            <Select value={selectedCarrier} onValueChange={setSelectedCarrier}>
+              <SelectTrigger className="w-full max-w-md text-black bg-white border-gray-300">
+                <SelectValue placeholder="Select a carrier" />
+              </SelectTrigger>
+              <SelectContent className="bg-white border-gray-300">
+                {persistencyData.carriers?.map((carrier) => (
+                  <SelectItem key={carrier.carrier} value={carrier.carrier} className="text-black hover:bg-gray-100">
+                    {carrier.carrier}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
+          {selectedCarrier && persistencyData.carriers?.map((carrier) => {
+            if (carrier.carrier !== selectedCarrier) return null
+            return (
+        <div key={carrier.carrier} className="mt-6">
           {/* Carrier Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="border border-gray-200 rounded-lg p-6 bg-white">
@@ -1986,9 +2019,11 @@ export default function Persistency() {
             )}
           </div>
         </div>
-      ))}
+            )
+          })}
+        </TabsContent>
 
-
+      </Tabs>
       </div>
 
       {/* Upload Policy Reports Modal */}

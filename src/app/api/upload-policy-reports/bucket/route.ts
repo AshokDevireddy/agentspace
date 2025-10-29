@@ -12,6 +12,11 @@ import { NextRequest, NextResponse } from 'next/server'
  * @param userId - The authenticated user's ID (auth_user_id)
  * @returns Promise<string> - The agency ID
  */
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
 async function getAgencyId(supabase: any, userId: string): Promise<string> {
   try {
     const { data: user, error } = await supabase

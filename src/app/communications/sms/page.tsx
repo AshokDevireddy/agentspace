@@ -253,9 +253,10 @@ function SMSMessagingPageContent() {
     }
   }, [isAdmin, viewMode])
 
+  // Initial fetch and when view mode changes
   useEffect(() => {
     fetchConversations()
-  }, [fetchConversations])
+  }, [viewMode, isAdmin]) // Only refetch when view mode or admin status changes
 
   // Debounced conversation refresh to avoid hammering the API
   const debouncedRefreshConversations = useCallback(() => {
@@ -313,14 +314,73 @@ function SMSMessagingPageContent() {
     setSelectedConversation(conversation)
     await fetchMessages(conversation.id)
     fetchDealDetails(conversation.dealId)
-    // Refresh conversations to update unread counts after messages are marked as read
-    fetchConversations()
-  }, [fetchConversations])
+    // Real-time subscription will handle updating unread counts
+  }, [])
 
-  // Subscribe to real-time updates - Only when a conversation is selected
+  // Subscribe to real-time updates - Global subscription for all conversations
+  useEffect(() => {
+    if (!user?.id) {
+      console.log('⚠️ Skipping real-time setup - no user')
+      return
+    }
+
+    console.log('🔔 Setting up global real-time subscription for all conversations')
+
+    // Create a unique channel name based on user ID
+    const channelName = `realtime-sms-all-${user.id}`
+
+    const allConversationsChannel = supabase
+      .channel(channelName, {
+        config: {
+          broadcast: { self: false },
+        },
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          console.log('📨 New message in any conversation:', payload.new)
+          const newMessage = payload.new as Message
+
+          // If this message is for a conversation that's not selected, update unread count
+          if (newMessage.conversation_id !== selectedConversation?.id && newMessage.direction === 'inbound') {
+            setConversations(prev => prev.map(conv =>
+              conv.id === newMessage.conversation_id
+                ? {
+                    ...conv,
+                    unreadCount: conv.unreadCount + 1,
+                    lastMessage: newMessage.body,
+                    lastMessageAt: newMessage.sent_at
+                  }
+                : conv
+            ))
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        console.log('🔌 Global real-time channel status:', status)
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to global real-time updates!')
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Channel error:', err)
+        }
+      })
+
+    // Cleanup on unmount
+    return () => {
+      console.log('🔕 Cleaning up global real-time subscription')
+      supabase.removeChannel(allConversationsChannel)
+    }
+  }, [user?.id, selectedConversation?.id])
+
+  // Subscribe to real-time updates - Only for the selected conversation
   useEffect(() => {
     if (!user?.id || !selectedConversation) {
-      console.log('⚠️ Skipping real-time setup - no user or conversation selected')
+      console.log('⚠️ Skipping conversation-specific real-time setup - no conversation selected')
       return
     }
 
@@ -375,14 +435,29 @@ function SMSMessagingPageContent() {
                   .eq('id', newMessage.id)
                   .is('read_at', null)
                 console.log('✅ Marked message as read')
+
+                // Update local conversation state to reflect read status
+                setConversations(prev => prev.map(conv =>
+                  conv.id === selectedConversation.id
+                    ? { ...conv, unreadCount: 0 }
+                    : conv
+                ))
               } catch (error) {
                 console.error('❌ Error marking message as read:', error)
               }
             }, 1000)
           }
 
-          // Debounced refresh of conversations list
-          debouncedRefreshConversations()
+          // Update the current conversation's last message in local state
+          setConversations(prev => prev.map(conv =>
+            conv.id === selectedConversation.id
+              ? {
+                  ...conv,
+                  lastMessage: newMessage.body,
+                  lastMessageAt: newMessage.sent_at
+                }
+              : conv
+          ))
         }
       )
       .on(
@@ -412,14 +487,26 @@ function SMSMessagingPageContent() {
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'UPDATE',
           schema: 'public',
           table: 'conversations',
+          filter: `id=eq.${selectedConversation.id}`,
         },
         (payload) => {
-          console.log('🔄 Conversation updated:', payload)
-          // Refresh conversations list when any conversation changes
-          debouncedRefreshConversations()
+          console.log('🔄 Current conversation updated:', payload)
+          // Only refresh if it's a meaningful update (not just last_message changes which we handle above)
+          const updatedConv = payload.new as any
+          setConversations(prev => prev.map(conv =>
+            conv.id === selectedConversation.id
+              ? {
+                  ...conv,
+                  // Update relevant fields that might have changed
+                  smsOptInStatus: updatedConv.sms_opt_in_status,
+                  optedInAt: updatedConv.opted_in_at,
+                  optedOutAt: updatedConv.opted_out_at,
+                }
+              : conv
+          ))
         }
       )
       .subscribe((status, err) => {
@@ -500,8 +587,7 @@ function SMSMessagingPageContent() {
       }
 
       // Real-time subscription will handle updating with the actual message
-      // Just refresh conversations to update last message
-      fetchConversations()
+      // and will update conversations list via debounced refresh
     } catch (error) {
       console.error('Error sending message:', error)
       alert(error instanceof Error ? error.message : 'Failed to send message')
@@ -534,11 +620,9 @@ function SMSMessagingPageContent() {
         throw new Error(error.error || 'Failed to resolve notification')
       }
 
-      // Refresh deal details and conversations to update UI and remove yellow indicator
-      await Promise.all([
-        fetchDealDetails(dealDetails.id),
-        fetchConversations()
-      ])
+      // Refresh deal details to update UI and remove yellow indicator
+      // Real-time subscription will handle updating conversations list
+      await fetchDealDetails(dealDetails.id)
 
       alert('Notification resolved successfully')
     } catch (error) {

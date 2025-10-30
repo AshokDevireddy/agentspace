@@ -1,17 +1,20 @@
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createBrowserClient } from '@supabase/ssr'
 
-const supabase = createClientComponentClient()
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 // Get current user with admin status
 export async function getCurrentUser() {
-  const { data: { session } } = await supabase.auth.getSession()
+  const { data: { user: authUser } } = await supabase.auth.getUser()
 
-  if (!session?.user) return null
+  if (!authUser) return null
 
   const { data: user } = await supabase
     .from('users')
     .select('*')
-    .eq('id', session.user.id)
+    .eq('auth_user_id', authUser.id)
     .single()
 
   return user

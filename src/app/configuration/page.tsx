@@ -132,8 +132,16 @@ export default function ConfigurationPage() {
 
   const fetchAllData = async () => {
     try {
-      // Get the current user's session to get the access token
-      const { data: { session } } = await createClient().auth.getSession()
+      // Get the current user to verify authentication
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        throw new Error('Not authenticated. Please log in again.')
+      }
+
+      // Get session for access token
+      const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
 
       if (!accessToken) {
@@ -143,10 +151,7 @@ export default function ConfigurationPage() {
       setCarriersLoading(true)
       setProductsLoading(true)
 
-      // Also fetch the current user's agency info
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-
+      // Fetch the current user's agency info
       let agencyData: Agency | null = null
       if (user) {
         const { data: userData } = await supabase
@@ -243,7 +248,8 @@ export default function ConfigurationPage() {
     if (!existingCarrier) {
       // Fetch updated carriers list to include the new carrier
       try {
-        const { data: { session } } = await createClient().auth.getSession()
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
         const accessToken = session?.access_token
 
         if (accessToken) {
@@ -391,7 +397,8 @@ export default function ConfigurationPage() {
       if (remainingProductsForCarrier.length === 0) {
         // This was the last product for this carrier, refresh carriers list
         try {
-          const { data: { session } } = await createClient().auth.getSession()
+          const supabase = createClient()
+          const { data: { session } } = await supabase.auth.getSession()
           const accessToken = session?.access_token
 
           if (accessToken) {

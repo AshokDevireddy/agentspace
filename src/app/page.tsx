@@ -405,7 +405,7 @@ export default function Home() {
                     <p className="text-sm font-medium text-muted-foreground">Monthly Commissions</p>
                   </div>
                   <p className="text-4xl font-bold text-foreground">
-                    ${(dashboardData.totals.monthly_commissions ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${(dashboardData.totals.monthly_commissions ?? 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </p>
                   <div className="flex items-center gap-1 mt-4 text-green-600">
                     <TrendingUp className="h-4 w-4" />

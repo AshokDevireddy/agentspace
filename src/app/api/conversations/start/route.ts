@@ -14,15 +14,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Get current user
-    const { data: { session } } = await server.auth.getSession();
-    if (!session?.user?.id) {
+    const { data: { user } } = await server.auth.getUser();
+    if (!user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { data: currentUser, error: currentUserError } = await admin
       .from('users')
       .select('id, agency_id, first_name, last_name')
-      .eq('auth_user_id', session.user.id)
+      .eq('auth_user_id', user.id)
       .single();
 
     if (currentUserError || !currentUser) {

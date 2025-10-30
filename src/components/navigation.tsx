@@ -18,7 +18,8 @@ import {
   MessageSquare,
   ExternalLink,
   BookOpen,
-  UserCheck
+  UserCheck,
+  Sparkles
 } from "lucide-react"
 import { createClient } from '@/lib/supabase/client'
 
@@ -32,6 +33,10 @@ const navigationItems = [
   { name: "Communication", href: "/communications/sms", icon: MessageSquare },
   { name: "Analytics", href: "/analytics", icon: TrendingUp },
   { name: "Insurance Toolkits", href: "/insurance-toolkits", icon: ExternalLink },
+]
+
+const adminNavigationItems = [
+  { name: "AI Mode", href: "/ai-chat", icon: Sparkles },
 ]
 
 export default function Navigation() {
@@ -161,6 +166,27 @@ export default function Navigation() {
               {item.name === "Communication" && unreadCount > 0 && (
                 <span className="ml-auto bg-blue-600 text-white text-xs font-bold rounded-full h-5 min-w-[20px] px-1.5 flex items-center justify-center">
                   {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </Link>
+          </div>
+        ))}
+
+        {/* Admin-only navigation items */}
+        {isAdmin && adminNavigationItems.map((item) => (
+          <div key={item.name} className="relative">
+            <Link
+              href={item.href}
+              className={cn(
+                "sidebar-nav-item w-full rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 hover:from-purple-500/20 hover:to-blue-500/20 border border-purple-500/20",
+                isActiveItem(item) && "active from-purple-500/20 to-blue-500/20"
+              )}
+              title={isSidebarCollapsed ? item.name : undefined}
+            >
+              {item.icon && <item.icon className="h-5 w-5 flex-shrink-0 text-purple-500" />}
+              {!isSidebarCollapsed && (
+                <span className="flex-1 text-left bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent font-semibold">
+                  {item.name}
                 </span>
               )}
             </Link>

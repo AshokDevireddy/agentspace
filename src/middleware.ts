@@ -32,8 +32,8 @@ export async function middleware(req: NextRequest) {
   const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/setup-account']
   const isPublicRoute = publicRoutes.includes(req.nextUrl.pathname) || req.nextUrl.pathname.startsWith('/auth/confirm')
 
-  // Public API prefixes that should bypass auth (cron jobs, webhooks, registration, etc.)
-  const publicApiPrefixes = ['/api/cron/', '/api/telnyx-webhook', '/api/register']
+  // Public API prefixes that should bypass auth (cron jobs, webhooks, registration, password reset, etc.)
+  const publicApiPrefixes = ['/api/cron/', '/api/telnyx-webhook', '/api/register', '/api/reset-password']
   const isPublicApi = publicApiPrefixes.some(prefix => req.nextUrl.pathname.startsWith(prefix))
 
   // If no user and trying to access protected route
@@ -59,6 +59,11 @@ export async function middleware(req: NextRequest) {
 
     // Handle user status
     if (userProfile) {
+      // Allow password recovery flow - users need to access /forgot-password even with certain statuses
+      if (req.nextUrl.pathname === '/forgot-password') {
+        return res
+      }
+
       // If user is onboarding, allow access to setup-account page and dashboard
       // (setup-account for Phase 1 password setup, dashboard for Phase 2 onboarding)
       if (userProfile.status === 'onboarding') {

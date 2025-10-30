@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Loader2 } from "lucide-react"
 
 export default function ForgotPassword() {
   const supabase = createClient()
@@ -23,62 +24,64 @@ export default function ForgotPassword() {
   const [tokenValid, setTokenValid] = useState<boolean>(false)
 
   useEffect(() => {
-    // Try to exchange any auth code in the URL for a session (PKCE / OTP flows)
-    supabase.auth.exchangeCodeForSession(window.location.href)
+    fetchUserData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-    // Listen for auth state changes, specifically PASSWORD_RECOVERY events
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
-          // User has clicked the password recovery link and is now authenticated
+  const fetchUserData = async () => {
+    try {
+      // Handle hash fragments from password reset link
+      const hash = window.location.hash.substring(1)
+      if (hash) {
+        const urlParams = new URLSearchParams(hash)
+        const accessToken = urlParams.get('access_token')
+        const refreshToken = urlParams.get('refresh_token')
+        const type = urlParams.get('type')
+
+        if (type === 'recovery' && accessToken && refreshToken) {
+          // Set session from recovery tokens
+          const { data: { session }, error: setSessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          })
+
+          if (setSessionError) {
+            console.error('Error setting session:', setSessionError)
+            router.push('/login')
+            return
+          }
+
           if (session?.user?.email) {
             setUserEmail(session.user.email)
             setTokenValid(true)
             setLoading(false)
-          } else {
-            setLoading(false)
-            setTimeout(() => {
-              router.push('/login')
-            }, 3000)
-          }
-        } else if (event === 'SIGNED_OUT') {
-          router.push('/login')
-        } else if (event === 'TOKEN_REFRESHED') {
-          // Check if we have a valid session with user data
-          const { data: { user } } = await supabase.auth.getUser()
-          if (user?.email) {
-            setUserEmail(user.email)
-            setTokenValid(true)
-            setLoading(false)
-          } else {
-            setLoading(false)
-            setTimeout(() => {
-              router.push('/login')
-            }, 3000)
+            return
           }
         }
       }
-    )
 
-    // Check if user is already authenticated (in case they refresh the page)
-    const checkCurrentSession = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      // Check if user is already authenticated
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        router.push('/login')
+        return
+      }
 
       if (user?.email) {
         setUserEmail(user.email)
         setTokenValid(true)
         setLoading(false)
       } else {
-        setLoading(false)
+        router.push('/login')
       }
+    } catch (error) {
+      console.error('Error fetching user data:', error)
+      router.push('/login')
+    } finally {
+      setLoading(false)
     }
-
-    checkCurrentSession()
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [router, supabase.auth])
+  }
 
   const validateForm = () => {
     const newErrors: string[] = []
@@ -180,7 +183,7 @@ export default function ForgotPassword() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
   }

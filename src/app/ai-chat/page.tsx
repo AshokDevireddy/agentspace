@@ -39,6 +39,8 @@ interface ThinkingStep {
   id: string;
   label: string;
   status: 'pending' | 'in_progress' | 'completed';
+  caption?: string;
+  details?: string[];
 }
 
 export default function AIChat() {
@@ -117,6 +119,130 @@ export default function AIChat() {
     return names[toolName] || toolName;
   };
 
+  const formatNumber = (value: number | null | undefined): string | null => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return null;
+    return new Intl.NumberFormat('en-US').format(Math.round(Number(value)));
+  };
+
+  const formatCurrency = (value: number | null | undefined): string | null => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return null;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0,
+    }).format(Number(value));
+  };
+
+  const formatPercent = (value: number | null | undefined): string | null => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return null;
+    const normalized = value > 1 ? value : value * 100;
+    return `${normalized.toFixed(1)}%`;
+  };
+
+  const summarizeValue = (value: any, depth = 0): string => {
+    if (depth > 2) {
+      return '…';
+    }
+    if (value === null || value === undefined) return 'null';
+    if (typeof value === 'string') {
+      return value.length > 40 ? `${value.slice(0, 40)}…` : value;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    if (Array.isArray(value)) {
+      if (value.length === 0) return '[]';
+      const preview = value.slice(0, 3).map(item => summarizeValue(item, depth + 1)).join(', ');
+      return `[${preview}${value.length > 3 ? ', …' : ''}]`;
+    }
+    if (typeof value === 'object') {
+      const keys = Object.keys(value);
+      if (keys.length === 0) return '{}';
+      const preview = keys.slice(0, 3)
+        .map(key => `${key}: ${summarizeValue(value[key], depth + 1)}`)
+        .join(', ');
+      return `{${preview}${keys.length > 3 ? ', …' : ''}}`;
+    }
+    return String(value);
+  };
+
+  const describeToolInput = (toolName: string, input: Record<string, any> | undefined): string | null => {
+    if (!input || typeof input !== 'object') {
+      return null;
+    }
+
+    const entries = Object.entries(input).filter(([, value]) => value !== undefined && value !== null && value !== '' && !(typeof value === 'object' && Object.keys(value).length === 0));
+    if (entries.length === 0) {
+      return 'Using default parameters.';
+    }
+
+    const formatted = entries
+      .map(([key, value]) => `${key}: ${summarizeValue(value)}`)
+      .join(', ');
+
+    return `Parameters → ${formatted}`;
+  };
+
+  const summarizeToolResultForStep = (toolName: string, result: any): string | null => {
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+
+    switch (toolName) {
+      case 'get_deals': {
+        const count = formatNumber(result.count);
+        const sample = formatNumber(result.deals?.length);
+        const total = formatCurrency(result.summary?.total_annual_premium);
+        const parts = [count ? `${count} deals` : 'Deals loaded'];
+        if (sample && result.deals?.length !== result.count) {
+          parts.push(`${sample} shown`);
+        }
+        if (total) {
+          parts.push(`total premium ${total}`);
+        }
+        return parts.join(' • ');
+      }
+      case 'get_agents': {
+        const count = formatNumber(result.count);
+        const prod = formatCurrency(result.summary?.total_production);
+        const policies = formatNumber(result.summary?.total_policies);
+        const parts = [count ? `${count} agents` : 'Agents loaded'];
+        if (prod) parts.push(`production ${prod}`);
+        if (policies) parts.push(`${policies} policies`);
+        return parts.join(' • ');
+      }
+      case 'get_persistency_analytics': {
+        const carriers = formatNumber(result.carriers?.length);
+        const persistency = formatPercent(result.overall_analytics?.overallPersistency);
+        return `Persistency across ${carriers || 'agency'} carriers${persistency ? ` • overall ${persistency}` : ''}`;
+      }
+      case 'get_conversations_data': {
+        const total = formatNumber(result.summary?.total_conversations);
+        const active = formatNumber(result.summary?.active_conversations);
+        return `Conversations: ${total || '0'} total${active ? ` • ${active} active` : ''}`;
+      }
+      case 'get_agency_summary': {
+        const total = formatCurrency(result.metrics?.total_production);
+        const policies = formatNumber(result.metrics?.total_policies);
+        return `Agency snapshot${total ? ` • production ${total}` : ''}${policies ? ` • ${policies} policies` : ''}`;
+      }
+      case 'get_data_summary': {
+        if (result.summary_only) {
+          const count = formatNumber(result.total_count);
+          return `Large dataset detected • approx. ${count || '0'} records summarized`;
+        }
+        const count = formatNumber(result.total_count);
+        const avg = formatCurrency(result.summary?.average_premium ?? result.summary?.average_production);
+        return `Summary over ${count || '0'} records${avg ? ` • average ${avg}` : ''}`;
+      }
+      default: {
+        const keys = Object.keys(result);
+        if (keys.length === 0) return 'Received empty result.';
+        return `Received data keys: ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '…' : ''}`;
+      }
+    }
+  };
+
   const extractChartCode = (content: string): { cleanContent: string; chartCode: string | null } => {
     // Look for ```chartcode blocks
     const chartCodeRegex = /```chartcode\n([\s\S]*?)```/g;
@@ -183,102 +309,178 @@ export default function AIChat() {
       let currentToolCallsMap = new Map<string, ToolCall>();
       let currentThinkingSteps: ThinkingStep[] = [];
       let toolResultsMap = new Map<string, any>();
+      let buffer = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      const syncThinkingStepsState = () => {
+        setThinkingSteps([...currentThinkingSteps]);
+      };
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+      const addStep = (step: ThinkingStep) => {
+        currentThinkingSteps = [...currentThinkingSteps, step];
+        syncThinkingStepsState();
+      };
 
-        for (const line of lines) {
-          if (!line.trim() || !line.startsWith('data: ')) continue;
+      const updateStep = (id: string, updater: (step: ThinkingStep) => ThinkingStep) => {
+        let changed = false;
+        currentThinkingSteps = currentThinkingSteps.map(step => {
+          if (step.id !== id) {
+            return step;
+          }
+          changed = true;
+          return updater(step);
+        });
+        if (changed) {
+          syncThinkingStepsState();
+        }
+      };
 
-          const data = line.slice(6);
-          if (data === '[DONE]') continue;
+      const appendStepDetail = (id: string, detail: string | null | undefined) => {
+        if (!detail) return;
+        updateStep(id, step => {
+          const existing = step.details || [];
+          if (existing.includes(detail)) {
+            return step;
+          }
+          return {
+            ...step,
+            details: [...existing, detail],
+          };
+        });
+      };
 
-          try {
-            const event = JSON.parse(data);
+      const ensureDraftingStep = () => {
+        const existing = currentThinkingSteps.find(step => step.id === 'drafting');
+        if (existing) {
+          if (existing.status !== 'completed') {
+            updateStep('drafting', step => ({ ...step, status: 'in_progress' }));
+          }
+          return;
+        }
+        addStep({
+          id: 'drafting',
+          label: 'Composing response',
+          status: 'in_progress',
+          details: ['Drafting a polished answer.'],
+        });
+      };
 
-            // Handle different event types
-            if (event.type === 'message_start') {
-              // Starting to think
-              currentThinkingSteps = [{
-                id: 'thinking',
-                label: 'Analyzing your request',
-                status: 'in_progress'
-              }];
-              setThinkingSteps([...currentThinkingSteps]);
-            } else if (event.type === 'content_block_start') {
-              if (event.content_block?.type === 'text') {
-                // Mark thinking as complete, start generating
-                currentThinkingSteps = currentThinkingSteps.map(step =>
-                  step.id === 'thinking' ? { ...step, status: 'completed' as const } : step
-                );
-                currentThinkingSteps.push({
-                  id: 'generating',
-                  label: 'Generating response',
-                  status: 'in_progress'
-                });
-                setThinkingSteps([...currentThinkingSteps]);
-              } else if (event.content_block?.type === 'tool_use') {
-                const toolCall: ToolCall = {
-                  id: event.content_block.id,
-                  name: event.content_block.name,
-                  input: {},
-                  status: 'running'
-                };
-                currentToolCallsMap.set(toolCall.id, toolCall);
-                setCurrentToolCalls(Array.from(currentToolCallsMap.values()));
+      const handleEvent = (event: any) => {
+        if (event.type === 'message_start') {
+          currentThinkingSteps = [{
+            id: 'analysis',
+            label: 'Understanding your request',
+            status: 'in_progress',
+            details: ['Reviewing your instructions and available context.'],
+          }];
+          syncThinkingStepsState();
+          return;
+        }
 
-                // Add thinking step for tool
-                const toolStep: ThinkingStep = {
-                  id: toolCall.id,
-                  label: getToolDisplayName(toolCall.name),
-                  status: 'in_progress'
-                };
-                currentThinkingSteps = [...currentThinkingSteps, toolStep];
-                setThinkingSteps([...currentThinkingSteps]);
-              }
-            } else if (event.type === 'content_block_delta') {
-              if (event.delta?.type === 'text_delta') {
-                assistantMessage += event.delta.text;
-                setStreamingContent(assistantMessage);
-              }
-            } else if (event.type === 'content_block_stop') {
-              // Content block finished
-            } else if (event.type === 'tool_result') {
-              // Tool execution completed
-              const toolCall = currentToolCallsMap.get(event.tool_use_id);
-              if (toolCall) {
-                toolCall.status = 'completed';
-                toolCall.result = event.result;
-                currentToolCallsMap.set(toolCall.id, toolCall);
-                setCurrentToolCalls(Array.from(currentToolCallsMap.values()));
+        if (event.type === 'content_block_start') {
+          if (event.content_block?.type === 'text') {
+            updateStep('analysis', step => ({ ...step, status: 'completed' as const }));
+            appendStepDetail('analysis', 'Finished identifying relevant datasets.');
+            ensureDraftingStep();
+          } else if (event.content_block?.type === 'tool_use') {
+            const toolCall: ToolCall = {
+              id: event.content_block.id,
+              name: event.content_block.name,
+              input: event.content_block.input ?? {},
+              status: 'running'
+            };
+            currentToolCallsMap.set(toolCall.id, toolCall);
+            setCurrentToolCalls(Array.from(currentToolCallsMap.values()));
 
-                // Store tool result for chart data
-                toolResultsMap.set(toolCall.name, event.result);
+            addStep({
+              id: toolCall.id,
+              label: getToolDisplayName(toolCall.name),
+              caption: toolCall.name,
+              status: 'in_progress',
+              details: ['Executing data request...'],
+            });
 
-                // Update thinking step
-                currentThinkingSteps = currentThinkingSteps.map(step =>
-                  step.id === toolCall.id ? { ...step, status: 'completed' as const } : step
-                );
-                setThinkingSteps([...currentThinkingSteps]);
-              }
-            } else if (event.type === 'message_delta') {
-              if (event.delta?.stop_reason) {
-                // Complete all pending steps
-                currentThinkingSteps = currentThinkingSteps.map(step => ({
-                  ...step,
-                  status: 'completed' as const
-                }));
-                setThinkingSteps([...currentThinkingSteps]);
-              }
+            const paramsDetail = describeToolInput(toolCall.name, toolCall.input);
+            if (paramsDetail) {
+              appendStepDetail(toolCall.id, paramsDetail);
             }
+          }
+          return;
+        }
+
+        if (event.type === 'content_block_delta') {
+          if (event.delta?.type === 'text_delta') {
+            assistantMessage += event.delta.text;
+            setStreamingContent(assistantMessage);
+          }
+          return;
+        }
+
+        if (event.type === 'tool_result') {
+          const toolCall = currentToolCallsMap.get(event.tool_use_id);
+          if (toolCall) {
+            toolCall.status = 'completed';
+            toolCall.result = event.result;
+            currentToolCallsMap.set(toolCall.id, toolCall);
+            setCurrentToolCalls(Array.from(currentToolCallsMap.values()));
+
+            toolResultsMap.set(toolCall.name, event.result);
+
+            const summary = summarizeToolResultForStep(toolCall.name, event.result);
+            if (summary) {
+              appendStepDetail(toolCall.id, summary);
+            }
+
+            updateStep(toolCall.id, step => ({ ...step, status: 'completed' as const }));
+          }
+          return;
+        }
+
+        if (event.type === 'message_delta') {
+          if (event.delta?.stop_reason) {
+            ensureDraftingStep();
+            appendStepDetail('drafting', 'Response ready to send.');
+            currentThinkingSteps = currentThinkingSteps.map(step => ({
+              ...step,
+              status: 'completed' as const
+            }));
+            syncThinkingStepsState();
+          }
+          return;
+        }
+      };
+
+      const processBuffer = (isFinal = false) => {
+        const segments = buffer.split(/\r?\n/);
+        if (!isFinal) {
+          buffer = segments.pop() ?? '';
+        } else {
+          buffer = '';
+        }
+
+        for (const segment of segments) {
+          const trimmed = segment.trim();
+          if (!trimmed || !trimmed.startsWith('data:')) continue;
+          const payload = trimmed.slice(5).trimStart();
+          if (payload === '[DONE]') continue;
+          try {
+            const event = JSON.parse(payload);
+            handleEvent(event);
           } catch (e) {
             console.error('Error parsing event:', e);
           }
         }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          buffer += decoder.decode();
+          processBuffer(true);
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        processBuffer(false);
       }
 
       // Extract chart code if present

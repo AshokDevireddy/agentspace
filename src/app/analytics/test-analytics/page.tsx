@@ -424,16 +424,32 @@ export default function AnalyticsTestPage() {
 		}
 	}, [periods, carrierFilter])
 
-	const palette = ["#16a34a", "#2563eb", "#f59e0b", "#ef4444", "#10b981", "#8b5cf6"]
+const BIG_PALETTE = [
+    "#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#10b981",
+    "#ec4899", "#14b8a6", "#f97316", "#a855f7", "#3b82f6", "#22c55e",
+    "#eab308", "#06b6d4", "#f43f5e", "#84cc16", "#6366f1", "#059669",
+    "#d946ef", "#0ea5e9", "#fb923c", "#34d399", "#60a5fa", "#f472b6"
+]
+
+function colorForLabel(label: string, explicitIndex?: number): string {
+    if (typeof explicitIndex === "number") return BIG_PALETTE[explicitIndex % BIG_PALETTE.length]
+    let hash = 0
+    for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) >>> 0
+    return BIG_PALETTE[hash % BIG_PALETTE.length]
+}
+
+function displayStateLabel(stateCode: string): string {
+    return stateCode === "UNK" ? "Unknown" : stateCode
+}
 
 	const wedges = React.useMemo(() => {
 		let cursor = 0
-		return (_analyticsData?.meta.carriers ?? [])
-			.map((label, idx) => ({
-				label,
-				value: byCarrierAgg[label].submitted,
-				color: palette[idx % palette.length],
-			}))
+    return (_analyticsData?.meta.carriers ?? [])
+            .map((label, idx) => ({
+                label,
+                value: byCarrierAgg[label].submitted,
+                color: colorForLabel(label, idx),
+            }))
 			.filter((w) => w.value > 0)
 			.map((w) => {
 				const pct = totalSubmitted > 0 ? w.value / totalSubmitted : 0
@@ -462,14 +478,8 @@ export default function AnalyticsTestPage() {
 		const carrierData = byCarrier[detailCarrier as keyof typeof byCarrier]?.status?.[windowKey]
 		if (!carrierData) return null
 
-		const statusColors: Record<string, string> = {
-			Lapsed: "#f97316",           // Vibrant orange
-			"Not Taken": "#eab308",      // Bright yellow/gold
-			Withdrawn: "#6366f1",        // Indigo
-			Other: "#8b5cf6",           // Purple
-			Terminated: "#dc2626",      // Deep red
-			Pending: "#06b6d4",         // Cyan/teal
-		}
+		// Use large palette with deterministic mapping so we have many distinct colors
+		const colorForStatus = (status: string) => colorForLabel(status)
 
 		// Only include statuses that exist in the breakdowns_status_over_time data for this carrier
 		const entries: { status: string; count: number; color: string }[] = []
@@ -481,7 +491,7 @@ export default function AnalyticsTestPage() {
 				entries.push({
 					status,
 					count,
-					color: statusColors[status] || "#6b7280",
+					color: colorForStatus(status),
 				})
 			}
 		})
@@ -518,13 +528,13 @@ export default function AnalyticsTestPage() {
 	const stateBreakdown = React.useMemo(() => {
 		if (groupBy !== "state") return null
 		
-		const stateColors: Record<string, string> = {
-			CA: "#3b82f6",  // Blue
-			TX: "#10b981",  // Green
-			FL: "#f59e0b",  // Orange
-			NY: "#8b5cf6",  // Purple
-			AZ: "#ef4444",  // Red
-		}
+        const stateColors: Record<string, string> = {
+            CA: colorForLabel("CA"),
+            TX: colorForLabel("TX"),
+            FL: colorForLabel("FL"),
+            NY: colorForLabel("NY"),
+            AZ: colorForLabel("AZ"),
+        }
 
 		const entries: { label: string; value: number; color: string }[] = []
 		
@@ -548,12 +558,13 @@ export default function AnalyticsTestPage() {
 				}
 			}
 			
-			Object.entries(stateTotals).forEach(([state, data]) => {
+            Object.entries(stateTotals).forEach(([state, data]) => {
 				if (data.submitted > 0) {
+                    const label = displayStateLabel(state)
 					entries.push({
-						label: state,
+                        label,
 						value: data.submitted,
-						color: stateColors[state] || "#6b7280",
+                        color: stateColors[label] || colorForLabel(label),
 					})
 				}
 			})
@@ -566,12 +577,13 @@ export default function AnalyticsTestPage() {
 			const stateData = carrierData.state?.[windowKey]
 			if (!stateData) return null
 			
-			stateData.forEach((entry: { state: string; submitted: number }) => {
+            stateData.forEach((entry: { state: string; submitted: number }) => {
 				if (entry.submitted > 0) {
+                    const label = displayStateLabel(entry.state)
 					entries.push({
-						label: entry.state,
+                        label,
 						value: entry.submitted,
-						color: stateColors[entry.state] || "#6b7280",
+                        color: stateColors[label] || colorForLabel(label),
 					})
 				}
 			})
@@ -600,12 +612,12 @@ export default function AnalyticsTestPage() {
 	const ageBreakdown = React.useMemo(() => {
 		if (groupBy !== "age") return null
 		
-		const ageColors: Record<string, string> = {
-			"18-29": "#10b981",  // Green
-			"30-44": "#3b82f6",  // Blue
-			"45-64": "#f59e0b",  // Orange
-			"65+": "#8b5cf6",    // Purple
-		}
+        const ageColors: Record<string, string> = {
+            "18-29": colorForLabel("18-29"),
+            "30-44": colorForLabel("30-44"),
+            "45-64": colorForLabel("45-64"),
+            "65+": colorForLabel("65+"),
+        }
 
 		const entries: { label: string; value: number; color: string }[] = []
 		
@@ -634,7 +646,7 @@ export default function AnalyticsTestPage() {
 					entries.push({
 						label: ageBand,
 						value: data.submitted,
-						color: ageColors[ageBand] || "#6b7280",
+                        color: ageColors[ageBand] || colorForLabel(ageBand),
 					})
 				}
 			})
@@ -652,7 +664,7 @@ export default function AnalyticsTestPage() {
 					entries.push({
 						label: entry.age_band,
 						value: entry.submitted,
-						color: ageColors[entry.age_band] || "#6b7280",
+                        color: ageColors[entry.age_band] || colorForLabel(entry.age_band),
 					})
 				}
 			})
@@ -1980,8 +1992,7 @@ export default function AnalyticsTestPage() {
 											<>
 												{/* Individual carrier lines */}
 								{(_analyticsData?.meta.carriers ?? []).map((carrier, carrierIdx) => {
-													const palette = ["#16a34a", "#2563eb", "#f59e0b"]
-													const color = palette[carrierIdx % palette.length]
+									const color = colorForLabel(String(carrier), carrierIdx)
 													const points = trendData
 														.map((data: any, idx: number) => {
 															const value = data.carriers?.[carrier]
@@ -2080,13 +2091,15 @@ export default function AnalyticsTestPage() {
 																}
 															} else {
 																// For other metrics, sum all carrier values for this period
-																if (data.carriers) {
-																	for (const carrierValue of Object.values(data.carriers)) {
-																		if (carrierValue !== undefined && carrierValue !== null) {
-																			cumulativeValue += carrierValue as number
-																		}
-																	}
-																}
+                                                        if (data.carriers) {
+                                                            const values = Object.values(data.carriers).filter(v => v !== undefined && v !== null) as number[]
+                                                            if (trendMetric === "avgprem") {
+                                                                const count = values.length
+                                                                cumulativeValue = count > 0 ? values.reduce((a, b) => a + b, 0) / count : 0
+                                                            } else {
+                                                                cumulativeValue = values.reduce((a, b) => a + b, 0)
+                                                            }
+                                                        }
 															}
 															
 															const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
@@ -2162,9 +2175,8 @@ export default function AnalyticsTestPage() {
 										) : (
 											// Single line for selected carrier
 											(() => {
-												const palette = ["#16a34a", "#2563eb", "#f59e0b"]
 									const carrierIdx = (Array.isArray(_analyticsData?.meta.carriers) ? [..._analyticsData!.meta.carriers] : []).indexOf(carrierFilter as any)
-												const color = carrierIdx >= 0 ? palette[carrierIdx % palette.length] : "#2563eb"
+									const color = carrierIdx >= 0 ? colorForLabel(String(carrierFilter), carrierIdx) : "#2563eb"
 												const points = trendData
 													.map((data: any, idx: number) => {
 														const value = data.value
@@ -2298,8 +2310,7 @@ export default function AnalyticsTestPage() {
 									{carrierFilter === "ALL" && (
 										<div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-wrap gap-4 justify-center mt-2">
 								{(_analyticsData?.meta.carriers ?? []).map((carrier, idx) => {
-												const palette = ["#16a34a", "#2563eb", "#f59e0b"]
-												const color = palette[idx % palette.length]
+									const color = colorForLabel(String(carrier), idx)
 												// Check if this carrier has data
 												const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
 												if (!hasData) return null

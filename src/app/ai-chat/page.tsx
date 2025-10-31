@@ -336,8 +336,8 @@ export default function AIChat() {
 
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50/50 overflow-hidden">
-      {/* Header */}
-      <div className="sticky top-0 z-10 backdrop-blur-xl bg-white/80 border-b border-slate-200/60 shadow-sm">
+      {/* Header - Fixed at top */}
+      <div className="fixed top-0 left-0 right-0 z-10 backdrop-blur-xl bg-white/80 shadow-sm lg:left-64">
         <div className="max-w-4xl mx-auto px-4 py-3">
           <div className="flex items-center justify-center">
             <div className="flex items-center gap-3">
@@ -363,7 +363,7 @@ export default function AIChat() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto pb-32">
+      <div className="flex-1 overflow-y-auto pt-20 pb-24">
         <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
           {messages.length === 0 && (
             <div className="text-center py-16">
@@ -516,17 +516,17 @@ export default function AIChat() {
         </div>
       </div>
 
-      {/* Input - Fixed to bottom */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 backdrop-blur-xl bg-white/80 border-t border-slate-200/60 shadow-2xl lg:left-64">
+      {/* Input - Floating at bottom */}
+      <div className="fixed bottom-0 left-0 right-0 z-20 pointer-events-none lg:left-64">
         <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="relative">
+          <div className="relative pointer-events-auto">
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Ask me anything about your agency..."
               disabled={isLoading}
-              className="w-full h-14 pl-5 pr-14 text-base rounded-2xl border-2 border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-100 shadow-lg bg-white/90 backdrop-blur-sm transition-all"
+              className="w-full h-14 pl-5 pr-14 text-base rounded-2xl border-2 border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-100 shadow-2xl bg-white backdrop-blur-sm transition-all"
             />
             <Button
               onClick={sendMessage}

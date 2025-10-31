@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarIcon } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 
 interface AgentScore {
@@ -142,19 +142,38 @@ export default function Scoreboard() {
     }
   }
 
+  // Memoize the date range calculation to avoid unnecessary recalculations
+  const dateRange = useMemo(() => {
+    if (timeframe === 'custom') {
+      return {
+        startDate: customStartDate || new Date().toISOString().split('T')[0],
+        endDate: customEndDate || new Date().toISOString().split('T')[0]
+      }
+    }
+    return getDateRange(timeframe)
+  }, [timeframe, customStartDate, customEndDate])
+
+  // Update custom dates when timeframe changes (only for non-custom timeframes)
   useEffect(() => {
     if (timeframe !== 'custom') {
-      const dateRange = getDateRange(timeframe)
-      setCustomStartDate(dateRange.startDate)
-      setCustomEndDate(dateRange.endDate)
+      const range = getDateRange(timeframe)
+      setCustomStartDate(range.startDate)
+      setCustomEndDate(range.endDate)
     }
   }, [timeframe])
 
+  // Fetch scoreboard data - only depends on user and the computed date range
   useEffect(() => {
     const fetchScoreboardData = async () => {
+      if (!user) return
+
+      // For custom timeframe, ensure both dates are set
+      if (timeframe === 'custom' && (!dateRange.startDate || !dateRange.endDate)) {
+        return
+      }
+
       try {
         setLoading(true)
-        const dateRange = getDateRange(timeframe)
         const params = new URLSearchParams({
           startDate: dateRange.startDate,
           endDate: dateRange.endDate
@@ -180,13 +199,8 @@ export default function Scoreboard() {
       }
     }
 
-    if (user) {
-      if (timeframe === 'custom' && (!customStartDate || !customEndDate)) {
-        return
-      }
-      fetchScoreboardData()
-    }
-  }, [user, timeframe, customStartDate, customEndDate])
+    fetchScoreboardData()
+  }, [user, timeframe, dateRange.startDate, dateRange.endDate])
 
   if (loading) {
     return (

@@ -256,7 +256,7 @@ function SMSMessagingPageContent() {
   // Initial fetch and when view mode changes
   useEffect(() => {
     fetchConversations()
-  }, [viewMode, isAdmin]) // Only refetch when view mode or admin status changes
+  }, [fetchConversations]) // Include fetchConversations in dependencies
 
   // Debounced conversation refresh to avoid hammering the API
   const debouncedRefreshConversations = useCallback(() => {
@@ -530,7 +530,7 @@ function SMSMessagingPageContent() {
       }
       supabase.removeChannel(channel)
     }
-  }, [user?.id, selectedConversation?.id, debouncedRefreshConversations])
+  }, [user?.id, selectedConversation?.id]) // Removed debouncedRefreshConversations to avoid re-subscriptions
 
   // Auto-select conversation from URL parameter
   useEffect(() => {

@@ -79,14 +79,15 @@ export default function Navigation() {
 
   // Fetch unread message count
   useEffect(() => {
-    const fetchUnreadCount = async () => {
-      if (!user?.id) {
-        setUnreadCount(0)
-        return
-      }
+    if (!user?.id) {
+      setUnreadCount(0)
+      return
+    }
 
+    const fetchUnreadCount = async () => {
       try {
-        const response = await fetch('/api/sms/conversations', {
+        // Use 'self' view to minimize data transfer - we only need unread counts
+        const response = await fetch('/api/sms/conversations?view=self', {
           credentials: 'include'
         })
 
@@ -105,13 +106,48 @@ export default function Navigation() {
       }
     }
 
+    // Initial fetch
     fetchUnreadCount()
 
-    // Poll for updates every 30 seconds
-    const interval = setInterval(fetchUnreadCount, 30000)
+    // Poll for updates every 30 seconds, but pause when tab is hidden
+    let interval: NodeJS.Timeout | null = null
 
-    return () => clearInterval(interval)
-  }, [user])
+    const startPolling = () => {
+      // Clear any existing interval
+      if (interval) clearInterval(interval)
+      interval = setInterval(fetchUnreadCount, 30000)
+    }
+
+    const stopPolling = () => {
+      if (interval) {
+        clearInterval(interval)
+        interval = null
+      }
+    }
+
+    // Start polling if page is visible
+    if (!document.hidden) {
+      startPolling()
+    }
+
+    // Handle visibility change - pause polling when tab is hidden
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling()
+      } else {
+        // Fetch immediately when tab becomes visible, then resume polling
+        fetchUnreadCount()
+        startPolling()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      stopPolling()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [user?.id])
 
   // Handle user logout
   const handleLogout = async () => {

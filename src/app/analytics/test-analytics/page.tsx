@@ -339,7 +339,39 @@ export default function AnalyticsTestPage() {
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
 	React.useEffect(() => {
-		setAnalyticsData(analytics_test_value)
+		let isMounted = true
+		;(async () => {
+			try {
+                console.log('hello gindha')
+				const supabase = createClient()
+				const { data: auth } = await supabase.auth.getUser()
+				const userId = auth?.user?.id
+				if (!userId) return
+                console.log("userId", userId)
+
+				const { data: userRow, error: userError } = await supabase
+					.from("users")
+					.select("agency_id")
+					.eq("auth_user_id", userId)
+					.single()
+				if (userError || !userRow?.agency_id) return
+                console.log("userRow", userRow)
+
+				const { data: rpcData, error: rpcError } = await supabase
+					.rpc("get_analytics_from_deals_with_agency_id", { p_agency_id: userRow.agency_id })
+				if (rpcError || !rpcData) return
+
+                console.log("rpcData", rpcData)
+                console.log("rpcError", rpcError)
+                console.log("userRow", userRow)
+                console.log("agency_id", userRow.agency_id)
+
+				if (isMounted) setAnalyticsData(rpcData as AnalyticsTestValue)
+			} catch (_) {
+				// swallow for now; can add toast/logging later
+			}
+		})()
+		return () => { isMounted = false }
 	}, [])
 
 	const isLoading = !_analyticsData
@@ -824,10 +856,12 @@ export default function AnalyticsTestPage() {
 	}, [periods, carrierFilter, trendMetric])
 
 	return (
-		<div className="flex w-full flex-col gap-6 p-6">
-			{isLoading && (
+		isLoading ? (
+			<div className="flex min-h-screen w-full items-center justify-center p-6">
 				<div className="text-sm text-muted-foreground">Loading analytics…</div>
-			)}
+			</div>
+		) : (
+			<div className="flex w-full flex-col gap-6 p-6">
 			{/* Header */}
 			<div className="flex items-center justify-between">
 				<h1 className="text-xl font-semibold">Agency Analytics</h1>
@@ -2129,7 +2163,7 @@ export default function AnalyticsTestPage() {
 											// Single line for selected carrier
 											(() => {
 												const palette = ["#16a34a", "#2563eb", "#f59e0b"]
-									const carrierIdx = ((_analyticsData?.meta.carriers ?? []) as string[]).indexOf(carrierFilter as any)
+									const carrierIdx = (Array.isArray(_analyticsData?.meta.carriers) ? [..._analyticsData!.meta.carriers] : []).indexOf(carrierFilter as any)
 												const color = carrierIdx >= 0 ? palette[carrierIdx % palette.length] : "#2563eb"
 												const points = trendData
 													.map((data: any, idx: number) => {
@@ -2317,6 +2351,7 @@ export default function AnalyticsTestPage() {
 				<TabsContent value="details" />
 			</Tabs>
 		</div>
+		)
 	)
 }
   

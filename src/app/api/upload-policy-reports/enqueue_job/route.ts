@@ -79,7 +79,7 @@ export async function POST(req: Request) {
   // Enqueue via SECURITY DEFINER RPC
   const results: Array<{ path: string; msgId?: number; error?: string }> = []
   for (const j of jobs) {
-    const { data: msgId, error } = await admin.rpc('enqueue_parse_job', {
+    const { data: msgId, error } = await admin.rpc('enqueue_policy_report_parse_job', {
       p_bucket: j.bucket,
       p_path: j.path,
       p_carrier: carrier,

@@ -1,0 +1,13 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.49.4?target=deno&pin=v135",
+    "papaparse": "https://esm.sh/papaparse@5.4.1?target=deno&pin=v135",
+    "xlsx": "https://esm.sh/xlsx@0.18.5?target=deno&pin=v135"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.window", "dom"]
+  },
+  "lock": true,
+  "lockPath": "./deno.lock"
+}

@@ -1,2036 +1,2369 @@
 "use client"
 
+import React from "react"
+import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
 } from "@/components/ui/select"
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts'
-import { Upload, FileText } from "lucide-react"
-import { useState, useEffect } from 'react'
-import UploadPolicyReportsModal from '@/components/modals/upload-policy-reports-modal'
-import { createClient } from '@/lib/supabase/client'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
-/**
- * Retrieves the agency ID for the current user
- *
- * @param supabase - Supabase client instance
- * @param userId - The authenticated user's ID (auth_user_id)
- * @returns Promise<string> - The agency ID
- */
-async function getAgencyId(supabase: ReturnType<typeof createClient>, userId: string): Promise<string> {
-  try {
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('agency_id')
-      .eq('auth_user_id', userId)
-      .single()
+// analytics_test_value: static data for the test analytics page
+const analytics_test_value = {
+  "meta": {
+    "window": "all_time",
+    "grain": "month",
+    "as_of": "2025-10-30",
+    "carriers": ["American Amicable", "Allstate", "Acme Life"],
+    "include_window_slices_12": false,
+    "definitions": {
+      "active_count_eom": "Policies active at month end",
+      "inactive_count_eom": "Policies lapsed/terminated by month end",
+      "submitted_count": "Policies submitted during the calendar month",
+      "avg_premium_submitted": "Average written premium of policies submitted during the month (USD)",
+      "persistency_formula": "active / (active + inactive)"
+    },
+    "period_start": "2024-11",
+    "period_end": "2025-10"
+  },
 
-    if (error || !user) {
-      throw new Error('Failed to fetch user agency')
+  "series": [
+    {"period":"2024-11","carrier":"American Amicable","active":122,"inactive":30,"submitted":82,"avg_premium_submitted":92.0,"persistency":0.8026},
+    {"period":"2024-12","carrier":"American Amicable","active":123,"inactive":31,"submitted":83,"avg_premium_submitted":92.6,"persistency":0.7987},
+    {"period":"2025-01","carrier":"American Amicable","active":125,"inactive":31,"submitted":83,"avg_premium_submitted":93.2,"persistency":0.8013},
+    {"period":"2025-02","carrier":"American Amicable","active":128,"inactive":32,"submitted":84,"avg_premium_submitted":93.8,"persistency":0.8000},
+    {"period":"2025-03","carrier":"American Amicable","active":132,"inactive":33,"submitted":86,"avg_premium_submitted":94.4,"persistency":0.8000},
+    {"period":"2025-04","carrier":"American Amicable","active":134,"inactive":34,"submitted":87,"avg_premium_submitted":95.0,"persistency":0.7976},
+    {"period":"2025-05","carrier":"American Amicable","active":137,"inactive":35,"submitted":89,"avg_premium_submitted":95.6,"persistency":0.7966},
+    {"period":"2025-06","carrier":"American Amicable","active":140,"inactive":35,"submitted":90,"avg_premium_submitted":96.2,"persistency":0.8000},
+    {"period":"2025-07","carrier":"American Amicable","active":144,"inactive":36,"submitted":92,"avg_premium_submitted":96.8,"persistency":0.8000},
+    {"period":"2025-08","carrier":"American Amicable","active":146,"inactive":37,"submitted":93,"avg_premium_submitted":97.4,"persistency":0.7986},
+    {"period":"2025-09","carrier":"American Amicable","active":149,"inactive":37,"submitted":95,"avg_premium_submitted":98.0,"persistency":0.8016},
+    {"period":"2025-10","carrier":"American Amicable","active":152,"inactive":38,"submitted":96,"avg_premium_submitted":98.6,"persistency":0.8000},
+
+    {"period":"2024-11","carrier":"Allstate","active":202,"inactive":50,"submitted":118,"avg_premium_submitted":106.0,"persistency":0.8016},
+    {"period":"2024-12","carrier":"Allstate","active":204,"inactive":51,"submitted":121,"avg_premium_submitted":106.6,"persistency":0.8000},
+    {"period":"2025-01","carrier":"Allstate","active":206,"inactive":51,"submitted":122,"avg_premium_submitted":107.2,"persistency":0.8016},
+    {"period":"2025-02","carrier":"Allstate","active":208,"inactive":52,"submitted":124,"avg_premium_submitted":107.8,"persistency":0.8000},
+    {"period":"2025-03","carrier":"Allstate","active":210,"inactive":53,"submitted":126,"avg_premium_submitted":108.4,"persistency":0.7985},
+    {"period":"2025-04","carrier":"Allstate","active":212,"inactive":54,"submitted":127,"avg_premium_submitted":109.0,"persistency":0.7970},
+    {"period":"2025-05","carrier":"Allstate","active":214,"inactive":55,"submitted":129,"avg_premium_submitted":109.6,"persistency":0.7957},
+    {"period":"2025-06","carrier":"Allstate","active":216,"inactive":55,"submitted":131,"avg_premium_submitted":110.2,"persistency":0.7963},
+    {"period":"2025-07","carrier":"Allstate","active":218,"inactive":56,"submitted":133,"avg_premium_submitted":110.8,"persistency":0.7956},
+    {"period":"2025-08","carrier":"Allstate","active":220,"inactive":57,"submitted":135,"avg_premium_submitted":111.4,"persistency":0.7948},
+    {"period":"2025-09","carrier":"Allstate","active":222,"inactive":58,"submitted":137,"avg_premium_submitted":112.0,"persistency":0.7938},
+    {"period":"2025-10","carrier":"Allstate","active":224,"inactive":58,"submitted":139,"avg_premium_submitted":112.6,"persistency":0.7946},
+
+    {"period":"2024-11","carrier":"Acme Life","active":92,"inactive":25,"submitted":61,"avg_premium_submitted":82.0,"persistency":0.7863},
+    {"period":"2024-12","carrier":"Acme Life","active":93,"inactive":26,"submitted":62,"avg_premium_submitted":82.6,"persistency":0.7815},
+    {"period":"2025-01","carrier":"Acme Life","active":94,"inactive":26,"submitted":64,"avg_premium_submitted":83.2,"persistency":0.7832},
+    {"period":"2025-02","carrier":"Acme Life","active":95,"inactive":27,"submitted":65,"avg_premium_submitted":83.8,"persistency":0.7787},
+    {"period":"2025-03","carrier":"Acme Life","active":96,"inactive":27,"submitted":67,"avg_premium_submitted":84.4,"persistency":0.7805},
+    {"period":"2025-04","carrier":"Acme Life","active":97,"inactive":28,"submitted":68,"avg_premium_submitted":85.0,"persistency":0.7760},
+    {"period":"2025-05","carrier":"Acme Life","active":98,"inactive":29,"submitted":70,"avg_premium_submitted":85.6,"persistency":0.7714},
+    {"period":"2025-06","carrier":"Acme Life","active":99,"inactive":29,"submitted":71,"avg_premium_submitted":86.2,"persistency":0.7733},
+    {"period":"2025-07","carrier":"Acme Life","active":100,"inactive":30,"submitted":73,"avg_premium_submitted":86.8,"persistency":0.7692},
+    {"period":"2025-08","carrier":"Acme Life","active":101,"inactive":31,"submitted":74,"avg_premium_submitted":87.4,"persistency":0.7652},
+    {"period":"2025-09","carrier":"Acme Life","active":102,"inactive":31,"submitted":76,"avg_premium_submitted":88.0,"persistency":0.7672},
+    {"period":"2025-10","carrier":"Acme Life","active":103,"inactive":32,"submitted":77,"avg_premium_submitted":88.6,"persistency":0.7630}
+  ],
+
+  "windows_by_carrier": {
+    "American Amicable": {
+      "3m":  { "active": 447,  "inactive": 112, "submitted": 284,  "avg_premium_submitted": 98.01, "persistency": 0.7996 },
+      "6m":  { "active": 868,  "inactive": 218, "submitted": 555,  "avg_premium_submitted": 97.13, "persistency": 0.7993 },
+      "9m":  { "active": 1262, "inactive": 317, "submitted": 812,  "avg_premium_submitted": 96.27, "persistency": 0.7992 },
+      "all_time": { "active": 1632, "inactive": 409, "submitted": 1060, "avg_premium_submitted": 95.41, "persistency": 0.7996 }
+    },
+    "Allstate": {
+      "3m":  { "active": 666,  "inactive": 173, "submitted": 411,  "avg_premium_submitted": 112.01, "persistency": 0.7938 },
+      "6m":  { "active": 1314, "inactive": 339, "submitted": 804,  "avg_premium_submitted": 111.13, "persistency": 0.7949 },
+      "9m":  { "active": 1944, "inactive": 498, "submitted": 1181, "avg_premium_submitted": 110.26, "persistency": 0.7961 },
+      "all_time": { "active": 2556, "inactive": 650, "submitted": 1542, "avg_premium_submitted": 109.40, "persistency": 0.7973 }
+    },
+    "Acme Life": {
+      "3m":  { "active": 306,  "inactive": 94,  "submitted": 227,  "avg_premium_submitted": 88.01, "persistency": 0.7650 },
+      "6m":  { "active": 603,  "inactive": 182, "submitted": 441,  "avg_premium_submitted": 87.13, "persistency": 0.7682 },
+      "9m":  { "active": 891,  "inactive": 264, "submitted": 641,  "avg_premium_submitted": 86.28, "persistency": 0.7714 },
+      "all_time": { "active": 1170, "inactive": 341, "submitted": 828,  "avg_premium_submitted": 85.45, "persistency": 0.7743 }
     }
+  },
 
-    if (!user.agency_id) {
-      throw new Error('User is not associated with an agency')
-    }
+  "totals": {
+    "by_carrier": [
+      {"window":"all_time","carrier":"American Amicable","active":1632,"inactive":409,"submitted":1060,"avg_premium_submitted":95.41,"persistency":0.7996},
+      {"window":"all_time","carrier":"Allstate","active":2556,"inactive":650,"submitted":1542,"avg_premium_submitted":109.40,"persistency":0.7973},
+      {"window":"all_time","carrier":"Acme Life","active":1170,"inactive":341,"submitted":828,"avg_premium_submitted":85.45,"persistency":0.7743}
+    ],
+    "all": {"window":"all_time","carrier":"ALL","active":5358,"inactive":1400,"submitted":3430,"avg_premium_submitted":99.30,"persistency":0.7928}
+  },
 
-    return user.agency_id
-  } catch (error) {
-    console.error('Error fetching agency ID:', error)
-    throw error instanceof Error ? error : new Error('Failed to retrieve agency ID')
-  }
-}
-
-// // Persistency data structure - fallback data for when RPC fails
-// const PERSISTENCY_DATA = {
-//   "carriers": [
-//     {
-//       "carrier": "Aetna",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 314,
-//           "positiveCount": 269,
-//           "negativePercentage": 53.86,
-//           "positivePercentage": 46.14
-//         },
-//         "6": {
-//           "negativeCount": 1757,
-//           "positiveCount": 841,
-//           "negativePercentage": 67.63,
-//           "positivePercentage": 32.37
-//         },
-//         "9": {
-//           "negativeCount": 2925,
-//           "positiveCount": 1227,
-//           "negativePercentage": 70.45,
-//           "positivePercentage": 29.55
-//         },
-//         "All": {
-//           "negativeCount": 5788,
-//           "positiveCount": 2208,
-//           "negativePercentage": 72.39,
-//           "positivePercentage": 27.61
-//         }
-//       },
-//       "totalPolicies": 13574,
-//       "persistencyRate": 27.61,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": 44,
-//             "percentage": 4.4
-//           },
-//           "Active": {
-//             "count": 269,
-//             "percentage": 26.87
-//           },
-//           "Closed": {
-//             "count": 49,
-//             "percentage": 4.9
-//           },
-//           "Lapsed": {
-//             "count": 177,
-//             "percentage": 17.68
-//           },
-//           "Decline": {
-//             "count": 315,
-//             "percentage": 31.47
-//           },
-//           "Pending": {
-//             "count": 33,
-//             "percentage": 3.3
-//           },
-//           "Withdrawn": {
-//             "count": 64,
-//             "percentage": 6.39
-//           },
-//           "Issued Not In Force": {
-//             "count": 50,
-//             "percentage": 5
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": 84,
-//             "percentage": 2.18
-//           },
-//           "Active": {
-//             "count": 841,
-//             "percentage": 21.8
-//           },
-//           "Closed": {
-//             "count": 219,
-//             "percentage": 5.68
-//           },
-//           "Lapsed": {
-//             "count": 1112,
-//             "percentage": 28.83
-//           },
-//           "Decline": {
-//             "count": 1080,
-//             "percentage": 28
-//           },
-//           "Not Taken": {
-//             "count": 95,
-//             "percentage": 2.46
-//           },
-//           "Withdrawn": {
-//             "count": 269,
-//             "percentage": 6.97
-//           },
-//           "Terminated": {
-//             "count": 157,
-//             "percentage": 4.07
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": 88,
-//             "percentage": 1.42
-//           },
-//           "Active": {
-//             "count": 1224,
-//             "percentage": 19.7
-//           },
-//           "Closed": {
-//             "count": 336,
-//             "percentage": 5.41
-//           },
-//           "Lapsed": {
-//             "count": 1931,
-//             "percentage": 31.08
-//           },
-//           "Decline": {
-//             "count": 1774,
-//             "percentage": 28.55
-//           },
-//           "Not Taken": {
-//             "count": 202,
-//             "percentage": 3.25
-//           },
-//           "Withdrawn": {
-//             "count": 448,
-//             "percentage": 7.21
-//           },
-//           "Terminated": {
-//             "count": 210,
-//             "percentage": 3.38
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": 333,
-//             "percentage": 2.45
-//           },
-//           "Active": {
-//             "count": 2199,
-//             "percentage": 16.2
-//           },
-//           "Closed": {
-//             "count": 690,
-//             "percentage": 5.08
-//           },
-//           "Lapsed": {
-//             "count": 3906,
-//             "percentage": 28.78
-//           },
-//           "Decline": {
-//             "count": 4583,
-//             "percentage": 33.76
-//           },
-//           "Not Taken": {
-//             "count": 675,
-//             "percentage": 4.97
-//           },
-//           "Withdrawn": {
-//             "count": 737,
-//             "percentage": 5.43
-//           },
-//           "Terminated": {
-//             "count": 451,
-//             "percentage": 3.32
-//           }
-//         }
-//       }
-//     },
-//     {
-//       "carrier": "Aflac",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 280,
-//           "positiveCount": 226,
-//           "negativePercentage": 55.34,
-//           "positivePercentage": 44.66
-//         },
-//         "6": {
-//           "negativeCount": 1595,
-//           "positiveCount": 762,
-//           "negativePercentage": 67.67,
-//           "positivePercentage": 32.33
-//         },
-//         "9": {
-//           "negativeCount": 3477,
-//           "positiveCount": 1318,
-//           "negativePercentage": 72.51,
-//           "positivePercentage": 27.49
-//         },
-//         "All": {
-//           "negativeCount": 8112,
-//           "positiveCount": 2737,
-//           "negativePercentage": 74.77,
-//           "positivePercentage": 25.23
-//         }
-//       },
-//       "totalPolicies": 16823,
-//       "persistencyRate": 25.23,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": 38,
-//             "percentage": 4.39
-//           },
-//           "Active": {
-//             "count": 226,
-//             "percentage": 26.13
-//           },
-//           "Closed": {
-//             "count": 41,
-//             "percentage": 4.74
-//           },
-//           "Lapsed": {
-//             "count": 150,
-//             "percentage": 17.34
-//           },
-//           "Decline": {
-//             "count": 254,
-//             "percentage": 29.36
-//           },
-//           "Not Taken": {
-//             "count": 27,
-//             "percentage": 3.12
-//           },
-//           "Withdrawn": {
-//             "count": 68,
-//             "percentage": 7.86
-//           },
-//           "Issued Not In Force": {
-//             "count": 61,
-//             "percentage": 7.05
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": 81,
-//             "percentage": 2.39
-//           },
-//           "Active": {
-//             "count": 761,
-//             "percentage": 22.47
-//           },
-//           "Closed": {
-//             "count": 173,
-//             "percentage": 5.11
-//           },
-//           "Lapsed": {
-//             "count": 1046,
-//             "percentage": 30.89
-//           },
-//           "Decline": {
-//             "count": 840,
-//             "percentage": 24.81
-//           },
-//           "Not Taken": {
-//             "count": 109,
-//             "percentage": 3.22
-//           },
-//           "Withdrawn": {
-//             "count": 258,
-//             "percentage": 7.62
-//           },
-//           "Terminated": {
-//             "count": 118,
-//             "percentage": 3.48
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": 81,
-//             "percentage": 1.17
-//           },
-//           "Active": {
-//             "count": 1317,
-//             "percentage": 19.09
-//           },
-//           "Closed": {
-//             "count": 353,
-//             "percentage": 5.12
-//           },
-//           "Lapsed": {
-//             "count": 2406,
-//             "percentage": 34.88
-//           },
-//           "Decline": {
-//             "count": 1752,
-//             "percentage": 25.4
-//           },
-//           "Not Taken": {
-//             "count": 271,
-//             "percentage": 3.93
-//           },
-//           "Withdrawn": {
-//             "count": 493,
-//             "percentage": 7.15
-//           },
-//           "Terminated": {
-//             "count": 225,
-//             "percentage": 3.26
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": 465,
-//             "percentage": 2.76
-//           },
-//           "Active": {
-//             "count": 2731,
-//             "percentage": 16.23
-//           },
-//           "Closed": {
-//             "count": 907,
-//             "percentage": 5.39
-//           },
-//           "Lapsed": {
-//             "count": 5569,
-//             "percentage": 33.1
-//           },
-//           "Decline": {
-//             "count": 4379,
-//             "percentage": 26.03
-//           },
-//           "Not Taken": {
-//             "count": 1138,
-//             "percentage": 6.76
-//           },
-//           "Withdrawn": {
-//             "count": 1113,
-//             "percentage": 6.62
-//           },
-//           "Terminated": {
-//             "count": 521,
-//             "percentage": 3.1
-//           }
-//         }
-//       }
-//     },
-//     {
-//       "carrier": "American Amicable / Occidental",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 554,
-//           "positiveCount": 160,
-//           "negativePercentage": 77.59,
-//           "positivePercentage": 22.41
-//         },
-//         "6": {
-//           "negativeCount": 2203,
-//           "positiveCount": 514,
-//           "negativePercentage": 81.08,
-//           "positivePercentage": 18.92
-//         },
-//         "9": {
-//           "negativeCount": 3462,
-//           "positiveCount": 729,
-//           "negativePercentage": 82.61,
-//           "positivePercentage": 17.39
-//         },
-//         "All": {
-//           "negativeCount": 5819,
-//           "positiveCount": 1278,
-//           "negativePercentage": 81.99,
-//           "positivePercentage": 18.01
-//         }
-//       },
-//       "totalPolicies": 7097,
-//       "persistencyRate": 18.01,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": 78,
-//             "percentage": 10.92
-//           },
-//           "Active": {
-//             "count": 160,
-//             "percentage": 22.41
-//           },
-//           "Declined": {
-//             "count": 205,
-//             "percentage": 28.71
-//           },
-//           "NotTaken": {
-//             "count": 75,
-//             "percentage": 10.5
-//           },
-//           "Withdrawn": {
-//             "count": 71,
-//             "percentage": 9.94
-//           },
-//           "IssNotPaid": {
-//             "count": 33,
-//             "percentage": 4.62
-//           },
-//           "Act-Pastdue": {
-//             "count": 36,
-//             "percentage": 5.04
-//           },
-//           "InfNotTaken": {
-//             "count": 56,
-//             "percentage": 7.84
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": 164,
-//             "percentage": 6.04
-//           },
-//           "Active": {
-//             "count": 514,
-//             "percentage": 18.92
-//           },
-//           "Declined": {
-//             "count": 744,
-//             "percentage": 27.38
-//           },
-//           "NotTaken": {
-//             "count": 304,
-//             "percentage": 11.19
-//           },
-//           "Withdrawn": {
-//             "count": 274,
-//             "percentage": 10.08
-//           },
-//           "Incomplete": {
-//             "count": 163,
-//             "percentage": 6
-//           },
-//           "Terminated": {
-//             "count": 109,
-//             "percentage": 4.01
-//           },
-//           "InfNotTaken": {
-//             "count": 445,
-//             "percentage": 16.38
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": 187,
-//             "percentage": 4.46
-//           },
-//           "Active": {
-//             "count": 728,
-//             "percentage": 17.37
-//           },
-//           "Declined": {
-//             "count": 1093,
-//             "percentage": 26.08
-//           },
-//           "NotTaken": {
-//             "count": 489,
-//             "percentage": 11.67
-//           },
-//           "Withdrawn": {
-//             "count": 421,
-//             "percentage": 10.05
-//           },
-//           "Incomplete": {
-//             "count": 245,
-//             "percentage": 5.85
-//           },
-//           "Terminated": {
-//             "count": 253,
-//             "percentage": 6.04
-//           },
-//           "InfNotTaken": {
-//             "count": 775,
-//             "percentage": 18.49
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": 274,
-//             "percentage": 3.86
-//           },
-//           "Active": {
-//             "count": 1270,
-//             "percentage": 17.89
-//           },
-//           "Declined": {
-//             "count": 1687,
-//             "percentage": 23.77
-//           },
-//           "NotTaken": {
-//             "count": 851,
-//             "percentage": 11.99
-//           },
-//           "Withdrawn": {
-//             "count": 597,
-//             "percentage": 8.41
-//           },
-//           "Incomplete": {
-//             "count": 364,
-//             "percentage": 5.13
-//           },
-//           "Terminated": {
-//             "count": 770,
-//             "percentage": 10.85
-//           },
-//           "InfNotTaken": {
-//             "count": 1284,
-//             "percentage": 18.09
-//           }
-//         }
-//       }
-//     },
-//     {
-//       "carrier": "American Home Life Insurance Company",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 4,
-//           "positiveCount": 15,
-//           "negativePercentage": 21.05,
-//           "positivePercentage": 78.95
-//         },
-//         "6": {
-//           "negativeCount": 5,
-//           "positiveCount": 17,
-//           "negativePercentage": 22.73,
-//           "positivePercentage": 77.27
-//         },
-//         "9": {
-//           "negativeCount": 19,
-//           "positiveCount": 19,
-//           "negativePercentage": 50,
-//           "positivePercentage": 50
-//         },
-//         "All": {
-//           "negativeCount": 361,
-//           "positiveCount": 131,
-//           "negativePercentage": 73.37,
-//           "positivePercentage": 26.63
-//         }
-//       },
-//       "totalPolicies": 1070,
-//       "persistencyRate": 26.63,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Active": {
-//             "count": 15,
-//             "percentage": 44.12
-//           },
-//           "Lapsed": {
-//             "count": 1,
-//             "percentage": 2.94
-//           },
-//           "Decline": {
-//             "count": 9,
-//             "percentage": 26.47
-//           },
-//           "Pending": {
-//             "count": 1,
-//             "percentage": 2.94
-//           },
-//           "Not Taken": {
-//             "count": 1,
-//             "percentage": 2.94
-//           },
-//           "Withdrawn": {
-//             "count": 3,
-//             "percentage": 8.82
-//           },
-//           "Issued Not In Force": {
-//             "count": 4,
-//             "percentage": 11.76
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Active": {
-//             "count": 17,
-//             "percentage": 35.42
-//           },
-//           "Lapsed": {
-//             "count": 2,
-//             "percentage": 4.17
-//           },
-//           "Decline": {
-//             "count": 20,
-//             "percentage": 41.67
-//           },
-//           "Pending": {
-//             "count": 1,
-//             "percentage": 2.08
-//           },
-//           "Not Taken": {
-//             "count": 1,
-//             "percentage": 2.08
-//           },
-//           "Withdrawn": {
-//             "count": 3,
-//             "percentage": 6.25
-//           },
-//           "Issued Not In Force": {
-//             "count": 4,
-//             "percentage": 8.33
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Active": {
-//             "count": 19,
-//             "percentage": 22.35
-//           },
-//           "Lapsed": {
-//             "count": 10,
-//             "percentage": 11.76
-//           },
-//           "Decline": {
-//             "count": 40,
-//             "percentage": 47.06
-//           },
-//           "Pending": {
-//             "count": 1,
-//             "percentage": 1.18
-//           },
-//           "Not Taken": {
-//             "count": 2,
-//             "percentage": 2.35
-//           },
-//           "Withdrawn": {
-//             "count": 9,
-//             "percentage": 10.59
-//           },
-//           "Issued Not In Force": {
-//             "count": 4,
-//             "percentage": 4.71
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": 20,
-//             "percentage": 1.87
-//           },
-//           "Active": {
-//             "count": 131,
-//             "percentage": 12.24
-//           },
-//           "Closed": {
-//             "count": 20,
-//             "percentage": 1.87
-//           },
-//           "Lapsed": {
-//             "count": 249,
-//             "percentage": 23.27
-//           },
-//           "Decline": {
-//             "count": 442,
-//             "percentage": 41.31
-//           },
-//           "Not Taken": {
-//             "count": 87,
-//             "percentage": 8.13
-//           },
-//           "Withdrawn": {
-//             "count": 77,
-//             "percentage": 7.2
-//           },
-//           "LM App Decline": {
-//             "count": 44,
-//             "percentage": 4.11
-//           }
-//         }
-//       }
-//     },
-//     {
-//       "carrier": "Combined",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 2774,
-//           "positiveCount": 6304,
-//           "negativePercentage": 30.56,
-//           "positivePercentage": 69.44
-//         },
-//         "6": {
-//           "negativeCount": 3296,
-//           "positiveCount": 6646,
-//           "negativePercentage": 33.15,
-//           "positivePercentage": 66.85
-//         },
-//         "9": {
-//           "negativeCount": 3296,
-//           "positiveCount": 6646,
-//           "negativePercentage": 33.15,
-//           "positivePercentage": 66.85
-//         },
-//         "All": {
-//           "negativeCount": 3296,
-//           "positiveCount": 6646,
-//           "negativePercentage": 33.15,
-//           "positivePercentage": 66.85
-//         }
-//       },
-//       "totalPolicies": 9942,
-//       "persistencyRate": 66.85,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Issued": {
-//             "count": 1914,
-//             "percentage": 21.08
-//           },
-//           "In-Force": {
-//             "count": 4390,
-//             "percentage": 48.36
-//           },
-//           "Terminated": {
-//             "count": 2755,
-//             "percentage": 30.35
-//           },
-//           "Lapse-Pending": {
-//             "count": 19,
-//             "percentage": 0.21
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Issued": {
-//             "count": 1923,
-//             "percentage": 19.34
-//           },
-//           "In-Force": {
-//             "count": 4723,
-//             "percentage": 47.51
-//           },
-//           "Terminated": {
-//             "count": 3270,
-//             "percentage": 32.89
-//           },
-//           "Lapse-Pending": {
-//             "count": 26,
-//             "percentage": 0.26
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Issued": {
-//             "count": 1923,
-//             "percentage": 19.34
-//           },
-//           "In-Force": {
-//             "count": 4723,
-//             "percentage": 47.51
-//           },
-//           "Terminated": {
-//             "count": 3270,
-//             "percentage": 32.89
-//           },
-//           "Lapse-Pending": {
-//             "count": 26,
-//             "percentage": 0.26
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "Issued": {
-//             "count": 1923,
-//             "percentage": 19.34
-//           },
-//           "In-Force": {
-//             "count": 4723,
-//             "percentage": 47.51
-//           },
-//           "Terminated": {
-//             "count": 3270,
-//             "percentage": 32.89
-//           },
-//           "Lapse-Pending": {
-//             "count": 26,
-//             "percentage": 0.26
-//           }
-//         }
-//       }
-//     },
-//     {
-//       "carrier": "RNA",
-//       "timeRanges": {
-//         "3": {
-//           "negativeCount": 0,
-//           "positiveCount": 5,
-//           "negativePercentage": 0,
-//           "positivePercentage": 100
-//         },
-//         "6": {
-//           "negativeCount": 6,
-//           "positiveCount": 13,
-//           "negativePercentage": 31.58,
-//           "positivePercentage": 68.42
-//         },
-//         "9": {
-//           "negativeCount": 45,
-//           "positiveCount": 25,
-//           "negativePercentage": 64.29,
-//           "positivePercentage": 35.71
-//         },
-//         "All": {
-//           "negativeCount": 1976,
-//           "positiveCount": 384,
-//           "negativePercentage": 83.73,
-//           "positivePercentage": 16.27
-//         }
-//       },
-//       "totalPolicies": 2771,
-//       "persistencyRate": 16.27,
-//       "statusBreakdowns": {
-//         "3": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "CONTRACT ACTIVE": {
-//             "count": 5,
-//             "percentage": 50
-//           },
-//           "CON SUS HOME OFFICE": {
-//             "count": 1,
-//             "percentage": 10
-//           },
-//           "CON SUS RETURNED EFT": {
-//             "count": 4,
-//             "percentage": 40
-//           }
-//         },
-//         "6": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "CON TERM LAPSED": {
-//             "count": 3,
-//             "percentage": 11.54
-//           },
-//           "CONTRACT ACTIVE": {
-//             "count": 13,
-//             "percentage": 50
-//           },
-//           "CON TERM NT NO PAY": {
-//             "count": 3,
-//             "percentage": 11.54
-//           },
-//           "CON SUS HOME OFFICE": {
-//             "count": 3,
-//             "percentage": 11.54
-//           },
-//           "CON SUS RETURNED EFT": {
-//             "count": 4,
-//             "percentage": 15.38
-//           }
-//         },
-//         "9": {
-//           "Other": {
-//             "count": null,
-//             "percentage": null
-//           },
-//           "CON TERM LAPSED": {
-//             "count": 23,
-//             "percentage": 29.87
-//           },
-//           "CONTRACT ACTIVE": {
-//             "count": 25,
-//             "percentage": 32.47
-//           },
-//           "CON TERM NT NO PAY": {
-//             "count": 22,
-//             "percentage": 28.57
-//           },
-//           "CON SUS HOME OFFICE": {
-//             "count": 3,
-//             "percentage": 3.9
-//           },
-//           "CON SUS RETURNED EFT": {
-//             "count": 4,
-//             "percentage": 5.19
-//           }
-//         },
-//         "All": {
-//           "Other": {
-//             "count": 211,
-//             "percentage": 7.61
-//           },
-//           "CON TERM LAPSED": {
-//             "count": 379,
-//             "percentage": 13.68
-//           },
-//           "CONTRACT ACTIVE": {
-//             "count": 327,
-//             "percentage": 11.8
-//           },
-//           "CON TERM DECLINED": {
-//             "count": 138,
-//             "percentage": 4.98
-//           },
-//           "CON TERM NT NO PAY": {
-//             "count": 694,
-//             "percentage": 25.05
-//           },
-//           "CON TERM WITHDRAWN": {
-//             "count": 436,
-//             "percentage": 15.73
-//           },
-//           "CON TERM INCOMPLETE": {
-//             "count": 467,
-//             "percentage": 16.85
-//           },
-//           "CON TERM NOT ISSUED": {
-//             "count": 119,
-//             "percentage": 4.29
-//           }
-//         }
-//       }
-//     }
-//   ],
-//   "overall_analytics": {
-//     "timeRanges": {
-//       "3": {
-//         "activeCount": 6979,
-//         "inactiveCount": 3926,
-//         "activePercentage": 64
-//       },
-//       "6": {
-//         "activeCount": 8793,
-//         "inactiveCount": 8862,
-//         "activePercentage": 49.8
-//       },
-//       "9": {
-//         "activeCount": 9964,
-//         "inactiveCount": 13224,
-//         "activePercentage": 42.97
-//       },
-//       "All": {
-//         "activeCount": 13384,
-//         "inactiveCount": 25352,
-//         "activePercentage": 34.55
-//       }
-//     },
-//     "activeCount": 13384,
-//     "inactiveCount": 25352,
-//     "overallPersistency": 34.55
-//   },
-//   "carrier_comparison": {
-//     "activeShareByCarrier": {
-//       "RNA": 2.87,
-//       "Aetna": 16.5,
-//       "Aflac": 20.45,
-//       "Combined": 49.66,
-//       "American Amicable / Occidental": 9.55,
-//       "American Home Life Insurance Company": 0.98
-//     },
-//     "inactiveShareByCarrier": {
-//       "RNA": 7.79,
-//       "Aetna": 22.83,
-//       "Aflac": 32,
-//       "Combined": 13,
-//       "American Amicable / Occidental": 22.95,
-//       "American Home Life Insurance Company": 1.42
-//     }
-//   }
-// }
-
-// Helper functions to process data
-const getCarrierPersistencyData = (carrier: { timeRanges?: Record<string, { positivePercentage?: number; positiveCount?: number | null }> }) => {
-  if (!carrier.timeRanges || !carrier.timeRanges["3"] || carrier.timeRanges["3"].positiveCount === null) {
-    return null
-  }
-
-  return [
-    { period: '3 Months', persistency: carrier.timeRanges["3"]?.positivePercentage || 0 },
-    { period: '6 Months', persistency: carrier.timeRanges["6"]?.positivePercentage || 0 },
-    { period: '9 Months', persistency: carrier.timeRanges["9"]?.positivePercentage || 0 },
-    { period: 'All Time', persistency: carrier.timeRanges["All"]?.positivePercentage || 0 },
-  ]
-}
-
-// Helper function for carrier policy data (currently unused but kept for future use)
-// const getCarrierPolicyData = (carrier: { timeRanges?: Record<string, { positiveCount?: number | null; negativeCount?: number }> }) => {
-//   if (!carrier.timeRanges || !carrier.timeRanges["3"] || carrier.timeRanges["3"].positiveCount === null) {
-//     return null
-//   }
-//
-//   return [
-//     { period: '3 Months', active: carrier.timeRanges["3"]?.positiveCount || 0, inactive: carrier.timeRanges["3"]?.negativeCount || 0 },
-//     { period: '6 Months', active: carrier.timeRanges["6"]?.positiveCount || 0, inactive: carrier.timeRanges["6"]?.negativeCount || 0 },
-//     { period: '9 Months', active: carrier.timeRanges["9"]?.positiveCount || 0, inactive: carrier.timeRanges["9"]?.negativeCount || 0 },
-//     { period: 'All Time', active: carrier.timeRanges["All"]?.positiveCount || 0, inactive: carrier.timeRanges["All"]?.negativeCount || 0 },
-//   ]
-// }
-
-const getStatusBreakdownData = (carrier: { statusBreakdowns?: Record<string, Record<string, { count?: number; percentage?: number }>> }, timeRange: string = "All") => {
-  const breakdown = carrier.statusBreakdowns?.[timeRange]
-  if (!breakdown) return []
-
-  const colors = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#84cc16', '#06b6d4', '#f97316', '#ec4899']
-
-  return Object.entries(breakdown)
-    .filter(([, value]) => value && value.count !== null && value.count !== undefined && value.count > 0)
-    .map(([key, value], index) => ({
-      name: key,
-      value: value.count || 0,
-      percentage: value.percentage || 0,
-      color: colors[index % colors.length]
-    }))
-}
-
-// Function to generate carrier comparison data
-const generateCarrierComparisonData = (persistencyData: {
-  carrier_comparison?: {
-    activeShareByCarrier?: Record<string, number | null>;
-    inactiveShareByCarrier?: Record<string, number | null>;
-  };
-  overall_analytics?: {
-    activeCount?: number | null;
-    inactiveCount?: number | null;
-  };
-  carriers?: Array<{ carrier: string; persistencyRate?: number }>;
-}) => {
-  if (!persistencyData?.carrier_comparison || !persistencyData?.overall_analytics) {
-    return { activePoliciesByCarrier: [], inactivePoliciesByCarrier: [], carrierComparisonData: [] }
-  }
-
-  const activeCount = persistencyData.overall_analytics.activeCount || 0
-  const inactiveCount = persistencyData.overall_analytics.inactiveCount || 0
-
-  const activePoliciesByCarrier = Object.entries(persistencyData.carrier_comparison.activeShareByCarrier || {})
-    .filter(([, share]) => share !== null && share !== undefined && share > 0)
-    .map(([carrier, share], index) => ({
-      name: carrier,
-      value: Math.round(((share as number) / 100) * activeCount),
-      color: ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#84cc16', '#06b6d4'][index % 6]
-    }))
-
-  const inactivePoliciesByCarrier = Object.entries(persistencyData.carrier_comparison.inactiveShareByCarrier || {})
-    .filter(([, share]) => share !== null && share !== undefined && share > 0)
-    .map(([carrier, share], index) => ({
-      name: carrier,
-      value: Math.round(((share as number) / 100) * inactiveCount),
-      color: ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#84cc16', '#06b6d4'][index % 6]
-    }))
-
-  const carrierComparisonData = (persistencyData.carriers || [])
-    .filter(carrier => (carrier.persistencyRate || 0) > 0)
-    .map(carrier => ({
-      carrier: carrier.carrier,
-      persistency: carrier.persistencyRate || 0
-    }))
-
-  return {
-    activePoliciesByCarrier,
-    inactivePoliciesByCarrier,
-    carrierComparisonData
-  }
-}
-
-
-export default function Persistency() {
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [selectedCarrier, setSelectedCarrier] = useState<string>('')
-
-  // Dynamic persistency data from Supabase RPC
-  const [persistencyData, setPersistencyData] = useState<{
-    overall_analytics?: {
-      timeRanges?: Record<string, { activePercentage?: number; activeCount?: number | null; inactiveCount?: number | null }>;
-      overallPersistency?: number;
-      activeCount?: number | null;
-      inactiveCount?: number | null;
-    };
-    carriers?: Array<{
-      carrier: string;
-      persistencyRate?: number;
-      totalPolicies?: number;
-      timeRanges?: Record<string, { positiveCount?: number | null; negativeCount?: number; positivePercentage?: number }>;
-      statusBreakdowns?: Record<string, Record<string, { count?: number; percentage?: number }>>;
-    }>;
-    carrier_comparison?: {
-      activeShareByCarrier?: Record<string, number | null>;
-      inactiveShareByCarrier?: Record<string, number | null>;
-    };
-  } | null>(null)
-
-  // Fetch persistency data from Supabase RPC
-  useEffect(() => {
-    const fetchPersistencyData = async () => {
-      try {
-        setIsLoading(true)
-        setError(null)
-
-        const supabase = createClient()
-
-        // Get current user
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-        if (authError || !user) {
-          throw new Error('User not authenticated')
+  "breakdowns_over_time": {
+    "by_carrier": {
+      "American Amicable": {
+        "status": {
+          "3m":  {"Lapsed": 78, "Terminated": 22, "Pending": 12},
+          "6m":  {"Lapsed": 153, "Terminated": 44, "Pending": 21},
+          "9m":  {"Lapsed": 222, "Terminated": 63, "Pending": 32},
+          "all_time": {"Lapsed": 286, "Terminated": 82, "Pending": 41}
+        },
+        "state": {
+          "3m":  [
+            {"state":"CA","active":210,"inactive":54,"submitted":135,"avg_premium_submitted":99.8},
+            {"state":"TX","active":126,"inactive":35,"submitted":85,"avg_premium_submitted":93.9},
+            {"state":"FL","active":111,"inactive":28,"submitted":64,"avg_premium_submitted":87.5}
+          ],
+          "6m":  [
+            {"state":"CA","active":415,"inactive":106,"submitted":270,"avg_premium_submitted":99.5},
+            {"state":"TX","active":249,"inactive":70,"submitted":170,"avg_premium_submitted":93.7},
+            {"state":"FL","active":204,"inactive":52,"submitted":115,"avg_premium_submitted":87.3}
+          ],
+          "9m":  [
+            {"state":"CA","active":603,"inactive":153,"submitted":400,"avg_premium_submitted":99.1},
+            {"state":"TX","active":364,"inactive":99,"submitted":250,"avg_premium_submitted":93.6},
+            {"state":"FL","active":295,"inactive":75,"submitted":162,"avg_premium_submitted":87.1}
+          ],
+          "all_time": [
+            {"state":"CA","active":823,"inactive":200,"submitted":530,"avg_premium_submitted":100.76},
+            {"state":"TX","active":494,"inactive":129,"submitted":318,"avg_premium_submitted":94.04},
+            {"state":"FL","active":329,"inactive":80,"submitted":212,"avg_premium_submitted":88.29}
+          ]
+        },
+        "age_band": {
+          "3m":  [
+            {"age_band":"18-29","active":82,"inactive":19,"submitted":54,"avg_premium_submitted":81.9},
+            {"age_band":"30-44","active":165,"inactive":40,"submitted":106,"avg_premium_submitted":91.3},
+            {"age_band":"45-64","active":153,"inactive":38,"submitted":98,"avg_premium_submitted":103.8},
+            {"age_band":"65+","active":47,"inactive":11,"submitted":26,"avg_premium_submitted":115.3}
+          ],
+          "6m":  [
+            {"age_band":"18-29","active":164,"inactive":38,"submitted":106,"avg_premium_submitted":81.7},
+            {"age_band":"30-44","active":329,"inactive":76,"submitted":213,"avg_premium_submitted":91.2},
+            {"age_band":"45-64","active":312,"inactive":72,"submitted":194,"avg_premium_submitted":103.7},
+            {"age_band":"65+","active":107,"inactive":24,"submitted":61,"avg_premium_submitted":115.2}
+          ],
+          "9m":  [
+            {"age_band":"18-29","active":248,"inactive":57,"submitted":160,"avg_premium_submitted":81.6},
+            {"age_band":"30-44","active":497,"inactive":115,"submitted":320,"avg_premium_submitted":91.2},
+            {"age_band":"45-64","active":471,"inactive":109,"submitted":295,"avg_premium_submitted":103.6},
+            {"age_band":"65+","active":161,"inactive":36,"submitted":98,"avg_premium_submitted":115.2}
+          ],
+          "all_time": [
+            {"age_band":"18-29","active":296,"inactive":72,"submitted":191,"avg_premium_submitted":81.57},
+            {"age_band":"30-44","active":592,"inactive":144,"submitted":382,"avg_premium_submitted":91.16},
+            {"age_band":"45-64","active":560,"inactive":136,"submitted":360,"avg_premium_submitted":103.64},
+            {"age_band":"65+","active":198,"inactive":47,"submitted":127,"avg_premium_submitted":115.15}
+          ]
         }
+      },
 
-        // Get agency ID for the user
-        const agencyId = await getAgencyId(supabase, user.id)
-
-        // Call the RPC function
-        const { data, error: rpcError } = await supabase.rpc('analyze_persistency_for_deals', {
-          p_agency_id: agencyId
-        })
-
-        if (rpcError) {
-          throw new Error(`RPC Error: ${rpcError.message}`)
+      "Allstate": {
+        "status": {
+          "3m":  {"Lapsed": 121, "Terminated": 35, "Pending": 17},
+          "6m":  {"Lapsed": 237, "Terminated": 68, "Pending": 34},
+          "9m":  {"Lapsed": 349, "Terminated": 100, "Pending": 49},
+          "all_time": {"Lapsed": 455, "Terminated": 130, "Pending": 65}
+        },
+        "state": {
+          "3m":  [
+            {"state":"CA","active":634,"inactive":158,"submitted":391,"avg_premium_submitted":115.7},
+            {"state":"TX","active":380,"inactive":93,"submitted":230,"avg_premium_submitted":108.2},
+            {"state":"FL","active":259,"inactive":65,"submitted":150,"avg_premium_submitted":101.5}
+          ],
+          "6m":  [
+            {"state":"CA","active":900,"inactive":231,"submitted":540,"avg_premium_submitted":115.5},
+            {"state":"TX","active":540,"inactive":131,"submitted":335,"avg_premium_submitted":108.0},
+            {"state":"FL","active":374,"inactive":100,"submitted":219,"avg_premium_submitted":101.2}
+          ],
+          "9m":  [
+            {"state":"CA","active":1100,"inactive":282,"submitted":675,"avg_premium_submitted":115.4},
+            {"state":"TX","active":660,"inactive":161,"submitted":420,"avg_premium_submitted":107.8},
+            {"state":"FL","active":484,"inactive":127,"submitted":281,"avg_premium_submitted":100.9}
+          ],
+          "all_time": [
+            {"state":"CA","active":1278,"inactive":325,"submitted":765,"avg_premium_submitted":115.44},
+            {"state":"TX","active":767,"inactive":195,"submitted":467,"avg_premium_submitted":107.74},
+            {"state":"FL","active":511,"inactive":130,"submitted":310,"avg_premium_submitted":101.15}
+          ]
+        },
+        "age_band": {
+          "3m":  [
+            {"age_band":"18-29","active":215,"inactive":52,"submitted":132,"avg_premium_submitted":93.6},
+            {"age_band":"30-44","active":435,"inactive":108,"submitted":264,"avg_premium_submitted":104.5},
+            {"age_band":"45-64","active":411,"inactive":103,"submitted":247,"avg_premium_submitted":118.8},
+            {"age_band":"65+","active":145,"inactive":36,"submitted":83,"avg_premium_submitted":132.1}
+          ],
+          "6m":  [
+            {"age_band":"18-29","active":430,"inactive":104,"submitted":263,"avg_premium_submitted":93.5},
+            {"age_band":"30-44","active":870,"inactive":209,"submitted":527,"avg_premium_submitted":104.4},
+            {"age_band":"45-64","active":822,"inactive":206,"submitted":494,"avg_premium_submitted":118.7},
+            {"age_band":"65+","active":285,"inactive":67,"submitted":154,"avg_premium_submitted":131.9}
+          ],
+          "9m":  [
+            {"age_band":"18-29","active":665,"inactive":160,"submitted":400,"avg_premium_submitted":93.5},
+            {"age_band":"30-44","active":1340,"inactive":322,"submitted":812,"avg_premium_submitted":104.4},
+            {"age_band":"45-64","active":1268,"inactive":319,"submitted":765,"avg_premium_submitted":118.7},
+            {"age_band":"65+","active":450,"inactive":107,"submitted":240,"avg_premium_submitted":131.9}
+          ],
+          "all_time": [
+            {"age_band":"18-29","active":460,"inactive":119,"submitted":302,"avg_premium_submitted":93.45},
+            {"age_band":"30-44","active":920,"inactive":234,"submitted":561,"avg_premium_submitted":104.44},
+            {"age_band":"45-64","active":869,"inactive":221,"submitted":530,"avg_premium_submitted":118.73},
+            {"age_band":"65+","active":307,"inactive":76,"submitted":163,"avg_premium_submitted":131.93}
+          ]
         }
+      },
 
-        if (data && typeof data === 'object' && 'carriers' in data && Array.isArray(data.carriers) && data.carriers.length > 0) {
-          setPersistencyData(data)
-        } else {
-          // No data - empty state
-          setPersistencyData(null)
+      "Acme Life": {
+        "status": {
+          "3m":  {"Lapsed": 66, "Terminated": 19, "Pending": 9},
+          "6m":  {"Lapsed": 127, "Terminated": 36, "Pending": 19},
+          "9m":  {"Lapsed": 185, "Terminated": 53, "Pending": 26},
+          "all_time": {"Lapsed": 239, "Terminated": 68, "Pending": 34}
+        },
+        "state": {
+          "3m":  [
+            {"state":"CA","active":150,"inactive":43,"submitted":100,"avg_premium_submitted":90.3},
+            {"state":"TX","active":89,"inactive":25,"submitted":60,"avg_premium_submitted":84.2},
+            {"state":"FL","active":67,"inactive":19,"submitted":43,"avg_premium_submitted":77.5}
+          ],
+          "6m":  [
+            {"state":"CA","active":299,"inactive":85,"submitted":201,"avg_premium_submitted":90.2},
+            {"state":"TX","active":178,"inactive":49,"submitted":120,"avg_premium_submitted":84.2},
+            {"state":"FL","active":134,"inactive":38,"submitted":80,"avg_premium_submitted":77.4}
+          ],
+          "9m":  [
+            {"state":"CA","active":434,"inactive":123,"submitted":302,"avg_premium_submitted":90.2},
+            {"state":"TX","active":259,"inactive":73,"submitted":182,"avg_premium_submitted":84.2},
+            {"state":"FL","active":197,"inactive":55,"submitted":117,"avg_premium_submitted":77.4}
+          ],
+          "all_time": [
+            {"state":"CA","active":569,"inactive":161,"submitted":402,"avg_premium_submitted":90.2},
+            {"state":"TX","active":341,"inactive":97,"submitted":241,"avg_premium_submitted":84.19},
+            {"state":"FL","active":228,"inactive":64,"submitted":158,"avg_premium_submitted":77.41}
+          ]
+        },
+        "age_band": {
+          "3m":  [
+            {"age_band":"18-29","active":60,"inactive":18,"submitted":40,"avg_premium_submitted":73.1},
+            {"age_band":"30-44","active":121,"inactive":34,"submitted":78,"avg_premium_submitted":85.7},
+            {"age_band":"45-64","active":115,"inactive":32,"submitted":74,"avg_premium_submitted":96.4},
+            {"age_band":"65+","active":40,"inactive":10,"submitted":35,"avg_premium_submitted":103.1}
+          ],
+          "6m":  [
+            {"age_band":"18-29","active":120,"inactive":34,"submitted":80,"avg_premium_submitted":73.1},
+            {"age_band":"30-44","active":240,"inactive":68,"submitted":156,"avg_premium_submitted":85.6},
+            {"age_band":"45-64","active":230,"inactive":66,"submitted":148,"avg_premium_submitted":96.3},
+            {"age_band":"65+","active":80,"inactive":20,"submitted":70,"avg_premium_submitted":103.1}
+          ],
+          "9m":  [
+            {"age_band":"18-29","active":180,"inactive":52,"submitted":120,"avg_premium_submitted":73.1},
+            {"age_band":"30-44","active":360,"inactive":102,"submitted":234,"avg_premium_submitted":85.6},
+            {"age_band":"45-64","active":345,"inactive":98,"submitted":222,"avg_premium_submitted":96.3},
+            {"age_band":"65+","active":120,"inactive":33,"submitted":90,"avg_premium_submitted":103.1}
+          ],
+          "all_time": [
+            {"age_band":"18-29","active":205,"inactive":56,"submitted":122,"avg_premium_submitted":73.03},
+            {"age_band":"30-44","active":410,"inactive":116,"submitted":287,"avg_premium_submitted":85.61},
+            {"age_band":"45-64","active":387,"inactive":110,"submitted":272,"avg_premium_submitted":96.32},
+            {"age_band":"65+","active":136,"inactive":40,"submitted":120,"avg_premium_submitted":103.09}
+          ]
         }
-
-      } catch (err) {
-        console.error('Error fetching persistency data:', err)
-        setError(err instanceof Error ? err.message : 'Failed to fetch persistency data')
-      } finally {
-        setIsLoading(false)
       }
     }
-
-    fetchPersistencyData()
-  }, [])
-
-
-  // Show loading state
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading persistency data...</p>
-        </div>
-      </div>
-    )
   }
+} as const
 
-  // Show error state
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto p-6">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-            <h2 className="text-lg font-semibold text-red-800 mb-2">Error Loading Data</h2>
-            <p className="text-red-600 mb-4">{error}</p>
-            <p className="text-sm text-gray-600">
-              Please check your connection and try refreshing the page.
-            </p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Show empty state if no data
-  if (!persistencyData || !persistencyData.overall_analytics) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center max-w-2xl mx-auto p-6">
-          <div className="bg-white border border-gray-200 rounded-lg p-8 shadow-sm">
-            <div className="flex justify-center mb-6">
-              <div className="bg-blue-50 rounded-full p-4">
-                <FileText className="h-12 w-12 text-blue-600" />
-              </div>
-            </div>
-
-            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-              No Persistency Data Available
-            </h2>
-
-            <p className="text-gray-600 mb-6 leading-relaxed">
-              Persistency analytics are not available because no policy reports have been uploaded yet,
-              or there are no deals in the database for your agency.
-            </p>
-
-            <Button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="bg-black text-white hover:bg-gray-800"
-            >
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Policy Reports
-            </Button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Generate dynamic data based on current persistency data (only after data is loaded)
-  const overallPersistencyData = [
-    { period: '3 Months', persistency: persistencyData.overall_analytics.timeRanges?.["3"]?.activePercentage || 0 },
-    { period: '6 Months', persistency: persistencyData.overall_analytics.timeRanges?.["6"]?.activePercentage || 0 },
-    { period: '9 Months', persistency: persistencyData.overall_analytics.timeRanges?.["9"]?.activePercentage || 0 },
-    { period: 'All Time', persistency: persistencyData.overall_analytics.timeRanges?.["All"]?.activePercentage || 0 },
-  ]
-
-  const overallPolicyData = [
-    { period: '3 Months', active: persistencyData.overall_analytics.timeRanges?.["3"]?.activeCount || 0, inactive: persistencyData.overall_analytics.timeRanges?.["3"]?.inactiveCount || 0 },
-    { period: '6 Months', active: persistencyData.overall_analytics.timeRanges?.["6"]?.activeCount || 0, inactive: persistencyData.overall_analytics.timeRanges?.["6"]?.inactiveCount || 0 },
-    { period: '9 Months', active: persistencyData.overall_analytics.timeRanges?.["9"]?.activeCount || 0, inactive: persistencyData.overall_analytics.timeRanges?.["9"]?.inactiveCount || 0 },
-    { period: 'All Time', active: persistencyData.overall_analytics.timeRanges?.["All"]?.activeCount || 0, inactive: persistencyData.overall_analytics.timeRanges?.["All"]?.inactiveCount || 0 },
-  ]
-
-  const { activePoliciesByCarrier, inactivePoliciesByCarrier, carrierComparisonData } = generateCarrierComparisonData(persistencyData)
-
-  return (
-    <div className="min-h-screen bg-white -m-4 lg:-m-6">
-      <div className="container mx-auto px-6 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Persistency</h1>
-            {/* <h2 className="text-2xl font-light text-gray-600 mt-2">Overall Analytics</h2> */}
-          </div>
-          <div className="flex items-center space-x-4">
-            <Select defaultValue="3months">
-              <SelectTrigger className="w-40 text-black bg-white border-gray-300">
-                <SelectValue className="text-black" />
-              </SelectTrigger>
-              <SelectContent className="bg-white border-gray-300">
-                <SelectItem value="3months" className="text-black hover:bg-gray-100">3 Months</SelectItem>
-                <SelectItem value="6months" className="text-black hover:bg-gray-100">6 Months</SelectItem>
-                <SelectItem value="9months" className="text-black hover:bg-gray-100">9 Months</SelectItem>
-                <SelectItem value="alltime" className="text-black hover:bg-gray-100">All Time</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="bg-black text-white hover:bg-gray-800 px-4 py-2"
-            >
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Policy Reports
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <Tabs defaultValue="overall" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 bg-gray-100 mb-6">
-          <TabsTrigger value="overall" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
-            Overall Analytics
-          </TabsTrigger>
-          <TabsTrigger value="comparison" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
-            Carrier Comparison
-          </TabsTrigger>
-          <TabsTrigger value="leads" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
-            Leads Analysis
-          </TabsTrigger>
-          <TabsTrigger value="individual" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
-            Individual Carrier
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overall" className="mt-6">
-          {/* Key Metrics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        {/* Overall Persistency */}
-        <div className="border border-gray-200 rounded-lg p-6 bg-white">
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-gray-600">Overall Persistency</h3>
-            <div className="flex items-baseline justify-between">
-              <span className="text-xs text-gray-500">All Time</span>
-            </div>
-            <p className="text-3xl font-bold text-gray-900">{persistencyData.overall_analytics.overallPersistency || 0}%</p>
-            <p className="text-sm text-gray-600">All Carriers Combined</p>
-            <p className="text-xs text-gray-500">Total Policies: {((persistencyData.overall_analytics.activeCount || 0) + (persistencyData.overall_analytics.inactiveCount || 0)).toLocaleString()}</p>
-          </div>
-        </div>
-
-        {/* Active Policies */}
-        <div className="border border-gray-200 rounded-lg p-6 bg-white">
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-gray-600">Active Policies</h3>
-            <p className="text-3xl font-bold text-gray-900">{(persistencyData.overall_analytics.activeCount || 0).toLocaleString()}</p>
-            <p className="text-sm text-gray-600">Persisting Across All Carriers</p>
-          </div>
-        </div>
-
-        {/* Inactive Policies */}
-        <div className="border border-gray-200 rounded-lg p-6 bg-white">
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-gray-600">Inactive Policies</h3>
-            <p className="text-3xl font-bold text-gray-900">{(persistencyData.overall_analytics.inactiveCount || 0).toLocaleString()}</p>
-            <p className="text-sm text-gray-600">Persisting Across All Carriers</p>
-          </div>
-        </div>
-
-        {/* Total Policies */}
-        <div className="border border-gray-200 rounded-lg p-6 bg-white">
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-gray-600">Total Policies</h3>
-            <p className="text-3xl font-bold text-gray-900">{((persistencyData.overall_analytics.activeCount || 0) + (persistencyData.overall_analytics.inactiveCount || 0)).toLocaleString()}</p>
-            <p className="text-sm text-gray-600">All Carriers Combined</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bar Chart - Active/Inactive Policies */}
-        <div className="border border-gray-200 rounded-lg bg-white">
-          <div className="p-6 pb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Active and Inactive Policies</h3>
-          </div>
-          <div className="px-6 pb-6">
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={overallPolicyData} margin={{ top: 20, right: 30, left: 80, bottom: 40 }}>
-                  <XAxis
-                    dataKey="period"
-                    tick={{ fontSize: 12, fill: '#666' }}
-                    axisLine={{ stroke: '#e0e0e0' }}
-                    label={{ value: 'Date Range', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
-                    domain={['dataMin', 'dataMax']}
-                    padding={{ left: 30, right: 30 }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 12, fill: '#666' }}
-                    axisLine={{ stroke: '#e0e0e0' }}
-                    label={{ value: 'Number of Policies', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e0e0e0',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                    }}
-                    formatter={(value, name) => [
-                      value,
-                      name === 'active' ? 'Active Policies' : 'Inactive Policies'
-                    ]}
-                  />
-                  <Legend align="right" verticalAlign="top" wrapperStyle={{ paddingBottom: '20px' }} />
-                  <Bar dataKey="active" fill="#10b981" name="Active Policies" />
-                  <Bar dataKey="inactive" fill="#ef4444" name="Inactive Policies" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        {/* Line Chart - Persistency Trends */}
-        <div className="border border-gray-200 rounded-lg bg-white">
-          <div className="p-6 pb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Persistency Trends</h3>
-          </div>
-          <div className="px-6 pb-6">
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={overallPersistencyData} margin={{ top: 20, right: 30, left: 80, bottom: 40 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis
-                    dataKey="period"
-                    tick={{ fontSize: 12, fill: '#666' }}
-                    axisLine={{ stroke: '#e0e0e0' }}
-                    label={{ value: 'Date Range', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
-                    domain={['dataMin', 'dataMax']}
-                    padding={{ left: 30, right: 30 }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 12, fill: '#666' }}
-                    axisLine={{ stroke: '#e0e0e0' }}
-                    label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e0e0e0',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                    }}
-                    formatter={(value) => [
-                      `${value}%`,
-                      'Persistency Rate'
-                    ]}
-                  />
-                  <Legend align="right" verticalAlign="top" wrapperStyle={{ paddingBottom: '20px' }} />
-                  <Line
-                    type="monotone"
-                    dataKey="persistency"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 3 }}
-                    activeDot={{ r: 5, stroke: '#8b5cf6', strokeWidth: 2 }}
-                    name="Persistency Rate"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-      </div>
-        </TabsContent>
-
-        <TabsContent value="comparison" className="mt-6">
-          {/* Carrier Comparison Section */}
-          {/* Pie Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Active Policies Pie Chart */}
-          <div className="border border-gray-200 rounded-lg bg-white">
-            <div className="p-6 pb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Active Policies by Carrier</h3>
-            </div>
-            <div className="px-6 pb-6">
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={activePoliciesByCarrier}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      dataKey="value"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    >
-                      {activePoliciesByCarrier.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                      formatter={(value) => [value, 'Active Policies']}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-
-          {/* Inactive Policies Pie Chart */}
-          <div className="border border-gray-200 rounded-lg bg-white">
-            <div className="p-6 pb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Inactive Policies by Carrier</h3>
-            </div>
-            <div className="px-6 pb-6">
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={inactivePoliciesByCarrier}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      dataKey="value"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    >
-                      {inactivePoliciesByCarrier.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                      formatter={(value) => [value, 'Inactive Policies']}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Carrier Comparison Bar Chart */}
-        <div className="border border-gray-200 rounded-lg bg-white">
-          <div className="p-6 pb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Persistency Rates by Carrier</h3>
-          </div>
-          <div className="px-6 pb-6">
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={carrierComparisonData} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis
-                    dataKey="carrier"
-                    tick={{ fontSize: 12, fill: '#666' }}
-                    axisLine={{ stroke: '#e0e0e0' }}
-                    label={{ value: 'Carrier', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
-                    domain={['dataMin', 'dataMax']}
-                    padding={{ left: 30, right: 30 }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 12, fill: '#666' }}
-                    axisLine={{ stroke: '#e0e0e0' }}
-                    label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e0e0e0',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                    }}
-                    formatter={(value) => [
-                      `${value}%`,
-                      'Persistency Rate'
-                    ]}
-                  />
-                  <Bar dataKey="persistency" fill="#8b5cf6" name="Persistency Rate" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-        </TabsContent>
-
-        <TabsContent value="leads" className="mt-6">
-          {/* Leads Analysis Section */}
-
-        {/* Summary Statistics */}
-        <div className="mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="border border-gray-200 rounded-lg p-6 bg-white">
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium text-gray-600">Average Leads Needed</h3>
-                <p className="text-3xl font-bold text-gray-900">2.04</p>
-                <p className="text-sm text-gray-600">For One Active Customer</p>
-              </div>
-            </div>
-            <div className="border border-gray-200 rounded-lg p-6 bg-white">
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium text-gray-600">Overall Lead Placement</h3>
-                <p className="text-3xl font-bold text-gray-900">53.1%</p>
-                <p className="text-sm text-gray-600">Across All Lead Types</p>
-              </div>
-            </div>
-            <div className="border border-gray-200 rounded-lg p-6 bg-white">
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium text-gray-600">Active Conversion Rate</h3>
-                <p className="text-3xl font-bold text-gray-900">58.6%</p>
-                <p className="text-sm text-gray-600">From Placed Leads</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Pie Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Lead Distribution Pie Chart */}
-          <div className="border border-gray-200 rounded-lg bg-white">
-            <div className="p-6 pb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Distribution of Leads</h3>
-            </div>
-            <div className="px-6 pb-6">
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: 'Not Placed', value: 800, color: '#ef4444' },
-                        { name: 'Active', value: 654, color: '#10b981' },
-                        { name: 'Inactive', value: 346, color: '#f59e0b' },
-                      ]}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      dataKey="value"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    >
-                      {[
-                        { name: 'Not Placed', value: 800, color: '#ef4444' },
-                        { name: 'Active', value: 654, color: '#10b981' },
-                        { name: 'Inactive', value: 346, color: '#f59e0b' },
-                      ].map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                      formatter={(value) => [value, 'Leads']}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-
-          {/* Placement Rate by Lead Type Pie Chart */}
-          <div className="border border-gray-200 rounded-lg bg-white">
-            <div className="p-6 pb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Placement Rate by Lead Type</h3>
-            </div>
-            <div className="px-6 pb-6">
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: 'Referrals', value: 75.2, color: '#8b5cf6' },
-                        { name: 'Ads', value: 45.8, color: '#10b981' },
-                        { name: 'Third Party', value: 38.4, color: '#f59e0b' },
-                      ]}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      dataKey="value"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    >
-                      {[
-                        { name: 'Referrals', value: 75.2, color: '#8b5cf6' },
-                        { name: 'Ads', value: 45.8, color: '#10b981' },
-                        { name: 'Third Party', value: 38.4, color: '#f59e0b' },
-                      ].map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                      formatter={(value) => [`${value}%`, 'Placement Rate']}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Bar Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Lead Placement Bar Chart */}
-          <div className="border border-gray-200 rounded-lg bg-white">
-            <div className="p-6 pb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Lead Placement by Type</h3>
-            </div>
-            <div className="px-6 pb-6">
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={[
-                    { leadType: 'Referrals', placed: 75.2, notPlaced: 24.8, placedCount: 752, notPlacedCount: 248 },
-                    { leadType: 'Ads', placed: 45.8, notPlaced: 54.2, placedCount: 458, notPlacedCount: 542 },
-                    { leadType: 'Third Party', placed: 38.4, notPlaced: 61.6, placedCount: 384, notPlacedCount: 616 },
-                  ]} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis
-                      dataKey="leadType"
-                      tick={{ fontSize: 12, fill: '#666' }}
-                      axisLine={{ stroke: '#e0e0e0' }}
-                      label={{ value: 'Lead Type', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
-                      domain={['dataMin', 'dataMax']}
-                      padding={{ left: 30, right: 30 }}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12, fill: '#666' }}
-                      axisLine={{ stroke: '#e0e0e0' }}
-                      label={{ value: 'Placement Rate (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                      formatter={(value, name, props) => {
-                        const data = props.payload
-                        if (name === 'placed') {
-                          return [`Placed Leads: ${value}% (${data.placedCount} leads)`, '']
-                        } else if (name === 'notPlaced') {
-                          return [`Not Placed Leads: ${value}% (${data.notPlacedCount} leads)`, '']
-                        }
-                        return [value, name]
-                      }}
-                    />
-                    <Legend align="right" verticalAlign="top" wrapperStyle={{ paddingBottom: '20px' }} />
-                    <Bar dataKey="placed" fill="#10b981" name="Placed Leads" />
-                    <Bar dataKey="notPlaced" fill="#ef4444" name="Not Placed Leads" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-
-          {/* Lead Conversion Bar Chart */}
-          <div className="border border-gray-200 rounded-lg bg-white">
-            <div className="p-6 pb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Lead Conversion to Active Customers</h3>
-            </div>
-            <div className="px-6 pb-6">
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={[
-                    { leadType: 'Referrals', activeConversion: 65.4, inactiveConversion: 34.6, activeCount: 491, inactiveCount: 261 },
-                    { leadType: 'Ads', activeConversion: 58.2, inactiveConversion: 41.8, activeCount: 267, inactiveCount: 191 },
-                    { leadType: 'Third Party', activeConversion: 52.1, inactiveConversion: 47.9, activeCount: 200, inactiveCount: 184 },
-                  ]} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis
-                      dataKey="leadType"
-                      tick={{ fontSize: 12, fill: '#666' }}
-                      axisLine={{ stroke: '#e0e0e0' }}
-                      label={{ value: 'Lead Type', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
-                      domain={['dataMin', 'dataMax']}
-                      padding={{ left: 30, right: 30 }}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12, fill: '#666' }}
-                      axisLine={{ stroke: '#e0e0e0' }}
-                      label={{ value: 'Conversion Rate (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                      formatter={(value, name, props) => {
-                        const data = props.payload
-                        if (name === 'activeConversion') {
-                          return [`${value}% (${data.activeCount} leads)`, 'Active Conversion']
-                        } else if (name === 'inactiveConversion') {
-                          return [`${value}% (${data.inactiveCount} leads)`, 'Inactive Conversion']
-                        }
-                        return [`${value}%`, name]
-                      }}
-                    />
-                    <Legend align="right" verticalAlign="top" wrapperStyle={{ paddingBottom: '20px' }} />
-                    <Bar dataKey="activeConversion" fill="#10b981" name="Active Conversion" />
-                    <Bar dataKey="inactiveConversion" fill="#f59e0b" name="Inactive Conversion" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Leads Per Customer Chart */}
-        <div className="mt-6">
-          <div className="border border-gray-200 rounded-lg bg-white">
-            <div className="p-6 pb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Average Leads Needed to Acquire One Customer</h3>
-            </div>
-            <div className="px-6 pb-6">
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={[
-                    { leadType: 'Referrals', leadsPerCustomer: 2.04, totalLeads: 1000, activeCustomers: 491 },
-                    { leadType: 'Ads', leadsPerCustomer: 3.75, totalLeads: 1000, activeCustomers: 267 },
-                    { leadType: 'Third Party', leadsPerCustomer: 5.00, totalLeads: 1000, activeCustomers: 200 },
-                  ]} margin={{ top: 20, right: 30, left: 60, bottom: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis
-                      dataKey="leadType"
-                      tick={{ fontSize: 12, fill: '#666' }}
-                      axisLine={{ stroke: '#e0e0e0' }}
-                      label={{ value: 'Lead Type', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
-                      domain={['dataMin', 'dataMax']}
-                      padding={{ left: 30, right: 30 }}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12, fill: '#666' }}
-                      axisLine={{ stroke: '#e0e0e0' }}
-                      label={{ value: 'Leads Per Customer', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                      formatter={(value) => [`${value} leads`]}
-                    />
-                    <Bar dataKey="leadsPerCustomer" fill="#8b5cf6" name="Leads Per Customer">
-                      {[
-                        { leadType: 'Referrals', leadsPerCustomer: 2.04, totalLeads: 1000, activeCustomers: 491 },
-                        { leadType: 'Ads', leadsPerCustomer: 3.75, totalLeads: 1000, activeCustomers: 267 },
-                        { leadType: 'Third Party', leadsPerCustomer: 5.00, totalLeads: 1000, activeCustomers: 200 },
-                      ].map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={index === 0 ? '#8b5cf6' : index === 1 ? '#10b981' : '#f59e0b'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-        </div>
-        </TabsContent>
-
-        <TabsContent value="individual" className="mt-6">
-          {/* Individual Carrier Section */}
-          <div className="mb-6">
-            <Select value={selectedCarrier} onValueChange={setSelectedCarrier}>
-              <SelectTrigger className="w-full max-w-md text-black bg-white border-gray-300">
-                <SelectValue placeholder="Select a carrier" />
-              </SelectTrigger>
-              <SelectContent className="bg-white border-gray-300">
-                {persistencyData.carriers?.map((carrier) => (
-                  <SelectItem key={carrier.carrier} value={carrier.carrier} className="text-black hover:bg-gray-100">
-                    {carrier.carrier}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {selectedCarrier && persistencyData.carriers?.map((carrier) => {
-            if (carrier.carrier !== selectedCarrier) return null
-            return (
-        <div key={carrier.carrier} className="mt-6">
-          {/* Carrier Metrics */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div className="border border-gray-200 rounded-lg p-6 bg-white">
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium text-gray-600">Persistency Rate</h3>
-                <p className="text-3xl font-bold text-gray-900">{carrier.persistencyRate || 0}%</p>
-                <p className="text-sm text-gray-600">All Time</p>
-              </div>
-            </div>
-            <div className="border border-gray-200 rounded-lg p-6 bg-white">
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium text-gray-600">Total Policies</h3>
-                <p className="text-3xl font-bold text-gray-900">{(carrier.totalPolicies || 0).toLocaleString()}</p>
-                <p className="text-sm text-gray-600">All Time</p>
-              </div>
-            </div>
-            <div className="border border-gray-200 rounded-lg p-6 bg-white">
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium text-gray-600">Active Policies</h3>
-                <p className="text-3xl font-bold text-gray-900">
-                  {(carrier.timeRanges?.All?.positiveCount || 0).toLocaleString()}
-                </p>
-                <p className="text-sm text-gray-600">All Time</p>
-              </div>
-            </div>
-            <div className="border border-gray-200 rounded-lg p-6 bg-white">
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium text-gray-600">Inactive Policies</h3>
-                <p className="text-3xl font-bold text-gray-900">
-                  {(carrier.timeRanges?.All?.negativeCount || 0).toLocaleString()}
-                </p>
-                <p className="text-sm text-gray-600">All Time</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Carrier Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Status Breakdown Pie Chart */}
-            <div className="border border-gray-200 rounded-lg bg-white">
-              <div className="p-6 pb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Status Breakdown</h3>
-              </div>
-              <div className="px-6 pb-6">
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={getStatusBreakdownData(carrier, "All")}
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={80}
-                        dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {getStatusBreakdownData(carrier, "All").map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'white',
-                          border: '1px solid #e0e0e0',
-                          borderRadius: '8px',
-                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                        }}
-                        formatter={(value) => [value, 'Policies']}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-
-            {/* Persistency Over Time */}
-            {getCarrierPersistencyData(carrier) && (
-              <div className="border border-gray-200 rounded-lg bg-white">
-                <div className="p-6 pb-4">
-                  <h3 className="text-lg font-semibold text-gray-900">Persistency Over Time</h3>
-                </div>
-                <div className="px-6 pb-6">
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getCarrierPersistencyData(carrier) || []} margin={{ top: 20, right: 30, left: 80, bottom: 40 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis
-                          dataKey="period"
-                          tick={{ fontSize: 12, fill: '#666' }}
-                          axisLine={{ stroke: '#e0e0e0' }}
-                          label={{ value: 'Date Range', position: 'insideBottom', offset: -10, style: { textAnchor: 'middle', fill: '#666' } }}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 12, fill: '#666' }}
-                          axisLine={{ stroke: '#e0e0e0' }}
-                          label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: '#666' } }}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: 'white',
-                            border: '1px solid #e0e0e0',
-                            borderRadius: '8px',
-                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                          }}
-                          formatter={(value) => [
-                            `${value}%`,
-                            'Persistency Rate'
-                          ]}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="persistency"
-                          stroke="#8b5cf6"
-                          strokeWidth={2}
-                          dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 3 }}
-                          activeDot={{ r: 5, stroke: '#8b5cf6', strokeWidth: 2 }}
-                          name="Persistency Rate"
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-            )
-          })}
-        </TabsContent>
-
-      </Tabs>
-      </div>
-
-      {/* Upload Policy Reports Modal */}
-      <UploadPolicyReportsModal
-        isOpen={isUploadModalOpen}
-        onClose={() => setIsUploadModalOpen(false)}
-      />
-    </div>
-  )
+function parsePeriodToIndex(period: string): number {
+	const [y, m] = period.split("-").map(Number)
+	return y * 12 + (m - 1)
 }
+
+function getLastNPeriods(series: ReadonlyArray<{ period: string }>, endPeriod: string, n: number | "all") {
+	if (n === "all") return Array.from(new Set(series.map((s) => s.period)))
+	const endIdx = parsePeriodToIndex(endPeriod)
+	const unique = Array.from(new Set(series.map((s) => s.period)))
+	const filtered = unique.filter((p) => endIdx - parsePeriodToIndex(p) < n)
+	return filtered
+}
+
+function numberWithCommas(n: number) {
+	return n.toLocaleString()
+}
+
+function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
+	const rad = (angleDeg - 90) * (Math.PI / 180)
+	return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }
+}
+
+function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
+	const start = polarToCartesian(cx, cy, r, endAngle)
+	const end = polarToCartesian(cx, cy, r, startAngle)
+	const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1
+	return [`M ${cx} ${cy}`, `L ${start.x} ${start.y}`, `A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`, "Z"].join(" ")
+}
+
+function describeDonutArc(cx: number, cy: number, outerR: number, innerR: number, startAngle: number, endAngle: number) {
+	const outerStart = polarToCartesian(cx, cy, outerR, endAngle)
+	const outerEnd = polarToCartesian(cx, cy, outerR, startAngle)
+	const innerStart = polarToCartesian(cx, cy, innerR, startAngle)
+	const innerEnd = polarToCartesian(cx, cy, innerR, endAngle)
+	const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1
+	return [
+		`M ${outerStart.x} ${outerStart.y}`,
+		`A ${outerR} ${outerR} 0 ${largeArcFlag} 0 ${outerEnd.x} ${outerEnd.y}`,
+		`L ${innerStart.x} ${innerStart.y}`,
+		`A ${innerR} ${innerR} 0 ${largeArcFlag} 1 ${innerEnd.x} ${innerEnd.y}`,
+		"Z"
+	].join(" ")
+}
+
+type AnalyticsTestValue = typeof analytics_test_value
+
+export default function AnalyticsTestPage() {
+	const [groupBy, setGroupBy] = React.useState("carrier")
+	const [trendMetric, setTrendMetric] = React.useState("persistency")
+	const [timeWindow, setTimeWindow] = React.useState<"3" | "6" | "9" | "all">("3")
+	const [carrierFilter, setCarrierFilter] = React.useState<string>("ALL")
+	const [selectedCarrier, setSelectedCarrier] = React.useState<string | null>(null)
+	const [hoverInfo, setHoverInfo] = React.useState<null | { x: number; y: number; label: string; submitted: number; sharePct: number; persistencyPct: number; active: number }>(null)
+	const [hoverStatusInfo, setHoverStatusInfo] = React.useState<null | { x: number; y: number; status: string; count: number; pct: number }>(null)
+	const [hoverBreakdownInfo, setHoverBreakdownInfo] = React.useState<null | { x: number; y: number; label: string; value: number; pct: number }>(null)
+	const [hoverPersistencyInfo, setHoverPersistencyInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
+	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; avgPremium?: number }>(null)
+
+	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
+	React.useEffect(() => {
+		let isMounted = true
+		;(async () => {
+			try {
+                console.log('hello gindha')
+				const supabase = createClient()
+				const { data: auth } = await supabase.auth.getUser()
+				const userId = auth?.user?.id
+				if (!userId) return
+                console.log("userId", userId)
+
+				const { data: userRow, error: userError } = await supabase
+					.from("users")
+					.select("agency_id")
+					.eq("auth_user_id", userId)
+					.single()
+				if (userError || !userRow?.agency_id) return
+                console.log("userRow", userRow)
+
+				const { data: rpcData, error: rpcError } = await supabase
+					.rpc("get_analytics_from_deals_with_agency_id", { p_agency_id: userRow.agency_id })
+				if (rpcError || !rpcData) return
+
+                console.log("rpcData", rpcData)
+                console.log("rpcError", rpcError)
+                console.log("userRow", userRow)
+                console.log("agency_id", userRow.agency_id)
+
+				if (isMounted) setAnalyticsData(rpcData as AnalyticsTestValue)
+			} catch (_) {
+				// swallow for now; can add toast/logging later
+			}
+		})()
+		return () => { isMounted = false }
+	}, [])
+
+	const isLoading = !_analyticsData
+	const analyticsData = _analyticsData as AnalyticsTestValue | null
+
+	const carriers = React.useMemo(() => ["ALL", ...(_analyticsData?.meta.carriers ?? [])], [_analyticsData])
+
+	const n: number | "all" = timeWindow === "all" ? "all" : Number(timeWindow)
+	const periods = React.useMemo(() => {
+		if (!_analyticsData) return [] as string[]
+		return getLastNPeriods(_analyticsData.series, _analyticsData.meta.period_end, n)
+	}, [_analyticsData, timeWindow])
+
+	// Aggregations per carrier for current window
+	const byCarrierAgg = React.useMemo(() => {
+		const agg: Record<string, { submitted: number; active: number; inactive: number }> = {}
+		for (const c of (_analyticsData?.meta.carriers ?? [])) agg[c] = { submitted: 0, active: 0, inactive: 0 }
+		for (const row of (_analyticsData?.series ?? [])) {
+			if (!periods.includes(row.period)) continue
+			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) continue
+			agg[row.carrier].submitted += row.submitted
+			agg[row.carrier].active += row.active
+			agg[row.carrier].inactive += row.inactive
+		}
+		return agg
+	}, [periods, carrierFilter])
+
+	const totalSubmitted = React.useMemo(() => Object.values(byCarrierAgg).reduce((a, s) => a + s.submitted, 0), [byCarrierAgg])
+	
+	// Calculate top stats based on selected carrier and time window
+	const topStats = React.useMemo(() => {
+		let totalActive = 0
+		let totalInactive = 0
+		let totalSubmittedValue = 0
+		
+		for (const row of (_analyticsData?.series ?? [])) {
+			if (!periods.includes(row.period)) continue
+			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) continue
+			totalActive += row.active || 0
+			totalInactive += row.inactive || 0
+			totalSubmittedValue += row.submitted || 0
+		}
+		
+		const persistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
+		
+		return {
+			persistency: persistency,
+			submitted: totalSubmittedValue,
+			active: totalActive,
+		}
+	}, [periods, carrierFilter])
+
+const BIG_PALETTE = [
+    "#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#10b981",
+    "#ec4899", "#14b8a6", "#f97316", "#a855f7", "#3b82f6", "#22c55e",
+    "#eab308", "#06b6d4", "#f43f5e", "#84cc16", "#6366f1", "#059669",
+    "#d946ef", "#0ea5e9", "#fb923c", "#34d399", "#60a5fa", "#f472b6"
+]
+
+function colorForLabel(label: string, explicitIndex?: number): string {
+    if (typeof explicitIndex === "number") return BIG_PALETTE[explicitIndex % BIG_PALETTE.length]
+    let hash = 0
+    for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) >>> 0
+    return BIG_PALETTE[hash % BIG_PALETTE.length]
+}
+
+function displayStateLabel(stateCode: string): string {
+    return stateCode === "UNK" ? "Unknown" : stateCode
+}
+
+	const wedges = React.useMemo(() => {
+		let cursor = 0
+    return (_analyticsData?.meta.carriers ?? [])
+            .map((label, idx) => ({
+                label,
+                value: byCarrierAgg[label].submitted,
+                color: colorForLabel(label, idx),
+            }))
+			.filter((w) => w.value > 0)
+			.map((w) => {
+				const pct = totalSubmitted > 0 ? w.value / totalSubmitted : 0
+				const ang = pct * 360
+				const piece = { ...w, start: cursor, end: cursor + ang, pct: Math.round(pct * 1000) / 10 }
+				cursor += ang
+				return piece
+			})
+	}, [byCarrierAgg, totalSubmitted])
+
+	// Determine if we should show detail view
+	const detailCarrier = React.useMemo(() => {
+		if (selectedCarrier) return selectedCarrier
+		if (carrierFilter !== "ALL" && groupBy === "carrier") return carrierFilter
+		return null
+	}, [selectedCarrier, carrierFilter, groupBy])
+
+	// Helper to get window key
+	const windowKey = React.useMemo(() => timeWindow === "all" ? "all_time" : `${timeWindow}m` as "3m" | "6m" | "9m" | "all_time", [timeWindow])
+
+	// Status breakdown for detail view (when groupBy === "carrier")
+	const statusBreakdown = React.useMemo(() => {
+		if (!detailCarrier || groupBy !== "carrier") return null
+		const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
+		if (!byCarrier || !(detailCarrier in byCarrier)) return null
+		const carrierData = byCarrier[detailCarrier as keyof typeof byCarrier]?.status?.[windowKey]
+		if (!carrierData) return null
+
+		// Use large palette with deterministic mapping so we have many distinct colors
+		const colorForStatus = (status: string) => colorForLabel(status)
+
+		// Only include statuses that exist in the breakdowns_status_over_time data for this carrier
+		const entries: { status: string; count: number; color: string }[] = []
+		
+		// Add statuses from breakdowns_status_over_time - only if they exist as keys in carrierData
+		Object.keys(carrierData).forEach((status) => {
+			const count = carrierData[status as keyof typeof carrierData] as number | undefined
+			if (count !== undefined && count >= 0) {
+				entries.push({
+					status,
+					count,
+					color: colorForStatus(status),
+				})
+			}
+		})
+
+		const total = entries.reduce((sum, e) => sum + e.count, 0)
+		
+		// Filter entries with count > 0 for donut chart
+		const entriesWithData = entries.filter(e => e.count > 0)
+		
+		let cursor = 0
+		const donutWedges = entriesWithData.map((e) => {
+			const pct = total > 0 ? e.count / total : 0
+			const ang = pct * 360
+			const piece = {
+				...e,
+				start: cursor,
+				end: cursor + ang,
+				pct: Math.round(pct * 1000) / 10,
+			}
+			cursor += ang
+			return piece
+		})
+
+		// Calculate percentages for all entries for legend
+		const allEntries = entries.map(e => ({
+			...e,
+			pct: total > 0 ? Math.round((e.count / total) * 1000) / 10 : 0,
+		}))
+
+		return { wedges: donutWedges, legendEntries: allEntries, total }
+	}, [detailCarrier, timeWindow, windowKey, groupBy])
+
+	// State breakdown for detail view (when groupBy === "state")
+	const stateBreakdown = React.useMemo(() => {
+		if (groupBy !== "state") return null
+		
+        const stateColors: Record<string, string> = {
+            CA: colorForLabel("CA"),
+            TX: colorForLabel("TX"),
+            FL: colorForLabel("FL"),
+            NY: colorForLabel("NY"),
+            AZ: colorForLabel("AZ"),
+        }
+
+		const entries: { label: string; value: number; color: string }[] = []
+		
+		if (carrierFilter === "ALL") {
+			// Sum across all carriers
+			const stateTotals: Record<string, { submitted: number }> = {}
+			
+			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
+				const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
+				if (!byCarrier || !(carrier in byCarrier)) continue
+				const carrierData = byCarrier[carrier as keyof typeof byCarrier]
+				if (!carrierData) continue
+				const stateData = carrierData.state?.[windowKey]
+				if (!stateData) continue
+				
+				for (const stateEntry of stateData) {
+					if (!stateTotals[stateEntry.state]) {
+						stateTotals[stateEntry.state] = { submitted: 0 }
+					}
+					stateTotals[stateEntry.state].submitted += stateEntry.submitted
+				}
+			}
+			
+            Object.entries(stateTotals).forEach(([state, data]) => {
+				if (data.submitted > 0) {
+                    const label = displayStateLabel(state)
+					entries.push({
+                        label,
+						value: data.submitted,
+                        color: stateColors[label] || colorForLabel(label),
+					})
+				}
+			})
+		} else {
+			// Single carrier
+			const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
+			if (!byCarrier || !(carrierFilter in byCarrier)) return null
+			const carrierData = byCarrier[carrierFilter as keyof typeof byCarrier]
+			if (!carrierData) return null
+			const stateData = carrierData.state?.[windowKey]
+			if (!stateData) return null
+			
+            stateData.forEach((entry: { state: string; submitted: number }) => {
+				if (entry.submitted > 0) {
+                    const label = displayStateLabel(entry.state)
+					entries.push({
+                        label,
+						value: entry.submitted,
+                        color: stateColors[label] || colorForLabel(label),
+					})
+				}
+			})
+		}
+
+		const total = entries.reduce((sum, e) => sum + e.value, 0)
+		
+		let cursor = 0
+		const wedges = entries.map((e) => {
+			const pct = total > 0 ? e.value / total : 0
+			const ang = pct * 360
+			const piece = {
+				...e,
+				start: cursor,
+				end: cursor + ang,
+				pct: Math.round(pct * 1000) / 10,
+			}
+			cursor += ang
+			return piece
+		})
+
+		return { wedges, total }
+	}, [carrierFilter, windowKey, groupBy])
+
+	// Age breakdown for detail view (when groupBy === "age")
+	const ageBreakdown = React.useMemo(() => {
+		if (groupBy !== "age") return null
+		
+        const ageColors: Record<string, string> = {
+            "18-29": colorForLabel("18-29"),
+            "30-44": colorForLabel("30-44"),
+            "45-64": colorForLabel("45-64"),
+            "65+": colorForLabel("65+"),
+        }
+
+		const entries: { label: string; value: number; color: string }[] = []
+		
+		if (carrierFilter === "ALL") {
+			// Sum across all carriers
+			const ageTotals: Record<string, { submitted: number }> = {}
+			
+			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
+				const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
+				if (!byCarrier || !(carrier in byCarrier)) continue
+				const carrierData = byCarrier[carrier as keyof typeof byCarrier]
+				if (!carrierData) continue
+				const ageData = carrierData.age_band?.[windowKey]
+				if (!ageData) continue
+				
+				for (const ageEntry of ageData) {
+					if (!ageTotals[ageEntry.age_band]) {
+						ageTotals[ageEntry.age_band] = { submitted: 0 }
+					}
+					ageTotals[ageEntry.age_band].submitted += ageEntry.submitted
+				}
+			}
+			
+			Object.entries(ageTotals).forEach(([ageBand, data]) => {
+				if (data.submitted > 0) {
+					entries.push({
+						label: ageBand,
+						value: data.submitted,
+                        color: ageColors[ageBand] || colorForLabel(ageBand),
+					})
+				}
+			})
+		} else {
+			// Single carrier
+			const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
+			if (!byCarrier || !(carrierFilter in byCarrier)) return null
+			const carrierData = byCarrier[carrierFilter as keyof typeof byCarrier]
+			if (!carrierData) return null
+			const ageData = carrierData.age_band?.[windowKey]
+			if (!ageData) return null
+			
+			ageData.forEach((entry: { age_band: string; submitted: number }) => {
+				if (entry.submitted > 0) {
+					entries.push({
+						label: entry.age_band,
+						value: entry.submitted,
+                        color: ageColors[entry.age_band] || colorForLabel(entry.age_band),
+					})
+				}
+			})
+		}
+
+		const total = entries.reduce((sum, e) => sum + e.value, 0)
+		
+		let cursor = 0
+		const wedges = entries.map((e) => {
+			const pct = total > 0 ? e.value / total : 0
+			const ang = pct * 360
+			const piece = {
+				...e,
+				start: cursor,
+				end: cursor + ang,
+				pct: Math.round(pct * 1000) / 10,
+			}
+			cursor += ang
+			return piece
+		})
+
+		return { wedges, total }
+	}, [carrierFilter, windowKey, groupBy])
+
+	// Persistency breakdown for detail view (when groupBy === "persistency")
+	const persistencyBreakdown = React.useMemo(() => {
+		if (groupBy !== "persistency") return null
+		
+		const persistencyColors: Record<string, string> = {
+			"Active": "#10b981",  // Green
+			"Inactive": "#ef4444", // Red
+		}
+
+		let active = 0
+		let inactive = 0
+
+		if (carrierFilter === "ALL") {
+			// Sum across all carriers
+			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
+				const windowsByCarrier = _analyticsData?.windows_by_carrier
+				if (!windowsByCarrier || !(carrier in windowsByCarrier)) continue
+				const carrierData = windowsByCarrier[carrier as keyof typeof windowsByCarrier]
+				if (!carrierData) continue
+				const windowData = carrierData[windowKey]
+				if (!windowData) continue
+				active += windowData.active || 0
+				inactive += windowData.inactive || 0
+			}
+		} else {
+			// Single carrier
+			const windowsByCarrier = _analyticsData?.windows_by_carrier
+			if (!windowsByCarrier || !(carrierFilter in windowsByCarrier)) return null
+			const carrierData = windowsByCarrier[carrierFilter as keyof typeof windowsByCarrier]
+			if (!carrierData) return null
+			const windowData = carrierData[windowKey]
+			if (!windowData) return null
+			active = windowData.active || 0
+			inactive = windowData.inactive || 0
+		}
+
+		const entries: { label: string; count: number; color: string }[] = [
+			{ label: "Active", count: active, color: persistencyColors["Active"] },
+			{ label: "Inactive", count: inactive, color: persistencyColors["Inactive"] },
+		].filter(e => e.count > 0)
+
+		const total = active + inactive
+		
+		let cursor = 0
+		const wedges = entries.map((e) => {
+			const pct = total > 0 ? e.count / total : 0
+			const ang = pct * 360
+			const piece = {
+				...e,
+				start: cursor,
+				end: cursor + ang,
+				pct: Math.round(pct * 1000) / 10,
+			}
+			cursor += ang
+			return piece
+		})
+
+		return { wedges, total, active, inactive }
+	}, [carrierFilter, windowKey, groupBy])
+
+	// Calculate trend data for line chart
+	const trendData = React.useMemo(() => {
+		if (trendMetric === "all") {
+			// For "all", we need submitted and active data
+			const filteredSeries = (_analyticsData?.series ?? []).filter(row => {
+				if (!periods.includes(row.period)) return false
+				if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) return false
+				return true
+			})
+
+			const periodData: Record<string, { 
+				period: string
+				submitted: { value: number; carriers?: Record<string, number> }
+				active: { value: number; carriers?: Record<string, number> }
+			}> = {}
+
+			if (carrierFilter === "ALL") {
+				for (const row of filteredSeries) {
+					if (!periodData[row.period]) {
+						periodData[row.period] = {
+							period: row.period,
+							submitted: { value: 0, carriers: {} },
+							active: { value: 0, carriers: {} },
+						}
+					}
+					if (!periodData[row.period].submitted.carriers) {
+						periodData[row.period].submitted.carriers = {}
+					}
+					if (!periodData[row.period].active.carriers) {
+						periodData[row.period].active.carriers = {}
+					}
+					periodData[row.period].submitted.carriers![row.carrier] = row.submitted
+					periodData[row.period].active.carriers![row.carrier] = row.active
+				}
+			} else {
+				for (const row of filteredSeries) {
+					if (!periodData[row.period]) {
+						periodData[row.period] = {
+							period: row.period,
+							submitted: { value: row.submitted },
+							active: { value: row.active },
+						}
+					}
+				}
+			}
+
+			const sortedPeriods = Object.values(periodData).sort((a, b) => {
+				const aIdx = parsePeriodToIndex(a.period)
+				const bIdx = parsePeriodToIndex(b.period)
+				return aIdx - bIdx
+			})
+
+			return sortedPeriods as any
+		}
+
+		// Filter series data by periods and carrier filter
+		const filteredSeries = (_analyticsData?.series ?? []).filter(row => {
+			if (!periods.includes(row.period)) return false
+			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) return false
+			return true
+		})
+
+		// Determine which field to extract based on metric
+		const getValue = (row: { persistency: number; submitted: number; active: number; avg_premium_submitted: number }) => {
+			switch (trendMetric) {
+				case "persistency":
+					return row.persistency
+				case "submitted":
+					return row.submitted
+				case "active":
+					return row.active
+				case "avgprem":
+					return row.avg_premium_submitted
+				default:
+					return 0
+			}
+		}
+
+		// Group by period
+		const periodData: Record<string, { period: string; value: number; carriers?: Record<string, number> }> = {}
+
+		if (carrierFilter === "ALL") {
+			// Group by period, then by carrier
+			for (const row of filteredSeries) {
+				if (!periodData[row.period]) {
+					periodData[row.period] = {
+						period: row.period,
+						value: 0,
+						carriers: {},
+					}
+				}
+				if (!periodData[row.period].carriers) {
+					periodData[row.period].carriers = {}
+				}
+				periodData[row.period].carriers![row.carrier] = getValue(row)
+			}
+		} else {
+			// Single carrier - just get the values
+			for (const row of filteredSeries) {
+				if (!periodData[row.period]) {
+					periodData[row.period] = {
+						period: row.period,
+						value: getValue(row),
+					}
+				}
+			}
+		}
+
+		// Sort periods chronologically
+		const sortedPeriods = Object.values(periodData).sort((a, b) => {
+			const aIdx = parsePeriodToIndex(a.period)
+			const bIdx = parsePeriodToIndex(b.period)
+			return aIdx - bIdx
+		})
+
+		return sortedPeriods
+	}, [periods, carrierFilter, trendMetric])
+
+	return (
+		isLoading ? (
+			<div className="flex min-h-screen w-full items-center justify-center p-6">
+				<div className="text-sm text-muted-foreground">Loading analytics…</div>
+			</div>
+		) : (
+			<div className="flex w-full flex-col gap-6 p-6">
+			{/* Header */}
+			<div className="flex items-center justify-between">
+				<h1 className="text-xl font-semibold">Agency Analytics</h1>
+
+				<div className="flex items-center gap-3">
+					{/* Time window: 3,6,9,All Time */}
+					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
+						<SelectTrigger className="w-[140px]"><SelectValue placeholder="3 Months" /></SelectTrigger>
+						<SelectContent>
+							<SelectItem value="3">3 Months</SelectItem>
+							<SelectItem value="6">6 Months</SelectItem>
+							<SelectItem value="9">9 Months</SelectItem>
+							<SelectItem value="all">All Time</SelectItem>
+						</SelectContent>
+					</Select>
+
+					{/* Carrier selector sourced from JSON */}
+					<Select value={carrierFilter} onValueChange={(value) => {
+						setCarrierFilter(value)
+						if (value === "ALL") {
+							setSelectedCarrier(null)
+						} else if (groupBy === "carrier") {
+							setSelectedCarrier(value)
+						}
+					}}>
+						<SelectTrigger className="w-[200px]"><SelectValue placeholder="All Carriers" /></SelectTrigger>
+						<SelectContent>
+							{carriers.map((c) => (
+								<SelectItem key={c} value={c}>{c === "ALL" ? "All Carriers" : c}</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+
+					{/* Downlines: single option for now */}
+					<Select value="all" onValueChange={() => {}}>
+						<SelectTrigger className="w-[160px]"><SelectValue placeholder="All Downlines" /></SelectTrigger>
+						<SelectContent>
+							<SelectItem value="all">All Downlines</SelectItem>
+						</SelectContent>
+					</Select>
+
+					<Button variant="blue">Upload Reports</Button>
+				</div>
+			</div>
+
+			{/* KPI tiles centered to middle 1/3rd */}
+			<div className="flex w-full justify-center">
+				<div className="grid w-full max-w-3xl grid-cols-3 gap-3">
+					<Card>
+						<CardContent className="p-4">
+							<div className="text-xs text-muted-foreground">Persistency</div>
+							<div className="text-lg font-semibold">{(topStats.persistency * 100).toFixed(2)}%</div>
+						</CardContent>
+					</Card>
+					<Card>
+						<CardContent className="p-4">
+							<div className="text-xs text-muted-foreground">Submitted</div>
+							<div className="text-lg font-semibold">{numberWithCommas(topStats.submitted)}</div>
+						</CardContent>
+					</Card>
+					<Card>
+						<CardContent className="p-4">
+							<div className="text-xs text-muted-foreground">Active</div>
+							<div className="text-lg font-semibold">{numberWithCommas(topStats.active)}</div>
+						</CardContent>
+					</Card>
+				</div>
+			</div>
+
+			{/* Total Submitted Business / Status Breakdown */}
+			<Card>
+				<CardContent className="p-4 sm:p-6">
+					{(detailCarrier || groupBy === "state" || groupBy === "age" || groupBy === "persistency") ? (
+						// Breakdown View (Status, State, Age, or Persistency)
+						<>
+							<div className="mb-4 flex items-center gap-3">
+								<div className="text-xs font-medium tracking-wide text-muted-foreground">
+									{groupBy === "carrier" && detailCarrier
+										? `${detailCarrier === carrierFilter && carrierFilter !== "ALL" ? "COMBINED" : detailCarrier.toUpperCase()} - STATUS BREAKDOWN`
+										: groupBy === "state"
+										? `${carrierFilter === "ALL" ? "ALL CARRIERS" : carrierFilter.toUpperCase()} - BY STATE`
+										: groupBy === "age"
+										? `${carrierFilter === "ALL" ? "ALL CARRIERS" : carrierFilter.toUpperCase()} - BY AGE`
+										: groupBy === "persistency"
+										? `${carrierFilter === "ALL" ? "ALL CARRIERS" : carrierFilter.toUpperCase()} - BY PERSISTENCY`
+										: "BREAKDOWN"}
+								</div>
+								{(groupBy === "carrier" && detailCarrier) && (
+									<Button
+										onClick={() => {
+											setSelectedCarrier(null)
+											setCarrierFilter("ALL")
+										}}
+										variant="outline"
+										size="sm"
+										className="h-6 text-xs px-2"
+									>
+										Back to Carriers
+									</Button>
+								)}
+							</div>
+
+							{/* Tabs */}
+							<div className="mb-4 flex flex-wrap gap-2 justify-center">
+								{[
+									{ key: "carrier", label: "By Carrier" },
+									{ key: "state", label: "By State" },
+									{ key: "age", label: "By Age" },
+									{ key: "persistency", label: "By Persistency" },
+								].map((g) => (
+									<Button
+										key={g.key}
+										variant={groupBy === g.key ? "blue" : "outline"}
+										size="sm"
+										onClick={() => {
+											setGroupBy(g.key)
+											if (g.key !== "carrier") {
+												setSelectedCarrier(null)
+											}
+										}}
+										className="rounded-full"
+									>
+										{g.label}
+									</Button>
+								))}
+							</div>
+
+							{/* Render breakdown charts based on groupBy */}
+							{groupBy === "carrier" && statusBreakdown && (
+								<div className="flex flex-col items-center justify-center gap-6">
+									{/* Donut Chart */}
+									<div className="relative h-[320px] w-[320px]">
+										<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
+											<defs>
+												<filter id="shadow-status" x="-20%" y="-20%" width="140%" height="140%">
+													<feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
+												</filter>
+												<filter id="darken-status">
+													<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
+												</filter>
+											</defs>
+											<circle cx={160} cy={160} r={100} fill="#fff" />
+											<g filter="url(#shadow-status)">
+												{statusBreakdown.wedges.map((w, idx) => {
+													const path = describeDonutArc(160, 160, 150, 100, w.start, w.end)
+													const mid = (w.start + w.end) / 2
+													const center = polarToCartesian(160, 160, 125, mid)
+													const isHovered = hoverStatusInfo?.status === w.status
+													const isOtherHovered = hoverStatusInfo !== null && !isHovered
+
+													return (
+														<path
+															key={w.status}
+															d={path}
+															fill={w.color}
+															stroke="#fff"
+															strokeWidth={2}
+															opacity={isOtherHovered ? 0.4 : 1}
+															filter={isHovered ? "url(#darken-status)" : undefined}
+															style={{
+																transform: isHovered ? "scale(1.05)" : "scale(1)",
+																transformOrigin: "160px 160px",
+																transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+																animationDelay: `${idx * 0.1}s`,
+															}}
+															className="cursor-pointer pie-slice-animate"
+															onMouseEnter={() => setHoverStatusInfo({
+																x: center.x,
+																y: center.y,
+																status: w.status,
+																count: w.count,
+																pct: w.pct,
+															})}
+															onMouseLeave={() => setHoverStatusInfo(null)}
+														/>
+													)
+												})}
+											</g>
+										</svg>
+										{hoverStatusInfo && (
+											<div
+												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+												style={{ left: hoverStatusInfo.x, top: hoverStatusInfo.y }}
+											>
+												<div className="mb-1 text-sm font-semibold">{hoverStatusInfo.status}</div>
+												<div className="text-white/90">
+													{numberWithCommas(hoverStatusInfo.count)} ({hoverStatusInfo.pct}%)
+												</div>
+											</div>
+										)}
+									</div>
+
+									{/* Status Legend */}
+									<div className="flex flex-wrap justify-center gap-4 mt-4">
+										{statusBreakdown.legendEntries.length === 0 ? (
+											<div className="text-sm text-muted-foreground">No data in range</div>
+										) : (
+											statusBreakdown.legendEntries.map((w) => (
+												<div key={w.status} className="flex items-center gap-2 text-sm">
+													<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: w.color }} />
+													<span>{w.status} ({w.pct}%)</span>
+												</div>
+											))
+										)}
+									</div>
+								</div>
+							)}
+
+							{/* State Breakdown */}
+							{groupBy === "state" && stateBreakdown && (
+								<div className="flex flex-col items-center justify-center gap-6">
+									<div className="relative h-[320px] w-[320px]">
+										<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
+											<defs>
+												<filter id="shadow-breakdown" x="-20%" y="-20%" width="140%" height="140%">
+													<feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
+												</filter>
+												<filter id="darken-breakdown">
+													<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
+												</filter>
+											</defs>
+											<g filter="url(#shadow-breakdown)">
+												{stateBreakdown.wedges.map((w, idx) => {
+													const path = describeArc(160, 160, 150, w.start, w.end)
+													const mid = (w.start + w.end) / 2
+													const center = polarToCartesian(160, 160, 90, mid)
+													const isHovered = hoverBreakdownInfo?.label === w.label
+													const isOtherHovered = hoverBreakdownInfo !== null && !isHovered
+
+													return (
+														<path
+															key={w.label}
+															d={path}
+															fill={w.color}
+															stroke="#fff"
+															strokeWidth={2}
+															opacity={isOtherHovered ? 0.4 : 1}
+															filter={isHovered ? "url(#darken-breakdown)" : undefined}
+															style={{
+																transform: isHovered ? "scale(1.05)" : "scale(1)",
+																transformOrigin: "160px 160px",
+																transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+																animationDelay: `${idx * 0.1}s`,
+															}}
+															className="cursor-pointer pie-slice-animate"
+															onMouseEnter={() => setHoverBreakdownInfo({
+																x: center.x,
+																y: center.y,
+																label: w.label,
+																value: w.value,
+																pct: w.pct,
+															})}
+															onMouseLeave={() => setHoverBreakdownInfo(null)}
+														/>
+													)
+												})}
+											</g>
+										</svg>
+										{hoverBreakdownInfo && (
+											<div
+												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+												style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
+											>
+												<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
+												<div className="text-white/90">
+													{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
+												</div>
+											</div>
+										)}
+									</div>
+
+									<div className="flex flex-wrap justify-center gap-4 mt-4">
+										{stateBreakdown.wedges.length === 0 ? (
+											<div className="text-sm text-muted-foreground">No data in range</div>
+										) : (
+											stateBreakdown.wedges.map((w) => (
+												<div key={w.label} className="flex items-center gap-2 text-sm">
+													<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: w.color }} />
+													<span>{w.label} ({w.pct}%)</span>
+												</div>
+											))
+										)}
+									</div>
+								</div>
+							)}
+
+							{/* Age Breakdown */}
+							{groupBy === "age" && ageBreakdown && (
+								<div className="flex flex-col items-center justify-center gap-6">
+									<div className="relative h-[320px] w-[320px]">
+										<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
+											<defs>
+												<filter id="shadow-age" x="-20%" y="-20%" width="140%" height="140%">
+													<feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
+												</filter>
+												<filter id="darken-age">
+													<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
+												</filter>
+											</defs>
+											<g filter="url(#shadow-age)">
+												{ageBreakdown.wedges.map((w, idx) => {
+													const path = describeArc(160, 160, 150, w.start, w.end)
+													const mid = (w.start + w.end) / 2
+													const center = polarToCartesian(160, 160, 90, mid)
+													const isHovered = hoverBreakdownInfo?.label === w.label
+													const isOtherHovered = hoverBreakdownInfo !== null && !isHovered
+
+													return (
+														<path
+															key={w.label}
+															d={path}
+															fill={w.color}
+															stroke="#fff"
+															strokeWidth={2}
+															opacity={isOtherHovered ? 0.4 : 1}
+															filter={isHovered ? "url(#darken-age)" : undefined}
+															style={{
+																transform: isHovered ? "scale(1.05)" : "scale(1)",
+																transformOrigin: "160px 160px",
+																transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+																animationDelay: `${idx * 0.1}s`,
+															}}
+															className="cursor-pointer pie-slice-animate"
+															onMouseEnter={() => setHoverBreakdownInfo({
+																x: center.x,
+																y: center.y,
+																label: w.label,
+																value: w.value,
+																pct: w.pct,
+															})}
+															onMouseLeave={() => setHoverBreakdownInfo(null)}
+														/>
+													)
+												})}
+											</g>
+										</svg>
+										{hoverBreakdownInfo && (
+											<div
+												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+												style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
+											>
+												<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
+												<div className="text-white/90">
+													{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
+												</div>
+											</div>
+										)}
+									</div>
+
+									<div className="flex flex-wrap justify-center gap-4 mt-4">
+										{ageBreakdown.wedges.length === 0 ? (
+											<div className="text-sm text-muted-foreground">No data in range</div>
+										) : (
+											ageBreakdown.wedges.map((w) => (
+												<div key={w.label} className="flex items-center gap-2 text-sm">
+													<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: w.color }} />
+													<span>{w.label} ({w.pct}%)</span>
+												</div>
+											))
+										)}
+									</div>
+								</div>
+							)}
+
+							{/* Persistency Breakdown */}
+							{groupBy === "persistency" && persistencyBreakdown && (
+								<div className="flex flex-col items-center justify-center gap-6">
+									<div className="relative h-[320px] w-[320px]">
+										<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
+											<defs>
+												<filter id="shadow-persistency" x="-20%" y="-20%" width="140%" height="140%">
+													<feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
+												</filter>
+												<filter id="darken-persistency">
+													<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
+												</filter>
+											</defs>
+											<g filter="url(#shadow-persistency)">
+												{persistencyBreakdown.wedges.map((w, idx) => {
+													const path = describeArc(160, 160, 150, w.start, w.end)
+													const mid = (w.start + w.end) / 2
+													const center = polarToCartesian(160, 160, 90, mid)
+													const isHovered = hoverPersistencyInfo?.label === w.label
+													const isOtherHovered = hoverPersistencyInfo !== null && !isHovered
+
+													return (
+														<path
+															key={w.label}
+															d={path}
+															fill={w.color}
+															stroke="#fff"
+															strokeWidth={2}
+															opacity={isOtherHovered ? 0.4 : 1}
+															filter={isHovered ? "url(#darken-persistency)" : undefined}
+															style={{
+																transform: isHovered ? "scale(1.05)" : "scale(1)",
+																transformOrigin: "160px 160px",
+																transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+																animationDelay: `${idx * 0.1}s`,
+															}}
+															className="cursor-pointer pie-slice-animate"
+															onMouseEnter={() => setHoverPersistencyInfo({
+																x: center.x,
+																y: center.y,
+																label: w.label,
+																count: w.count,
+																pct: w.pct,
+															})}
+															onMouseLeave={() => setHoverPersistencyInfo(null)}
+														/>
+													)
+												})}
+											</g>
+										</svg>
+										{hoverPersistencyInfo && (
+											<div
+												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+												style={{ left: hoverPersistencyInfo.x, top: hoverPersistencyInfo.y }}
+											>
+												<div className="mb-1 text-sm font-semibold">{hoverPersistencyInfo.label}</div>
+												<div className="text-white/90">
+													{numberWithCommas(hoverPersistencyInfo.count)} ({hoverPersistencyInfo.pct}%)
+												</div>
+											</div>
+										)}
+									</div>
+
+									<div className="flex flex-wrap justify-center gap-4 mt-4">
+										{persistencyBreakdown.wedges.length === 0 ? (
+											<div className="text-sm text-muted-foreground">No data in range</div>
+										) : (
+											persistencyBreakdown.wedges.map((w) => (
+												<div key={w.label} className="flex items-center gap-2 text-sm">
+													<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: w.color }} />
+													<span>{w.label} ({w.pct}%)</span>
+												</div>
+											))
+										)}
+									</div>
+								</div>
+							)}
+						</>
+					) : (
+						// Carrier Pie Chart View
+						<>
+							<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">TOTAL SUBMITTED BUSINESS</div>
+
+							{/* Tabs */}
+							<div className="mb-4 flex flex-wrap gap-2 justify-center">
+								{[
+									{ key: "carrier", label: "By Carrier" },
+									{ key: "state", label: "By State" },
+									{ key: "age", label: "By Age" },
+									{ key: "persistency", label: "By Persistency" },
+								].map((g) => (
+									<Button
+										key={g.key}
+										variant={groupBy === g.key ? "blue" : "outline"}
+										size="sm"
+										onClick={() => setGroupBy(g.key)}
+										className="rounded-full"
+									>
+										{g.label}
+									</Button>
+								))}
+							</div>
+
+					<div className="flex flex-col items-center justify-center gap-6">
+						{/* SVG pie with hover */}
+						<div className="relative h-[320px] w-[320px]">
+							<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
+								<defs>
+									<filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+										<feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
+									</filter>
+									<filter id="darken">
+										<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
+									</filter>
+								</defs>
+								<g filter="url(#shadow)">
+									{wedges.map((w, idx) => {
+										const path = describeArc(160, 160, 150, w.start, w.end)
+										const mid = (w.start + w.end) / 2
+										const center = polarToCartesian(160, 160, 90, mid)
+										const agg = byCarrierAgg[w.label]
+										const persistencyPct = agg.active + agg.inactive > 0 ? (agg.active / (agg.active + agg.inactive)) * 100 : 0
+										const isHovered = hoverInfo?.label === w.label
+										const isOtherHovered = hoverInfo !== null && !isHovered
+										
+										return (
+											<path
+												key={w.label}
+												d={path}
+												fill={w.color}
+												stroke="#fff"
+												strokeWidth={2}
+												opacity={isOtherHovered ? 0.4 : 1}
+												filter={isHovered ? "url(#darken)" : undefined}
+												style={{
+													transform: isHovered ? "scale(1.05)" : "scale(1)",
+													transformOrigin: "160px 160px",
+													transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+													animationDelay: `${idx * 0.1}s`,
+												}}
+												className="cursor-pointer pie-slice-animate"
+												onMouseEnter={() => setHoverInfo({
+													x: center.x,
+													y: center.y,
+													label: w.label,
+													submitted: agg.submitted,
+													sharePct: w.pct,
+													persistencyPct: Math.round(persistencyPct * 10) / 10,
+													active: agg.active,
+												})}
+												onMouseLeave={() => setHoverInfo(null)}
+												onClick={() => {
+													setSelectedCarrier(w.label)
+													setCarrierFilter(w.label)
+													setGroupBy("carrier")
+												}}
+											/>
+										)
+									})}
+								</g>
+							</svg>
+							{hoverInfo && (
+								<div
+									className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+									style={{ left: hoverInfo.x, top: hoverInfo.y }}
+								>
+									<div className="mb-1 text-sm font-semibold">{hoverInfo.label}</div>
+									<div className="space-y-1">
+										<div className="flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-white/80" /><span>{numberWithCommas(hoverInfo.submitted)} Total Submitted</span></div>
+										<div className="text-white/90">{hoverInfo.sharePct}% of Total Business</div>
+										<div className="text-white/90">{hoverInfo.persistencyPct}% Persistency Rate</div>
+										<div className="text-white/90">{numberWithCommas(hoverInfo.active)} Active Policies</div>
+									</div>
+									<div className="mt-2 text-[10px] italic text-white/70">Click to see status breakdown</div>
+								</div>
+							)}
+						</div>
+
+						{/* Legend below chart */}
+						<div className="flex flex-wrap justify-center gap-4 mt-4">
+							{wedges.length === 0 ? (
+								<div className="text-sm text-muted-foreground">No data in range</div>
+							) : (
+								wedges.map((l) => (
+									<div key={l.label} className="flex items-center gap-2 text-sm">
+										<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: l.color }} />
+										<span>{l.label} ({l.pct}%)</span>
+									</div>
+								))
+							)}
+						</div>
+					</div>
+						</>
+					)}
+				</CardContent>
+			</Card>
+
+			{/* Performance Trends */}
+			<Card>
+				<CardContent className="p-4 sm:p-6">
+					<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">PERFORMANCE TRENDS</div>
+					<div className="mb-4 flex flex-wrap gap-2 justify-center">
+						{[
+							{ key: "persistency", label: "Persistency Rate" },
+							{ key: "submitted", label: "Submitted Volume" },
+							{ key: "active", label: "Active Policies" },
+							{ key: "avgprem", label: "Avg Premium" },
+							{ key: "all", label: "Show All" },
+						].map((m) => (
+							<Button key={m.key} variant={trendMetric === m.key ? "blue" : "outline"} size="sm" onClick={() => setTrendMetric(m.key)} className="rounded-full">{m.label}</Button>
+						))}
+					</div>
+					{trendData && trendData.length > 0 ? (
+						(() => {
+							// Handle "Show All" case - show submitted and active together
+							if (trendMetric === "all") {
+								// Calculate min/max for submitted and active
+								let minValue = Infinity
+								let maxValue = -Infinity
+								
+								for (const data of trendData as any[]) {
+									// Check submitted values
+									if (carrierFilter === "ALL") {
+										// Calculate cumulative submitted for this period
+										let cumulativeSubmitted = 0
+										if (data.submitted?.carriers) {
+											for (const value of Object.values(data.submitted.carriers)) {
+												if (value !== undefined && value !== null) {
+													const val = value as number
+													minValue = Math.min(minValue, val)
+													maxValue = Math.max(maxValue, val)
+													cumulativeSubmitted += val
+												}
+											}
+										}
+										if (cumulativeSubmitted > 0) {
+											minValue = Math.min(minValue, cumulativeSubmitted)
+											maxValue = Math.max(maxValue, cumulativeSubmitted)
+										}
+										
+										// Calculate cumulative active for this period
+										let cumulativeActive = 0
+										if (data.active?.carriers) {
+											for (const value of Object.values(data.active.carriers)) {
+												if (value !== undefined && value !== null) {
+													const val = value as number
+													minValue = Math.min(minValue, val)
+													maxValue = Math.max(maxValue, val)
+													cumulativeActive += val
+												}
+											}
+										}
+										if (cumulativeActive > 0) {
+											minValue = Math.min(minValue, cumulativeActive)
+											maxValue = Math.max(maxValue, cumulativeActive)
+										}
+									} else {
+										if (data.submitted?.value !== undefined && data.submitted.value !== null) {
+											minValue = Math.min(minValue, data.submitted.value)
+											maxValue = Math.max(maxValue, data.submitted.value)
+										}
+										if (data.active?.value !== undefined && data.active.value !== null) {
+											minValue = Math.min(minValue, data.active.value)
+											maxValue = Math.max(maxValue, data.active.value)
+										}
+									}
+								}
+								
+								if (minValue === Infinity || maxValue === -Infinity) {
+									minValue = 0
+									maxValue = 100
+								}
+								
+								const range = maxValue - minValue
+								const padding = range * 0.1 || Math.abs(maxValue) * 0.1 || 1
+								minValue = Math.max(0, minValue - padding)
+								maxValue = maxValue + padding
+								
+								const chartHeight = 240
+								const chartBottom = 260
+								
+								const valueToY = (value: number) => {
+									if (maxValue === minValue) return chartBottom
+									const normalized = (value - minValue) / (maxValue - minValue)
+									return chartBottom - (normalized * chartHeight)
+								}
+								
+								const formatYLabel = (value: number): string => {
+									return numberWithCommas(Math.round(value))
+								}
+								
+								return (
+									<div className="relative h-[300px] w-full">
+										<svg width="100%" height="100%" viewBox="0 0 800 300" className="overflow-visible">
+											<defs>
+												<linearGradient id="gridGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+													<stop offset="0%" stopColor="#e5e7eb" stopOpacity="0.1" />
+													<stop offset="100%" stopColor="#e5e7eb" stopOpacity="0.3" />
+												</linearGradient>
+											</defs>
+											
+											<rect x="60" y="20" width="720" height="240" fill="transparent" />
+											
+											{/* Grid lines */}
+											{Array.from({ length: 5 }).map((_, i) => {
+												const yPos = 20 + (240 / 4) * i
+												const value = maxValue - ((maxValue - minValue) / 4) * i
+												return (
+													<g key={i}>
+														<line
+															x1="60"
+															y1={yPos}
+															x2="780"
+															y2={yPos}
+															stroke="#e5e7eb"
+															strokeWidth="1"
+															strokeDasharray="4 4"
+														/>
+														<text
+															x="55"
+															y={yPos + 4}
+															textAnchor="end"
+															fill="#6b7280"
+															fontSize="11"
+															fontFamily="system-ui"
+														>
+															{formatYLabel(value)}
+														</text>
+													</g>
+												)
+											})}
+											
+											{/* X-axis labels */}
+											{(trendData as any[]).map((data, idx) => {
+												const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
+												const monthLabel = data.period.split("-")[1]
+												const yearLabel = data.period.split("-")[0].slice(2)
+												
+												return (
+													<g key={data.period}>
+														<line
+															x1={xPos}
+															y1="20"
+															x2={xPos}
+															y2="260"
+															stroke="#e5e7eb"
+															strokeWidth="1"
+															strokeDasharray="4 4"
+															opacity={idx === 0 || idx === trendData.length - 1 ? 0 : 1}
+														/>
+														<text
+															x={xPos}
+															y="275"
+															textAnchor="middle"
+															fill="#6b7280"
+															fontSize="10"
+															fontFamily="system-ui"
+														>
+															{monthLabel}/{yearLabel}
+														</text>
+													</g>
+												)
+											})}
+											
+											{/* Cumulative Submitted Volume line */}
+											{(() => {
+												const submittedColor = "#16a34a" // Green for submitted
+												const submittedPoints = (trendData as any[])
+													.map((data: any, idx: number) => {
+														// Calculate cumulative submitted for this period
+														let cumulativeSubmitted = 0
+														if (carrierFilter === "ALL") {
+															if (data.submitted?.carriers) {
+																for (const value of Object.values(data.submitted.carriers)) {
+																	if (value !== undefined && value !== null) {
+																		cumulativeSubmitted += value as number
+																	}
+																}
+															}
+														} else {
+															cumulativeSubmitted = data.submitted?.value || 0
+														}
+														
+														const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
+														const yPos = valueToY(cumulativeSubmitted)
+														
+														// Get cumulative active, persistency, and avg premium
+									const periodSeries = (_analyticsData?.series ?? []).filter(r => 
+															r.period === data.period && (carrierFilter === "ALL" || r.carrier === carrierFilter)
+														)
+														let totalActive = 0
+														let totalInactive = 0
+														let totalSubmitted = 0
+														let totalPremium = 0
+														for (const row of periodSeries) {
+															totalActive += row.active || 0
+															totalInactive += row.inactive || 0
+															const submitted = row.submitted || 0
+															totalSubmitted += submitted
+															totalPremium += (row.avg_premium_submitted || 0) * submitted
+														}
+														const cumulativePersistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
+														const avgPremium = totalSubmitted > 0 ? totalPremium / totalSubmitted : 0
+														
+														return { x: xPos, y: yPos, value: cumulativeSubmitted, period: data.period, submitted: cumulativeSubmitted, active: totalActive, persistency: cumulativePersistency, avgPremium }
+													})
+												
+												const pathData = submittedPoints.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
+												
+												return (
+													<g key="cumulative-submitted">
+														<path d={pathData} fill="none" stroke={submittedColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+														{submittedPoints.map((p: any, i: number) => (
+															<circle
+																key={i}
+																cx={p.x}
+																cy={p.y}
+																r="5"
+																fill={submittedColor}
+																stroke="#fff"
+																strokeWidth="2"
+																className="cursor-pointer"
+																onMouseEnter={(e) => {
+																	const circle = e.currentTarget
+																	const container = circle.closest(".relative")
+																	if (container) {
+																		const circleRect = circle.getBoundingClientRect()
+																		const containerRect = container.getBoundingClientRect()
+																		// Calculate position relative to the container
+																		const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																		// Position above the point (center of circle minus height to place tooltip above)
+																		const y = circleRect.top - containerRect.top - 10
+																		setHoverTrendInfo({ x, y, period: p.period, value: p.submitted, carrier: "Cumulative Submitted", submitted: p.submitted, active: p.active, persistency: p.persistency, avgPremium: p.avgPremium })
+																	}
+																}}
+																onMouseLeave={() => setHoverTrendInfo(null)}
+															/>
+														))}
+													</g>
+												)
+											})()}
+											
+											{/* Cumulative Active Policies line */}
+											{(() => {
+												const activeColor = "#2563eb" // Blue for active
+												const activePoints = (trendData as any[])
+													.map((data: any, idx: number) => {
+														// Calculate cumulative active for this period
+														let cumulativeActive = 0
+														if (carrierFilter === "ALL") {
+															if (data.active?.carriers) {
+																for (const value of Object.values(data.active.carriers)) {
+																	if (value !== undefined && value !== null) {
+																		cumulativeActive += value as number
+																	}
+																}
+															}
+														} else {
+															cumulativeActive = data.active?.value || 0
+														}
+														
+														const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
+														const yPos = valueToY(cumulativeActive)
+														
+														// Get cumulative submitted, persistency, and avg premium
+									const periodSeries = (_analyticsData?.series ?? []).filter(r => 
+															r.period === data.period && (carrierFilter === "ALL" || r.carrier === carrierFilter)
+														)
+														let totalSubmitted = 0
+														let totalActive = 0
+														let totalInactive = 0
+														let totalPremium = 0
+														for (const row of periodSeries) {
+															const submitted = row.submitted || 0
+															totalSubmitted += submitted
+															totalActive += row.active || 0
+															totalInactive += row.inactive || 0
+															totalPremium += (row.avg_premium_submitted || 0) * submitted
+														}
+														const cumulativePersistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
+														const avgPremium = totalSubmitted > 0 ? totalPremium / totalSubmitted : 0
+														
+														return { x: xPos, y: yPos, value: cumulativeActive, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency, avgPremium }
+													})
+												
+												const pathData = activePoints.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
+												
+												return (
+													<g key="cumulative-active">
+														<path d={pathData} fill="none" stroke={activeColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6 4" />
+														{activePoints.map((p: any, i: number) => (
+															<circle
+																key={i}
+																cx={p.x}
+																cy={p.y}
+																r="5"
+																fill={activeColor}
+																stroke="#fff"
+																strokeWidth="2"
+																className="cursor-pointer"
+																onMouseEnter={(e) => {
+																	const circle = e.currentTarget
+																	const container = circle.closest(".relative")
+																	if (container) {
+																		const circleRect = circle.getBoundingClientRect()
+																		const containerRect = container.getBoundingClientRect()
+																		// Calculate position relative to the container
+																		const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																		// Position above the point (center of circle minus height to place tooltip above)
+																		const y = circleRect.top - containerRect.top - 10
+																		setHoverTrendInfo({ x, y, period: p.period, value: p.active, carrier: "Cumulative Active", submitted: p.submitted, active: p.active, persistency: p.persistency, avgPremium: p.avgPremium })
+																	}
+																}}
+																onMouseLeave={() => setHoverTrendInfo(null)}
+															/>
+														))}
+													</g>
+												)
+											})()}
+										</svg>
+										
+										{/* Hover tooltip */}
+										{hoverTrendInfo && (
+											<div
+												className="pointer-events-none absolute -translate-x-1/2 -translate-y-full animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 mb-2"
+												style={{ left: hoverTrendInfo.x, top: hoverTrendInfo.y }}
+											>
+												<div className="mb-1 text-sm font-semibold">
+													{(() => {
+														const monthLabel = hoverTrendInfo.period.split("-")[1]
+														const yearLabel = hoverTrendInfo.period.split("-")[0]
+														return `${monthLabel}/${yearLabel}`
+													})()}
+												</div>
+												{hoverTrendInfo.carrier && (
+													<div className="mb-2 text-xs text-white/80 font-semibold">{hoverTrendInfo.carrier}</div>
+												)}
+												{/* For "Show All": show all values */}
+												{hoverTrendInfo.submitted !== undefined && (
+													<div className="mb-1 text-white/90 font-semibold">
+														Submitted: {numberWithCommas(Math.round(hoverTrendInfo.submitted))}
+													</div>
+												)}
+												{hoverTrendInfo.active !== undefined && (
+													<div className="mb-1 text-white/90 font-semibold">
+														Active: {numberWithCommas(Math.round(hoverTrendInfo.active))}
+													</div>
+												)}
+												{hoverTrendInfo.persistency !== undefined && (
+													<div className="mb-1 text-white/90 font-semibold">
+														Persistency: {((hoverTrendInfo.persistency || 0) * 100).toFixed(2)}%
+													</div>
+												)}
+												{hoverTrendInfo.avgPremium !== undefined && (
+													<div className="text-white/90 font-semibold">
+														Avg Premium: ${hoverTrendInfo.avgPremium.toFixed(2)}
+													</div>
+												)}
+											</div>
+										)}
+										
+										{/* Legend */}
+										<div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-wrap gap-4 justify-center mt-2">
+											<div className="flex items-center gap-2 text-xs">
+												<svg width="20" height="4" className="flex-shrink-0">
+													<line x1="0" y1="2" x2="20" y2="2" stroke="#16a34a" strokeWidth="3" />
+												</svg>
+												<span className="text-muted-foreground">Cumulative Submitted</span>
+											</div>
+											<div className="flex items-center gap-2 text-xs">
+												<svg width="20" height="4" className="flex-shrink-0">
+													<line x1="0" y1="2" x2="20" y2="2" stroke="#2563eb" strokeWidth="3" strokeDasharray="6 4" />
+												</svg>
+												<span className="text-muted-foreground">Cumulative Active</span>
+											</div>
+										</div>
+									</div>
+								)
+							}
+							
+							// Calculate min and max values for Y-axis scaling
+							let minValue = Infinity
+							let maxValue = -Infinity
+
+							if (carrierFilter === "ALL") {
+								// Get min/max from all carriers and cumulative
+								for (const data of trendData) {
+									if (data.carriers) {
+										for (const value of Object.values(data.carriers)) {
+											if (value !== undefined && value !== null) {
+												minValue = Math.min(minValue, value as number)
+												maxValue = Math.max(maxValue, value as number)
+											}
+										}
+										// Also include cumulative value
+										let cumulativeValue = 0
+										if (trendMetric === "persistency") {
+											// For persistency, calculate from active and inactive
+								const periodSeries = (_analyticsData?.series ?? []).filter(row => 
+												row.period === data.period && periods.includes(row.period)
+											)
+											let totalActive = 0
+											let totalInactive = 0
+											for (const row of periodSeries) {
+												totalActive += row.active || 0
+												totalInactive += row.inactive || 0
+											}
+											if (totalActive + totalInactive > 0) {
+												cumulativeValue = totalActive / (totalActive + totalInactive)
+											}
+										} else {
+											// For other metrics, sum all carrier values
+											for (const carrierValue of Object.values(data.carriers)) {
+												if (carrierValue !== undefined && carrierValue !== null) {
+													cumulativeValue += carrierValue as number
+												}
+											}
+										}
+										if (cumulativeValue > 0 || trendMetric === "persistency") {
+											minValue = Math.min(minValue, cumulativeValue)
+											maxValue = Math.max(maxValue, cumulativeValue)
+										}
+									}
+								}
+							} else {
+								// Get min/max from single carrier
+								for (const data of trendData) {
+									if (data.value !== undefined && data.value !== null) {
+										minValue = Math.min(minValue, data.value)
+										maxValue = Math.max(maxValue, data.value)
+									}
+								}
+							}
+
+							// Handle edge cases
+							if (minValue === Infinity || maxValue === -Infinity) {
+								minValue = 0
+								maxValue = 100
+							}
+
+							// Add padding to the range (10% on each side)
+							const range = maxValue - minValue
+							const padding = range * 0.1 || Math.abs(maxValue) * 0.1 || 1
+							minValue = Math.max(0, minValue - padding)
+							maxValue = maxValue + padding
+
+							// For persistency, clamp to 0-1
+							if (trendMetric === "persistency") {
+								minValue = 0
+								maxValue = 1
+							}
+
+							// Format Y-axis label
+							const formatYLabel = (value: number): string => {
+								if (trendMetric === "persistency") {
+									return `${Math.round(value * 100)}%`
+								} else if (trendMetric === "avgprem") {
+									return `$${Math.round(value)}`
+								} else {
+									return numberWithCommas(Math.round(value))
+								}
+							}
+
+							const chartHeight = 240
+							const chartTop = 20
+							const chartBottom = 260
+
+							// Convert value to Y coordinate
+							const valueToY = (value: number) => {
+								if (maxValue === minValue) return chartBottom
+								const normalized = (value - minValue) / (maxValue - minValue)
+								return chartBottom - (normalized * chartHeight)
+							}
+
+							return (
+								<div className="relative h-[300px] w-full">
+									<svg width="100%" height="100%" viewBox="0 0 800 300" className="overflow-visible">
+										<defs>
+											<linearGradient id="gridGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+												<stop offset="0%" stopColor="#e5e7eb" stopOpacity="0.1" />
+												<stop offset="100%" stopColor="#e5e7eb" stopOpacity="0.3" />
+											</linearGradient>
+										</defs>
+										
+										{/* Chart area */}
+										<rect x="60" y="20" width="720" height="240" fill="transparent" />
+										
+										{/* Grid lines */}
+										{Array.from({ length: 5 }).map((_, i) => {
+											const yPos = 20 + (240 / 4) * i
+											const value = maxValue - ((maxValue - minValue) / 4) * i
+											return (
+												<g key={i}>
+													<line
+														x1="60"
+														y1={yPos}
+														x2="780"
+														y2={yPos}
+														stroke="#e5e7eb"
+														strokeWidth="1"
+														strokeDasharray="4 4"
+													/>
+													{/* Y-axis labels */}
+													<text
+														x="55"
+														y={yPos + 4}
+														textAnchor="end"
+														fill="#6b7280"
+														fontSize="11"
+														fontFamily="system-ui"
+													>
+														{formatYLabel(value)}
+													</text>
+												</g>
+											)
+										})}
+										
+										{/* X-axis labels and vertical grid lines */}
+										{trendData.map((data: any, idx: number) => {
+											const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
+											const monthLabel = data.period.split("-")[1]
+											const yearLabel = data.period.split("-")[0].slice(2)
+											
+											return (
+												<g key={data.period}>
+													<line
+														x1={xPos}
+														y1="20"
+														x2={xPos}
+														y2="260"
+														stroke="#e5e7eb"
+														strokeWidth="1"
+														strokeDasharray="4 4"
+														opacity={idx === 0 || idx === trendData.length - 1 ? 0 : 1}
+													/>
+													<text
+														x={xPos}
+														y="275"
+														textAnchor="middle"
+														fill="#6b7280"
+														fontSize="10"
+														fontFamily="system-ui"
+													>
+														{monthLabel}/{yearLabel}
+													</text>
+												</g>
+											)
+										})}
+										
+										{/* Draw lines for each carrier */}
+										{carrierFilter === "ALL" ? (
+											<>
+												{/* Individual carrier lines */}
+								{(_analyticsData?.meta.carriers ?? []).map((carrier, carrierIdx) => {
+									const color = colorForLabel(String(carrier), carrierIdx)
+													const points = trendData
+														.map((data: any, idx: number) => {
+															const value = data.carriers?.[carrier]
+															if (value === undefined || value === null) return null
+															const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
+															const yPos = valueToY(value)
+															
+															// Get all values for this period and carrier
+									const periodRow = (_analyticsData?.series ?? []).find(r => 
+																r.period === data.period && r.carrier === carrier
+															)
+															const submitted = periodRow?.submitted || 0
+															const active = periodRow?.active || 0
+															const persistency = periodRow?.persistency || 0
+															
+															return { x: xPos, y: yPos, value, period: data.period, carrier: carrier as any, submitted, active, persistency }
+														})
+														.filter((p: any): p is { x: number; y: number; value: number; period: string; carrier: any; submitted: number; active: number; persistency: number } => p !== null)
+													
+													if (points.length === 0) return null
+													
+													// Draw line
+													const pathData = points
+														.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
+														.join(" ")
+													
+													return (
+														<g key={carrier}>
+															<path
+																d={pathData}
+																fill="none"
+																stroke={color}
+																strokeWidth="2.5"
+																strokeLinecap="round"
+																strokeLinejoin="round"
+															/>
+															{/* Dots on line */}
+															{points.map((p: any, i: number) => (
+																<circle
+																	key={i}
+																	cx={p.x}
+																	cy={p.y}
+																	r="4"
+																	fill={color}
+																	stroke="#fff"
+																	strokeWidth="2"
+																	className="cursor-pointer"
+																	onMouseEnter={(e) => {
+																		const circle = e.currentTarget
+																		const container = circle.closest(".relative")
+																		if (container) {
+																			const circleRect = circle.getBoundingClientRect()
+																			const containerRect = container.getBoundingClientRect()
+																			// Calculate position relative to the container
+																			const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																			// Position above the point (center of circle minus height to place tooltip above)
+																			const y = circleRect.top - containerRect.top - 10
+																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: p.carrier, submitted: p.submitted, active: p.active, persistency: p.persistency })
+																		}
+																	}}
+																	onMouseLeave={() => setHoverTrendInfo(null)}
+																/>
+															))}
+														</g>
+													)
+												})}
+												
+												{/* Cumulative line */}
+												{(() => {
+													const cumulativeColor = "#8b5cf6" // Purple for cumulative
+													const cumulativePoints = trendData
+														.map((data: any, idx: number) => {
+															let cumulativeValue = 0
+															
+															if (trendMetric === "persistency") {
+																// For persistency, calculate from active and inactive
+																// Filter series data for this period
+									const periodSeries = (_analyticsData?.series ?? []).filter(row => 
+																	row.period === data.period && periods.includes(row.period)
+																)
+																
+																// Sum active and inactive across all carriers for this period
+																let totalActive = 0
+																let totalInactive = 0
+																
+																for (const row of periodSeries) {
+																	totalActive += row.active || 0
+																	totalInactive += row.inactive || 0
+																}
+																
+																// Calculate persistency: active / (active + inactive)
+																if (totalActive + totalInactive > 0) {
+																	cumulativeValue = totalActive / (totalActive + totalInactive)
+																} else {
+																	cumulativeValue = 0
+																}
+															} else {
+																// For other metrics, sum all carrier values for this period
+                                                        if (data.carriers) {
+                                                            const values = Object.values(data.carriers).filter(v => v !== undefined && v !== null) as number[]
+                                                            if (trendMetric === "avgprem") {
+                                                                const count = values.length
+                                                                cumulativeValue = count > 0 ? values.reduce((a, b) => a + b, 0) / count : 0
+                                                            } else {
+                                                                cumulativeValue = values.reduce((a, b) => a + b, 0)
+                                                            }
+                                                        }
+															}
+															
+															const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
+															const yPos = valueToY(cumulativeValue)
+															
+															// Get all cumulative values for this period
+									const periodSeries = (_analyticsData?.series ?? []).filter(row => 
+																row.period === data.period && periods.includes(row.period)
+															)
+															let totalSubmitted = 0
+															let totalActive = 0
+															let totalInactive = 0
+															for (const row of periodSeries) {
+																totalSubmitted += row.submitted || 0
+																totalActive += row.active || 0
+																totalInactive += row.inactive || 0
+															}
+															const cumulativePersistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
+															
+															return { x: xPos, y: yPos, value: cumulativeValue, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency }
+														})
+														.filter((p: any) => p.value > 0 || trendMetric === "persistency")
+													
+													if (cumulativePoints.length === 0) return null
+													
+													const pathData = cumulativePoints
+														.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
+														.join(" ")
+													
+													return (
+														<g key="cumulative">
+															<path
+																d={pathData}
+																fill="none"
+																stroke={cumulativeColor}
+																strokeWidth="3"
+																strokeLinecap="round"
+																strokeLinejoin="round"
+																strokeDasharray="6 4"
+																opacity={0.9}
+															/>
+															{/* Dots on cumulative line */}
+															{cumulativePoints.map((p: any, i: number) => (
+																<circle
+																	key={i}
+																	cx={p.x}
+																	cy={p.y}
+																	r="5"
+																	fill={cumulativeColor}
+																	stroke="#fff"
+																	strokeWidth="2"
+																	className="cursor-pointer"
+																	onMouseEnter={(e) => {
+																		const circle = e.currentTarget
+																		const container = circle.closest(".relative")
+																		if (container) {
+																			const circleRect = circle.getBoundingClientRect()
+																			const containerRect = container.getBoundingClientRect()
+																			// Calculate position relative to the container
+																			const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																			// Position above the point (center of circle minus height to place tooltip above)
+																			const y = circleRect.top - containerRect.top - 10
+																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: "Cumulative", submitted: p.submitted, active: p.active, persistency: p.persistency })
+																		}
+																	}}
+																	onMouseLeave={() => setHoverTrendInfo(null)}
+																/>
+															))}
+														</g>
+													)
+												})()}
+											</>
+										) : (
+											// Single line for selected carrier
+											(() => {
+									const carrierIdx = (Array.isArray(_analyticsData?.meta.carriers) ? [..._analyticsData!.meta.carriers] : []).indexOf(carrierFilter as any)
+									const color = carrierIdx >= 0 ? colorForLabel(String(carrierFilter), carrierIdx) : "#2563eb"
+												const points = trendData
+													.map((data: any, idx: number) => {
+														const value = data.value
+														const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
+														const yPos = valueToY(value)
+														
+														// Get all values for this period and carrier
+									const periodRow = (_analyticsData?.series ?? []).find(r => 
+															r.period === data.period && r.carrier === carrierFilter
+														)
+														const submitted = periodRow?.submitted || 0
+														const active = periodRow?.active || 0
+														const persistency = periodRow?.persistency || 0
+														
+														return { x: xPos, y: yPos, value, period: data.period, submitted, active, persistency }
+													})
+												
+												const pathData = points
+													.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
+													.join(" ")
+												
+												return (
+													<g>
+														<path
+															d={pathData}
+															fill="none"
+															stroke={color}
+															strokeWidth="2.5"
+															strokeLinecap="round"
+															strokeLinejoin="round"
+														/>
+														{points.map((p: any, i: number) => (
+															<circle
+																key={i}
+																cx={p.x}
+																cy={p.y}
+																r="4"
+																fill={color}
+																stroke="#fff"
+																strokeWidth="2"
+																className="cursor-pointer"
+																onMouseEnter={(e) => {
+																	const circle = e.currentTarget
+																	const container = circle.closest(".relative")
+																	if (container) {
+																		const circleRect = circle.getBoundingClientRect()
+																		const containerRect = container.getBoundingClientRect()
+																		// Calculate position relative to the container
+																		const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																		// Position above the point (center of circle minus height to place tooltip above)
+																		const y = circleRect.top - containerRect.top - 10
+																		setHoverTrendInfo({ x, y, period: p.period, value: p.value, submitted: p.submitted, active: p.active, persistency: p.persistency })
+																	}
+																}}
+																onMouseLeave={() => setHoverTrendInfo(null)}
+															/>
+														))}
+													</g>
+												)
+											})()
+										)}
+									</svg>
+									
+									{/* Hover tooltip */}
+									{hoverTrendInfo && (
+										<div
+											className="pointer-events-none absolute -translate-x-1/2 -translate-y-full animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 mb-2"
+											style={{ left: hoverTrendInfo.x, top: hoverTrendInfo.y }}
+										>
+											<div className="mb-1 text-sm font-semibold">
+												{(() => {
+													const monthLabel = hoverTrendInfo.period.split("-")[1]
+													const yearLabel = hoverTrendInfo.period.split("-")[0]
+													return `${monthLabel}/${yearLabel}`
+												})()}
+											</div>
+											{hoverTrendInfo.carrier && (
+												<div className="mb-1 text-xs text-white/80">{hoverTrendInfo.carrier}</div>
+											)}
+											<div className="space-y-1">
+												{trendMetric === "persistency" ? (
+													/* For persistency: only show persistency */
+													<div className="text-white/90 font-medium">
+														Persistency: {((hoverTrendInfo.value || 0) * 100).toFixed(2)}%
+													</div>
+												) : trendMetric === "all" ? (
+													/* For "Show All": show all values */
+													<>
+														{hoverTrendInfo.submitted !== undefined && (
+															<div className="text-white/90 font-medium mb-1">
+																Submitted: {numberWithCommas(Math.round(hoverTrendInfo.submitted))}
+															</div>
+														)}
+														{hoverTrendInfo.active !== undefined && (
+															<div className="text-white/90 font-medium mb-1">
+																Active: {numberWithCommas(Math.round(hoverTrendInfo.active))}
+															</div>
+														)}
+														{hoverTrendInfo.persistency !== undefined && (
+															<div className="text-white/90 font-medium mb-1">
+																Persistency: {((hoverTrendInfo.persistency || 0) * 100).toFixed(2)}%
+															</div>
+														)}
+														{hoverTrendInfo.avgPremium !== undefined && (
+															<div className="text-white/90 font-medium">
+																Avg Premium: ${hoverTrendInfo.avgPremium.toFixed(2)}
+															</div>
+														)}
+													</>
+												) : (
+													/* For other metrics: show main metric value only */
+													<div className="text-white/90 font-medium">
+														{(() => {
+															if (trendMetric === "avgprem") {
+																return `Avg Premium: $${hoverTrendInfo.value.toFixed(2)}`
+															} else if (trendMetric === "submitted") {
+																return `Submitted: ${numberWithCommas(Math.round(hoverTrendInfo.value))}`
+															} else if (trendMetric === "active") {
+																return `Active: ${numberWithCommas(Math.round(hoverTrendInfo.value))}`
+															} else {
+																return numberWithCommas(Math.round(hoverTrendInfo.value))
+															}
+														})()}
+													</div>
+												)}
+											</div>
+										</div>
+									)}
+									
+									{/* Legend for all carriers */}
+									{carrierFilter === "ALL" && (
+										<div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-wrap gap-4 justify-center mt-2">
+								{(_analyticsData?.meta.carriers ?? []).map((carrier, idx) => {
+									const color = colorForLabel(String(carrier), idx)
+												// Check if this carrier has data
+												const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
+												if (!hasData) return null
+												return (
+													<div key={carrier} className="flex items-center gap-2 text-xs">
+														<span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+														<span className="text-muted-foreground">{carrier}</span>
+													</div>
+												)
+											})}
+											{/* Cumulative legend */}
+											<div className="flex items-center gap-2 text-xs">
+												<svg width="20" height="4" className="flex-shrink-0">
+													<line
+														x1="0"
+														y1="2"
+														x2="20"
+														y2="2"
+														stroke="#8b5cf6"
+														strokeWidth="3"
+														strokeDasharray="6 4"
+													/>
+												</svg>
+												<span className="text-muted-foreground font-semibold">Cumulative</span>
+											</div>
+										</div>
+									)}
+								</div>
+							)
+						})()
+					) : trendMetric !== "all" ? (
+						<div className="h-[300px] w-full rounded-md border bg-muted/20 flex items-center justify-center">
+							<div className="text-sm text-muted-foreground">No data available for the selected period</div>
+						</div>
+					) : (
+						<div className="h-[300px] w-full rounded-md border bg-muted/20 flex items-center justify-center">
+							<div className="text-sm text-muted-foreground">Coming soon</div>
+						</div>
+					)}
+				</CardContent>
+			</Card>
+
+			<Tabs defaultValue="overview" className="hidden">
+				<TabsList>
+					<TabsTrigger value="overview">Overview</TabsTrigger>
+					<TabsTrigger value="details">Details</TabsTrigger>
+				</TabsList>
+				<TabsContent value="overview" />
+				<TabsContent value="details" />
+			</Tabs>
+		</div>
+		)
+	)
+}
+  
+  

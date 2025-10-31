@@ -323,6 +323,8 @@ function describeDonutArc(cx: number, cy: number, outerR: number, innerR: number
 	].join(" ")
 }
 
+type AnalyticsTestValue = typeof analytics_test_value
+
 export default function AnalyticsTestPage() {
 	const [groupBy, setGroupBy] = React.useState("carrier")
 	const [trendMetric, setTrendMetric] = React.useState("persistency")
@@ -335,16 +337,27 @@ export default function AnalyticsTestPage() {
 	const [hoverPersistencyInfo, setHoverPersistencyInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
 	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; avgPremium?: number }>(null)
 
-	const carriers = React.useMemo(() => ["ALL", ...analytics_test_value.meta.carriers], [])
+	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
+	React.useEffect(() => {
+		setAnalyticsData(analytics_test_value)
+	}, [])
+
+	const isLoading = !_analyticsData
+	const analyticsData = _analyticsData as AnalyticsTestValue | null
+
+	const carriers = React.useMemo(() => ["ALL", ...(_analyticsData?.meta.carriers ?? [])], [_analyticsData])
 
 	const n: number | "all" = timeWindow === "all" ? "all" : Number(timeWindow)
-	const periods = React.useMemo(() => getLastNPeriods(analytics_test_value.series, analytics_test_value.meta.period_end, n), [timeWindow])
+	const periods = React.useMemo(() => {
+		if (!_analyticsData) return [] as string[]
+		return getLastNPeriods(_analyticsData.series, _analyticsData.meta.period_end, n)
+	}, [_analyticsData, timeWindow])
 
 	// Aggregations per carrier for current window
 	const byCarrierAgg = React.useMemo(() => {
 		const agg: Record<string, { submitted: number; active: number; inactive: number }> = {}
-		for (const c of analytics_test_value.meta.carriers) agg[c] = { submitted: 0, active: 0, inactive: 0 }
-		for (const row of analytics_test_value.series) {
+		for (const c of (_analyticsData?.meta.carriers ?? [])) agg[c] = { submitted: 0, active: 0, inactive: 0 }
+		for (const row of (_analyticsData?.series ?? [])) {
 			if (!periods.includes(row.period)) continue
 			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) continue
 			agg[row.carrier].submitted += row.submitted
@@ -362,7 +375,7 @@ export default function AnalyticsTestPage() {
 		let totalInactive = 0
 		let totalSubmittedValue = 0
 		
-		for (const row of analytics_test_value.series) {
+		for (const row of (_analyticsData?.series ?? [])) {
 			if (!periods.includes(row.period)) continue
 			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) continue
 			totalActive += row.active || 0
@@ -383,7 +396,7 @@ export default function AnalyticsTestPage() {
 
 	const wedges = React.useMemo(() => {
 		let cursor = 0
-		return analytics_test_value.meta.carriers
+		return (_analyticsData?.meta.carriers ?? [])
 			.map((label, idx) => ({
 				label,
 				value: byCarrierAgg[label].submitted,
@@ -412,7 +425,7 @@ export default function AnalyticsTestPage() {
 	// Status breakdown for detail view (when groupBy === "carrier")
 	const statusBreakdown = React.useMemo(() => {
 		if (!detailCarrier || groupBy !== "carrier") return null
-		const byCarrier = analytics_test_value.breakdowns_over_time?.by_carrier
+		const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
 		if (!byCarrier || !(detailCarrier in byCarrier)) return null
 		const carrierData = byCarrier[detailCarrier as keyof typeof byCarrier]?.status?.[windowKey]
 		if (!carrierData) return null
@@ -487,8 +500,8 @@ export default function AnalyticsTestPage() {
 			// Sum across all carriers
 			const stateTotals: Record<string, { submitted: number }> = {}
 			
-			for (const carrier of analytics_test_value.meta.carriers) {
-				const byCarrier = analytics_test_value.breakdowns_over_time?.by_carrier
+			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
+				const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
 				if (!byCarrier || !(carrier in byCarrier)) continue
 				const carrierData = byCarrier[carrier as keyof typeof byCarrier]
 				if (!carrierData) continue
@@ -514,7 +527,7 @@ export default function AnalyticsTestPage() {
 			})
 		} else {
 			// Single carrier
-			const byCarrier = analytics_test_value.breakdowns_over_time?.by_carrier
+			const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
 			if (!byCarrier || !(carrierFilter in byCarrier)) return null
 			const carrierData = byCarrier[carrierFilter as keyof typeof byCarrier]
 			if (!carrierData) return null
@@ -568,8 +581,8 @@ export default function AnalyticsTestPage() {
 			// Sum across all carriers
 			const ageTotals: Record<string, { submitted: number }> = {}
 			
-			for (const carrier of analytics_test_value.meta.carriers) {
-				const byCarrier = analytics_test_value.breakdowns_over_time?.by_carrier
+			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
+				const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
 				if (!byCarrier || !(carrier in byCarrier)) continue
 				const carrierData = byCarrier[carrier as keyof typeof byCarrier]
 				if (!carrierData) continue
@@ -595,7 +608,7 @@ export default function AnalyticsTestPage() {
 			})
 		} else {
 			// Single carrier
-			const byCarrier = analytics_test_value.breakdowns_over_time?.by_carrier
+			const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
 			if (!byCarrier || !(carrierFilter in byCarrier)) return null
 			const carrierData = byCarrier[carrierFilter as keyof typeof byCarrier]
 			if (!carrierData) return null
@@ -646,8 +659,8 @@ export default function AnalyticsTestPage() {
 
 		if (carrierFilter === "ALL") {
 			// Sum across all carriers
-			for (const carrier of analytics_test_value.meta.carriers) {
-				const windowsByCarrier = analytics_test_value.windows_by_carrier
+			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
+				const windowsByCarrier = _analyticsData?.windows_by_carrier
 				if (!windowsByCarrier || !(carrier in windowsByCarrier)) continue
 				const carrierData = windowsByCarrier[carrier as keyof typeof windowsByCarrier]
 				if (!carrierData) continue
@@ -658,7 +671,7 @@ export default function AnalyticsTestPage() {
 			}
 		} else {
 			// Single carrier
-			const windowsByCarrier = analytics_test_value.windows_by_carrier
+			const windowsByCarrier = _analyticsData?.windows_by_carrier
 			if (!windowsByCarrier || !(carrierFilter in windowsByCarrier)) return null
 			const carrierData = windowsByCarrier[carrierFilter as keyof typeof windowsByCarrier]
 			if (!carrierData) return null
@@ -696,7 +709,7 @@ export default function AnalyticsTestPage() {
 	const trendData = React.useMemo(() => {
 		if (trendMetric === "all") {
 			// For "all", we need submitted and active data
-			const filteredSeries = analytics_test_value.series.filter(row => {
+			const filteredSeries = (_analyticsData?.series ?? []).filter(row => {
 				if (!periods.includes(row.period)) return false
 				if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) return false
 				return true
@@ -748,7 +761,7 @@ export default function AnalyticsTestPage() {
 		}
 
 		// Filter series data by periods and carrier filter
-		const filteredSeries = analytics_test_value.series.filter(row => {
+		const filteredSeries = (_analyticsData?.series ?? []).filter(row => {
 			if (!periods.includes(row.period)) return false
 			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) return false
 			return true
@@ -812,6 +825,9 @@ export default function AnalyticsTestPage() {
 
 	return (
 		<div className="flex w-full flex-col gap-6 p-6">
+			{isLoading && (
+				<div className="text-sm text-muted-foreground">Loading analytics…</div>
+			)}
 			{/* Header */}
 			<div className="flex items-center justify-between">
 				<h1 className="text-xl font-semibold">Agency Analytics</h1>
@@ -1563,7 +1579,7 @@ export default function AnalyticsTestPage() {
 														const yPos = valueToY(cumulativeSubmitted)
 														
 														// Get cumulative active, persistency, and avg premium
-														const periodSeries = analytics_test_value.series.filter(r => 
+									const periodSeries = (_analyticsData?.series ?? []).filter(r => 
 															r.period === data.period && (carrierFilter === "ALL" || r.carrier === carrierFilter)
 														)
 														let totalActive = 0
@@ -1641,7 +1657,7 @@ export default function AnalyticsTestPage() {
 														const yPos = valueToY(cumulativeActive)
 														
 														// Get cumulative submitted, persistency, and avg premium
-														const periodSeries = analytics_test_value.series.filter(r => 
+									const periodSeries = (_analyticsData?.series ?? []).filter(r => 
 															r.period === data.period && (carrierFilter === "ALL" || r.carrier === carrierFilter)
 														)
 														let totalSubmitted = 0
@@ -1774,7 +1790,7 @@ export default function AnalyticsTestPage() {
 										let cumulativeValue = 0
 										if (trendMetric === "persistency") {
 											// For persistency, calculate from active and inactive
-											const periodSeries = analytics_test_value.series.filter(row => 
+								const periodSeries = (_analyticsData?.series ?? []).filter(row => 
 												row.period === data.period && periods.includes(row.period)
 											)
 											let totalActive = 0
@@ -1929,7 +1945,7 @@ export default function AnalyticsTestPage() {
 										{carrierFilter === "ALL" ? (
 											<>
 												{/* Individual carrier lines */}
-												{analytics_test_value.meta.carriers.map((carrier, carrierIdx) => {
+								{(_analyticsData?.meta.carriers ?? []).map((carrier, carrierIdx) => {
 													const palette = ["#16a34a", "#2563eb", "#f59e0b"]
 													const color = palette[carrierIdx % palette.length]
 													const points = trendData
@@ -1940,7 +1956,7 @@ export default function AnalyticsTestPage() {
 															const yPos = valueToY(value)
 															
 															// Get all values for this period and carrier
-															const periodRow = analytics_test_value.series.find(r => 
+									const periodRow = (_analyticsData?.series ?? []).find(r => 
 																r.period === data.period && r.carrier === carrier
 															)
 															const submitted = periodRow?.submitted || 0
@@ -2009,7 +2025,7 @@ export default function AnalyticsTestPage() {
 															if (trendMetric === "persistency") {
 																// For persistency, calculate from active and inactive
 																// Filter series data for this period
-																const periodSeries = analytics_test_value.series.filter(row => 
+									const periodSeries = (_analyticsData?.series ?? []).filter(row => 
 																	row.period === data.period && periods.includes(row.period)
 																)
 																
@@ -2043,7 +2059,7 @@ export default function AnalyticsTestPage() {
 															const yPos = valueToY(cumulativeValue)
 															
 															// Get all cumulative values for this period
-															const periodSeries = analytics_test_value.series.filter(row => 
+									const periodSeries = (_analyticsData?.series ?? []).filter(row => 
 																row.period === data.period && periods.includes(row.period)
 															)
 															let totalSubmitted = 0
@@ -2113,7 +2129,7 @@ export default function AnalyticsTestPage() {
 											// Single line for selected carrier
 											(() => {
 												const palette = ["#16a34a", "#2563eb", "#f59e0b"]
-												const carrierIdx = analytics_test_value.meta.carriers.indexOf(carrierFilter as any)
+									const carrierIdx = ((_analyticsData?.meta.carriers ?? []) as string[]).indexOf(carrierFilter as any)
 												const color = carrierIdx >= 0 ? palette[carrierIdx % palette.length] : "#2563eb"
 												const points = trendData
 													.map((data: any, idx: number) => {
@@ -2122,7 +2138,7 @@ export default function AnalyticsTestPage() {
 														const yPos = valueToY(value)
 														
 														// Get all values for this period and carrier
-														const periodRow = analytics_test_value.series.find(r => 
+									const periodRow = (_analyticsData?.series ?? []).find(r => 
 															r.period === data.period && r.carrier === carrierFilter
 														)
 														const submitted = periodRow?.submitted || 0
@@ -2247,7 +2263,7 @@ export default function AnalyticsTestPage() {
 									{/* Legend for all carriers */}
 									{carrierFilter === "ALL" && (
 										<div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-wrap gap-4 justify-center mt-2">
-											{analytics_test_value.meta.carriers.map((carrier, idx) => {
+								{(_analyticsData?.meta.carriers ?? []).map((carrier, idx) => {
 												const palette = ["#16a34a", "#2563eb", "#f59e0b"]
 												const color = palette[idx % palette.length]
 												// Check if this carrier has data

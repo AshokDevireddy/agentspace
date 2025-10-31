@@ -1,12 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
-import { Loader2 } from "lucide-react"
+import { Loader2, Filter, X } from "lucide-react"
 import { PolicyDetailsModal } from "@/components/modals/policy-details-modal"
 
 // Types for the API responses
@@ -40,8 +40,11 @@ interface FilterOption {
 interface FilterOptions {
   agents: FilterOption[]
   carriers: FilterOption[]
+  products: FilterOption[]
+  clients: FilterOption[]
   policyNumbers: FilterOption[]
   statuses: FilterOption[]
+  billingCycles: FilterOption[]
   leadSources: FilterOption[]
   hasAlertOptions: FilterOption[]
 }
@@ -79,13 +82,29 @@ const billingCycleColors: Record<string, string> = {
 }
 
 export default function BookOfBusiness() {
+  // Local filter state (what user selects but hasn't applied yet)
+  const [localAgent, setLocalAgent] = useState("all")
+  const [localCarrier, setLocalCarrier] = useState("all")
+  const [localProduct, setLocalProduct] = useState("all")
+  const [localClient, setLocalClient] = useState("all")
+  const [localPolicyNumber, setLocalPolicyNumber] = useState("all")
+  const [localStatus, setLocalStatus] = useState("all")
+  const [localBillingCycle, setLocalBillingCycle] = useState("all")
+  const [localLeadSource, setLocalLeadSource] = useState("all")
+  const [localEffectiveDateStart, setLocalEffectiveDateStart] = useState("")
+  const [localEffectiveDateEnd, setLocalEffectiveDateEnd] = useState("")
+
+  // Active filter state (what's actually applied)
   const [selectedAgent, setSelectedAgent] = useState("all")
   const [selectedCarrier, setSelectedCarrier] = useState("all")
-  const [policyNumberSearch, setPolicyNumberSearch] = useState("")
+  const [selectedProduct, setSelectedProduct] = useState("all")
+  const [selectedClient, setSelectedClient] = useState("all")
+  const [selectedPolicyNumber, setSelectedPolicyNumber] = useState("all")
   const [selectedStatus, setSelectedStatus] = useState("all")
+  const [selectedBillingCycle, setSelectedBillingCycle] = useState("all")
   const [selectedLeadSource, setSelectedLeadSource] = useState("all")
-  const [clientSearch, setClientSearch] = useState("")
-  const [selectedHasAlert, setSelectedHasAlert] = useState("all")
+  const [selectedEffectiveDateStart, setSelectedEffectiveDateStart] = useState("")
+  const [selectedEffectiveDateEnd, setSelectedEffectiveDateEnd] = useState("")
 
   // Modal state
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null)
@@ -94,12 +113,16 @@ export default function BookOfBusiness() {
   // State for API data
   const [deals, setDeals] = useState<Deal[]>([])
   const [nextCursor, setNextCursor] = useState<{ cursor_created_at: string; cursor_id: string } | null>(null)
+  const nextCursorRef = useRef<{ cursor_created_at: string; cursor_id: string } | null>(null)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    agents: [{ value: "all", label: "Select an Agent" }],
-    carriers: [{ value: "all", label: "Select a Carrier" }],
-    policyNumbers: [],
-    statuses: [{ value: "all", label: "Select a Status" }],
+    agents: [{ value: "all", label: "All Agents" }],
+    carriers: [{ value: "all", label: "All Carriers" }],
+    products: [{ value: "all", label: "All Products" }],
+    clients: [{ value: "all", label: "All Clients" }],
+    policyNumbers: [{ value: "all", label: "All Policy Numbers" }],
+    statuses: [{ value: "all", label: "All Statuses" }],
+    billingCycles: [{ value: "all", label: "All Billing Cycles" }],
     leadSources: [{ value: "all", label: "All Lead Sources" }],
     hasAlertOptions: [
       { value: "all", label: "All" },
@@ -120,39 +143,22 @@ export default function BookOfBusiness() {
         }
         const data = await response.json()
 
-        // Fetch agency's lead sources
-        const { createClient } = await import('@/lib/supabase/client')
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-
-        if (user) {
-          const { data: userData } = await supabase
-            .from('users')
-            .select('agency_id')
-            .eq('auth_user_id', user.id)
-            .single()
-
-          if (userData?.agency_id) {
-            const { data: agencyData } = await supabase
-              .from('agencies')
-              .select('lead_sources')
-              .eq('id', userData.agency_id)
-              .single()
-
-            if (agencyData?.lead_sources) {
-              const leadSourceOptions = [
-                { value: "all", label: "All Lead Sources" },
-                ...agencyData.lead_sources.map((source: string) => ({
-                  value: source,
-                  label: source
-                }))
-              ]
-              data.leadSources = leadSourceOptions
-            }
-          }
-        }
-
-        setFilterOptions(data)
+        // Ensure all required fields exist
+        setFilterOptions({
+          agents: data.agents || [{ value: "all", label: "All Agents" }],
+          carriers: data.carriers || [{ value: "all", label: "All Carriers" }],
+          products: data.products || [{ value: "all", label: "All Products" }],
+          clients: data.clients || [{ value: "all", label: "All Clients" }],
+          policyNumbers: data.policyNumbers || [{ value: "all", label: "All Policy Numbers" }],
+          statuses: data.statuses || [{ value: "all", label: "All Statuses" }],
+          billingCycles: data.billingCycles || [{ value: "all", label: "All Billing Cycles" }],
+          leadSources: data.leadSources || [{ value: "all", label: "All Lead Sources" }],
+          hasAlertOptions: data.hasAlertOptions || [
+            { value: "all", label: "All" },
+            { value: "yes", label: "Yes" },
+            { value: "no", label: "No" }
+          ]
+        })
       } catch (err) {
         console.error('Error fetching filter options:', err)
         setError('Failed to load filter options')
@@ -162,22 +168,31 @@ export default function BookOfBusiness() {
     fetchFilterOptions()
   }, [])
 
+  // Update ref when nextCursor changes
+  useEffect(() => {
+    nextCursorRef.current = nextCursor
+  }, [nextCursor])
+
   // Fetch deals data
-  const fetchDeals = async (reset: boolean = true) => {
+  const fetchDeals = useCallback(async (reset: boolean = true) => {
     if (reset) setLoading(true)
     else setIsLoadingMore(true)
     try {
       const params = new URLSearchParams()
       if (selectedAgent !== 'all') params.append('agent_id', selectedAgent)
       if (selectedCarrier !== 'all') params.append('carrier_id', selectedCarrier)
-      if (policyNumberSearch) params.append('policy_number', policyNumberSearch)
+      if (selectedProduct !== 'all') params.append('product_id', selectedProduct)
+      if (selectedClient !== 'all') params.append('client_id', selectedClient)
+      if (selectedPolicyNumber !== 'all') params.append('policy_number', selectedPolicyNumber)
       if (selectedStatus !== 'all') params.append('status', selectedStatus)
+      if (selectedBillingCycle !== 'all') params.append('billing_cycle', selectedBillingCycle)
       if (selectedLeadSource !== 'all') params.append('lead_source', selectedLeadSource)
-      if (clientSearch) params.append('client_name', clientSearch)
+      if (selectedEffectiveDateStart) params.append('effective_date_start', selectedEffectiveDateStart)
+      if (selectedEffectiveDateEnd) params.append('effective_date_end', selectedEffectiveDateEnd)
       params.append('limit', '50')
-      if (!reset && nextCursor) {
-        params.append('cursor_created_at', nextCursor.cursor_created_at)
-        params.append('cursor_id', nextCursor.cursor_id)
+      if (!reset && nextCursorRef.current) {
+        params.append('cursor_created_at', nextCursorRef.current.cursor_created_at)
+        params.append('cursor_id', nextCursorRef.current.cursor_id)
       }
 
       const response = await fetch(`/api/deals/book-of-business?${params.toString()}`)
@@ -199,17 +214,51 @@ export default function BookOfBusiness() {
       if (reset) setLoading(false)
       else setIsLoadingMore(false)
     }
+  }, [selectedAgent, selectedCarrier, selectedProduct, selectedClient, selectedPolicyNumber, selectedStatus, selectedBillingCycle, selectedLeadSource, selectedEffectiveDateStart, selectedEffectiveDateEnd])
+
+  // Fetch deals when active filters change
+  useEffect(() => {
+    setNextCursor(null)
+    fetchDeals(true)
+  }, [fetchDeals])
+
+  // Apply filters when button is clicked
+  const handleApplyFilters = () => {
+    setSelectedAgent(localAgent)
+    setSelectedCarrier(localCarrier)
+    setSelectedProduct(localProduct)
+    setSelectedClient(localClient)
+    setSelectedPolicyNumber(localPolicyNumber)
+    setSelectedStatus(localStatus)
+    setSelectedBillingCycle(localBillingCycle)
+    setSelectedLeadSource(localLeadSource)
+    setSelectedEffectiveDateStart(localEffectiveDateStart)
+    setSelectedEffectiveDateEnd(localEffectiveDateEnd)
   }
 
-  // Fetch deals when filters change with debounce for text inputs
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      setNextCursor(null)
-      fetchDeals(true)
-    }, 300) // 300ms debounce for text inputs
-
-    return () => clearTimeout(timeoutId)
-  }, [selectedAgent, selectedCarrier, policyNumberSearch, selectedStatus, selectedLeadSource, clientSearch])
+  // Clear all filters
+  const handleClearFilters = () => {
+    setLocalAgent("all")
+    setLocalCarrier("all")
+    setLocalProduct("all")
+    setLocalClient("all")
+    setLocalPolicyNumber("all")
+    setLocalStatus("all")
+    setLocalBillingCycle("all")
+    setLocalLeadSource("all")
+    setLocalEffectiveDateStart("")
+    setLocalEffectiveDateEnd("")
+    setSelectedAgent("all")
+    setSelectedCarrier("all")
+    setSelectedProduct("all")
+    setSelectedClient("all")
+    setSelectedPolicyNumber("all")
+    setSelectedStatus("all")
+    setSelectedBillingCycle("all")
+    setSelectedLeadSource("all")
+    setSelectedEffectiveDateStart("")
+    setSelectedEffectiveDateEnd("")
+  }
 
   const handleRowClick = (deal: Deal) => {
     setSelectedDealId(deal.id)
@@ -257,8 +306,28 @@ export default function BookOfBusiness() {
   return (
     <div className="space-y-6 max-w-full overflow-hidden">
       {/* Header */}
-      <div>
+      <div className="flex items-center justify-between">
         <h1 className="text-4xl font-bold text-gradient">Book of Business</h1>
+        <div className="flex gap-2 items-center">
+          <Button
+            onClick={handleApplyFilters}
+            size="sm"
+            className="btn-gradient h-8 px-4"
+          >
+            <Filter className="h-3.5 w-3.5 mr-1.5" />
+            Filter
+          </Button>
+          {(selectedAgent !== 'all' || selectedCarrier !== 'all' || selectedProduct !== 'all' || selectedClient !== 'all' || selectedPolicyNumber !== 'all' || selectedStatus !== 'all' || selectedBillingCycle !== 'all' || selectedLeadSource !== 'all' || selectedEffectiveDateStart || selectedEffectiveDateEnd) && (
+            <Button
+              onClick={handleClearFilters}
+              variant="outline"
+              size="sm"
+              className="h-8 px-3"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Error Message */}
@@ -269,88 +338,149 @@ export default function BookOfBusiness() {
       )}
 
       {/* Filters */}
-      <Card className="professional-card filter-container">
-        <CardContent className="p-3">
+      <Card className="professional-card filter-container !rounded-md">
+        <CardContent className="p-2">
           <div className="space-y-2">
-            {/* First Row - Primary Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
+            {/* First Row - 5 filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+              {/* Agent */}
               <div>
-                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
+                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
                   Agent
                 </label>
                 <SimpleSearchableSelect
                   options={filterOptions.agents}
-                  value={selectedAgent}
-                  onValueChange={setSelectedAgent}
-                  placeholder="Select an Agent"
-                  searchPlaceholder="Search agents..."
+                  value={localAgent}
+                  onValueChange={setLocalAgent}
+                  placeholder="All Agents"
+                  searchPlaceholder="Search..."
                 />
               </div>
 
+              {/* Carrier */}
               <div>
-                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
+                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
                   Carrier
                 </label>
                 <SimpleSearchableSelect
                   options={filterOptions.carriers}
-                  value={selectedCarrier}
-                  onValueChange={setSelectedCarrier}
-                  placeholder="Select a Carrier"
-                  searchPlaceholder="Search carriers..."
+                  value={localCarrier}
+                  onValueChange={setLocalCarrier}
+                  placeholder="All Carriers"
+                  searchPlaceholder="Search..."
                 />
               </div>
 
+              {/* Product */}
               <div>
-                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
+                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  Product
+                </label>
+                <SimpleSearchableSelect
+                  options={filterOptions.products}
+                  value={localProduct}
+                  onValueChange={setLocalProduct}
+                  placeholder="All Products"
+                  searchPlaceholder="Search..."
+                />
+              </div>
+
+              {/* Client */}
+              <div>
+                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  Client
+                </label>
+                <SimpleSearchableSelect
+                  options={filterOptions.clients}
+                  value={localClient}
+                  onValueChange={setLocalClient}
+                  placeholder="All Clients"
+                  searchPlaceholder="Search..."
+                />
+              </div>
+
+              {/* Policy Number */}
+              <div>
+                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
                   Policy #
                 </label>
                 <SimpleSearchableSelect
                   options={filterOptions.policyNumbers}
-                  value={policyNumberSearch}
-                  onValueChange={setPolicyNumberSearch}
-                  placeholder="Enter a Policy Number"
-                  searchPlaceholder="Search policy numbers..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
-                  Status
-                </label>
-                <SimpleSearchableSelect
-                  options={filterOptions.statuses}
-                  value={selectedStatus}
-                  onValueChange={setSelectedStatus}
-                  placeholder="Select a Status"
-                  searchPlaceholder="Search status..."
+                  value={localPolicyNumber}
+                  onValueChange={setLocalPolicyNumber}
+                  placeholder="All Policy Numbers"
+                  searchPlaceholder="Search..."
                 />
               </div>
             </div>
 
-            {/* Second Row - Additional Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-2">
+            {/* Second Row - 5 filters + buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 items-end">
+              {/* Status */}
               <div>
-                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
-                  Client
+                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  Status
                 </label>
-                <Input
-                  type="text"
-                  placeholder="Enter Client's Name"
-                  value={clientSearch}
-                  onChange={(e) => setClientSearch(e.target.value)}
-                  className="h-8 text-sm"
+                <SimpleSearchableSelect
+                  options={filterOptions.statuses}
+                  value={localStatus}
+                  onValueChange={setLocalStatus}
+                  placeholder="All Statuses"
+                  searchPlaceholder="Search..."
                 />
               </div>
+
+              {/* Billing Cycle */}
               <div>
-                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
+                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  Billing Cycle
+                </label>
+                <SimpleSearchableSelect
+                  options={filterOptions.billingCycles}
+                  value={localBillingCycle}
+                  onValueChange={setLocalBillingCycle}
+                  placeholder="All Billing Cycles"
+                  searchPlaceholder="Search..."
+                />
+              </div>
+
+              {/* Lead Source */}
+              <div>
+                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
                   Lead Source
                 </label>
                 <SimpleSearchableSelect
                   options={filterOptions.leadSources}
-                  value={selectedLeadSource}
-                  onValueChange={setSelectedLeadSource}
-                  placeholder="Select Lead Source"
-                  searchPlaceholder="Search lead sources..."
+                  value={localLeadSource}
+                  onValueChange={setLocalLeadSource}
+                  placeholder="All Lead Sources"
+                  searchPlaceholder="Search..."
+                />
+              </div>
+
+              {/* Effective Date Start */}
+              <div>
+                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  Effective Date Start
+                </label>
+                <Input
+                  type="date"
+                  value={localEffectiveDateStart}
+                  onChange={(e) => setLocalEffectiveDateStart(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+
+              {/* Effective Date End */}
+              <div>
+                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  Effective Date End
+                </label>
+                <Input
+                  type="date"
+                  value={localEffectiveDateEnd}
+                  onChange={(e) => setLocalEffectiveDateEnd(e.target.value)}
+                  className="h-8 text-sm"
                 />
               </div>
             </div>

@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
     const { data: currentUser, error: currentUserError } = await admin
       .from('users')
-      .select('id, agency_id')
+      .select('id, agency_id, perm_level, role')
       .eq('auth_user_id', user.id)
       .single();
 
@@ -53,19 +53,32 @@ export async function GET(req: NextRequest) {
     }
 
     // Fetch unique policy numbers for search
-    const { data: policyNumbers, error: policyNumbersError } = await admin
-      .from('deals')
-      .select('policy_number, agent_id')
-      .not('policy_number', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(1000);
+    // Use the same logic as book-of-business API to determine visible deals
+    const isAdmin = currentUser.perm_level === 'admin' || currentUser.role === 'admin';
 
-    const visiblePolicyNumbers = (policyNumbers || []).filter(p => visibleUserIds.includes(p.agent_id as any));
+    let policyNumbersQuery = admin
+      .from('deals')
+      .select('policy_number')
+      .not('policy_number', 'is', null)
+      .neq('policy_number', '');
+
+    // Apply same visibility logic as book-of-business route
+    if (isAdmin) {
+      policyNumbersQuery = policyNumbersQuery.eq('agency_id', currentUser.agency_id);
+    } else {
+      // Non-admin sees only their downline
+      policyNumbersQuery = policyNumbersQuery.in('agent_id', visibleUserIds);
+    }
+
+    const { data: policyNumbers, error: policyNumbersError } = await policyNumbersQuery;
 
     if (policyNumbersError) {
       console.error('Error fetching policy numbers:', policyNumbersError);
       return NextResponse.json({ error: policyNumbersError.message }, { status: 400 });
     }
+
+    // Get unique policy numbers (deduplicate) and sort alphabetically
+    const uniquePolicyNumbers = [...new Set((policyNumbers || []).map(p => p.policy_number).filter(Boolean))].sort();
 
     // Transform data for frontend consumption
     const agentOptions = [
@@ -85,9 +98,57 @@ export async function GET(req: NextRequest) {
     ];
 
     const policyNumberOptions = [
-      ...(visiblePolicyNumbers?.map(policy => ({
-        value: policy.policy_number,
-        label: policy.policy_number
+      { value: "all", label: "All Policy Numbers" },
+      ...(uniquePolicyNumbers.map(policyNumber => ({
+        value: policyNumber,
+        label: policyNumber
+      })))
+    ];
+
+    // Fetch products - filter by agency
+    const carrierIds = carriers?.map(c => c.id) || [];
+    let productsQuery = admin
+      .from('products')
+      .select('id, name, carrier_id')
+      .eq('agency_id', currentUser.agency_id)
+      .eq('is_active', true);
+
+    if (carrierIds.length > 0) {
+      productsQuery = productsQuery.in('carrier_id', carrierIds);
+    }
+
+    const { data: products, error: productsError } = await productsQuery.order('name', { ascending: true });
+
+    if (productsError) {
+      console.error('Error fetching products:', productsError);
+    }
+
+    const productOptions = [
+      { value: "all", label: "All Products" },
+      ...(products?.map(product => ({
+        value: product.id,
+        label: product.name
+      })) || [])
+    ];
+
+    // Fetch clients (users with role='client') for this agency
+    const { data: clients, error: clientsError } = await admin
+      .from('users')
+      .select('id, first_name, last_name, email')
+      .eq('agency_id', currentUser.agency_id)
+      .eq('role', 'client')
+      .order('last_name', { ascending: true })
+      .order('first_name', { ascending: true });
+
+    if (clientsError) {
+      console.error('Error fetching clients:', clientsError);
+    }
+
+    const clientOptions = [
+      { value: "all", label: "All Clients" },
+      ...(clients?.map(client => ({
+        value: client.id,
+        label: `${client.first_name} ${client.last_name}${client.email ? ` - ${client.email}` : ''}`
       })) || [])
     ];
 
@@ -108,22 +169,60 @@ export async function GET(req: NextRequest) {
       .filter(status => status))]
       .sort();
 
-    console.log('Found statuses for agency:', visibleStatuses);
-
     const statusOptions = [
-      { value: "all", label: "Select a Status" },
+      { value: "all", label: "All Statuses" },
       ...(visibleStatuses?.map(status => ({
         value: status,
         label: status.charAt(0).toUpperCase() + status.slice(1)
       })) || [])
     ];
 
+    // Fetch unique billing cycles from deals
+    const { data: billingCycleData, error: billingCycleError } = await admin
+      .from('deals')
+      .select('billing_cycle')
+      .eq('agency_id', currentUser.agency_id)
+      .not('billing_cycle', 'is', null);
+
+    if (billingCycleError) {
+      console.error('Error fetching billing cycles:', billingCycleError);
+    }
+
+    const uniqueBillingCycles = [...new Set((billingCycleData || [])
+      .map(d => d.billing_cycle)
+      .filter(cycle => cycle))]
+      .sort();
+
+    const billingCycleOptions = [
+      { value: "all", label: "All Billing Cycles" },
+      ...(uniqueBillingCycles?.map(cycle => ({
+        value: cycle,
+        label: cycle.charAt(0).toUpperCase() + cycle.slice(1)
+      })) || [])
+    ];
+
+    // Fetch unique lead sources from deals
+    const { data: leadSourceData, error: leadSourceDataError } = await admin
+      .from('deals')
+      .select('lead_source')
+      .eq('agency_id', currentUser.agency_id)
+      .not('lead_source', 'is', null);
+
+    if (leadSourceDataError) {
+      console.error('Error fetching lead sources:', leadSourceDataError);
+    }
+
+    const uniqueLeadSources = [...new Set((leadSourceData || [])
+      .map(d => d.lead_source)
+      .filter(source => source))]
+      .sort();
+
     const leadSourceOptions = [
-      { value: "all", label: "--------" },
-      { value: "referral", label: "Referral" },
-      { value: "purchased", label: "Purchased Lead" },
-      { value: "provided", label: "Provided Lead" },
-      { value: "no_lead", label: "No Lead" }
+      { value: "all", label: "All Lead Sources" },
+      ...(uniqueLeadSources?.map(source => ({
+        value: source,
+        label: source.charAt(0).toUpperCase() + source.slice(1)
+      })) || [])
     ];
 
     const hasAlertOptions = [
@@ -135,8 +234,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       agents: agentOptions,
       carriers: carrierOptions,
+      products: productOptions,
+      clients: clientOptions,
       policyNumbers: policyNumberOptions,
       statuses: statusOptions,
+      billingCycles: billingCycleOptions,
       leadSources: leadSourceOptions,
       hasAlertOptions: hasAlertOptions
     }, { status: 200 });

@@ -34,10 +34,14 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const agentId = searchParams.get('agent_id');
     const carrierId = searchParams.get('carrier_id');
+    const productId = searchParams.get('product_id');
+    const clientId = searchParams.get('client_id');
     const policyNumber = searchParams.get('policy_number');
     const status = searchParams.get('status');
-    const clientName = searchParams.get('client_name');
+    const billingCycle = searchParams.get('billing_cycle');
     const leadSource = searchParams.get('lead_source');
+    const effectiveDateStart = searchParams.get('effective_date_start');
+    const effectiveDateEnd = searchParams.get('effective_date_end');
     const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 200);
     const cursorCreatedAt = searchParams.get('cursor_created_at');
     const cursorId = searchParams.get('cursor_id');
@@ -86,10 +90,14 @@ export async function GET(req: NextRequest) {
     // Apply filters
     if (agentId && agentId !== 'all') query = query.eq('agent_id', agentId);
     if (carrierId && carrierId !== 'all') query = query.eq('carrier_id', carrierId);
-    if (policyNumber && policyNumber.trim()) query = query.ilike('policy_number', `%${policyNumber.trim()}%`);
+    if (productId && productId !== 'all') query = query.eq('product_id', productId);
+    if (clientId && clientId !== 'all') query = query.eq('client_id', clientId);
+    if (policyNumber && policyNumber !== 'all' && policyNumber.trim()) query = query.eq('policy_number', policyNumber.trim());
     if (status && status !== 'all') query = query.eq('status', status);
-    if (clientName && clientName.trim()) query = query.ilike('client_name', `%${clientName.trim()}%`);
+    if (billingCycle && billingCycle !== 'all') query = query.eq('billing_cycle', billingCycle);
     if (leadSource && leadSource !== 'all') query = query.eq('lead_source', leadSource);
+    if (effectiveDateStart) query = query.gte('policy_effective_date', effectiveDateStart);
+    if (effectiveDateEnd) query = query.lte('policy_effective_date', effectiveDateEnd);
 
     // Apply cursor pagination
     if (cursorCreatedAt && cursorId) {
@@ -120,11 +128,11 @@ export async function GET(req: NextRequest) {
       appNumber: deal.application_number || '',
       clientName: deal.client_name,
       clientPhone: deal.client_phone || '',
-      effectiveDate: new Date(deal.policy_effective_date).toLocaleDateString('en-US', {
+      effectiveDate: deal.policy_effective_date ? new Date(deal.policy_effective_date).toLocaleDateString('en-US', {
         month: 'numeric',
         day: 'numeric',
         year: '2-digit'
-      }),
+      }) : 'N/A',
       annualPremium: `$${Number(deal.annual_premium || 0).toFixed(2)}`,
       billingCycle: deal.billing_cycle || '',
       leadSource: deal.lead_source || '',

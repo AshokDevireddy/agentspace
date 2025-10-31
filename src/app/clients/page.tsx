@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
-import { Search, User } from "lucide-react"
+import { Filter, X, User } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // Client data type
@@ -29,6 +29,18 @@ const statusColors: { [key: string]: string } = {
   "onboarding": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
   "active": "bg-green-500/20 text-green-400 border-green-500/30",
   "inactive": "bg-red-500/20 text-red-400 border-red-500/30",
+}
+
+const generateClientOptions = (clients: Client[]) => {
+  const options = [{ value: "all", label: "All Clients" }]
+  clients.forEach(client => {
+    // Format as "Name - email" so users can search by either
+    options.push({
+      value: client.id,
+      label: `${client.name} - ${client.email}`
+    })
+  })
+  return options
 }
 
 const generateAgentOptions = (clients: Client[]) => {
@@ -54,12 +66,22 @@ const generateStatusOptions = () => {
 }
 
 export default function Clients() {
-  const [searchTerm, setSearchTerm] = useState("")
+  // Local filter state (what user selects but hasn't applied yet)
+  const [localClientName, setLocalClientName] = useState("all")
+  const [localAgent, setLocalAgent] = useState("all")
+  const [localStatus, setLocalStatus] = useState("all")
+  const [localStartDate, setLocalStartDate] = useState("")
+  const [localEndDate, setLocalEndDate] = useState("")
+
+  // Active filter state (what's actually applied)
+  const [selectedClientName, setSelectedClientName] = useState("all")
   const [selectedAgent, setSelectedAgent] = useState("all")
   const [selectedStatus, setSelectedStatus] = useState("all")
-  const [startDate, setStartDate] = useState("")
-  const [endDate, setEndDate] = useState("")
+  const [selectedStartDate, setSelectedStartDate] = useState("")
+  const [selectedEndDate, setSelectedEndDate] = useState("")
+
   const [clientsData, setClientsData] = useState<Client[]>([])
+  const [allClients, setAllClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
@@ -91,6 +113,25 @@ export default function Clients() {
     checkAdminStatus()
   }, [user?.id])
 
+  // Fetch all clients for dropdown options (without pagination)
+  useEffect(() => {
+    const fetchAllClients = async () => {
+      try {
+        const url = `/api/clients?page=1&limit=1000&view=${viewMode}`
+        const response = await fetch(url)
+        if (!response.ok) {
+          throw new Error('Failed to fetch clients')
+        }
+        const data = await response.json()
+        setAllClients(data.clients || [])
+      } catch (err) {
+        console.error('Error fetching all clients:', err)
+      }
+    }
+
+    fetchAllClients()
+  }, [viewMode])
+
   // Fetch clients data from API
   useEffect(() => {
     const fetchClients = async () => {
@@ -117,27 +158,48 @@ export default function Clients() {
     fetchClients()
   }, [currentPage, viewMode])
 
-  const filteredClients = clientsData.filter((client: Client) => {
-    const matchesSearch =
-      client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      client.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      client.phone.toLowerCase().includes(searchTerm.toLowerCase())
+  // Apply filters when button is clicked
+  const handleApplyFilters = () => {
+    setSelectedClientName(localClientName)
+    setSelectedAgent(localAgent)
+    setSelectedStatus(localStatus)
+    setSelectedStartDate(localStartDate)
+    setSelectedEndDate(localEndDate)
+    setCurrentPage(1)
+  }
 
+  // Clear all filters
+  const handleClearFilters = () => {
+    setLocalClientName("all")
+    setLocalAgent("all")
+    setLocalStatus("all")
+    setLocalStartDate("")
+    setLocalEndDate("")
+    setSelectedClientName("all")
+    setSelectedAgent("all")
+    setSelectedStatus("all")
+    setSelectedStartDate("")
+    setSelectedEndDate("")
+    setCurrentPage(1)
+  }
+
+  const filteredClients = clientsData.filter((client: Client) => {
+    const matchesClient = selectedClientName === "all" || client.id === selectedClientName
     const matchesAgent = selectedAgent === "all" || client.supportingAgent === selectedAgent
     const matchesStatus = selectedStatus === "all" || client.status === selectedStatus
 
     let matchesDateRange = true
-    if (startDate || endDate) {
+    if (selectedStartDate || selectedEndDate) {
       const clientDate = new Date(client.created)
-      if (startDate) {
-        matchesDateRange = matchesDateRange && clientDate >= new Date(startDate)
+      if (selectedStartDate) {
+        matchesDateRange = matchesDateRange && clientDate >= new Date(selectedStartDate)
       }
-      if (endDate) {
-        matchesDateRange = matchesDateRange && clientDate <= new Date(endDate)
+      if (selectedEndDate) {
+        matchesDateRange = matchesDateRange && clientDate <= new Date(selectedEndDate)
       }
     }
 
-    return matchesSearch && matchesAgent && matchesStatus && matchesDateRange
+    return matchesClient && matchesAgent && matchesStatus && matchesDateRange
   })
 
   // Show loading state
@@ -162,7 +224,8 @@ export default function Clients() {
     )
   }
 
-  const agentOptions = generateAgentOptions(clientsData)
+  const clientOptions = generateClientOptions(allClients)
+  const agentOptions = generateAgentOptions(allClients)
   const statusOptions = generateStatusOptions()
 
   return (
@@ -216,79 +279,98 @@ export default function Clients() {
         </div>
       </div>
 
-      {/* Search and Filters */}
-      <Card className="professional-card filter-container">
-        <CardContent className="p-3">
-          {/* Search Bar */}
-          <div className="mb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input
-                type="text"
-                placeholder="Search clients by name, email, or phone..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 h-9 text-sm"
+      {/* Filters */}
+      <Card className="professional-card filter-container !rounded-md">
+        <CardContent className="p-2">
+          <div className="flex items-end gap-2 flex-wrap">
+            {/* Client Name/Email */}
+            <div className="flex-1 min-w-[120px]">
+              <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                Client
+              </label>
+              <SimpleSearchableSelect
+                options={clientOptions}
+                value={localClientName}
+                onValueChange={setLocalClientName}
+                placeholder="All Clients"
+                searchPlaceholder="Search..."
               />
             </div>
-          </div>
 
-          <div className="space-y-2">
-            {/* Filters Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
-              {/* Supporting Agent */}
-              <div>
-                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
-                  Supporting Agent
-                </label>
-                <SimpleSearchableSelect
-                  options={agentOptions}
-                  value={selectedAgent}
-                  onValueChange={setSelectedAgent}
-                  placeholder="All Agents"
-                  searchPlaceholder="Search agents..."
-                />
-              </div>
+            {/* Supporting Agent */}
+            <div className="flex-1 min-w-[120px]">
+              <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                Supporting Agent
+              </label>
+              <SimpleSearchableSelect
+                options={agentOptions}
+                value={localAgent}
+                onValueChange={setLocalAgent}
+                placeholder="All Agents"
+                searchPlaceholder="Search..."
+              />
+            </div>
 
-              {/* Status */}
-              <div>
-                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
-                  Status
-                </label>
-                <SimpleSearchableSelect
-                  options={statusOptions}
-                  value={selectedStatus}
-                  onValueChange={setSelectedStatus}
-                  placeholder="All Statuses"
-                  searchPlaceholder="Search status..."
-                />
-              </div>
+            {/* Status */}
+            <div className="flex-1 min-w-[120px]">
+              <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                Status
+              </label>
+              <SimpleSearchableSelect
+                options={statusOptions}
+                value={localStatus}
+                onValueChange={setLocalStatus}
+                placeholder="All Statuses"
+                searchPlaceholder="Search..."
+              />
+            </div>
 
-              {/* Start Date */}
-              <div>
-                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
-                  Start Date
-                </label>
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
+            {/* Start Date */}
+            <div className="flex-1 min-w-[120px]">
+              <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                Start Date
+              </label>
+              <Input
+                type="date"
+                value={localStartDate}
+                onChange={(e) => setLocalStartDate(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
 
-              {/* End Date */}
-              <div>
-                <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
-                  End Date
-                </label>
-                <Input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
+            {/* End Date */}
+            <div className="flex-1 min-w-[120px]">
+              <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                End Date
+              </label>
+              <Input
+                type="date"
+                value={localEndDate}
+                onChange={(e) => setLocalEndDate(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
+
+            {/* Filter Buttons */}
+            <div className="flex gap-2 items-end">
+              <Button
+                onClick={handleApplyFilters}
+                size="sm"
+                className="btn-gradient h-8 px-4"
+              >
+                <Filter className="h-3.5 w-3.5 mr-1.5" />
+                Filter
+              </Button>
+              {(selectedClientName !== 'all' || selectedAgent !== 'all' || selectedStatus !== 'all' || selectedStartDate || selectedEndDate) && (
+                <Button
+                  onClick={handleClearFilters}
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-3"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>

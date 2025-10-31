@@ -101,7 +101,7 @@ export function SimpleSearchableSelect({
                   type="button"
                   key={option.value}
                   className={cn(
-                    "w-full flex items-center px-2.5 py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors",
+                    "w-full flex items-center px-2.5 py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors text-left",
                     value === option.value && "bg-primary/20 text-primary"
                   )}
                   onClick={() => {
@@ -112,11 +112,11 @@ export function SimpleSearchableSelect({
                 >
                   <Check
                     className={cn(
-                      "mr-2 h-4 w-4",
+                      "mr-2 h-4 w-4 shrink-0",
                       value === option.value ? "opacity-100 text-primary" : "opacity-0"
                     )}
                   />
-                  {option.label}
+                  <span className="text-left flex-1">{option.label}</span>
                 </button>
               ))
             )}

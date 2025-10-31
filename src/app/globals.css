@@ -149,6 +149,14 @@
   stroke-linejoin: round;
 }
 
+.tree-path-light {
+  stroke: #d1d5db;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Table Styles */
 .table-container {
   @apply bg-card border border-border rounded-lg shadow-sm overflow-hidden;

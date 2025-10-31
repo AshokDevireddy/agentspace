@@ -2,13 +2,11 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function ResetPassword() {
-  const supabase = createClient()
   const router = useRouter()
 
   const [email, setEmail] = useState("")
@@ -38,13 +36,19 @@ export default function ResetPassword() {
     setMessage(null)
 
     try {
-      // Send password reset email
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/forgot-password`,
+      // Call API route to send password reset email via admin client
+      const response = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
       })
 
-      if (error) {
-        console.error('Error sending reset email:', error)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send reset email')
       }
 
       // Always show success message to prevent email enumeration
@@ -53,9 +57,10 @@ export default function ResetPassword() {
         router.push('/login')
       }, 3000)
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in password reset:', error)
-      setMessage({ type: 'error', text: 'An unexpected error occurred. Please try again.' })
+      // Even on error, show generic success message to prevent email enumeration
+      setMessage({ type: 'success', text: 'If an account exists for this email, a reset link has been sent. Check your inbox.' })
       setTimeout(() => {
         router.push('/login')
       }, 3000)

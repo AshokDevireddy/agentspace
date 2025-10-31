@@ -9,6 +9,14 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const view = searchParams.get('view') || 'table'
 
+    // Filter parameters
+    const inUpline = searchParams.get('inUpline') // Agent name - show all agents in this agent's upline
+    const directUpline = searchParams.get('directUpline') // Agent name - show agents with this direct upline
+    const inDownline = searchParams.get('inDownline') // Agent name - show all agents in this agent's downline
+    const directDownline = searchParams.get('directDownline') // Agent name - show agents with this direct downline
+    const agentName = searchParams.get('agentName') // Agent name - filter by exact agent name
+    const status = searchParams.get('status') // Status filter
+
     const supabase = createAdminClient()
     const userClient = await createServerClient()
 
@@ -175,6 +183,32 @@ export async function GET(request: Request) {
       return downline
     }
 
+    // Get all agents in upline recursively (traverse up the chain)
+    const getUpline = (agentId: string): string[] => {
+      const uplineIds: string[] = []
+      let currentId: string | null = agentId
+
+      while (currentId) {
+        const agent = usersById.get(currentId)
+        if (!agent || !agent.upline_id) break
+        uplineIds.push(agent.upline_id as string)
+        currentId = agent.upline_id as string
+      }
+
+      return uplineIds
+    }
+
+    // Helper function to find agent by name
+    const findAgentByName = (name: string): UserNode | null => {
+      for (const user of Array.from(usersById.values())) {
+        const fullName = `${user.last_name}, ${user.first_name}`
+        if (fullName === name) {
+          return user
+        }
+      }
+      return null
+    }
+
     // For admins in table view, show all agency agents. For tree view or non-admins, show downline only
     let visibleUsers: UserNode[]
     if (isAdmin && view === 'table') {
@@ -183,6 +217,70 @@ export async function GET(request: Request) {
     } else {
       // Non-admin or tree view: show only downline
       visibleUsers = [currentUserNode, ...getDownline(currentUserNode)]
+    }
+
+    // Apply filters
+    if (agentName && agentName !== 'all') {
+      visibleUsers = visibleUsers.filter(user => {
+        const fullName = `${user.last_name}, ${user.first_name}`
+        return fullName === agentName
+      })
+    }
+
+    if (directUpline && directUpline !== 'all') {
+      const uplineAgent = findAgentByName(directUpline)
+      if (uplineAgent) {
+        visibleUsers = visibleUsers.filter(user => user.upline_id === uplineAgent.id)
+      } else {
+        visibleUsers = [] // No matching upline agent found
+      }
+    }
+
+    if (directDownline && directDownline !== 'all') {
+      const downlineAgent = findAgentByName(directDownline)
+      if (downlineAgent) {
+        // Get direct downlines (agents where this agent is their upline_id)
+        visibleUsers = visibleUsers.filter(user => {
+          return user.id === downlineAgent.id || user.upline_id === downlineAgent.id
+        })
+      } else {
+        visibleUsers = [] // No matching downline agent found
+      }
+    }
+
+    if (inUpline && inUpline !== 'all') {
+      const targetAgent = findAgentByName(inUpline)
+      if (targetAgent) {
+        // Get all agents in this agent's upline chain (all agents above this agent)
+        const uplineIds = getUpline(targetAgent.id)
+        visibleUsers = visibleUsers.filter(user => uplineIds.includes(user.id))
+      } else {
+        visibleUsers = [] // No matching agent found
+      }
+    }
+
+    if (inDownline && inDownline !== 'all') {
+      const targetAgent = findAgentByName(inDownline)
+      if (targetAgent) {
+        // Get all agents in this agent's downline using RPC function
+        const { data: downline, error: downlineError } = await supabase.rpc('get_agent_downline', {
+          agent_id: targetAgent.id
+        })
+
+        if (downlineError) {
+          console.error('Error fetching downline for filter:', downlineError)
+          visibleUsers = []
+        } else {
+          const downlineIds = [targetAgent.id, ...((downline as any[])?.map((u: any) => u.id) || [])]
+          visibleUsers = visibleUsers.filter(user => downlineIds.includes(user.id))
+        }
+      } else {
+        visibleUsers = [] // No matching agent found
+      }
+    }
+
+    if (status && status !== 'all') {
+      visibleUsers = visibleUsers.filter(user => user.status === status)
     }
 
     const uplineIds = visibleUsers
@@ -294,8 +392,22 @@ export async function GET(request: Request) {
     const totalCount = visibleUsers.length
     const totalPages = Math.ceil(totalCount / limit)
 
+    // Get all agents for dropdown options (before filtering)
+    let allAgentsForDropdown: UserNode[]
+    if (isAdmin && view === 'table') {
+      allAgentsForDropdown = Array.from(usersById.values())
+    } else {
+      allAgentsForDropdown = [currentUserNode, ...getDownline(currentUserNode)]
+    }
+
+    const allAgentOptions = allAgentsForDropdown.map(user => ({
+      id: user.id,
+      name: `${user.last_name}, ${user.first_name}`
+    }))
+
     return NextResponse.json({
       agents: paginatedAgents,
+      allAgents: allAgentOptions, // For dropdown options
       pagination: {
         currentPage: page,
         totalPages,

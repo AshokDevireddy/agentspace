@@ -327,7 +327,7 @@ export default function Home() {
       {/* Header */}
       <div>
         <h1 className="text-4xl font-bold text-gradient mb-2">
-          Welcome back, {firstName}.
+          Welcome, {firstName}.
         </h1>
         <div className="flex items-center space-x-2 text-sm text-muted-foreground">
           <span>This Week</span>

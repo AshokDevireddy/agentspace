@@ -19,7 +19,8 @@ import {
   ExternalLink,
   BookOpen,
   UserCheck,
-  Sparkles
+  Sparkles,
+  FolderOpen
 } from "lucide-react"
 import { createClient } from '@/lib/supabase/client'
 
@@ -33,6 +34,7 @@ const navigationItems = [
   { name: "Communication", href: "/communications/sms", icon: MessageSquare },
   { name: "Analytics", href: "/analytics", icon: TrendingUp },
   { name: "Insurance Toolkits", href: "/insurance-toolkits", icon: ExternalLink },
+  { name: "Resources", href: "/resources", icon: FolderOpen },
 ]
 
 const adminNavigationItems = [

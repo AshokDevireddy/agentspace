@@ -425,17 +425,53 @@ export default function AnalyticsTestPage() {
 	}, [periods, carrierFilter])
 
 const BIG_PALETTE = [
-    "#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#10b981",
+    "#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#7c3aed", "#10b981",
     "#ec4899", "#14b8a6", "#f97316", "#a855f7", "#3b82f6", "#22c55e",
     "#eab308", "#06b6d4", "#f43f5e", "#84cc16", "#6366f1", "#059669",
     "#d946ef", "#0ea5e9", "#fb923c", "#34d399", "#60a5fa", "#f472b6"
 ]
+
+const CUMULATIVE_COLOR = "#8b5cf6" // Purple for cumulative - excluded from carrier colors
+
+// All purple/violet shades to exclude from carrier colors
+const PURPLE_COLORS = [
+    "#7c3aed", // purple-600 (in palette)
+    "#a855f7", // violet-500 (in palette)
+    "#6366f1", // indigo-500 (purple-ish, in palette)
+    "#d946ef", // fuchsia-500 (purple-ish, in palette)
+    "#8b5cf6", // violet-500 (cumulative color)
+]
+
+function isPurpleColor(color: string): boolean {
+    return PURPLE_COLORS.includes(color.toLowerCase())
+}
 
 function colorForLabel(label: string, explicitIndex?: number): string {
     if (typeof explicitIndex === "number") return BIG_PALETTE[explicitIndex % BIG_PALETTE.length]
     let hash = 0
     for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) >>> 0
     return BIG_PALETTE[hash % BIG_PALETTE.length]
+}
+
+function carrierColorForLabel(label: string, explicitIndex?: number): string {
+    // Get color from regular function
+    let color = colorForLabel(label, explicitIndex)
+    // If it's purple, keep shifting until we find a non-purple color
+    let attempts = 0
+    while (isPurpleColor(color) && attempts < BIG_PALETTE.length) {
+        const index = typeof explicitIndex === "number" 
+            ? explicitIndex 
+            : (() => {
+                let hash = 0
+                for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) >>> 0
+                return hash
+            })()
+        // Shift to next color in palette
+        const shiftedIndex = (index + attempts + 1) % BIG_PALETTE.length
+        color = BIG_PALETTE[shiftedIndex]
+        attempts++
+    }
+    return color
 }
 
 function displayStateLabel(stateCode: string): string {
@@ -448,7 +484,7 @@ function displayStateLabel(stateCode: string): string {
             .map((label, idx) => ({
                 label,
                 value: byCarrierAgg[label].submitted,
-                color: colorForLabel(label, idx),
+                color: carrierColorForLabel(label, idx),
             }))
 			.filter((w) => w.value > 0)
 			.map((w) => {
@@ -1901,6 +1937,21 @@ function displayStateLabel(stateCode: string): string {
 								}
 							}
 
+							// Get Y-axis title based on trend metric
+							const getYAxisTitle = (): string => {
+								if (trendMetric === "persistency") {
+									return "Persistency (%)"
+								} else if (trendMetric === "avgprem") {
+									return "Avg Premium ($)"
+								} else if (trendMetric === "submitted") {
+									return "Submitted Volume"
+								} else if (trendMetric === "active") {
+									return "Active Policies"
+								} else {
+									return "Value"
+								}
+							}
+
 							const chartHeight = 240
 							const chartTop = 20
 							const chartBottom = 260
@@ -1913,7 +1964,8 @@ function displayStateLabel(stateCode: string): string {
 							}
 
 							return (
-								<div className="relative h-[300px] w-full">
+								<>
+									<div className="relative h-[300px] w-full">
 									<svg width="100%" height="100%" viewBox="0 0 800 300" className="overflow-visible">
 										<defs>
 											<linearGradient id="gridGradient" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -1987,12 +2039,39 @@ function displayStateLabel(stateCode: string): string {
 											)
 										})}
 										
+										{/* Y-axis title */}
+										<text
+											x="15"
+											y="150"
+											textAnchor="middle"
+											fill="#6b7280"
+											fontSize="12"
+											fontFamily="system-ui"
+											fontWeight="500"
+											transform="rotate(-90 15 150)"
+										>
+											{getYAxisTitle()}
+										</text>
+										
+										{/* X-axis title */}
+										<text
+											x="420"
+											y="290"
+											textAnchor="middle"
+											fill="#6b7280"
+											fontSize="12"
+											fontFamily="system-ui"
+											fontWeight="500"
+										>
+											Months
+										</text>
+										
 										{/* Draw lines for each carrier */}
 										{carrierFilter === "ALL" ? (
 											<>
 												{/* Individual carrier lines */}
 								{(_analyticsData?.meta.carriers ?? []).map((carrier, carrierIdx) => {
-									const color = colorForLabel(String(carrier), carrierIdx)
+									const color = carrierColorForLabel(String(carrier), carrierIdx)
 													const points = trendData
 														.map((data: any, idx: number) => {
 															const value = data.carriers?.[carrier]
@@ -2062,7 +2141,7 @@ function displayStateLabel(stateCode: string): string {
 												
 												{/* Cumulative line */}
 												{(() => {
-													const cumulativeColor = "#8b5cf6" // Purple for cumulative
+													const cumulativeColor = CUMULATIVE_COLOR // Purple for cumulative
 													const cumulativePoints = trendData
 														.map((data: any, idx: number) => {
 															let cumulativeValue = 0
@@ -2176,7 +2255,7 @@ function displayStateLabel(stateCode: string): string {
 											// Single line for selected carrier
 											(() => {
 									const carrierIdx = (Array.isArray(_analyticsData?.meta.carriers) ? [..._analyticsData!.meta.carriers] : []).indexOf(carrierFilter as any)
-									const color = carrierIdx >= 0 ? colorForLabel(String(carrierFilter), carrierIdx) : "#2563eb"
+									const color = carrierIdx >= 0 ? carrierColorForLabel(String(carrierFilter), carrierIdx) : "#2563eb"
 												const points = trendData
 													.map((data: any, idx: number) => {
 														const value = data.value
@@ -2305,12 +2384,13 @@ function displayStateLabel(stateCode: string): string {
 											</div>
 										</div>
 									)}
+									</div>
 									
-									{/* Legend for all carriers */}
+									{/* Legend for all carriers - below graph */}
 									{carrierFilter === "ALL" && (
-										<div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-wrap gap-4 justify-center mt-2">
-								{(_analyticsData?.meta.carriers ?? []).map((carrier, idx) => {
-									const color = colorForLabel(String(carrier), idx)
+										<div className="flex flex-wrap gap-4 justify-center mt-4">
+											{(_analyticsData?.meta.carriers ?? []).map((carrier, idx) => {
+												const color = carrierColorForLabel(String(carrier), idx)
 												// Check if this carrier has data
 												const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
 												if (!hasData) return null
@@ -2323,22 +2403,22 @@ function displayStateLabel(stateCode: string): string {
 											})}
 											{/* Cumulative legend */}
 											<div className="flex items-center gap-2 text-xs">
-												<svg width="20" height="4" className="flex-shrink-0">
-													<line
-														x1="0"
-														y1="2"
-														x2="20"
-														y2="2"
-														stroke="#8b5cf6"
-														strokeWidth="3"
-														strokeDasharray="6 4"
-													/>
+													<svg width="20" height="4" className="flex-shrink-0">
+														<line
+															x1="0"
+															y1="2"
+															x2="20"
+															y2="2"
+															stroke={CUMULATIVE_COLOR}
+															strokeWidth="3"
+															strokeDasharray="6 4"
+														/>
 												</svg>
 												<span className="text-muted-foreground font-semibold">Cumulative</span>
 											</div>
 										</div>
 									)}
-								</div>
+								</>
 							)
 						})()
 					) : trendMetric !== "all" ? (

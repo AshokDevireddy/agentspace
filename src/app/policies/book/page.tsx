@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
+import { AsyncSearchableSelect } from "@/components/ui/async-searchable-select"
 import { Loader2, Filter, X } from "lucide-react"
 import { PolicyDetailsModal } from "@/components/modals/policy-details-modal"
 
@@ -38,15 +39,11 @@ interface FilterOption {
 }
 
 interface FilterOptions {
-  agents: FilterOption[]
   carriers: FilterOption[]
   products: FilterOption[]
-  clients: FilterOption[]
-  policyNumbers: FilterOption[]
   statuses: FilterOption[]
   billingCycles: FilterOption[]
   leadSources: FilterOption[]
-  hasAlertOptions: FilterOption[]
 }
 
 // Dynamic color generator for status values - MORE VIBRANT
@@ -116,19 +113,11 @@ export default function BookOfBusiness() {
   const nextCursorRef = useRef<{ cursor_created_at: string; cursor_id: string } | null>(null)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    agents: [{ value: "all", label: "All Agents" }],
     carriers: [{ value: "all", label: "All Carriers" }],
     products: [{ value: "all", label: "All Products" }],
-    clients: [{ value: "all", label: "All Clients" }],
-    policyNumbers: [{ value: "all", label: "All Policy Numbers" }],
     statuses: [{ value: "all", label: "All Statuses" }],
     billingCycles: [{ value: "all", label: "All Billing Cycles" }],
-    leadSources: [{ value: "all", label: "All Lead Sources" }],
-    hasAlertOptions: [
-      { value: "all", label: "All" },
-      { value: "yes", label: "Yes" },
-      { value: "no", label: "No" }
-    ]
+    leadSources: [{ value: "all", label: "All Lead Sources" }]
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -145,19 +134,11 @@ export default function BookOfBusiness() {
 
         // Ensure all required fields exist
         setFilterOptions({
-          agents: data.agents || [{ value: "all", label: "All Agents" }],
           carriers: data.carriers || [{ value: "all", label: "All Carriers" }],
           products: data.products || [{ value: "all", label: "All Products" }],
-          clients: data.clients || [{ value: "all", label: "All Clients" }],
-          policyNumbers: data.policyNumbers || [{ value: "all", label: "All Policy Numbers" }],
           statuses: data.statuses || [{ value: "all", label: "All Statuses" }],
           billingCycles: data.billingCycles || [{ value: "all", label: "All Billing Cycles" }],
-          leadSources: data.leadSources || [{ value: "all", label: "All Lead Sources" }],
-          hasAlertOptions: data.hasAlertOptions || [
-            { value: "all", label: "All" },
-            { value: "yes", label: "Yes" },
-            { value: "no", label: "No" }
-          ]
+          leadSources: data.leadSources || [{ value: "all", label: "All Lead Sources" }]
         })
       } catch (err) {
         console.error('Error fetching filter options:', err)
@@ -348,12 +329,12 @@ export default function BookOfBusiness() {
                 <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
                   Agent
                 </label>
-                <SimpleSearchableSelect
-                  options={filterOptions.agents}
+                <AsyncSearchableSelect
                   value={localAgent}
                   onValueChange={setLocalAgent}
                   placeholder="All Agents"
-                  searchPlaceholder="Search..."
+                  searchPlaceholder="Type to search agents..."
+                  searchEndpoint="/api/deals/search-agents"
                 />
               </div>
 
@@ -390,12 +371,12 @@ export default function BookOfBusiness() {
                 <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
                   Client
                 </label>
-                <SimpleSearchableSelect
-                  options={filterOptions.clients}
+                <AsyncSearchableSelect
                   value={localClient}
                   onValueChange={setLocalClient}
                   placeholder="All Clients"
-                  searchPlaceholder="Search..."
+                  searchPlaceholder="Type to search clients..."
+                  searchEndpoint="/api/deals/search-clients"
                 />
               </div>
 
@@ -404,12 +385,12 @@ export default function BookOfBusiness() {
                 <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
                   Policy #
                 </label>
-                <SimpleSearchableSelect
-                  options={filterOptions.policyNumbers}
+                <AsyncSearchableSelect
                   value={localPolicyNumber}
                   onValueChange={setLocalPolicyNumber}
                   placeholder="All Policy Numbers"
-                  searchPlaceholder="Search..."
+                  searchPlaceholder="Type to search policy numbers..."
+                  searchEndpoint="/api/deals/search-policy-numbers"
                 />
               </div>
             </div>

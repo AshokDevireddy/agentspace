@@ -336,6 +336,8 @@ export default function AnalyticsTestPage() {
 	const [hoverBreakdownInfo, setHoverBreakdownInfo] = React.useState<null | { x: number; y: number; label: string; value: number; pct: number }>(null)
 	const [hoverPersistencyInfo, setHoverPersistencyInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
 	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; avgPremium?: number }>(null)
+	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
+	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
 	React.useEffect(() => {
@@ -379,6 +381,13 @@ export default function AnalyticsTestPage() {
 
 	const carriers = React.useMemo(() => ["ALL", ...(_analyticsData?.meta.carriers ?? [])], [_analyticsData])
 
+	// Initialize visible carriers when analytics data loads
+	React.useEffect(() => {
+		if (_analyticsData?.meta.carriers) {
+			setVisibleCarriers(new Set(_analyticsData.meta.carriers))
+		}
+	}, [_analyticsData])
+
 	const n: number | "all" = timeWindow === "all" ? "all" : Number(timeWindow)
 	const periods = React.useMemo(() => {
 		if (!_analyticsData) return [] as string[]
@@ -400,13 +409,13 @@ export default function AnalyticsTestPage() {
 	}, [periods, carrierFilter])
 
 	const totalSubmitted = React.useMemo(() => Object.values(byCarrierAgg).reduce((a, s) => a + s.submitted, 0), [byCarrierAgg])
-	
+
 	// Calculate top stats based on selected carrier and time window
 	const topStats = React.useMemo(() => {
 		let totalActive = 0
 		let totalInactive = 0
 		let totalSubmittedValue = 0
-		
+
 		for (const row of (_analyticsData?.series ?? [])) {
 			if (!periods.includes(row.period)) continue
 			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) continue
@@ -414,9 +423,9 @@ export default function AnalyticsTestPage() {
 			totalInactive += row.inactive || 0
 			totalSubmittedValue += row.submitted || 0
 		}
-		
+
 		const persistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
-		
+
 		return {
 			persistency: persistency,
 			submitted: totalSubmittedValue,
@@ -424,54 +433,54 @@ export default function AnalyticsTestPage() {
 		}
 	}, [periods, carrierFilter])
 
-const BIG_PALETTE = [
-    "#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#7c3aed", "#10b981",
-    "#ec4899", "#14b8a6", "#f97316", "#a855f7", "#3b82f6", "#22c55e",
-    "#eab308", "#06b6d4", "#f43f5e", "#84cc16", "#6366f1", "#059669",
-    "#d946ef", "#0ea5e9", "#fb923c", "#34d399", "#60a5fa", "#f472b6"
-]
+const CUMULATIVE_COLOR = "#8b5cf6" // Purple for cumulative
 
-const CUMULATIVE_COLOR = "#8b5cf6" // Purple for cumulative - excluded from carrier colors
-
-// All purple/violet shades to exclude from carrier colors
-const PURPLE_COLORS = [
-    "#7c3aed", // purple-600 (in palette)
-    "#a855f7", // violet-500 (in palette)
-    "#6366f1", // indigo-500 (purple-ish, in palette)
-    "#d946ef", // fuchsia-500 (purple-ish, in palette)
-    "#8b5cf6", // violet-500 (cumulative color)
-]
-
-function isPurpleColor(color: string): boolean {
-    return PURPLE_COLORS.includes(color.toLowerCase())
+// Fixed carrier colors - distinct and consistent
+const CARRIER_COLORS: Record<string, string> = {
+    "Aetna": "#2563eb",           // Blue
+    "Aflac": "#16a34a",           // Green
+    "American Amicable": "#f59e0b", // Amber/Orange
+    "Occidental": "#f59e0b",       // Amber/Orange (same as American Amicable)
+    "American Amicable / Occidental": "#f59e0b", // Amber/Orange
+    "American Home Life Insurance Company": "#ef4444", // Red
+    "Allstate": "#0891b2",        // Cyan
+    "Combined": "#14b8a6",        // Teal
+    "RNA": "#ec4899",             // Pink
+    "Acme Life": "#84cc16",       // Lime
+    "Corebridge": "#f97316",      // Orange
+    "Ethos": "#6366f1",           // Indigo
+    "FG Annuities": "#22c55e",    // Emerald
+    "Foresters": "#eab308",       // Yellow
+    "Legal General": "#06b6d4",   // Sky Blue
+    "Liberty Bankers": "#a855f7", // Purple (not cumulative purple)
+    "Mutual Omaha": "#f43f5e",    // Rose
+    "National Life": "#059669",   // Green-600
+    "SBLI": "#0ea5e9",            // Light Blue
+    "Transamerica": "#fb923c",    // Orange-400
+    "United Home Life": "#34d399", // Emerald-400
 }
 
+// Fallback colors for any carrier not in the map
+const FALLBACK_COLORS = [
+    "#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#0891b2", "#14b8a6",
+    "#ec4899", "#84cc16", "#f97316", "#6366f1", "#22c55e", "#eab308",
+    "#06b6d4", "#f43f5e", "#059669", "#0ea5e9", "#fb923c", "#34d399",
+]
+
 function colorForLabel(label: string, explicitIndex?: number): string {
-    if (typeof explicitIndex === "number") return BIG_PALETTE[explicitIndex % BIG_PALETTE.length]
+    if (typeof explicitIndex === "number") return FALLBACK_COLORS[explicitIndex % FALLBACK_COLORS.length]
     let hash = 0
     for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) >>> 0
-    return BIG_PALETTE[hash % BIG_PALETTE.length]
+    return FALLBACK_COLORS[hash % FALLBACK_COLORS.length]
 }
 
 function carrierColorForLabel(label: string, explicitIndex?: number): string {
-    // Get color from regular function
-    let color = colorForLabel(label, explicitIndex)
-    // If it's purple, keep shifting until we find a non-purple color
-    let attempts = 0
-    while (isPurpleColor(color) && attempts < BIG_PALETTE.length) {
-        const index = typeof explicitIndex === "number" 
-            ? explicitIndex 
-            : (() => {
-                let hash = 0
-                for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) >>> 0
-                return hash
-            })()
-        // Shift to next color in palette
-        const shiftedIndex = (index + attempts + 1) % BIG_PALETTE.length
-        color = BIG_PALETTE[shiftedIndex]
-        attempts++
+    // Check if we have a fixed color for this carrier
+    if (CARRIER_COLORS[label]) {
+        return CARRIER_COLORS[label]
     }
-    return color
+    // Fallback to generated color
+    return colorForLabel(label, explicitIndex)
 }
 
 function displayStateLabel(stateCode: string): string {
@@ -481,10 +490,10 @@ function displayStateLabel(stateCode: string): string {
 	const wedges = React.useMemo(() => {
 		let cursor = 0
     return (_analyticsData?.meta.carriers ?? [])
-            .map((label, idx) => ({
+            .map((label) => ({
                 label,
                 value: byCarrierAgg[label].submitted,
-                color: carrierColorForLabel(label, idx),
+                color: carrierColorForLabel(label),
             }))
 			.filter((w) => w.value > 0)
 			.map((w) => {
@@ -494,7 +503,7 @@ function displayStateLabel(stateCode: string): string {
 				cursor += ang
 				return piece
 			})
-	}, [byCarrierAgg, totalSubmitted])
+	}, [byCarrierAgg, totalSubmitted, _analyticsData])
 
 	// Determine if we should show detail view
 	const detailCarrier = React.useMemo(() => {
@@ -519,7 +528,7 @@ function displayStateLabel(stateCode: string): string {
 
 		// Only include statuses that exist in the breakdowns_status_over_time data for this carrier
 		const entries: { status: string; count: number; color: string }[] = []
-		
+
 		// Add statuses from breakdowns_status_over_time - only if they exist as keys in carrierData
 		Object.keys(carrierData).forEach((status) => {
 			const count = carrierData[status as keyof typeof carrierData] as number | undefined
@@ -533,10 +542,10 @@ function displayStateLabel(stateCode: string): string {
 		})
 
 		const total = entries.reduce((sum, e) => sum + e.count, 0)
-		
+
 		// Filter entries with count > 0 for donut chart
 		const entriesWithData = entries.filter(e => e.count > 0)
-		
+
 		let cursor = 0
 		const donutWedges = entriesWithData.map((e) => {
 			const pct = total > 0 ? e.count / total : 0
@@ -563,7 +572,7 @@ function displayStateLabel(stateCode: string): string {
 	// State breakdown for detail view (when groupBy === "state")
 	const stateBreakdown = React.useMemo(() => {
 		if (groupBy !== "state") return null
-		
+
         const stateColors: Record<string, string> = {
             CA: colorForLabel("CA"),
             TX: colorForLabel("TX"),
@@ -573,11 +582,11 @@ function displayStateLabel(stateCode: string): string {
         }
 
 		const entries: { label: string; value: number; color: string }[] = []
-		
+
 		if (carrierFilter === "ALL") {
 			// Sum across all carriers
 			const stateTotals: Record<string, { submitted: number }> = {}
-			
+
 			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
 				const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
 				if (!byCarrier || !(carrier in byCarrier)) continue
@@ -585,7 +594,7 @@ function displayStateLabel(stateCode: string): string {
 				if (!carrierData) continue
 				const stateData = carrierData.state?.[windowKey]
 				if (!stateData) continue
-				
+
 				for (const stateEntry of stateData) {
 					if (!stateTotals[stateEntry.state]) {
 						stateTotals[stateEntry.state] = { submitted: 0 }
@@ -593,7 +602,7 @@ function displayStateLabel(stateCode: string): string {
 					stateTotals[stateEntry.state].submitted += stateEntry.submitted
 				}
 			}
-			
+
             Object.entries(stateTotals).forEach(([state, data]) => {
 				if (data.submitted > 0) {
                     const label = displayStateLabel(state)
@@ -612,7 +621,7 @@ function displayStateLabel(stateCode: string): string {
 			if (!carrierData) return null
 			const stateData = carrierData.state?.[windowKey]
 			if (!stateData) return null
-			
+
             stateData.forEach((entry: { state: string; submitted: number }) => {
 				if (entry.submitted > 0) {
                     const label = displayStateLabel(entry.state)
@@ -626,7 +635,7 @@ function displayStateLabel(stateCode: string): string {
 		}
 
 		const total = entries.reduce((sum, e) => sum + e.value, 0)
-		
+
 		let cursor = 0
 		const wedges = entries.map((e) => {
 			const pct = total > 0 ? e.value / total : 0
@@ -647,7 +656,7 @@ function displayStateLabel(stateCode: string): string {
 	// Age breakdown for detail view (when groupBy === "age")
 	const ageBreakdown = React.useMemo(() => {
 		if (groupBy !== "age") return null
-		
+
         const ageColors: Record<string, string> = {
             "18-29": colorForLabel("18-29"),
             "30-44": colorForLabel("30-44"),
@@ -656,11 +665,11 @@ function displayStateLabel(stateCode: string): string {
         }
 
 		const entries: { label: string; value: number; color: string }[] = []
-		
+
 		if (carrierFilter === "ALL") {
 			// Sum across all carriers
 			const ageTotals: Record<string, { submitted: number }> = {}
-			
+
 			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
 				const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
 				if (!byCarrier || !(carrier in byCarrier)) continue
@@ -668,7 +677,7 @@ function displayStateLabel(stateCode: string): string {
 				if (!carrierData) continue
 				const ageData = carrierData.age_band?.[windowKey]
 				if (!ageData) continue
-				
+
 				for (const ageEntry of ageData) {
 					if (!ageTotals[ageEntry.age_band]) {
 						ageTotals[ageEntry.age_band] = { submitted: 0 }
@@ -676,7 +685,7 @@ function displayStateLabel(stateCode: string): string {
 					ageTotals[ageEntry.age_band].submitted += ageEntry.submitted
 				}
 			}
-			
+
 			Object.entries(ageTotals).forEach(([ageBand, data]) => {
 				if (data.submitted > 0) {
 					entries.push({
@@ -694,7 +703,7 @@ function displayStateLabel(stateCode: string): string {
 			if (!carrierData) return null
 			const ageData = carrierData.age_band?.[windowKey]
 			if (!ageData) return null
-			
+
 			ageData.forEach((entry: { age_band: string; submitted: number }) => {
 				if (entry.submitted > 0) {
 					entries.push({
@@ -707,7 +716,7 @@ function displayStateLabel(stateCode: string): string {
 		}
 
 		const total = entries.reduce((sum, e) => sum + e.value, 0)
-		
+
 		let cursor = 0
 		const wedges = entries.map((e) => {
 			const pct = total > 0 ? e.value / total : 0
@@ -728,7 +737,7 @@ function displayStateLabel(stateCode: string): string {
 	// Persistency breakdown for detail view (when groupBy === "persistency")
 	const persistencyBreakdown = React.useMemo(() => {
 		if (groupBy !== "persistency") return null
-		
+
 		const persistencyColors: Record<string, string> = {
 			"Active": "#10b981",  // Green
 			"Inactive": "#ef4444", // Red
@@ -767,7 +776,7 @@ function displayStateLabel(stateCode: string): string {
 		].filter(e => e.count > 0)
 
 		const total = active + inactive
-		
+
 		let cursor = 0
 		const wedges = entries.map((e) => {
 			const pct = total > 0 ? e.count / total : 0
@@ -795,7 +804,7 @@ function displayStateLabel(stateCode: string): string {
 				return true
 			})
 
-			const periodData: Record<string, { 
+			const periodData: Record<string, {
 				period: string
 				submitted: { value: number; carriers?: Record<string, number> }
 				active: { value: number; carriers?: Record<string, number> }
@@ -914,11 +923,11 @@ function displayStateLabel(stateCode: string): string {
 			<div className="flex items-center justify-between">
 				<h1 className="text-xl font-semibold">Agency Analytics</h1>
 
-				<div className="flex items-center gap-3">
+				<div className="flex items-center gap-2">
 					{/* Time window: 3,6,9,All Time */}
 					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
-						<SelectTrigger className="w-[140px]"><SelectValue placeholder="3 Months" /></SelectTrigger>
-						<SelectContent>
+						<SelectTrigger className="w-[120px] rounded-md h-9 text-sm"><SelectValue placeholder="3 Months" /></SelectTrigger>
+						<SelectContent className="rounded-md">
 							<SelectItem value="3">3 Months</SelectItem>
 							<SelectItem value="6">6 Months</SelectItem>
 							<SelectItem value="9">9 Months</SelectItem>
@@ -935,8 +944,8 @@ function displayStateLabel(stateCode: string): string {
 							setSelectedCarrier(value)
 						}
 					}}>
-						<SelectTrigger className="w-[200px]"><SelectValue placeholder="All Carriers" /></SelectTrigger>
-						<SelectContent>
+						<SelectTrigger className="w-[160px] rounded-md h-9 text-sm"><SelectValue placeholder="All Carriers" /></SelectTrigger>
+						<SelectContent className="rounded-md">
 							{carriers.map((c) => (
 								<SelectItem key={c} value={c}>{c === "ALL" ? "All Carriers" : c}</SelectItem>
 							))}
@@ -945,42 +954,55 @@ function displayStateLabel(stateCode: string): string {
 
 					{/* Downlines: single option for now */}
 					<Select value="all" onValueChange={() => {}}>
-						<SelectTrigger className="w-[160px]"><SelectValue placeholder="All Downlines" /></SelectTrigger>
-						<SelectContent>
+						<SelectTrigger className="w-[140px] rounded-md h-9 text-sm"><SelectValue placeholder="All Downlines" /></SelectTrigger>
+						<SelectContent className="rounded-md">
 							<SelectItem value="all">All Downlines</SelectItem>
 						</SelectContent>
 					</Select>
 
-					<Button variant="blue">Upload Reports</Button>
+					<Button variant="blue" className="rounded-md h-9 text-sm">Upload Reports</Button>
+
+					{/* AI Mode Button */}
+					<Button
+						variant="outline"
+						className="rounded-md border-2 border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700 font-medium h-9 text-sm ml-2"
+						onClick={() => {
+							// Navigate to AI chat or open modal
+							window.location.href = '/ai-chat'
+						}}
+					>
+						<span className="mr-1.5">✨</span>
+						Ask AI to make Custom graphs
+					</Button>
 				</div>
 			</div>
 
 			{/* KPI tiles centered to middle 1/3rd */}
 			<div className="flex w-full justify-center">
 				<div className="grid w-full max-w-3xl grid-cols-3 gap-3">
-					<Card>
+					<Card className="rounded-md">
 						<CardContent className="p-4">
-							<div className="text-xs text-muted-foreground">Persistency</div>
-							<div className="text-lg font-semibold">{(topStats.persistency * 100).toFixed(2)}%</div>
+							<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
+							<div className="text-2xl font-bold mt-2">{(topStats.persistency * 100).toFixed(2)}%</div>
 						</CardContent>
 					</Card>
-					<Card>
+					<Card className="rounded-md">
 						<CardContent className="p-4">
-							<div className="text-xs text-muted-foreground">Submitted</div>
-							<div className="text-lg font-semibold">{numberWithCommas(topStats.submitted)}</div>
+							<div className="text-xs text-muted-foreground uppercase font-medium">Submitted</div>
+							<div className="text-2xl font-bold mt-2">{numberWithCommas(topStats.submitted)}</div>
 						</CardContent>
 					</Card>
-					<Card>
+					<Card className="rounded-md">
 						<CardContent className="p-4">
-							<div className="text-xs text-muted-foreground">Active</div>
-							<div className="text-lg font-semibold">{numberWithCommas(topStats.active)}</div>
+							<div className="text-xs text-muted-foreground uppercase font-medium">Active</div>
+							<div className="text-2xl font-bold mt-2">{numberWithCommas(topStats.active)}</div>
 						</CardContent>
 					</Card>
 				</div>
 			</div>
 
 			{/* Total Submitted Business / Status Breakdown */}
-			<Card>
+			<Card className="rounded-md">
 				<CardContent className="p-4 sm:p-6">
 					{(detailCarrier || groupBy === "state" || groupBy === "age" || groupBy === "persistency") ? (
 						// Breakdown View (Status, State, Age, or Persistency)
@@ -988,7 +1010,7 @@ function displayStateLabel(stateCode: string): string {
 							<div className="mb-4 flex items-center gap-3">
 								<div className="text-xs font-medium tracking-wide text-muted-foreground">
 									{groupBy === "carrier" && detailCarrier
-										? `${detailCarrier === carrierFilter && carrierFilter !== "ALL" ? "COMBINED" : detailCarrier.toUpperCase()} - STATUS BREAKDOWN`
+										? `${detailCarrier.toUpperCase()} - STATUS BREAKDOWN`
 										: groupBy === "state"
 										? `${carrierFilter === "ALL" ? "ALL CARRIERS" : carrierFilter.toUpperCase()} - BY STATE`
 										: groupBy === "age"
@@ -1030,7 +1052,7 @@ function displayStateLabel(stateCode: string): string {
 												setSelectedCarrier(null)
 											}
 										}}
-										className="rounded-full"
+										className="rounded-md"
 									>
 										{g.label}
 									</Button>
@@ -1370,14 +1392,14 @@ function displayStateLabel(stateCode: string): string {
 										variant={groupBy === g.key ? "blue" : "outline"}
 										size="sm"
 										onClick={() => setGroupBy(g.key)}
-										className="rounded-full"
+										className="rounded-md"
 									>
 										{g.label}
 									</Button>
 								))}
 							</div>
 
-					<div className="flex flex-col items-center justify-center gap-6">
+					<div className="flex items-center justify-center gap-8">
 						{/* SVG pie with hover */}
 						<div className="relative h-[320px] w-[320px]">
 							<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
@@ -1398,7 +1420,7 @@ function displayStateLabel(stateCode: string): string {
 										const persistencyPct = agg.active + agg.inactive > 0 ? (agg.active / (agg.active + agg.inactive)) * 100 : 0
 										const isHovered = hoverInfo?.label === w.label
 										const isOtherHovered = hoverInfo !== null && !isHovered
-										
+
 										return (
 											<path
 												key={w.label}
@@ -1452,18 +1474,22 @@ function displayStateLabel(stateCode: string): string {
 							)}
 						</div>
 
-						{/* Legend below chart */}
-						<div className="flex flex-wrap justify-center gap-4 mt-4">
-							{wedges.length === 0 ? (
-								<div className="text-sm text-muted-foreground">No data in range</div>
-							) : (
-								wedges.map((l) => (
-									<div key={l.label} className="flex items-center gap-2 text-sm">
-										<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: l.color }} />
-										<span>{l.label} ({l.pct}%)</span>
-									</div>
-								))
-							)}
+						{/* Legend on the right */}
+						<div className="flex flex-col gap-3 min-w-[250px]">
+							<div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Carriers</div>
+							<div className="flex flex-col gap-2">
+								{wedges.length === 0 ? (
+									<div className="text-sm text-muted-foreground">No data in range</div>
+								) : (
+									wedges.map((l) => (
+										<div key={l.label} className="flex items-center gap-2 text-sm p-1.5 hover:bg-muted/50 rounded-md transition-colors">
+											<span className="h-3 w-3 rounded-sm flex-shrink-0" style={{ backgroundColor: l.color }} />
+											<span className="text-xs text-muted-foreground">{l.label}</span>
+											<span className="ml-auto text-xs font-semibold">{l.pct}%</span>
+										</div>
+									))
+								)}
+							</div>
 						</div>
 					</div>
 						</>
@@ -1472,7 +1498,7 @@ function displayStateLabel(stateCode: string): string {
 			</Card>
 
 			{/* Performance Trends */}
-			<Card>
+			<Card className="rounded-md">
 				<CardContent className="p-4 sm:p-6">
 					<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">PERFORMANCE TRENDS</div>
 					<div className="mb-4 flex flex-wrap gap-2 justify-center">
@@ -1483,7 +1509,7 @@ function displayStateLabel(stateCode: string): string {
 							{ key: "avgprem", label: "Avg Premium" },
 							{ key: "all", label: "Show All" },
 						].map((m) => (
-							<Button key={m.key} variant={trendMetric === m.key ? "blue" : "outline"} size="sm" onClick={() => setTrendMetric(m.key)} className="rounded-full">{m.label}</Button>
+							<Button key={m.key} variant={trendMetric === m.key ? "blue" : "outline"} size="sm" onClick={() => setTrendMetric(m.key)} className="rounded-md">{m.label}</Button>
 						))}
 					</div>
 					{trendData && trendData.length > 0 ? (
@@ -1493,7 +1519,7 @@ function displayStateLabel(stateCode: string): string {
 								// Calculate min/max for submitted and active
 								let minValue = Infinity
 								let maxValue = -Infinity
-								
+
 								for (const data of trendData as any[]) {
 									// Check submitted values
 									if (carrierFilter === "ALL") {
@@ -1513,7 +1539,7 @@ function displayStateLabel(stateCode: string): string {
 											minValue = Math.min(minValue, cumulativeSubmitted)
 											maxValue = Math.max(maxValue, cumulativeSubmitted)
 										}
-										
+
 										// Calculate cumulative active for this period
 										let cumulativeActive = 0
 										if (data.active?.carriers) {
@@ -1541,32 +1567,33 @@ function displayStateLabel(stateCode: string): string {
 										}
 									}
 								}
-								
+
 								if (minValue === Infinity || maxValue === -Infinity) {
 									minValue = 0
 									maxValue = 100
 								}
-								
+
 								const range = maxValue - minValue
 								const padding = range * 0.1 || Math.abs(maxValue) * 0.1 || 1
 								minValue = Math.max(0, minValue - padding)
 								maxValue = maxValue + padding
-								
+
 								const chartHeight = 240
 								const chartBottom = 260
-								
+
 								const valueToY = (value: number) => {
 									if (maxValue === minValue) return chartBottom
 									const normalized = (value - minValue) / (maxValue - minValue)
 									return chartBottom - (normalized * chartHeight)
 								}
-								
+
 								const formatYLabel = (value: number): string => {
 									return numberWithCommas(Math.round(value))
 								}
-								
+
 								return (
-									<div className="relative h-[300px] w-full">
+									<div className="flex gap-6">
+										<div className="relative h-[300px] flex-1">
 										<svg width="100%" height="100%" viewBox="0 0 800 300" className="overflow-visible">
 											<defs>
 												<linearGradient id="gridGradient" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -1574,9 +1601,9 @@ function displayStateLabel(stateCode: string): string {
 													<stop offset="100%" stopColor="#e5e7eb" stopOpacity="0.3" />
 												</linearGradient>
 											</defs>
-											
+
 											<rect x="60" y="20" width="720" height="240" fill="transparent" />
-											
+
 											{/* Grid lines */}
 											{Array.from({ length: 5 }).map((_, i) => {
 												const yPos = 20 + (240 / 4) * i
@@ -1605,13 +1632,13 @@ function displayStateLabel(stateCode: string): string {
 													</g>
 												)
 											})}
-											
+
 											{/* X-axis labels */}
 											{(trendData as any[]).map((data, idx) => {
 												const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
 												const monthLabel = data.period.split("-")[1]
 												const yearLabel = data.period.split("-")[0].slice(2)
-												
+
 												return (
 													<g key={data.period}>
 														<line
@@ -1637,7 +1664,7 @@ function displayStateLabel(stateCode: string): string {
 													</g>
 												)
 											})}
-											
+
 											{/* Cumulative Submitted Volume line */}
 											{(() => {
 												const submittedColor = "#16a34a" // Green for submitted
@@ -1656,12 +1683,12 @@ function displayStateLabel(stateCode: string): string {
 														} else {
 															cumulativeSubmitted = data.submitted?.value || 0
 														}
-														
+
 														const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
 														const yPos = valueToY(cumulativeSubmitted)
-														
+
 														// Get cumulative active, persistency, and avg premium
-									const periodSeries = (_analyticsData?.series ?? []).filter(r => 
+									const periodSeries = (_analyticsData?.series ?? []).filter(r =>
 															r.period === data.period && (carrierFilter === "ALL" || r.carrier === carrierFilter)
 														)
 														let totalActive = 0
@@ -1677,12 +1704,12 @@ function displayStateLabel(stateCode: string): string {
 														}
 														const cumulativePersistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
 														const avgPremium = totalSubmitted > 0 ? totalPremium / totalSubmitted : 0
-														
+
 														return { x: xPos, y: yPos, value: cumulativeSubmitted, period: data.period, submitted: cumulativeSubmitted, active: totalActive, persistency: cumulativePersistency, avgPremium }
 													})
-												
+
 												const pathData = submittedPoints.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
-												
+
 												return (
 													<g key="cumulative-submitted">
 														<path d={pathData} fill="none" stroke={submittedColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
@@ -1715,7 +1742,7 @@ function displayStateLabel(stateCode: string): string {
 													</g>
 												)
 											})()}
-											
+
 											{/* Cumulative Active Policies line */}
 											{(() => {
 												const activeColor = "#2563eb" // Blue for active
@@ -1734,12 +1761,12 @@ function displayStateLabel(stateCode: string): string {
 														} else {
 															cumulativeActive = data.active?.value || 0
 														}
-														
+
 														const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
 														const yPos = valueToY(cumulativeActive)
-														
+
 														// Get cumulative submitted, persistency, and avg premium
-									const periodSeries = (_analyticsData?.series ?? []).filter(r => 
+									const periodSeries = (_analyticsData?.series ?? []).filter(r =>
 															r.period === data.period && (carrierFilter === "ALL" || r.carrier === carrierFilter)
 														)
 														let totalSubmitted = 0
@@ -1755,12 +1782,12 @@ function displayStateLabel(stateCode: string): string {
 														}
 														const cumulativePersistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
 														const avgPremium = totalSubmitted > 0 ? totalPremium / totalSubmitted : 0
-														
+
 														return { x: xPos, y: yPos, value: cumulativeActive, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency, avgPremium }
 													})
-												
+
 												const pathData = activePoints.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
-												
+
 												return (
 													<g key="cumulative-active">
 														<path d={pathData} fill="none" stroke={activeColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6 4" />
@@ -1794,7 +1821,7 @@ function displayStateLabel(stateCode: string): string {
 												)
 											})()}
 										</svg>
-										
+
 										{/* Hover tooltip */}
 										{hoverTrendInfo && (
 											<div
@@ -1834,26 +1861,30 @@ function displayStateLabel(stateCode: string): string {
 												)}
 											</div>
 										)}
-										
-										{/* Legend */}
-										<div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-wrap gap-4 justify-center mt-2">
-											<div className="flex items-center gap-2 text-xs">
-												<svg width="20" height="4" className="flex-shrink-0">
-													<line x1="0" y1="2" x2="20" y2="2" stroke="#16a34a" strokeWidth="3" />
+									</div>
+
+									{/* Legend for Show All - on the right side */}
+									<div className="flex flex-col gap-2 ml-6 min-w-[200px]">
+										<div className="text-xs font-semibold text-muted-foreground uppercase mb-1">Metrics</div>
+										<div className="flex flex-col gap-2">
+											<div className="flex items-center gap-2 px-2.5 py-1.5 bg-green-50 rounded border border-green-200">
+												<svg width="16" height="3" className="flex-shrink-0">
+													<line x1="0" y1="1.5" x2="16" y2="1.5" stroke="#16a34a" strokeWidth="2.5" />
 												</svg>
-												<span className="text-muted-foreground">Cumulative Submitted</span>
+												<span className="text-xs font-medium text-green-700">Submitted</span>
 											</div>
-											<div className="flex items-center gap-2 text-xs">
-												<svg width="20" height="4" className="flex-shrink-0">
-													<line x1="0" y1="2" x2="20" y2="2" stroke="#2563eb" strokeWidth="3" strokeDasharray="6 4" />
+											<div className="flex items-center gap-2 px-2.5 py-1.5 bg-blue-50 rounded border border-blue-200">
+												<svg width="16" height="3" className="flex-shrink-0">
+													<line x1="0" y1="1.5" x2="16" y2="1.5" stroke="#2563eb" strokeWidth="2.5" strokeDasharray="4 2" />
 												</svg>
-												<span className="text-muted-foreground">Cumulative Active</span>
+												<span className="text-xs font-medium text-blue-700">Active</span>
 											</div>
 										</div>
 									</div>
+								</div>
 								)
 							}
-							
+
 							// Calculate min and max values for Y-axis scaling
 							let minValue = Infinity
 							let maxValue = -Infinity
@@ -1872,7 +1903,7 @@ function displayStateLabel(stateCode: string): string {
 										let cumulativeValue = 0
 										if (trendMetric === "persistency") {
 											// For persistency, calculate from active and inactive
-								const periodSeries = (_analyticsData?.series ?? []).filter(row => 
+								const periodSeries = (_analyticsData?.series ?? []).filter(row =>
 												row.period === data.period && periods.includes(row.period)
 											)
 											let totalActive = 0
@@ -1964,8 +1995,8 @@ function displayStateLabel(stateCode: string): string {
 							}
 
 							return (
-								<>
-									<div className="relative h-[300px] w-full">
+								<div className="flex gap-6">
+									<div className="relative h-[300px] flex-1">
 									<svg width="100%" height="100%" viewBox="0 0 800 300" className="overflow-visible">
 										<defs>
 											<linearGradient id="gridGradient" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -1973,10 +2004,10 @@ function displayStateLabel(stateCode: string): string {
 												<stop offset="100%" stopColor="#e5e7eb" stopOpacity="0.3" />
 											</linearGradient>
 										</defs>
-										
+
 										{/* Chart area */}
 										<rect x="60" y="20" width="720" height="240" fill="transparent" />
-										
+
 										{/* Grid lines */}
 										{Array.from({ length: 5 }).map((_, i) => {
 											const yPos = 20 + (240 / 4) * i
@@ -2006,13 +2037,13 @@ function displayStateLabel(stateCode: string): string {
 												</g>
 											)
 										})}
-										
+
 										{/* X-axis labels and vertical grid lines */}
 										{trendData.map((data: any, idx: number) => {
 											const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
 											const monthLabel = data.period.split("-")[1]
 											const yearLabel = data.period.split("-")[0].slice(2)
-											
+
 											return (
 												<g key={data.period}>
 													<line
@@ -2038,7 +2069,7 @@ function displayStateLabel(stateCode: string): string {
 												</g>
 											)
 										})}
-										
+
 										{/* Y-axis title */}
 										<text
 											x="15"
@@ -2052,7 +2083,7 @@ function displayStateLabel(stateCode: string): string {
 										>
 											{getYAxisTitle()}
 										</text>
-										
+
 										{/* X-axis title */}
 										<text
 											x="420"
@@ -2065,39 +2096,39 @@ function displayStateLabel(stateCode: string): string {
 										>
 											Months
 										</text>
-										
+
 										{/* Draw lines for each carrier */}
 										{carrierFilter === "ALL" ? (
 											<>
 												{/* Individual carrier lines */}
-								{(_analyticsData?.meta.carriers ?? []).map((carrier, carrierIdx) => {
-									const color = carrierColorForLabel(String(carrier), carrierIdx)
+								{(_analyticsData?.meta.carriers ?? []).filter(carrier => visibleCarriers.has(carrier)).map((carrier) => {
+									const color = carrierColorForLabel(String(carrier))
 													const points = trendData
 														.map((data: any, idx: number) => {
 															const value = data.carriers?.[carrier]
 															if (value === undefined || value === null) return null
 															const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
 															const yPos = valueToY(value)
-															
+
 															// Get all values for this period and carrier
-									const periodRow = (_analyticsData?.series ?? []).find(r => 
+									const periodRow = (_analyticsData?.series ?? []).find(r =>
 																r.period === data.period && r.carrier === carrier
 															)
 															const submitted = periodRow?.submitted || 0
 															const active = periodRow?.active || 0
 															const persistency = periodRow?.persistency || 0
-															
+
 															return { x: xPos, y: yPos, value, period: data.period, carrier: carrier as any, submitted, active, persistency }
 														})
 														.filter((p: any): p is { x: number; y: number; value: number; period: string; carrier: any; submitted: number; active: number; persistency: number } => p !== null)
-													
+
 													if (points.length === 0) return null
-													
+
 													// Draw line
 													const pathData = points
 														.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
 														.join(" ")
-													
+
 													return (
 														<g key={carrier}>
 															<path
@@ -2138,30 +2169,30 @@ function displayStateLabel(stateCode: string): string {
 														</g>
 													)
 												})}
-												
+
 												{/* Cumulative line */}
 												{(() => {
 													const cumulativeColor = CUMULATIVE_COLOR // Purple for cumulative
 													const cumulativePoints = trendData
 														.map((data: any, idx: number) => {
 															let cumulativeValue = 0
-															
+
 															if (trendMetric === "persistency") {
 																// For persistency, calculate from active and inactive
 																// Filter series data for this period
-									const periodSeries = (_analyticsData?.series ?? []).filter(row => 
+									const periodSeries = (_analyticsData?.series ?? []).filter(row =>
 																	row.period === data.period && periods.includes(row.period)
 																)
-																
+
 																// Sum active and inactive across all carriers for this period
 																let totalActive = 0
 																let totalInactive = 0
-																
+
 																for (const row of periodSeries) {
 																	totalActive += row.active || 0
 																	totalInactive += row.inactive || 0
 																}
-																
+
 																// Calculate persistency: active / (active + inactive)
 																if (totalActive + totalInactive > 0) {
 																	cumulativeValue = totalActive / (totalActive + totalInactive)
@@ -2180,12 +2211,12 @@ function displayStateLabel(stateCode: string): string {
                                                             }
                                                         }
 															}
-															
+
 															const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
 															const yPos = valueToY(cumulativeValue)
-															
+
 															// Get all cumulative values for this period
-									const periodSeries = (_analyticsData?.series ?? []).filter(row => 
+									const periodSeries = (_analyticsData?.series ?? []).filter(row =>
 																row.period === data.period && periods.includes(row.period)
 															)
 															let totalSubmitted = 0
@@ -2197,17 +2228,17 @@ function displayStateLabel(stateCode: string): string {
 																totalInactive += row.inactive || 0
 															}
 															const cumulativePersistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
-															
+
 															return { x: xPos, y: yPos, value: cumulativeValue, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency }
 														})
 														.filter((p: any) => p.value > 0 || trendMetric === "persistency")
-													
+
 													if (cumulativePoints.length === 0) return null
-													
+
 													const pathData = cumulativePoints
 														.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
 														.join(" ")
-													
+
 													return (
 														<g key="cumulative">
 															<path
@@ -2254,29 +2285,28 @@ function displayStateLabel(stateCode: string): string {
 										) : (
 											// Single line for selected carrier
 											(() => {
-									const carrierIdx = (Array.isArray(_analyticsData?.meta.carriers) ? [..._analyticsData!.meta.carriers] : []).indexOf(carrierFilter as any)
-									const color = carrierIdx >= 0 ? carrierColorForLabel(String(carrierFilter), carrierIdx) : "#2563eb"
+									const color = carrierColorForLabel(String(carrierFilter))
 												const points = trendData
 													.map((data: any, idx: number) => {
 														const value = data.value
 														const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
 														const yPos = valueToY(value)
-														
+
 														// Get all values for this period and carrier
-									const periodRow = (_analyticsData?.series ?? []).find(r => 
+									const periodRow = (_analyticsData?.series ?? []).find(r =>
 															r.period === data.period && r.carrier === carrierFilter
 														)
 														const submitted = periodRow?.submitted || 0
 														const active = periodRow?.active || 0
 														const persistency = periodRow?.persistency || 0
-														
+
 														return { x: xPos, y: yPos, value, period: data.period, submitted, active, persistency }
 													})
-												
+
 												const pathData = points
 													.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
 													.join(" ")
-												
+
 												return (
 													<g>
 														<path
@@ -2318,7 +2348,7 @@ function displayStateLabel(stateCode: string): string {
 											})()
 										)}
 									</svg>
-									
+
 									{/* Hover tooltip */}
 									{hoverTrendInfo && (
 										<div
@@ -2385,40 +2415,109 @@ function displayStateLabel(stateCode: string): string {
 										</div>
 									)}
 									</div>
-									
-									{/* Legend for all carriers - below graph */}
+
+									{/* Drag and Drop Legend - on the right side */}
 									{carrierFilter === "ALL" && (
-										<div className="flex flex-wrap gap-4 justify-center mt-4">
-											{(_analyticsData?.meta.carriers ?? []).map((carrier, idx) => {
-												const color = carrierColorForLabel(String(carrier), idx)
-												// Check if this carrier has data
-												const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
-												if (!hasData) return null
-												return (
-													<div key={carrier} className="flex items-center gap-2 text-xs">
-														<span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-														<span className="text-muted-foreground">{carrier}</span>
-													</div>
-												)
-											})}
-											{/* Cumulative legend */}
-											<div className="flex items-center gap-2 text-xs">
-													<svg width="20" height="4" className="flex-shrink-0">
+										<div className="flex flex-col gap-3 ml-6 min-w-[220px]">
+											{/* Carriers Section - Active and Hidden */}
+											<div className="flex flex-col gap-1.5">
+												<div className="text-xs font-semibold text-muted-foreground uppercase">Carriers</div>
+												<div className="text-[10px] text-muted-foreground mb-1">Click to Show/Hide Carriers</div>
+												<div
+													className="flex flex-col gap-1.5 p-2.5 bg-muted/10 rounded-md border border-muted/50 max-h-[400px] overflow-y-auto"
+													onDragOver={(e) => e.preventDefault()}
+													onDrop={(e) => {
+														e.preventDefault()
+														// Allow dropping anywhere to toggle visibility
+													}}
+												>
+													{/* Active Carriers */}
+													{(_analyticsData?.meta.carriers ?? [])
+														.filter(carrier => {
+															const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
+															return hasData && visibleCarriers.has(carrier)
+														})
+														.map((carrier) => {
+															const color = carrierColorForLabel(String(carrier))
+															return (
+																<div
+																	key={carrier}
+																	draggable
+																	onDragStart={() => setDraggedCarrier(carrier)}
+																	onDragEnd={() => setDraggedCarrier(null)}
+																	onClick={() => {
+																		const newVisible = new Set(visibleCarriers)
+																		newVisible.delete(carrier)
+																		setVisibleCarriers(newVisible)
+																	}}
+																	className="flex items-center gap-2 px-2.5 py-1.5 bg-background rounded border cursor-move hover:shadow-sm transition-all"
+																	style={{ borderLeft: `3px solid ${color}` }}
+																>
+																	<span className="h-2.5 w-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
+																	<span className="text-xs font-medium flex-1">{carrier}</span>
+																</div>
+															)
+														})}
+
+													{/* Divider if there are hidden carriers */}
+													{(_analyticsData?.meta.carriers ?? []).filter(carrier => {
+														const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
+														return hasData && !visibleCarriers.has(carrier)
+													}).length > 0 && (
+														<div className="border-t border-muted my-1"></div>
+													)}
+
+													{/* Hidden Carriers */}
+													{(_analyticsData?.meta.carriers ?? [])
+														.filter(carrier => {
+															const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
+															return hasData && !visibleCarriers.has(carrier)
+														})
+														.map((carrier) => {
+															const color = carrierColorForLabel(String(carrier))
+															return (
+																<div
+																	key={carrier}
+																	draggable
+																	onDragStart={() => setDraggedCarrier(carrier)}
+																	onDragEnd={() => setDraggedCarrier(null)}
+																	onClick={() => {
+																		const newVisible = new Set(visibleCarriers)
+																		newVisible.add(carrier)
+																		setVisibleCarriers(newVisible)
+																	}}
+																	className="flex items-center gap-2 px-2.5 py-1.5 bg-muted/30 rounded border border-muted cursor-move hover:shadow-sm transition-all opacity-50 hover:opacity-70"
+																	style={{ borderLeft: `3px solid ${color}` }}
+																>
+																	<span className="h-2.5 w-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: color, opacity: 0.5 }} />
+																	<span className="text-xs text-muted-foreground flex-1">{carrier}</span>
+																</div>
+															)
+														})}
+												</div>
+											</div>
+
+											{/* Cumulative legend - always visible */}
+											<div className="flex flex-col gap-1.5 pt-2 border-t">
+												<div className="text-xs font-semibold text-muted-foreground uppercase">Always Shown</div>
+												<div className="flex items-center gap-2 px-2.5 py-1.5 bg-purple-50 rounded border border-purple-200">
+													<svg width="16" height="3" className="flex-shrink-0">
 														<line
 															x1="0"
-															y1="2"
-															x2="20"
-															y2="2"
+															y1="1.5"
+															x2="16"
+															y2="1.5"
 															stroke={CUMULATIVE_COLOR}
-															strokeWidth="3"
-															strokeDasharray="6 4"
+															strokeWidth="2.5"
+															strokeDasharray="4 2"
 														/>
-												</svg>
-												<span className="text-muted-foreground font-semibold">Cumulative</span>
+													</svg>
+													<span className="text-xs font-medium text-purple-700">Cumulative</span>
+												</div>
 											</div>
 										</div>
 									)}
-								</>
+								</div>
 							)
 						})()
 					) : trendMetric !== "all" ? (
@@ -2445,5 +2544,4 @@ function displayStateLabel(stateCode: string): string {
 		)
 	)
 }
-  
-  
+

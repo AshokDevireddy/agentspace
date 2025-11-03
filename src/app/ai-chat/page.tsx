@@ -5,7 +5,6 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
 import { Sparkles, Send, Loader2, CheckCircle2, Circle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import CodeExecutor from '@/components/ai/CodeExecutor';
 import ThinkingProgress from '@/components/ai/ThinkingProgress';
 import { createClient } from '@/lib/supabase/client';
@@ -54,6 +53,7 @@ export default function AIChat() {
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const [currentToolCalls, setCurrentToolCalls] = useState<ToolCall[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
 
   // Check admin status
@@ -95,6 +95,18 @@ export default function AIChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent, thinkingSteps, currentToolCalls]);
 
+  // Auto-resize textarea
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      // Reset height to auto to get the correct scrollHeight
+      textarea.style.height = 'auto';
+      // Set height to scrollHeight (content height) but cap at max-height
+      const newHeight = Math.min(textarea.scrollHeight, 200); // Max 200px
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, [input]);
+
   const toggleToolExpanded = (toolId: string) => {
     setExpandedTools(prev => {
       const next = new Set(prev);
@@ -111,7 +123,7 @@ export default function AIChat() {
     const names: Record<string, string> = {
       'get_deals': 'Retrieving deals data',
       'get_agents': 'Fetching agent information',
-      'get_persistency_analytics': 'Analyzing persistency data',
+      'get_persistency_analytics': 'Loading comprehensive analytics',
       'get_conversations_data': 'Getting conversation data',
       'get_carriers_and_products': 'Loading carriers and products',
       'get_agency_summary': 'Generating agency summary'
@@ -212,9 +224,16 @@ export default function AIChat() {
         return parts.join(' • ');
       }
       case 'get_persistency_analytics': {
-        const carriers = formatNumber(result.carriers?.length);
-        const persistency = formatPercent(result.overall_analytics?.overallPersistency);
-        return `Persistency across ${carriers || 'agency'} carriers${persistency ? ` • overall ${persistency}` : ''}`;
+        const carriers = formatNumber(result.meta?.carriers?.length || result.carriers?.length);
+        const totalActive = formatNumber(result.totals?.all?.active);
+        const totalSubmitted = formatNumber(result.totals?.all?.submitted);
+        const persistency = formatPercent(result.totals?.all?.persistency || result.overall_analytics?.overallPersistency);
+        const parts = [];
+        if (carriers) parts.push(`${carriers} carriers`);
+        if (totalSubmitted) parts.push(`${totalSubmitted} submitted`);
+        if (totalActive) parts.push(`${totalActive} active`);
+        if (persistency) parts.push(`${persistency} persistency`);
+        return parts.length > 0 ? `Analytics: ${parts.join(' • ')}` : 'Analytics data loaded';
       }
       case 'get_conversations_data': {
         const total = formatNumber(result.summary?.total_conversations);
@@ -271,6 +290,11 @@ export default function AIChat() {
     setStreamingContent('');
     setThinkingSteps([]);
     setCurrentToolCalls([]);
+
+    // Reset textarea height after sending
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
 
     try {
       const conversationMessages = [
@@ -520,7 +544,7 @@ export default function AIChat() {
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
@@ -721,26 +745,44 @@ export default function AIChat() {
       {/* Input - Floating at bottom */}
       <div className="fixed bottom-0 left-0 right-0 z-20 pointer-events-none lg:left-64">
         <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="relative pointer-events-auto">
-            <Input
+          <div className="relative pointer-events-auto flex items-end gap-3">
+            <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyPress}
               placeholder="Ask me anything about your agency..."
               disabled={isLoading}
-              className="w-full h-14 pl-5 pr-14 text-base rounded-2xl border-2 border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-100 shadow-2xl bg-white backdrop-blur-sm transition-all"
+              rows={1}
+              className="flex-1 min-h-[56px] max-h-[200px] pl-5 pr-5 py-4 text-base rounded-3xl border-2 border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-100 shadow-2xl bg-white backdrop-blur-sm transition-all resize-none overflow-y-auto focus:outline-none"
+              style={{
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#cbd5e1 transparent'
+              }}
             />
-            <Button
+            <button
               onClick={sendMessage}
               disabled={isLoading || !input.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 shadow-lg shadow-purple-300 disabled:opacity-50 disabled:shadow-none transition-all"
+              className="flex-shrink-0 h-11 w-11 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-slate-300 disabled:to-slate-300 shadow-lg shadow-purple-300 disabled:shadow-none transition-all flex items-center justify-center mb-[6px]"
             >
               {isLoading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="h-5 w-5 text-white animate-spin" />
               ) : (
-                <Send className="h-5 w-5" />
+                <svg
+                  className="h-5 w-5 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2.5}
+                    d="M5 10l7-7m0 0l7 7m-7-7v18"
+                  />
+                </svg>
               )}
-            </Button>
+            </button>
           </div>
         </div>
       </div>

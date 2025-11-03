@@ -414,33 +414,43 @@ export async function getAgencySummary(params: any, agencyId: string) {
   }
 }
 
-// Get persistency analytics using the same RPC as the analytics page
+// Get comprehensive analytics using the same RPC as the analytics dashboard page
 export async function getPersistencyAnalytics(params: any, agencyId: string) {
   try {
     const supabase = await createServerClient();
 
-    // Call the RPC function that the analytics page uses
-    const { data, error } = await supabase.rpc('analyze_persistency_for_deals', {
+    // Call the SAME RPC function that the analytics dashboard page uses
+    // This provides comprehensive analytics data including:
+    // - Time series by month and carrier
+    // - Breakdowns by status, state, age band
+    // - Multiple time windows (3m, 6m, 9m, all_time)
+    // - Persistency, submitted, and active policy counts
+    const { data, error } = await supabase.rpc('get_analytics_from_deals_with_agency_id', {
       p_agency_id: agencyId
     });
 
     if (error) {
-      console.error('Error fetching persistency analytics:', error);
-      throw new Error('Failed to fetch persistency analytics');
+      console.error('Error fetching analytics:', error);
+      throw new Error('Failed to fetch analytics data');
     }
 
-    if (!data || !data.carriers || data.carriers.length === 0) {
+    if (!data || !data.meta || !data.series || data.series.length === 0) {
       return {
-        message: 'No persistency data available. Please upload policy reports first.',
-        overall_analytics: null,
-        carriers: []
+        message: 'No analytics data available. Please upload policy reports first.',
+        meta: null,
+        series: [],
+        totals: null,
+        windows_by_carrier: null,
+        breakdowns_over_time: null
       };
     }
 
+    // Return the full analytics object with all breakdowns
+    // This matches the structure used by the analytics dashboard
     return data;
   } catch (error) {
     console.error('Error in getPersistencyAnalytics:', error);
-    return { error: 'Failed to get persistency analytics' };
+    return { error: 'Failed to get analytics data' };
   }
 }
 

@@ -310,6 +310,49 @@ function summarizePersistencyAnalytics(result: any) {
     return result;
   }
 
+  // Handle new comprehensive analytics data structure from get_analytics_from_deals_with_agency_id
+  if (result.meta && result.totals && result.series) {
+    const carriers = result.meta?.carriers || [];
+    const byCarrierTotals = result.totals?.by_carrier || [];
+
+    // For chart generation, provide clear summary of totals
+    const carrierSummary = byCarrierTotals.map((c: any) => ({
+      carrier: c.carrier,
+      active: c.active,
+      inactive: c.inactive,
+      submitted: c.submitted,
+      persistency: c.persistency,
+      avg_premium: c.avg_premium_submitted
+    }));
+
+    return {
+      // Overall metrics
+      overall: {
+        active: result.totals.all?.active,
+        inactive: result.totals.all?.inactive,
+        submitted: result.totals.all?.submitted,
+        persistency: result.totals.all?.persistency,
+        avg_premium: result.totals.all?.avg_premium_submitted
+      },
+      // Carrier-level data for charts
+      carriers: carrierSummary,
+      // Time series data (monthly breakdown) - limit to recent months
+      series: result.series?.slice(-12) || [],
+      // Provide windows for time-based analysis
+      windows: result.windows_by_carrier,
+      // Metadata
+      meta: {
+        carriers: carriers,
+        as_of: result.meta.as_of,
+        grain: result.meta.grain,
+        window: result.meta.window
+      },
+      // Note about data freshness
+      note: `Analytics data as of ${result.meta?.as_of || 'latest'}. Includes ${carriers.length} carriers.`
+    };
+  }
+
+  // Handle old data structure (legacy support)
   const carriers = Array.isArray(result.carriers) ? [...result.carriers] : [];
   const sortedCarriers = carriers.sort((a, b) => (Number(b?.totalPolicies) || 0) - (Number(a?.totalPolicies) || 0));
   const limitedCarriers = sortedCarriers.slice(0, 12).map(carrier => ({
@@ -470,46 +513,38 @@ When the user asks for a chart, graph, or visualization:
 
 1. First, retrieve the necessary data using the appropriate tool (get_deals, get_agents, get_persistency_analytics, etc.)
 
-2. Then, write EXECUTABLE JavaScript/React code to generate the chart. Use this exact format:
+2. Then, write EXECUTABLE JavaScript/React code to generate the chart using this structure:
 
 \`\`\`chartcode
-// Process the data first
-const chartData = [
-  { name: 'Category 1', value: 100 },
-  { name: 'Category 2', value: 200 },
-  // ... more data
-];
+// The 'data' variable contains the tool result you just fetched
+// ALWAYS inspect the structure first and extract what you need
 
-// Define the chart rendering function using React.createElement (NOT JSX)
+const chartData = /* transform data into chart format */;
+
 function renderChart() {
-  return React.createElement(ResponsiveContainer, { width: "100%", height: 400 },
-    React.createElement(BarChart, { data: chartData },
-      React.createElement(CartesianGrid, { strokeDasharray: "3 3" }),
-      React.createElement(XAxis, { dataKey: "name", angle: -45, textAnchor: "end", height: 80 }),
-      React.createElement(YAxis, null),
-      React.createElement(Tooltip, null),
-      React.createElement(Legend, null),
-      React.createElement(Bar, { dataKey: "value", fill: COLORS[0], radius: [8, 8, 0, 0] })
-    )
-  );
+  return /* React.createElement calls to build the chart */;
 }
 \`\`\`
+
+CRITICAL RULES:
+- The 'data' variable contains the complete tool result
+- INSPECT the data structure (check for arrays, objects, nested properties)
+- TRANSFORM the data into the format needed for charts (array of objects with consistent keys)
+- Use React.createElement() syntax, NOT JSX (<Component /> will not work)
+- The code block MUST use the \`\`\`chartcode language tag
 
 AVAILABLE COMPONENTS:
 - ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, AreaChart, Area
 - XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell
-- COLORS array with 8 colors
-- The 'data' variable contains the tool result you fetched
+- COLORS array with 8 predefined colors
+- Standard JavaScript array methods (map, filter, slice, etc.)
 
-CHART EXAMPLES (use React.createElement - NOT JSX):
+CHART PATTERNS:
 
-**Stacked Bar Chart:**
+**Bar Chart Pattern:**
 \`\`\`chartcode
-const chartData = data.carriers.map(carrier => ({
-  name: carrier.carrier,
-  active: carrier.timeRanges.All.positiveCount,
-  inactive: carrier.timeRanges.All.negativeCount
-})).slice(0, 10);
+// Transform data into array of objects with name + numeric values
+const chartData = /* extract/map from data */;
 
 function renderChart() {
   return React.createElement(ResponsiveContainer, { width: "100%", height: 400 },
@@ -519,19 +554,36 @@ function renderChart() {
       React.createElement(YAxis, null),
       React.createElement(Tooltip, null),
       React.createElement(Legend, null),
-      React.createElement(Bar, { dataKey: "active", stackId: "a", fill: "#10b981", name: "Active" }),
-      React.createElement(Bar, { dataKey: "inactive", stackId: "a", fill: "#ef4444", name: "Inactive" })
+      React.createElement(Bar, { dataKey: "value", fill: COLORS[0] })
     )
   );
 }
 \`\`\`
 
-**Pie Chart:**
+**Stacked Bar Chart Pattern:**
 \`\`\`chartcode
-const chartData = Object.entries(data.summary.status_breakdown).map(([status, count]) => ({
-  name: status,
-  value: count
-}));
+// For stacked bars, each Bar component needs the same stackId
+const chartData = /* extract/map from data */;
+
+function renderChart() {
+  return React.createElement(ResponsiveContainer, { width: "100%", height: 400 },
+    React.createElement(BarChart, { data: chartData, margin: { bottom: 80 } },
+      React.createElement(CartesianGrid, { strokeDasharray: "3 3" }),
+      React.createElement(XAxis, { dataKey: "name", angle: -45, textAnchor: "end", height: 100 }),
+      React.createElement(YAxis, null),
+      React.createElement(Tooltip, null),
+      React.createElement(Legend, null),
+      React.createElement(Bar, { dataKey: "category1", stackId: "a", fill: COLORS[0], name: "Category 1" }),
+      React.createElement(Bar, { dataKey: "category2", stackId: "a", fill: COLORS[1], name: "Category 2" })
+    )
+  );
+}
+\`\`\`
+
+**Pie Chart Pattern:**
+\`\`\`chartcode
+// Pie charts need array with 'name' and 'value' properties
+const chartData = /* extract/map from data */;
 
 function renderChart() {
   return React.createElement(ResponsiveContainer, { width: "100%", height: 400 },
@@ -556,12 +608,10 @@ function renderChart() {
 }
 \`\`\`
 
-**Line Chart:**
+**Line Chart Pattern:**
 \`\`\`chartcode
-const chartData = data.agents.slice(0, 10).map(agent => ({
-  name: \`\${agent.first_name} \${agent.last_name}\`,
-  production: Number(agent.total_prod)
-}));
+// Line charts work well for time series or ordered data
+const chartData = /* extract/map from data */;
 
 function renderChart() {
   return React.createElement(ResponsiveContainer, { width: "100%", height: 400 },
@@ -571,7 +621,7 @@ function renderChart() {
       React.createElement(YAxis, null),
       React.createElement(Tooltip, null),
       React.createElement(Legend, null),
-      React.createElement(Line, { type: "monotone", dataKey: "production", stroke: COLORS[0], strokeWidth: 2 })
+      React.createElement(Line, { type: "monotone", dataKey: "value", stroke: COLORS[0], strokeWidth: 2 })
     )
   );
 }
@@ -622,8 +672,13 @@ TOOL SELECTION DECISION TREE:
 6. User asks about persistency/active policies:
    → Use get_persistency_analytics (always)
 
-IMPORTANT:
-- Only provide what the user asks for. Do not add extra visualizations, tables, or analysis unless explicitly requested.
+IMPORTANT CHART CODE RULES:
+- The 'data' variable contains the exact tool result - adapt to its structure
+- INSPECT before using: check if data is an array, has nested properties, etc.
+- Common patterns: data.carriers, data.agents, data.deals, data.series, data.overall
+- If data structure is unclear, use safe navigation (data?.property || [])
+- Transform data to match chart requirements (array of objects with consistent keys)
+- Only provide what the user asks for - no extra visualizations unless requested
 - DO NOT create text-based charts or ASCII art - write actual executable code
 - The code block MUST use the \`\`\`chartcode language tag for proper detection
 - CRITICAL: You MUST use React.createElement() syntax, NOT JSX syntax (no <Component /> tags)
@@ -737,12 +792,12 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
                     toolUseContent.input = toolInput;
                   }
 
-                  // Send tool result back to client
+                  // Send SANITIZED tool result back to client (so charts can use same structure as AI)
                   const toolResultEvent = {
                     type: 'tool_result',
                     tool_use_id: currentToolUse.id,
                     tool_name: currentToolUse.name,
-                    result: toolResult
+                    result: sanitizedToolResult
                   };
                   const resultChunk = `data: ${JSON.stringify(toolResultEvent)}\n\n`;
                   controller.enqueue(new TextEncoder().encode(resultChunk));

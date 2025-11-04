@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
     }
 
     const transformedDeals = (deals || []).map((deal: any) => ({
-      id: deal.deal_id,
+      id: deal.id,
       carrierId: deal.carrier_id || '',
       date: deal.created_at
         ? new Date(deal.created_at).toLocaleDateString('en-US', {
@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
 
     const last = (deals || [])[deals.length - 1]
     const nextCursor = last
-      ? { cursor_created_at: last.created_at, cursor_id: last.deal_id }
+      ? { cursor_created_at: last.created_at, cursor_id: last.id }
       : null
 
     return NextResponse.json({ deals: transformedDeals, nextCursor }, { status: 200 });

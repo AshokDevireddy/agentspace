@@ -3,78 +3,62 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { sendSMS } from "@/lib/telnyx";
 import { getOrCreateConversation, logMessage } from "@/lib/sms-helpers";
 
-async function createCommissionSnapshotsForDeal(
+/**
+ * Creates a hierarchy snapshot for a deal
+ * This captures the agent hierarchy at the time the deal is created
+ * so that visibility is preserved even if agents move to different hierarchies later
+ */
+async function createDealHierarchySnapshot(
   supabase: ReturnType<typeof createAdminClient>,
   dealId: string,
-  writingAgentId: string,
-  carrierId: string,
-  productId: string
+  writingAgentId: string
 ) {
-  console.log('[Snapshots] START createCommissionSnapshotsForDeal', { dealId, writingAgentId, carrierId, productId })
+  console.log('[Hierarchy Snapshot] START createDealHierarchySnapshot', { dealId, writingAgentId })
 
-  let currentAgentId: string | null = writingAgentId
-  let level = 0
+  try {
+    // Get the full upline chain using the RPC function
+    const { data: uplineChain, error: chainError } = await supabase
+      .rpc('get_agent_upline_chain', { p_agent_id: writingAgentId })
 
-  interface MinimalAgent { id: string; upline_id: string | null; position_id: string }
-
-  while (currentAgentId) {
-    console.log('[Snapshots] Processing agent in chain', { currentAgentId, level })
-    const agentRes = await supabase
-      .from('users')
-      .select('id, upline_id, position_id')
-      .eq('id', currentAgentId)
-      .single()
-    const agentRow = agentRes.data as MinimalAgent | null
-    const agentError = agentRes.error
-
-    if (agentError || !agentRow) {
-      console.error(`[Snapshots] Could not fetch agent details for ID ${currentAgentId}. Error: ${agentError?.message}`)
-      break
-    }
-    console.log('[Snapshots] Agent mapping', { agentId: agentRow.id, upline_id: agentRow.upline_id, position_id: agentRow.position_id })
-
-    const { data: commissionStructure } = await supabase
-      .from('commission_structures')
-      .select('percentage, commission_type, level')
-      .eq('carrier_id', carrierId)
-      .eq('position_id', (agentRow as MinimalAgent).position_id)
-      .eq('product_id', productId)
-      .eq('is_active', true)
-      .order('level')
-      .limit(1)
-    console.log("AgentRow", agentRow)
-    if (commissionStructure && commissionStructure.length > 0) {
-      const structure = commissionStructure[0]
-      console.log('[Snapshots] Found commission structure', { agentId: agentRow.id, position_id: agentRow.position_id, structure })
-      const snapshotEntry = {
-        deal_id: dealId,
-        agent_id: (agentRow as MinimalAgent).id,
-        position_id: (agentRow as MinimalAgent).position_id,
-        carrier_id: carrierId,
-        product_id: productId,
-        commission_type: structure.commission_type,
-        percentage: structure.percentage,
-        level: level,
-        upline_agent_id: (agentRow as MinimalAgent).upline_id,
-        snapshot_date: new Date().toISOString(),
-      }
-
-      console.log('[Snapshots] About to upsert snapshot', snapshotEntry)
-      const { error: insertError } = await supabase
-        .from('commission_snapshots')
-        .upsert(snapshotEntry, { onConflict: 'deal_id,agent_id,commission_type,level', ignoreDuplicates: false })
-
-      if (insertError) {
-        console.error(`[Snapshots] Failed to insert snapshot for agent ${(agentRow as MinimalAgent).id} on deal ${dealId}:`, insertError)
-      } else {
-        console.log('[Snapshots] Inserted snapshot', snapshotEntry)
-      }
+    if (chainError) {
+      console.error('[Hierarchy Snapshot] Error fetching upline chain:', chainError)
+      throw new Error(`Failed to fetch upline chain: ${chainError.message}`)
     }
 
-    currentAgentId = (agentRow as MinimalAgent).upline_id
-    level += 1
+    if (!uplineChain || uplineChain.length === 0) {
+      console.warn('[Hierarchy Snapshot] No upline chain found for agent', writingAgentId)
+      return
+    }
+
+    console.log('[Hierarchy Snapshot] Found upline chain with', uplineChain.length, 'agents')
+
+    // Create snapshot entries for each agent in the chain
+    // The uplineChain includes the writing agent themselves and all their uplines
+    const snapshotEntries = uplineChain.map((chainEntry: any) => ({
+      deal_id: dealId,
+      agent_id: chainEntry.agent_id,
+      upline_id: chainEntry.upline_id, // null for top-level agent
+      created_at: new Date().toISOString(),
+    }))
+
+    console.log('[Hierarchy Snapshot] Creating', snapshotEntries.length, 'snapshot entries')
+
+    // Insert all snapshot entries in a single operation
+    const { error: insertError } = await supabase
+      .from('deal_hierarchy_snapshot')
+      .insert(snapshotEntries)
+
+    if (insertError) {
+      console.error('[Hierarchy Snapshot] Error inserting snapshots:', insertError)
+      throw new Error(`Failed to create hierarchy snapshots: ${insertError.message}`)
+    }
+
+    console.log('[Hierarchy Snapshot] Successfully created snapshots for deal', dealId)
+  } catch (error) {
+    console.error('[Hierarchy Snapshot] Unexpected error:', error)
+    // Re-throw to let the caller handle it
+    throw error
   }
-  console.log('[Snapshots] END createCommissionSnapshotsForDeal', { dealId })
 }
 
 export async function POST(req: NextRequest) {
@@ -222,23 +206,22 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 400 });
       }
 
-      // Create commission snapshots for the new deal
-      if (deal?.id && deal.agent_id && deal.carrier_id && deal.product_id) {
+      // Create hierarchy snapshot for the new deal
+      if (deal?.id && deal.agent_id) {
         try {
-          console.log('[Deals API] Creating snapshots for new deal', { id: deal.id, agent_id: deal.agent_id, carrier_id: deal.carrier_id, product_id: deal.product_id })
-          await createCommissionSnapshotsForDeal(
+          console.log('[Deals API] Creating hierarchy snapshot for new deal', { id: deal.id, agent_id: deal.agent_id })
+          await createDealHierarchySnapshot(
             supabase,
             deal.id,
-            deal.agent_id,
-            deal.carrier_id,
-            deal.product_id
+            deal.agent_id
           )
-          console.log('[Deals API] Snapshot creation attempt complete for deal', deal.id)
+          console.log('[Deals API] Hierarchy snapshot creation complete for deal', deal.id)
         } catch (e) {
-          console.error('[Snapshots] Unexpected error creating snapshots for deal', deal.id, e)
+          console.error('[Hierarchy Snapshot] Unexpected error creating snapshot for deal', deal.id, e)
+          // Don't fail the deal creation if snapshot fails, but log the error
         }
       } else {
-        console.warn('[Deals API] Missing required fields to create snapshots for deal', { id: deal?.id, agent_id: deal?.agent_id, carrier_id: deal?.carrier_id, product_id: deal?.product_id })
+        console.warn('[Deals API] Missing required fields to create hierarchy snapshot for deal', { id: deal?.id, agent_id: deal?.agent_id })
       }
 
       // Send welcome SMS to client (if client phone exists)

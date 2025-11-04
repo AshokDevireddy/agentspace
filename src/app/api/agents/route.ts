@@ -67,19 +67,13 @@ const buildTree = (rows: TreeRow[], rootId: string) => {
   const reachable = new Set<string>()
   visit(rootId, reachable)
 
-  const rootNode = byId.get(rootId)
-  if (rootNode) {
-    byId.forEach((node, id) => {
-      if (!reachable.has(id) && id !== rootId) {
-        rootNode.children.push(id)
-        visit(id, reachable)
-      }
-    })
-  }
+  // Only include agents that are reachable from the root through upline connections
+  // Do not add agents without uplines as direct children of root
 
   const toNode = (id: string): any => {
     const node = byId.get(id)
-    if (!node) return null
+    // Only include nodes that are reachable from the root
+    if (!node || !reachable.has(id)) return null
     return {
       name: `${node.last_name}, ${node.first_name}`,
       attributes: {

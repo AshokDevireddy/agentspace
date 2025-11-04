@@ -88,11 +88,12 @@ export default function Clients() {
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
   const [isAdmin, setIsAdmin] = useState(false)
-  const [viewMode, setViewMode] = useState<'downlines' | 'self' | 'all'>('self')
+  const [isAdminChecked, setIsAdminChecked] = useState(false)
+  const [viewMode, setViewMode] = useState<'downlines' | 'self'>('self')
   const { user } = useAuth()
   const supabase = createClient()
 
-  // Check if user is admin and set default view mode
+  // Check if user is admin
   useEffect(() => {
     const checkAdminStatus = async () => {
       if (!user?.id) return
@@ -105,9 +106,7 @@ export default function Clients() {
 
       const adminStatus = userData?.is_admin || false
       setIsAdmin(adminStatus)
-
-      // Set default view mode based on admin status
-      setViewMode(adminStatus ? 'all' : 'self')
+      setIsAdminChecked(true)
     }
 
     checkAdminStatus()
@@ -115,9 +114,13 @@ export default function Clients() {
 
   // Fetch all clients for dropdown options (without pagination)
   useEffect(() => {
+    if (!isAdminChecked) return
+
     const fetchAllClients = async () => {
       try {
-        const url = `/api/clients?page=1&limit=1000&view=${viewMode}`
+        // For admins viewing "downlines", we actually fetch "all"
+        const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
+        const url = `/api/clients?page=1&limit=1000&view=${effectiveViewMode}`
         const response = await fetch(url)
         if (!response.ok) {
           throw new Error('Failed to fetch clients')
@@ -130,14 +133,18 @@ export default function Clients() {
     }
 
     fetchAllClients()
-  }, [viewMode])
+  }, [viewMode, isAdmin, isAdminChecked])
 
   // Fetch clients data from API
   useEffect(() => {
+    if (!isAdminChecked) return
+
     const fetchClients = async () => {
       try {
         setLoading(true)
-        const url = `/api/clients?page=${currentPage}&limit=20&view=${viewMode}`
+        // For admins viewing "downlines", we actually fetch "all"
+        const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
+        const url = `/api/clients?page=${currentPage}&limit=20&view=${effectiveViewMode}`
         const response = await fetch(url)
         if (!response.ok) {
           throw new Error('Failed to fetch clients')
@@ -156,7 +163,7 @@ export default function Clients() {
     }
 
     fetchClients()
-  }, [currentPage, viewMode])
+  }, [currentPage, viewMode, isAdmin, isAdminChecked])
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
@@ -235,46 +242,41 @@ export default function Clients() {
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-4xl font-bold text-gradient">Clients</h1>
 
-          {/* View Mode Toggle */}
-          <div className="flex items-center space-x-2">
-            {isAdmin && (
-              <>
-                <Button
-                  variant={viewMode === 'all' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setViewMode('all')}
-                  className={viewMode === 'all' ? 'btn-gradient' : ''}
-                >
-                  Everyone
-                </Button>
-                <Button
-                  variant={viewMode === 'self' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setViewMode('self')}
-                  className={viewMode === 'self' ? 'btn-gradient' : ''}
-                >
-                  Just Me
-                </Button>
-              </>
-            )}
-            {!isAdmin && (
-              <Button
-                variant={viewMode === 'self' ? 'default' : 'outline'}
-                size="sm"
+          {/* View Mode Toggle with Slider */}
+          <div className="relative bg-accent/30 rounded-lg p-1">
+            <div className="grid grid-cols-2 gap-1 relative">
+              {/* Animated slider background */}
+              <div
+                className={cn(
+                  "absolute h-[calc(100%-8px)] bg-gradient-to-r from-blue-600 to-blue-500 rounded-md transition-all duration-300 ease-in-out top-1 shadow-md",
+                  viewMode === 'self' ? 'left-1 right-[calc(50%+2px)]' : 'left-[calc(50%+2px)] right-1'
+                )}
+              />
+
+              {/* Buttons */}
+              <button
                 onClick={() => setViewMode('self')}
-                className={viewMode === 'self' ? 'btn-gradient' : ''}
+                className={cn(
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
+                  viewMode === 'self'
+                    ? 'text-white'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
               >
                 Just Me
-              </Button>
-            )}
-            <Button
-              variant={viewMode === 'downlines' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setViewMode('downlines')}
-              className={viewMode === 'downlines' ? 'btn-gradient' : ''}
-            >
-              Downlines Only
-            </Button>
+              </button>
+              <button
+                onClick={() => setViewMode('downlines')}
+                className={cn(
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
+                  viewMode === 'downlines'
+                    ? 'text-white'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                Downlines
+              </button>
+            </div>
           </div>
         </div>
       </div>

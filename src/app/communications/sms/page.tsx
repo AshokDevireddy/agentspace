@@ -108,10 +108,10 @@ function SMSMessagingPageContent() {
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const [isResizingRightPanel, setIsResizingRightPanel] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
-  const [viewMode, setViewMode] = useState<'downlines' | 'self' | 'all'>('self')
+  const [isAdminChecked, setIsAdminChecked] = useState(false)
+  const [viewMode, setViewMode] = useState<'downlines' | 'self'>('self')
   const [notificationFilter, setNotificationFilter] = useState<'all' | 'lapse' | 'needs_info'>('all')
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const hasSetInitialViewMode = useRef(false)
   const conversationRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const filteredConversations = conversations.filter(conv => {
@@ -204,26 +204,19 @@ function SMSMessagingPageContent() {
       const adminStatus = userData?.is_admin || false
       console.log('🔐 Admin status:', adminStatus)
       setIsAdmin(adminStatus)
+      setIsAdminChecked(true)
     }
 
     checkAdminStatus()
   }, [user?.id])
-
-  // Set initial view mode based on admin status
-  useEffect(() => {
-    if (!hasSetInitialViewMode.current && user?.id) {
-      if (isAdmin) {
-        setViewMode('downlines') // Admins start with downlines which fetches all for them
-      }
-      hasSetInitialViewMode.current = true
-    }
-  }, [isAdmin, user?.id])
 
   useEffect(() => {
     scrollToBottom()
   }, [messages])
 
   const fetchConversations = useCallback(async () => {
+    if (!isAdminChecked) return
+
     try {
       // For admins viewing "downlines", we actually fetch "all"
       const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
@@ -251,7 +244,7 @@ function SMSMessagingPageContent() {
     } finally {
       setLoading(false)
     }
-  }, [isAdmin, viewMode])
+  }, [isAdmin, viewMode, isAdminChecked])
 
   // Initial fetch and when view mode changes
   useEffect(() => {
@@ -735,7 +728,7 @@ function SMSMessagingPageContent() {
                     : 'text-muted-foreground hover:text-foreground'
                 )}
               >
-                {isAdmin ? 'Everyone' : 'Downlines'}
+                Downlines
               </button>
             </div>
           </div>

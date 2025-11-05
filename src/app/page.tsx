@@ -378,16 +378,16 @@ export default function Home() {
           <Card className="professional-card">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
-                <div>
+                <div className="w-full overflow-hidden">
                   <div className="flex items-center gap-2 mb-4">
-                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                    <BarChart3 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     <p className="text-sm font-medium text-muted-foreground">Active Policies</p>
                   </div>
-                  <p className="text-4xl font-bold text-foreground">
+                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
                     {(dashboardData.totals.active_policies ?? 0).toLocaleString()}
                   </p>
                   <div className="flex items-center gap-1 mt-4 text-green-600">
-                    <TrendingUp className="h-4 w-4" />
+                    <TrendingUp className="h-4 w-4 flex-shrink-0" />
                     <span className="text-sm font-medium">2.5%</span>
                   </div>
                 </div>
@@ -399,16 +399,16 @@ export default function Home() {
           <Card className="professional-card">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
-                <div>
+                <div className="w-full overflow-hidden">
                   <div className="flex items-center gap-2 mb-4">
-                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    <DollarSign className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     <p className="text-sm font-medium text-muted-foreground">Monthly Commissions</p>
                   </div>
-                  <p className="text-4xl font-bold text-foreground">
+                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
                     ${(dashboardData.totals.monthly_commissions ?? 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </p>
                   <div className="flex items-center gap-1 mt-4 text-green-600">
-                    <TrendingUp className="h-4 w-4" />
+                    <TrendingUp className="h-4 w-4 flex-shrink-0" />
                     <span className="text-sm font-medium">5%</span>
                   </div>
                 </div>
@@ -420,16 +420,16 @@ export default function Home() {
           <Card className="professional-card">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
-                <div>
+                <div className="w-full overflow-hidden">
                   <div className="flex items-center gap-2 mb-4">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     <p className="text-sm font-medium text-muted-foreground">New Policies (Last Month)</p>
                   </div>
-                  <p className="text-4xl font-bold text-foreground">
+                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
                     {(dashboardData.totals.new_policies_last_month ?? 0).toLocaleString()}
                   </p>
                   <div className="flex items-center gap-1 mt-4 text-green-600">
-                    <TrendingUp className="h-4 w-4" />
+                    <TrendingUp className="h-4 w-4 flex-shrink-0" />
                     <span className="text-sm font-medium">1%</span>
                   </div>
                 </div>
@@ -441,16 +441,16 @@ export default function Home() {
           <Card className="professional-card">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
-                <div>
+                <div className="w-full overflow-hidden">
                   <div className="flex items-center gap-2 mb-4">
-                    <Briefcase className="h-4 w-4 text-muted-foreground" />
+                    <Briefcase className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     <p className="text-sm font-medium text-muted-foreground">Total Clients</p>
                   </div>
-                  <p className="text-4xl font-bold text-foreground">
+                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
                     {(dashboardData.totals.clients_count ?? 0).toLocaleString()}
                   </p>
                   <div className="flex items-center gap-1 mt-4 text-green-600">
-                    <TrendingUp className="h-4 w-4" />
+                    <TrendingUp className="h-4 w-4 flex-shrink-0" />
                     <span className="text-sm font-medium">2.5%</span>
                   </div>
                 </div>

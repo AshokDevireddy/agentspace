@@ -340,7 +340,7 @@ export default function AnalyticsTestPage() {
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
-	React.useEffect(() => {
+	React.	useEffect(() => {
 		let isMounted = true
 		;(async () => {
 			try {
@@ -353,20 +353,20 @@ export default function AnalyticsTestPage() {
 
 				const { data: userRow, error: userError } = await supabase
 					.from("users")
-					.select("agency_id")
+					.select("id, agency_id")
 					.eq("auth_user_id", userId)
 					.single()
-				if (userError || !userRow?.agency_id) return
+				if (userError || !userRow?.id) return
                 console.log("userRow", userRow)
 
 				const { data: rpcData, error: rpcError } = await supabase
-					.rpc("get_analytics_from_deals_with_agency_id", { p_agency_id: userRow.agency_id })
+					.rpc("get_analytics_from_deals_for_agent", { p_user_id: userRow.id })
 				if (rpcError || !rpcData) return
 
                 console.log("rpcData", rpcData)
                 console.log("rpcError", rpcError)
                 console.log("userRow", userRow)
-                console.log("agency_id", userRow.agency_id)
+                console.log("user_id", userRow.id)
 
 				if (isMounted) setAnalyticsData(rpcData as AnalyticsTestValue)
 			} catch (_) {

@@ -152,6 +152,51 @@ export default function PostDeal() {
     loadProducts()
   }, [agencyId, formData.carrierId])
 
+  const sendDiscordNotification = async (
+    agencyId: string,
+    agentId: string,
+    formData: typeof initialFormData,
+    monthlyPremium: number
+  ) => {
+    try {
+      // Get agent name
+      const { data: agentData } = await supabase
+        .from('users')
+        .select('first_name, last_name')
+        .eq('id', agentId)
+        .single()
+
+      const agentName = agentData
+        ? `${agentData.first_name} ${agentData.last_name}`
+        : 'Unknown Agent'
+
+      // Get carrier and product names
+      const carrierName = getCarrierName(formData.carrierId)
+      const productName = getProductName(formData.productId)
+
+      // Build the Discord message
+      const message = `**Agent:** ${agentName}
+      **Carrier:** ${carrierName}
+      **Product:** ${productName}
+      **Annual Premium:** $${(monthlyPremium * 12).toFixed(2)}`
+
+      // Send to Discord webhook API
+      await fetch('/api/discord/webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          agencyId,
+          message,
+        }),
+      })
+    } catch (error) {
+      // Log error but don't throw - we don't want to fail the deal submission
+      console.error('Error sending Discord notification:', error)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -322,6 +367,13 @@ export default function PostDeal() {
       }
 
       console.log("Deal operation complete:", successMessage)
+
+      // Send Discord notification (don't block on this - fire and forget)
+      sendDiscordNotification(agencyId, agent_id, formData, monthlyPremium).catch(err => {
+        console.error('Failed to send Discord notification:', err)
+        // Don't fail the whole operation if Discord notification fails
+      })
+
       alert(successMessage)
 
       router.push("/policies/book")

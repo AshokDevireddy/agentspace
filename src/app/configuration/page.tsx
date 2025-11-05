@@ -37,12 +37,13 @@ interface Agency {
   lead_sources?: string[]
   phone_number?: string
   messaging_enabled?: boolean
+  discord_webhook_url?: string
 }
 
 export default function ConfigurationPage() {
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<"carriers" | "lead-sources" | "messaging" | "policy-reports">("carriers")
+  const [activeTab, setActiveTab] = useState<"carriers" | "lead-sources" | "messaging" | "policy-reports" | "discord">("carriers")
 
   // Lead Sources state
   const [agency, setAgency] = useState<Agency | null>(null)
@@ -61,6 +62,12 @@ export default function ConfigurationPage() {
   // Messaging Settings state
   const [messagingEnabled, setMessagingEnabled] = useState<boolean>(false)
   const [savingMessagingEnabled, setSavingMessagingEnabled] = useState(false)
+
+  // Discord Settings state
+  const [discordWebhookUrl, setDiscordWebhookUrl] = useState<string>("")
+  const [editingDiscordWebhook, setEditingDiscordWebhook] = useState(false)
+  const [discordWebhookValue, setDiscordWebhookValue] = useState("")
+  const [savingDiscordWebhook, setSavingDiscordWebhook] = useState(false)
 
   // Policy Reports state
   const [uploads, setUploads] = useState<Array<{carrier: string, file: File | null}>>([
@@ -163,7 +170,7 @@ export default function ConfigurationPage() {
         if (userData?.agency_id) {
           const { data: agencyInfo } = await supabase
             .from('agencies')
-            .select('id, name, lead_sources, phone_number, messaging_enabled')
+            .select('id, name, lead_sources, phone_number, messaging_enabled, discord_webhook_url')
             .eq('id', userData.agency_id)
             .single()
 
@@ -173,6 +180,7 @@ export default function ConfigurationPage() {
             setLeadSources(agencyInfo.lead_sources || [])
             setAgencyPhoneNumber(agencyInfo.phone_number || "")
             setMessagingEnabled(agencyInfo.messaging_enabled || false)
+            setDiscordWebhookUrl(agencyInfo.discord_webhook_url || "")
           }
         }
       }
@@ -608,6 +616,42 @@ export default function ConfigurationPage() {
     }
   }
 
+  // Discord Webhook Management Functions
+  const handleEditDiscordWebhook = () => {
+    setEditingDiscordWebhook(true)
+    setDiscordWebhookValue(discordWebhookUrl)
+  }
+
+  const handleSaveDiscordWebhook = async () => {
+    if (!agency) return
+
+    try {
+      setSavingDiscordWebhook(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ discord_webhook_url: discordWebhookValue.trim() || null })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setDiscordWebhookUrl(discordWebhookValue.trim())
+      setEditingDiscordWebhook(false)
+      setDiscordWebhookValue("")
+    } catch (error) {
+      console.error('Error updating Discord webhook:', error)
+      alert('Failed to update Discord webhook URL')
+    } finally {
+      setSavingDiscordWebhook(false)
+    }
+  }
+
+  const handleCancelDiscordWebhookEdit = () => {
+    setEditingDiscordWebhook(false)
+    setDiscordWebhookValue("")
+  }
+
   // Policy Reports Management Functions
   const checkExistingPolicyFiles = async () => {
     try {
@@ -760,6 +804,17 @@ export default function ConfigurationPage() {
                 )}
               >
                 Policy Reports
+              </button>
+              <button
+                onClick={() => setActiveTab("discord")}
+                className={cn(
+                  "flex-1 px-4 py-3 text-sm font-medium transition-all",
+                  activeTab === "discord"
+                    ? "bg-blue-50 text-blue-700 border-b-2 border-blue-600"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+              >
+                Discord Notifications
               </button>
             </div>
           </div>
@@ -1163,6 +1218,133 @@ export default function ConfigurationPage() {
                     <li>Files will be processed to calculate persistency rates and track policy status</li>
                     <li>New uploads will replace any existing files for the same carrier</li>
                   </ul>
+                </div>
+              </div>
+            )}
+
+            {/* Discord Tab */}
+            {activeTab === "discord" && (
+              <div>
+                <div className="mb-4">
+                  <h2 className="text-xl font-semibold text-foreground mb-1">Discord Notifications</h2>
+                  <p className="text-sm text-muted-foreground">Configure Discord webhook to get notified when deals are posted</p>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Discord Webhook URL */}
+                  <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                    <h3 className="text-xl font-semibold text-foreground mb-4">Discord Webhook URL</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Enter your Discord webhook URL to receive notifications when agents post deals.
+                      Each notification will include the agent's name, deal details, and deal value.
+                    </p>
+
+                    {editingDiscordWebhook ? (
+                      <div className="flex gap-3">
+                        <Input
+                          type="url"
+                          value={discordWebhookValue}
+                          onChange={(e) => setDiscordWebhookValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveDiscordWebhook()
+                            if (e.key === 'Escape') handleCancelDiscordWebhookEdit()
+                          }}
+                          placeholder="https://discord.com/api/webhooks/..."
+                          className="flex-1 h-12 text-sm font-mono"
+                          disabled={savingDiscordWebhook}
+                        />
+                        <button
+                          onClick={handleSaveDiscordWebhook}
+                          disabled={savingDiscordWebhook}
+                          className="text-green-600 hover:text-green-800 p-3 disabled:opacity-50 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
+                        >
+                          <Check className="h-6 w-6" />
+                        </button>
+                        <button
+                          onClick={handleCancelDiscordWebhookEdit}
+                          disabled={savingDiscordWebhook}
+                          className="text-muted-foreground hover:text-foreground p-3 disabled:opacity-50 bg-accent rounded-lg hover:bg-accent/80 transition-colors"
+                        >
+                          <X className="h-6 w-6" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 bg-white rounded-lg border-2 border-gray-200 p-4">
+                          <p className="text-sm font-mono text-foreground break-all">
+                            {discordWebhookUrl || <span className="text-muted-foreground italic">Not configured</span>}
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleEditDiscordWebhook}
+                          className="text-blue-600 hover:text-blue-800 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                        >
+                          <Edit className="h-6 w-6" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Setup Instructions */}
+                  <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
+                    <h3 className="text-lg font-semibold text-blue-900 mb-3">How to Set Up Discord Webhook</h3>
+                    <ol className="space-y-2 text-sm text-blue-800">
+                      <li className="flex gap-2">
+                        <span className="font-bold">1.</span>
+                        <span>Open Discord and navigate to the channel where you want to receive notifications</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="font-bold">2.</span>
+                        <span>Click the gear icon (⚙️) next to the channel name to edit the channel</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="font-bold">3.</span>
+                        <span>Go to <strong>Integrations</strong> → <strong>Webhooks</strong> → <strong>New Webhook</strong></span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="font-bold">4.</span>
+                        <span>Give your webhook a name (e.g., "Deal Notifications")</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="font-bold">5.</span>
+                        <span>Click <strong>Copy Webhook URL</strong></span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="font-bold">6.</span>
+                        <span>Paste the URL above and save</span>
+                      </li>
+                    </ol>
+                  </div>
+
+                  {/* Notification Example */}
+                  <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                    <h3 className="text-lg font-semibold text-foreground mb-3">Notification Example</h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      When an agent posts a deal, you'll receive a message like this:
+                    </p>
+                    <div className="bg-white rounded-lg p-4 border-l-4 border-blue-500 font-mono text-sm">
+                      <p className="text-gray-700">
+                        🎉 <strong>New Deal Posted!</strong>
+                      </p>
+                      <p className="text-gray-600 mt-2">
+                        <strong>Agent:</strong> John Doe<br />
+                        <strong>Client:</strong> Jane Smith<br />
+                        <strong>Carrier:</strong> Aetna<br />
+                        <strong>Product:</strong> Term Life Insurance<br />
+                        <strong>Monthly Premium:</strong> $150.00<br />
+                        <strong>Annual Premium:</strong> $1,800.00
+                      </p>
+                    </div>
+                  </div>
+
+                  {!discordWebhookUrl && (
+                    <div className="bg-amber-50 rounded-lg p-6 border border-amber-200">
+                      <h3 className="text-lg font-semibold text-amber-900 mb-2">⚠️ No Webhook Configured</h3>
+                      <p className="text-sm text-amber-800">
+                        You won't receive Discord notifications until you configure a webhook URL above.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

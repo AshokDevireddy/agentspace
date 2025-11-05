@@ -386,10 +386,6 @@ export default function Home() {
                   <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
                     {(dashboardData.totals.active_policies ?? 0).toLocaleString()}
                   </p>
-                  <div className="flex items-center gap-1 mt-4 text-green-600">
-                    <TrendingUp className="h-4 w-4 flex-shrink-0" />
-                    <span className="text-sm font-medium">2.5%</span>
-                  </div>
                 </div>
               </div>
             </CardContent>
@@ -407,10 +403,6 @@ export default function Home() {
                   <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
                     ${(dashboardData.totals.monthly_commissions ?? 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </p>
-                  <div className="flex items-center gap-1 mt-4 text-green-600">
-                    <TrendingUp className="h-4 w-4 flex-shrink-0" />
-                    <span className="text-sm font-medium">5%</span>
-                  </div>
                 </div>
               </div>
             </CardContent>
@@ -428,10 +420,6 @@ export default function Home() {
                   <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
                     {(dashboardData.totals.new_policies_last_month ?? 0).toLocaleString()}
                   </p>
-                  <div className="flex items-center gap-1 mt-4 text-green-600">
-                    <TrendingUp className="h-4 w-4 flex-shrink-0" />
-                    <span className="text-sm font-medium">1%</span>
-                  </div>
                 </div>
               </div>
             </CardContent>
@@ -449,10 +437,7 @@ export default function Home() {
                   <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
                     {(dashboardData.totals.clients_count ?? 0).toLocaleString()}
                   </p>
-                  <div className="flex items-center gap-1 mt-4 text-green-600">
-                    <TrendingUp className="h-4 w-4 flex-shrink-0" />
-                    <span className="text-sm font-medium">2.5%</span>
-                  </div>
+
                 </div>
               </div>
             </CardContent>

@@ -1,11 +1,30 @@
 'use client'
 
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import Navigation from '@/components/navigation'
 import { Building2 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+
+import { ArctenAgent } from "@arcteninc/core";
+// import "@arcteninc/core/styles";
+
+import {
+  getLoggedInUserId,
+  getAgentAnalytics,
+  getTopCarriers,
+  getAveragePersistency,
+  getSubmissionTrends,
+  getCurrentMonthSummary,
+  postDeal,
+  getAgentsList,
+  addUser,
+  navigateToPage,
+  getCurrentPage,
+  getAgentHierarchy
+} from '@/lib/analytics-tools';
+
 
 // Pages that should not show the navigation sidebar
 const AUTH_PAGES = [
@@ -27,9 +46,11 @@ export default function ClientLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const router = useRouter()
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isClientPage = CLIENT_PAGES.some(page => pathname.startsWith(page))
   const [userRole, setUserRole] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -38,6 +59,7 @@ export default function ClientLayout({
       const { data: { user } } = await supabase.auth.getUser()
 
       if (user) {
+        setUserId(user.id)
         const { data: userData } = await supabase
           .from('users')
           .select('role')
@@ -55,6 +77,22 @@ export default function ClientLayout({
       setLoading(false)
     }
   }, [pathname, isAuthPage])
+
+  // Listen for navigation events from ArctenAgent tools
+  useEffect(() => {
+    const handleNavigation = (event: CustomEvent) => {
+      const { path } = event.detail
+      if (path) {
+        router.push(path)
+      }
+    }
+
+    window.addEventListener('arcten-navigate', handleNavigation as EventListener)
+
+    return () => {
+      window.removeEventListener('arcten-navigate', handleNavigation as EventListener)
+    }
+  }, [router])
 
   // On auth pages, show a simple layout with just the logo
   if (isAuthPage) {
@@ -99,11 +137,33 @@ export default function ClientLayout({
   return (
     <div className="min-h-screen bg-background lg:pl-64 overflow-x-hidden">
       <Navigation />
-      <main className="min-h-screen bg-background">
-        <div className="p-4 lg:p-6 space-y-6">
-          {children}
+      <div className="flex h-screen">
+        <div className="flex-1 overflow-scroll">
+          <div className="p-4 lg:p-6 space-y-6">
+            {children}
+          </div>
         </div>
-      </main>
+        <ArctenAgent
+          user={userId ? { id: userId } : undefined}
+          safeTools={[
+            getLoggedInUserId,
+            getAgentAnalytics,
+            getTopCarriers,
+            getAveragePersistency,
+            getSubmissionTrends,
+            getCurrentMonthSummary,
+            getAgentsList,
+            getCurrentPage,
+            getAgentHierarchy
+          ]}
+          tools={[
+            postDeal,
+            addUser,
+            navigateToPage
+          ]}
+          systemPrompt="You are a helpful assistant that can help with tasks related to the agency. end every message with a happy face emoji"
+        />
+      </div>
     </div>
   )
 }

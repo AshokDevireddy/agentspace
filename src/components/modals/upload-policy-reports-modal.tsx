@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Upload, FileText, X, TrendingUp } from "lucide-react"
-import {requestSignedUrl, putToSignedUrlSmart} from '@/lib/upload-policy-reports/client'
+import {requestSignedUrl, putToSignedUrlSmart, putToSignedUrl} from '@/lib/upload-policy-reports/client'
+import { createClient } from '@/lib/supabase/client'
 
 interface CarrierUpload {
   carrier: string
@@ -63,28 +64,94 @@ const handleAnalyze = async () => {
   }
 
   try {
-    // 1) Upload all files (auto-chunk if >5MB)
+    // 0) Create an ingest job first
+    const expectedFiles = uploadedFiles.length
+    const clientJobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+    // Resolve agencyId from current session
+    let agencyId: string | null = null
+    try {
+      const supabase = createClient()
+      const { data: auth } = await supabase.auth.getUser()
+      const userId = auth?.user?.id
+      if (userId) {
+        const { data: userRow, error: userError } = await supabase
+          .from('users')
+          .select('agency_id')
+          .eq('auth_user_id', userId)
+          .single()
+        if (!userError) {
+          agencyId = userRow?.agency_id ?? null
+        }
+      }
+    } catch {}
+
+    if (!agencyId) {
+      alert('Could not resolve your agency. Please refresh and try again.')
+      return
+    }
+    const jobResp = await fetch('/api/upload-policy-reports/create-job', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        agencyId,
+        expectedFiles,
+        clientJobId,
+      }),
+    })
+    const jobJson = await jobResp.json().catch(() => null)
+    if (!jobResp.ok || !jobJson?.job?.jobId) {
+      console.error('Failed to create ingest job', { status: jobResp.status, body: jobJson })
+      alert('Could not start ingest job. Please try again.')
+      return
+    }
+    const jobId = jobJson.job.jobId as string
+    console.debug('Created ingest job', { jobId, expectedFiles })
+
+    // 1) Request presigned URLs for all files in a single call (new ingestion flow)
+    const signResp = await fetch('/api/upload-policy-reports/sign', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jobId,
+        files: uploadedFiles.map(({ file }) => ({
+          fileName: file.name,
+          contentType: file.type || 'application/octet-stream',
+          size: file.size,
+        })),
+      }),
+    })
+    const signJson = await signResp.json().catch(() => null)
+    if (!signResp.ok || !Array.isArray(signJson?.files)) {
+      console.error('Presign failed', { status: signResp.status, body: signJson })
+      alert('Could not generate upload URLs. Please try again.')
+      return
+    }
+
+    // 2) Upload each file via its presigned URL (no chunking; URLs expire in 60s)
     const results = await Promise.allSettled(
-      uploadedFiles.map(async ({ carrier, file }) => {
-        const smartRes = await putToSignedUrlSmart(file, carrier /*, (pct) => setProgress(prev => ({ ...prev, [carrier]: pct })) */);
-        if (!smartRes.ok) throw new Error(`Upload failed for ${carrier} (${file.name}) with status ${smartRes.status}`);
-        return { carrier, file: file.name, paths: smartRes.paths };
-      })
-    );
+      (signJson.files as Array<{ fileId: string; fileName: string; presignedUrl: string }>).
+        map(async (f) => {
+          const match = uploadedFiles.find(uf => uf.file.name === f.fileName)
+          if (!match) throw new Error(`Missing file for ${f.fileName}`)
+          const res = await putToSignedUrl(f.presignedUrl, match.file)
+          if (!res.ok) throw new Error(`Upload failed with status ${res.status}`)
+          return { fileName: f.fileName, fileId: f.fileId }
+        })
+    )
 
     // 2) Summarize uploads
     const successes: { carrier: string; file: string; paths: string[] }[] = [];
     const failures: string[] = [];
 
-    results.forEach((r, i) => {
-      const { carrier, file } = uploadedFiles[i];
+    results.forEach((r) => {
       if (r.status === 'fulfilled') {
-        successes.push({ carrier, file: file.name, paths: r.value.paths || [] });
+        successes.push({ carrier: 'n/a', file: r.value.fileName, paths: [] });
       } else {
-        const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
-        failures.push(`${carrier} (${file.name}): ${reason}`);
+        const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
+        failures.push(reason)
       }
-    });
+    })
 
     if (successes.length) console.log('Uploaded:', successes);
     if (failures.length) console.error('Failed uploads:', failures);

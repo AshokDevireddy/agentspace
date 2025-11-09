@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import AddUserModal from "@/components/modals/add-user-modal"
-import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight } from "lucide-react"
+import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 // Agent data type
 interface Agent {
@@ -22,6 +23,9 @@ interface Agent {
   downlines: number
   status: string
   badge: string
+  position_id?: string | null
+  position_name?: string | null
+  position_level?: number | null
 }
 
 interface TreeNode {
@@ -30,6 +34,25 @@ interface TreeNode {
       [key: string]: string;
     };
     children?: TreeNode[];
+}
+
+interface PendingAgent {
+  agent_id: string
+  first_name: string
+  last_name: string
+  email: string
+  phone_number: string | null
+  role: string
+  upline_name: string | null
+  created_at: string
+}
+
+interface Position {
+  position_id: string
+  name: string
+  level: number
+  description: string | null
+  is_active: boolean
 }
 
 const badgeColors: { [key: string]: string } = {
@@ -214,6 +237,7 @@ export default function Agents() {
   const [localDirectDownline, setLocalDirectDownline] = useState("all")
   const [localAgentName, setLocalAgentName] = useState("all")
   const [localStatus, setLocalStatus] = useState("all")
+  const [localPosition, setLocalPosition] = useState("all")
 
   // Active filter state (what's actually applied)
   const [selectedInUpline, setSelectedInUpline] = useState("all")
@@ -222,6 +246,7 @@ export default function Agents() {
   const [selectedDirectDownline, setSelectedDirectDownline] = useState("all")
   const [selectedAgentName, setSelectedAgentName] = useState("all")
   const [selectedStatus, setSelectedStatus] = useState("all")
+  const [selectedPosition, setSelectedPosition] = useState("all")
 
   const [agentsData, setAgentsData] = useState<Agent[]>([])
   const [allAgents, setAllAgents] = useState<Array<{ id: string; name: string }>>([])
@@ -231,8 +256,16 @@ export default function Agents() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
-  const [view, setView] = useState<'table' | 'tree'>('table')
-  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const [view, setView] = useState<'table' | 'tree' | 'pending-positions'>('table')
+  const [translate, setTranslate] = useState({ x: 0, y: 0 })
+
+  // Pending positions state
+  const [pendingAgents, setPendingAgents] = useState<PendingAgent[]>([])
+  const [pendingCount, setPendingCount] = useState(0)
+  const [positions, setPositions] = useState<Position[]>([]) // For pending positions assignment (filtered by user level)
+  const [filterPositions, setFilterPositions] = useState<Position[]>([]) // For filter dropdown (all agency positions)
+  const [assigningAgentId, setAssigningAgentId] = useState<string | null>(null)
+  const [selectedPositionId, setSelectedPositionId] = useState<string>("")
 
     const containerRef = useCallback((containerElem: HTMLDivElement | null) => {
         if (containerElem !== null) {
@@ -275,6 +308,9 @@ export default function Agents() {
         if (selectedStatus && selectedStatus !== 'all') {
           params.append('status', selectedStatus)
         }
+        if (selectedPosition && selectedPosition !== 'all') {
+          params.append('positionId', selectedPosition)
+        }
 
         const url = `/api/agents?${params.toString()}`
         const response = await fetch(url)
@@ -302,7 +338,136 @@ export default function Agents() {
     }
 
     fetchAgents()
-  }, [currentPage, view, selectedInUpline, selectedDirectUpline, selectedInDownline, selectedDirectDownline, selectedAgentName, selectedStatus])
+  }, [currentPage, view, selectedInUpline, selectedDirectUpline, selectedInDownline, selectedDirectDownline, selectedAgentName, selectedStatus, selectedPosition])
+
+  // Fetch pending agents count for badge (runs on mount and when view changes)
+  useEffect(() => {
+    const fetchPendingCount = async () => {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const accessToken = session?.access_token
+
+        if (!accessToken) {
+          console.error('No access token available')
+          return
+        }
+
+        const response = await fetch('/api/agents/without-positions', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setPendingCount(data.count || 0)
+          // If we're on pending positions view, also set the full list
+          if (view === 'pending-positions') {
+            setPendingAgents(data.agents || [])
+          }
+        } else {
+          console.error('Failed to fetch pending agents:', response.status, await response.text())
+        }
+      } catch (err) {
+        console.error('Error fetching pending agents count:', err)
+      }
+    }
+
+    fetchPendingCount()
+  }, [view])
+
+  // Fetch positions for assignment dropdown (filtered by user's level)
+  useEffect(() => {
+    const fetchPositions = async () => {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const accessToken = session?.access_token
+
+        if (!accessToken) {
+          console.error('No access token available')
+          return
+        }
+
+        // Fetch positions with Bearer token
+        const response = await fetch('/api/positions', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+
+          // Fetch current user's position level to filter positions
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user) {
+            const { data: userData } = await supabase
+              .from('users')
+              .select('position_id, position:positions(level)')
+              .eq('auth_user_id', user.id)
+              .single()
+
+            const currentUserPositionLevel = userData?.position?.level
+
+            // Filter positions: only show positions BELOW current user's level (not including their level)
+            const filteredData = currentUserPositionLevel !== null && currentUserPositionLevel !== undefined
+              ? data.filter((pos: any) => pos.level < currentUserPositionLevel)
+              : data
+
+            setPositions(filteredData || [])
+          } else {
+            setPositions(data || [])
+          }
+        } else {
+          console.error('Failed to fetch positions:', response.status, await response.text())
+        }
+      } catch (err) {
+        console.error('Error fetching positions:', err)
+      }
+    }
+
+    if (view === 'pending-positions') {
+      fetchPositions()
+    }
+  }, [view])
+
+  // Fetch all positions for filter dropdown (table view) - no filtering, just all agency positions
+  useEffect(() => {
+    const fetchFilterPositions = async () => {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const accessToken = session?.access_token
+
+        if (!accessToken) {
+          console.error('No access token available')
+          return
+        }
+
+        // Fetch all positions for the agency (no level filtering)
+        const response = await fetch('/api/positions', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setFilterPositions(data || [])
+        } else {
+          console.error('Failed to fetch filter positions:', response.status, await response.text())
+        }
+      } catch (err) {
+        console.error('Error fetching filter positions:', err)
+      }
+    }
+
+    if (view === 'table') {
+      fetchFilterPositions()
+    }
+  }, [view])
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
@@ -312,6 +477,7 @@ export default function Agents() {
     setSelectedDirectDownline(localDirectDownline)
     setSelectedAgentName(localAgentName)
     setSelectedStatus(localStatus)
+    setSelectedPosition(localPosition)
     setCurrentPage(1)
   }
 
@@ -323,13 +489,54 @@ export default function Agents() {
     setLocalDirectDownline("all")
     setLocalAgentName("all")
     setLocalStatus("all")
+    setLocalPosition("all")
     setSelectedInUpline("all")
     setSelectedDirectUpline("all")
     setSelectedInDownline("all")
     setSelectedDirectDownline("all")
     setSelectedAgentName("all")
     setSelectedStatus("all")
+    setSelectedPosition("all")
     setCurrentPage(1)
+  }
+
+  // Handle position assignment
+  const handleAssignPosition = async (agentId: string, positionId: string) => {
+    if (!positionId) {
+      alert('Please select a position')
+      return
+    }
+
+    try {
+      setAssigningAgentId(agentId)
+      const response = await fetch('/api/agents/assign-position', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          agentId,
+          positionId,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to assign position')
+      }
+
+      // Remove the agent from pending list
+      setPendingAgents(prev => prev.filter(a => a.agent_id !== agentId))
+      setPendingCount(prev => Math.max(0, prev - 1))
+      setSelectedPositionId("")
+
+      alert('Position assigned successfully!')
+    } catch (err) {
+      console.error('Error assigning position:', err)
+      alert(err instanceof Error ? err.message : 'Failed to assign position')
+    } finally {
+      setAssigningAgentId(null)
+    }
   }
 
   // Show loading state
@@ -380,24 +587,42 @@ export default function Agents() {
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-4xl font-bold text-gradient">Agents</h1>
           <div className="flex items-center space-x-4">
-            <Button
-                variant="ghost"
+            <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
+              <Button
+                variant={view === 'table' ? 'default' : 'ghost'}
                 size="sm"
-                onClick={() => setView(view === 'table' ? 'tree' : 'table')}
-                className="flex items-center gap-2"
-            >
-                {view === 'table' ? (
-                  <>
-                    <GitMerge className="h-4 w-4" />
-                    Graph View
-                  </>
-                ) : (
-                  <>
-                    <List className="h-4 w-4" />
-                    List View
-                  </>
+                onClick={() => setView('table')}
+                className={`flex items-center gap-2 ${view === 'table' ? 'btn-gradient' : ''}`}
+              >
+                <List className="h-4 w-4" />
+                Table
+              </Button>
+              <Button
+                variant={view === 'tree' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setView('tree')}
+                className={`flex items-center gap-2 ${view === 'tree' ? 'btn-gradient' : ''}`}
+              >
+                <GitMerge className="h-4 w-4" />
+                Graph
+              </Button>
+              <Button
+                variant={view === 'pending-positions' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setView('pending-positions')}
+                className={`flex items-center gap-2 relative ${view === 'pending-positions' ? 'btn-gradient' : ''}`}
+              >
+                <UserCog className="h-4 w-4" />
+                Pending Positions
+                {pendingCount > 0 && (
+                  <Badge
+                    className="ml-1 h-5 min-w-5 flex items-center justify-center bg-amber-500 text-white border-0 text-xs px-1.5"
+                  >
+                    {pendingCount}
+                  </Badge>
                 )}
-            </Button>
+              </Button>
+            </div>
             <AddUserModal trigger={
               <Button className="btn-gradient" size="sm">
                 <Plus className="h-4 w-4 mr-2" />
@@ -497,6 +722,20 @@ export default function Agents() {
                 />
               </div>
 
+              {/* Position */}
+              <div className="flex-1 min-w-[120px]">
+                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  Position
+                </label>
+                <SimpleSearchableSelect
+                  options={[{ value: "all", label: "All Positions" }, ...filterPositions.map(p => ({ value: p.position_id, label: p.name }))]}
+                  value={localPosition}
+                  onValueChange={setLocalPosition}
+                  placeholder="All Positions"
+                  searchPlaceholder="Search..."
+                />
+              </div>
+
               {/* Filter Buttons */}
               <div className="flex gap-2 items-end">
                 <Button
@@ -507,7 +746,7 @@ export default function Agents() {
                   <Filter className="h-3.5 w-3.5 mr-1.5" />
                   Filter
                 </Button>
-                {(selectedInUpline !== 'all' || selectedDirectUpline !== 'all' || selectedInDownline !== 'all' || selectedDirectDownline !== 'all' || selectedAgentName !== 'all' || selectedStatus !== 'all') && (
+                {(selectedInUpline !== 'all' || selectedDirectUpline !== 'all' || selectedInDownline !== 'all' || selectedDirectDownline !== 'all' || selectedAgentName !== 'all' || selectedStatus !== 'all' || selectedPosition !== 'all') && (
                   <Button
                     onClick={handleClearFilters}
                     variant="outline"
@@ -530,6 +769,7 @@ export default function Agents() {
               <thead>
                 <tr>
                   <th>Agent</th>
+                  <th>Position</th>
                   <th>Upline</th>
                   <th>Status</th>
                   <th>Created</th>
@@ -540,7 +780,7 @@ export default function Agents() {
               <tbody>
                 {agentsData.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                    <td colSpan={7} className="py-8 text-center text-muted-foreground">
                       No agents found matching your criteria
                     </td>
                   </tr>
@@ -564,6 +804,18 @@ export default function Agents() {
                             </Badge>
                           </div>
                         </div>
+                      </td>
+                      <td>
+                        {agent.position_name ? (
+                          <Badge
+                            className="bg-blue-500/20 text-blue-400 border-blue-500/30 border"
+                            variant="outline"
+                          >
+                            {agent.position_name}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">Not Set</span>
+                        )}
                       </td>
                       <td>{agent.upline}</td>
                       <td>
@@ -664,7 +916,7 @@ export default function Agents() {
             </div>
           </Card>
         </div>
-      ) : (
+      ) : view === 'tree' ? (
         <div
           className="w-full"
           style={{
@@ -694,6 +946,85 @@ export default function Agents() {
                 </div>
             )}
         </div>
+      ) : (
+        <Card className="professional-card">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>Agents Without Positions</span>
+              <Badge className="bg-amber-500 text-white border-0">
+                {pendingCount} Pending
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {pendingAgents.length === 0 ? (
+              <div className="py-12 text-center">
+                <UserCog className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-lg font-medium text-foreground mb-2">
+                  All agents have positions assigned!
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  There are no agents waiting for position assignment.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground mb-4">
+                  The following agents need position assignments. Select a position for each agent and click Assign.
+                </p>
+                {pendingAgents.map((agent) => (
+                  <div
+                    key={agent.agent_id}
+                    className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="flex-1">
+                      <div className="font-medium text-foreground">
+                        {agent.first_name} {agent.last_name}
+                      </div>
+                      <div className="text-sm text-muted-foreground mt-1">
+                        {agent.email} {agent.phone_number && `• ${agent.phone_number}`}
+                      </div>
+                      {agent.upline_name && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Upline: {agent.upline_name}
+                        </div>
+                      )}
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Created: {new Date(agent.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 ml-4">
+                      <SimpleSearchableSelect
+                        options={positions
+                          .filter(p => p.is_active)
+                          .sort((a, b) => b.level - a.level)
+                          .map(p => ({
+                            value: p.position_id,
+                            label: `${p.name} (Level ${p.level})`
+                          }))}
+                        value={assigningAgentId === agent.agent_id ? selectedPositionId : ""}
+                        onValueChange={(value) => {
+                          setAssigningAgentId(agent.agent_id)
+                          setSelectedPositionId(value)
+                        }}
+                        placeholder="Select position..."
+                        searchPlaceholder="Search positions..."
+                      />
+                      <Button
+                        onClick={() => handleAssignPosition(agent.agent_id, selectedPositionId)}
+                        disabled={assigningAgentId !== agent.agent_id || !selectedPositionId}
+                        className="btn-gradient"
+                        size="sm"
+                      >
+                        {assigningAgentId === agent.agent_id && selectedPositionId ? 'Assign' : 'Select Position'}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   )

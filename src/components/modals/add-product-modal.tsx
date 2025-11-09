@@ -110,6 +110,11 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
         onProductCreated(data.product)
       }
 
+      // Show success message about setting commissions
+      if (data.message) {
+        alert(data.message)
+      }
+
       setIsOpen(false)
       // Reset form
       setFormData({

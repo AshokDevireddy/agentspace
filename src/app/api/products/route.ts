@@ -162,6 +162,28 @@ export async function POST(request: Request) {
       }, { status: 403 })
     }
 
+    // Get all positions for this agency
+    const { data: positions, error: positionsError } = await supabase
+      .from('positions')
+      .select('id')
+      .eq('agency_id', agencyId)
+      .eq('is_active', true)
+
+    if (positionsError) {
+      console.error('Error fetching positions:', positionsError)
+      return NextResponse.json({
+        error: 'Failed to validate positions',
+        detail: 'Could not verify position requirements'
+      }, { status: 500 })
+    }
+
+    if (!positions || positions.length === 0) {
+      return NextResponse.json({
+        error: 'No positions found',
+        detail: 'Please create positions before adding products. All products must have commission percentages set for each position.'
+      }, { status: 400 })
+    }
+
     // Insert the new product with agency_id
     const { data: product, error } = await supabase
       .from('products')
@@ -191,7 +213,28 @@ export async function POST(request: Request) {
       }, { status: 500 })
     }
 
-    return NextResponse.json({ product }, { status: 201 })
+    // Automatically create commission entries for all positions (set to 0% by default)
+    // This ensures all positions have entries and admin must set them before deals can be posted
+    const commissionEntries = positions.map(pos => ({
+      position_id: pos.id,
+      product_id: product.id,
+      commission_percentage: 0
+    }))
+
+    const { error: commissionError } = await supabase
+      .from('position_product_commissions')
+      .insert(commissionEntries)
+
+    if (commissionError) {
+      console.error('Error creating commission entries:', commissionError)
+      // Don't fail the product creation, but log the error
+      // Admin will need to manually add commission percentages
+    }
+
+    return NextResponse.json({
+      product,
+      message: 'Product created successfully. Please set commission percentages for all positions in the Commissions tab.'
+    }, { status: 201 })
 
   } catch (error) {
     console.error('API Error in product creation:', error)

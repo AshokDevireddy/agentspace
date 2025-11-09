@@ -7,13 +7,15 @@ import { getOrCreateConversation, logMessage } from "@/lib/sms-helpers";
  * Creates a hierarchy snapshot for a deal
  * This captures the agent hierarchy at the time the deal is created
  * so that visibility is preserved even if agents move to different hierarchies later
+ * Also stores commission percentage for each agent based on their position and the product
  */
 async function createDealHierarchySnapshot(
   supabase: ReturnType<typeof createAdminClient>,
   dealId: string,
-  writingAgentId: string
+  writingAgentId: string,
+  productId: string
 ) {
-  console.log('[Hierarchy Snapshot] START createDealHierarchySnapshot', { dealId, writingAgentId })
+  console.log('[Hierarchy Snapshot] START createDealHierarchySnapshot', { dealId, writingAgentId, productId })
 
   try {
     // Get the full upline chain using the RPC function
@@ -32,16 +34,69 @@ async function createDealHierarchySnapshot(
 
     console.log('[Hierarchy Snapshot] Found upline chain with', uplineChain.length, 'agents')
 
+    // Get all agent IDs from the chain
+    const agentIds = uplineChain.map((entry: any) => entry.agent_id)
+
+    // Fetch position_id for each agent
+    const { data: agentsWithPositions, error: positionsError } = await supabase
+      .from('users')
+      .select('id, position_id')
+      .in('id', agentIds)
+
+    if (positionsError) {
+      console.error('[Hierarchy Snapshot] Error fetching agent positions:', positionsError)
+      throw new Error(`Failed to fetch agent positions: ${positionsError.message}`)
+    }
+
+    // Create a map of agent_id -> position_id for quick lookup
+    const positionMap = new Map(
+      agentsWithPositions?.map(agent => [agent.id, agent.position_id]) || []
+    )
+
+    // Get all unique position IDs (filter out nulls)
+    const positionIds = Array.from(new Set(
+      Array.from(positionMap.values()).filter(pid => pid !== null)
+    ))
+
+    // Fetch commission percentages for all position-product combinations
+    let commissionMap = new Map<string, number>()
+    if (positionIds.length > 0 && productId) {
+      const { data: commissions, error: commissionsError } = await supabase
+        .from('position_product_commissions')
+        .select('position_id, commission_percentage')
+        .eq('product_id', productId)
+        .in('position_id', positionIds)
+
+      if (commissionsError) {
+        console.error('[Hierarchy Snapshot] Error fetching commissions:', commissionsError)
+        // Don't fail - just log and continue with NULL commissions
+      } else if (commissions) {
+        // Create map of position_id -> commission_percentage
+        commissionMap = new Map(
+          commissions.map(c => [c.position_id, c.commission_percentage])
+        )
+      }
+    }
+
+    console.log('[Hierarchy Snapshot] Fetched commission data for', commissionMap.size, 'position-product combinations')
+
     // Create snapshot entries for each agent in the chain
     // The uplineChain includes the writing agent themselves and all their uplines
-    const snapshotEntries = uplineChain.map((chainEntry: any) => ({
-      deal_id: dealId,
-      agent_id: chainEntry.agent_id,
-      upline_id: chainEntry.upline_id, // null for top-level agent
-      created_at: new Date().toISOString(),
-    }))
+    const snapshotEntries = uplineChain.map((chainEntry: any) => {
+      const agentId = chainEntry.agent_id
+      const positionId = positionMap.get(agentId)
+      const commissionPercentage = positionId ? commissionMap.get(positionId) || null : null
 
-    console.log('[Hierarchy Snapshot] Creating', snapshotEntries.length, 'snapshot entries')
+      return {
+        deal_id: dealId,
+        agent_id: agentId,
+        upline_id: chainEntry.upline_id, // null for top-level agent
+        commission_percentage: commissionPercentage,
+        created_at: new Date().toISOString(),
+      }
+    })
+
+    console.log('[Hierarchy Snapshot] Creating', snapshotEntries.length, 'snapshot entries with commission data')
 
     // Insert all snapshot entries in a single operation
     const { error: insertError } = await supabase
@@ -173,6 +228,108 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ deal, operation, message: "Deal updated successfully" }, { status: 200 });
     } else {
       // Create new deal
+      // IMPORTANT: Before creating a deal, we must verify that ALL agents in the upline have positions set
+      // This is a strict business rule - if even one agent in the upline doesn't have a position,
+      // the deal cannot be created because we won't have commission percentages for the hierarchy snapshot
+
+      if (agent_id && product_id) {
+        console.log('[Deals API] Validating upline positions before creating deal...')
+
+        // Get the full upline chain for the writing agent
+        const { data: uplineChain, error: chainError } = await supabase
+          .rpc('get_agent_upline_chain', { p_agent_id: agent_id })
+
+        if (chainError) {
+          console.error('[Deals API] Error fetching upline chain for validation:', chainError)
+          return NextResponse.json(
+            { error: `Failed to validate agent hierarchy: ${chainError.message}` },
+            { status: 400 }
+          )
+        }
+
+        if (!uplineChain || uplineChain.length === 0) {
+          return NextResponse.json(
+            { error: 'No upline hierarchy found for this agent. Cannot create deal.' },
+            { status: 400 }
+          )
+        }
+
+        // Get all agent IDs from the chain
+        const agentIds = uplineChain.map((entry: any) => entry.agent_id)
+
+        // Fetch position_id for each agent in the upline
+        const { data: agentsWithPositions, error: positionsError } = await supabase
+          .from('users')
+          .select('id, first_name, last_name, position_id')
+          .in('id', agentIds)
+
+        if (positionsError) {
+          console.error('[Deals API] Error fetching agent positions:', positionsError)
+          return NextResponse.json(
+            { error: `Failed to validate agent positions: ${positionsError.message}` },
+            { status: 400 }
+          )
+        }
+
+        // Check if ANY agent in the upline doesn't have a position
+        const agentsWithoutPositions = agentsWithPositions?.filter(agent => !agent.position_id) || []
+
+        if (agentsWithoutPositions.length > 0) {
+          const agentNames = agentsWithoutPositions
+            .map(a => `${a.first_name} ${a.last_name}`)
+            .join(', ')
+
+          console.error('[Deals API] Deal creation blocked - agents without positions:', agentNames)
+          return NextResponse.json(
+            {
+              error: `Cannot create deal: The following agents in the upline hierarchy do not have positions assigned: ${agentNames}. All agents in the upline must have positions set before deals can be created.`,
+              agents_without_positions: agentsWithoutPositions.map(a => ({
+                id: a.id,
+                name: `${a.first_name} ${a.last_name}`
+              }))
+            },
+            { status: 400 }
+          )
+        }
+
+        // Additionally verify that commission mappings exist for all positions + product
+        const positionIds = agentsWithPositions
+          ?.map(agent => agent.position_id)
+          .filter(pid => pid !== null) || []
+
+        if (positionIds.length > 0) {
+          const { data: commissions, error: commissionsError } = await supabase
+            .from('position_product_commissions')
+            .select('position_id')
+            .eq('product_id', product_id)
+            .in('position_id', positionIds)
+
+          if (commissionsError) {
+            console.error('[Deals API] Error fetching commission mappings:', commissionsError)
+            return NextResponse.json(
+              { error: `Failed to validate commission mappings: ${commissionsError.message}` },
+              { status: 400 }
+            )
+          }
+
+          const positionsWithCommissions = new Set(commissions?.map(c => c.position_id) || [])
+          const positionsWithoutCommissions = positionIds.filter(pid => !positionsWithCommissions.has(pid))
+
+          if (positionsWithoutCommissions.length > 0) {
+            console.error('[Deals API] Deal creation blocked - positions without commission mappings:', positionsWithoutCommissions)
+            return NextResponse.json(
+              {
+                error: `Cannot create deal: Commission percentages are not configured for some positions in the upline hierarchy. Please contact your administrator to set up commission mappings for this product.`,
+                positions_without_commissions: positionsWithoutCommissions
+              },
+              { status: 400 }
+            )
+          }
+        }
+
+        console.log('[Deals API] ✓ Validation passed - all upline agents have positions and commission mappings')
+      }
+
       dealData = {
         agent_id,
         agency_id,
@@ -207,13 +364,14 @@ export async function POST(req: NextRequest) {
       }
 
       // Create hierarchy snapshot for the new deal
-      if (deal?.id && deal.agent_id) {
+      if (deal?.id && deal.agent_id && deal.product_id) {
         try {
-          console.log('[Deals API] Creating hierarchy snapshot for new deal', { id: deal.id, agent_id: deal.agent_id })
+          console.log('[Deals API] Creating hierarchy snapshot for new deal', { id: deal.id, agent_id: deal.agent_id, product_id: deal.product_id })
           await createDealHierarchySnapshot(
             supabase,
             deal.id,
-            deal.agent_id
+            deal.agent_id,
+            deal.product_id
           )
           console.log('[Deals API] Hierarchy snapshot creation complete for deal', deal.id)
         } catch (e) {
@@ -221,7 +379,7 @@ export async function POST(req: NextRequest) {
           // Don't fail the deal creation if snapshot fails, but log the error
         }
       } else {
-        console.warn('[Deals API] Missing required fields to create hierarchy snapshot for deal', { id: deal?.id, agent_id: deal?.agent_id })
+        console.warn('[Deals API] Missing required fields to create hierarchy snapshot for deal', { id: deal?.id, agent_id: deal?.agent_id, product_id: deal?.product_id })
       }
 
       // Send welcome SMS to client (if client phone exists)

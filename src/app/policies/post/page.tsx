@@ -63,6 +63,11 @@ export default function PostDeal() {
   const [productsOptions, setProductsOptions] = useState<{ value: string, label: string }[]>([])
   const [leadSourceOptions, setLeadSourceOptions] = useState<{ value: string, label: string }[]>([])
 
+  // Position check states
+  const [positionCheckLoading, setPositionCheckLoading] = useState(true)
+  const [hasAllPositions, setHasAllPositions] = useState(false)
+  const [missingPositions, setMissingPositions] = useState<any[]>([])
+
   // Billing cycle options (fixed enum)
   const billingCycleOptions = [
     { value: "monthly", label: "Monthly" },
@@ -76,6 +81,50 @@ export default function PostDeal() {
       errorRef.current.scrollIntoView({ behavior: "smooth", block: "start" })
     }
   }, [error])
+
+  // Check if user and upline have positions assigned
+  useEffect(() => {
+    const checkPositions = async () => {
+      if (!user?.id) return
+
+      try {
+        setPositionCheckLoading(true)
+
+        const { data: { session } } = await supabase.auth.getSession()
+        const accessToken = session?.access_token
+
+        if (!accessToken) {
+          setPositionCheckLoading(false)
+          return
+        }
+
+        const response = await fetch('/api/agents/check-positions', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setHasAllPositions(data.has_all_positions)
+          setMissingPositions(data.missing_positions || [])
+        } else {
+          console.error('Failed to check positions')
+          // Default to blocking if check fails
+          setHasAllPositions(false)
+        }
+      } catch (err) {
+        console.error('Error checking positions:', err)
+        // Default to blocking if check fails
+        setHasAllPositions(false)
+      } finally {
+        setPositionCheckLoading(false)
+      }
+    }
+
+    checkPositions()
+  }, [user?.id])
 
   // Load user's agency and initial options
   useEffect(() => {
@@ -538,7 +587,63 @@ export default function PostDeal() {
         <p className="text-muted-foreground">Submit a new policy in {STEPS.length} easy steps</p>
       </div>
 
-      {/* Progress Stepper */}
+      {/* Position Check Loading */}
+      {positionCheckLoading && (
+        <Card className="border-amber-500/50 bg-amber-500/10">
+          <CardContent className="py-6">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-amber-500" />
+              <p className="text-sm text-foreground">
+                Verifying position assignments...
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Position Check Error */}
+      {!positionCheckLoading && !hasAllPositions && (
+        <Card className="border-destructive bg-destructive/10">
+          <CardHeader>
+            <CardTitle className="text-destructive flex items-center gap-2">
+              <Circle className="h-5 w-5 fill-current" />
+              Position Assignment Required
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-foreground">
+              You or your uplines don't have positions set. Position assignments are required before you can post deals. Please contact your upline to fix this.
+            </p>
+            {missingPositions.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Missing Positions:
+                </p>
+                <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
+                  {missingPositions.map((agent: any) => (
+                    <li key={agent.agent_id}>
+                      {agent.first_name} {agent.last_name} ({agent.email})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="pt-2">
+              <Button
+                variant="outline"
+                onClick={() => router.push('/agents')}
+              >
+                Go to Agents Page
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Only show form if positions are valid */}
+      {!positionCheckLoading && hasAllPositions && (
+        <>
+          {/* Progress Stepper */}
       <div className="relative">
         <div className="flex items-center justify-between">
           {STEPS.map((step, index) => {
@@ -977,6 +1082,8 @@ export default function PostDeal() {
           </form>
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   )
 }

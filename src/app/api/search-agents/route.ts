@@ -112,6 +112,7 @@ export async function GET(request: Request) {
     if (isAdmin) {
       console.log('[SEARCH-AGENTS] Admin search - querying agency:', currentUser.agency_id)
       // For admins: Query directly on agency_id (no .in() clause with large arrays)
+      // Only return pre-invite users for add user modal search
       const { data, error: searchError } = await supabase
         .from('users')
         .select(`
@@ -122,6 +123,7 @@ export async function GET(request: Request) {
           status
         `)
         .eq('agency_id', currentUser.agency_id)
+        .eq('status', 'pre-invite') // Only pre-invite users
         .neq('role', 'client') // Exclude clients
         .or(orConditions.join(','))
         .order('last_name', { ascending: true })
@@ -171,7 +173,7 @@ export async function GET(request: Request) {
           `)
           .eq('agency_id', currentUser.agency_id)
           .neq('role', 'client')
-          .eq('status', 'active') // Non-admins only see active users
+          .eq('status', 'pre-invite') // Only pre-invite users
           .or(orConditions.join(','))
           .order('last_name', { ascending: true })
           .limit(100)
@@ -199,7 +201,7 @@ export async function GET(request: Request) {
           `)
           .in('id', visibleAgentIds)
           .neq('role', 'client')
-          .eq('status', 'active') // Non-admins only see active users
+          .eq('status', 'pre-invite') // Only pre-invite users
           .or(orConditions.join(','))
           .order('last_name', { ascending: true })
           .limit(50)

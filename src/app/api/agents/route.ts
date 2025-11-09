@@ -42,6 +42,9 @@ type TreeRow = {
   last_name: string
   perm_level: string | null
   upline_id: string | null
+  position_id?: string | null
+  position_name?: string | null
+  position_level?: number | null
 }
 
 const buildTree = (rows: TreeRow[], rootId: string) => {
@@ -74,10 +77,14 @@ const buildTree = (rows: TreeRow[], rootId: string) => {
     const node = byId.get(id)
     // Only include nodes that are reachable from the root
     if (!node || !reachable.has(id)) return null
+
+    // Use position_name if available, otherwise fall back to perm_level
+    const displayPosition = node.position_name || formatPosition(node.perm_level)
+
     return {
       name: `${node.last_name}, ${node.first_name}`,
       attributes: {
-        position: formatPosition(node.perm_level)
+        position: displayPosition
       },
       children: node.children
         .map(toNode)
@@ -99,6 +106,7 @@ export async function GET(request: Request) {
     const directDownline = searchParams.get('directDownline')
     const agentName = searchParams.get('agentName')
     const status = searchParams.get('status')
+    const positionId = searchParams.get('positionId')
 
     const page = parseInt(searchParams.get('page') || '1', 10)
     const limit = parseInt(searchParams.get('limit') || '20', 10)
@@ -167,7 +175,8 @@ export async function GET(request: Request) {
       in_downline: inDownline && inDownline !== 'all' ? inDownline : null,
       direct_downline: directDownline && directDownline !== 'all' ? directDownline : null,
       agent_name: agentName && agentName !== 'all' ? agentName : null,
-      status: status && status !== 'all' ? status : null
+      status: status && status !== 'all' ? status : null,
+      position_id: positionId && positionId !== 'all' ? positionId : null
     }
 
     const includeFullAgency = isAdmin && view === 'table'
@@ -203,6 +212,9 @@ export async function GET(request: Request) {
         downlines: Number(row.downline_count || 0),
         status: row.status || 'active',
         badge: position,
+        position_id: row.position_id || null,
+        position_name: row.position_name || null,
+        position_level: row.position_level || null,
         children: []
       }
     })

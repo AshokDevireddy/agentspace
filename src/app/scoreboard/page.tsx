@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon } from "lucide-react"
 import { useEffect, useState, useMemo } from "react"
 import { useAuth } from "@/providers/AuthProvider"
+import { createClient } from "@/lib/supabase/client"
 
 interface AgentScore {
   rank: number
@@ -174,26 +175,36 @@ export default function Scoreboard() {
 
       try {
         setLoading(true)
-        const params = new URLSearchParams({
-          startDate: dateRange.startDate,
-          endDate: dateRange.endDate
-        })
-        const response = await fetch(`/api/scoreboard?${params.toString()}`)
+        setError(null)
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch scoreboard data')
+        // Use Supabase RPC function
+        const supabase = createClient()
+        const { data: rpcData, error: rpcError } = await supabase.rpc('get_scoreboard_data', {
+          p_user_id: user.id,
+          p_start_date: dateRange.startDate,
+          p_end_date: dateRange.endDate
+        })
+
+        if (rpcError) {
+          console.error('RPC Error:', rpcError)
+          throw new Error(rpcError.message || 'Failed to fetch scoreboard data')
         }
 
-        const result = await response.json()
+        if (!rpcData) {
+          throw new Error('No data returned from RPC')
+        }
 
-        if (result.success) {
-          setData(result.data)
+        // The RPC returns a wrapper object with success and data
+        if (rpcData.success === false) {
+          setError(rpcData.error || 'Failed to load scoreboard')
+        } else if (rpcData.data) {
+          setData(rpcData.data)
         } else {
-          setError(result.error || 'Failed to load scoreboard')
+          throw new Error('Invalid response format from RPC')
         }
       } catch (err) {
         console.error('Error fetching scoreboard:', err)
-        setError('Failed to load scoreboard data')
+        setError(err instanceof Error ? err.message : 'Failed to load scoreboard data')
       } finally {
         setLoading(false)
       }

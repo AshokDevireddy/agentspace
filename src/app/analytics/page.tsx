@@ -1,6 +1,7 @@
 "use client"
 
 import React from "react"
+import UploadPolicyReportsModal from "@/components/modals/upload-policy-reports-modal"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -338,6 +339,7 @@ export default function AnalyticsTestPage() {
 	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; avgPremium?: number }>(null)
 	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
+	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
 	React.	useEffect(() => {
@@ -960,7 +962,13 @@ function displayStateLabel(stateCode: string): string {
 						</SelectContent>
 					</Select>
 
-					<Button variant="blue" className="rounded-md h-9 text-sm">Upload Reports</Button>
+					<Button
+						variant="blue"
+						className="rounded-md h-9 text-sm"
+						onClick={() => setIsUploadModalOpen(true)}
+					>
+						Upload Reports
+					</Button>
 
 					{/* AI Mode Button */}
 					<Button
@@ -976,6 +984,12 @@ function displayStateLabel(stateCode: string): string {
 					</Button>
 				</div>
 			</div>
+
+		{/* Upload Policy Reports Modal */}
+		<UploadPolicyReportsModal
+			isOpen={isUploadModalOpen}
+			onClose={() => setIsUploadModalOpen(false)}
+		/>
 
 			{/* KPI tiles centered to middle 1/3rd */}
 			<div className="flex w-full justify-center">

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Upload, Users, Loader2, X, FileText, Plus, CheckCircle2 } from "lucide-react"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
+import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 
 interface UserData {
   id: string
@@ -55,7 +56,8 @@ const carriers = [
   'Combined Insurance',
   'American Home Life',
   'Royal Neighbors',
-  'Liberty Bankers Life'
+  'Liberty Bankers Life',
+  'Foresters'
 ]
 
 const permissionLevels = [
@@ -361,49 +363,115 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   }
 
   const uploadPolicyReports = async () => {
-    const uploadedFiles = uploads.filter(upload => upload.file !== null)
-
+    const uploadedFiles = uploads.filter(u => u.file !== null) as Array<{ carrier: string; file: File }>;
     if (uploadedFiles.length === 0) {
       return { success: true, message: 'No files to upload' }
     }
 
     try {
-      const formData = new FormData()
+      // 0) Create an ingest job first
+      const expectedFiles = uploadedFiles.length
+      const clientJobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-      uploadedFiles.forEach((upload) => {
-        if (upload.file) {
-          formData.append(`carrier_${upload.carrier}`, upload.file)
+      // Resolve agencyId from current session
+      let agencyId: string | null = null
+      try {
+        const { data: auth } = await supabase.auth.getUser()
+        const userId = auth?.user?.id
+        if (userId) {
+          const { data: userRow, error: userError } = await supabase
+            .from('users')
+            .select('agency_id')
+            .eq('auth_user_id', userId)
+            .single()
+          if (!userError) {
+            agencyId = userRow?.agency_id ?? null
+          }
+        }
+      } catch {}
+
+      if (!agencyId) {
+        return { success: false, message: 'Could not resolve your agency. Please refresh and try again.' }
+      }
+
+      const jobResp = await fetch('/api/upload-policy-reports/create-job', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          agencyId,
+          expectedFiles,
+          clientJobId,
+        }),
+      })
+      const jobJson = await jobResp.json().catch(() => null)
+      if (!jobResp.ok || !jobJson?.job?.jobId) {
+        console.error('Failed to create ingest job', { status: jobResp.status, body: jobJson })
+        return { success: false, message: 'Could not start ingest job. Please try again.' }
+      }
+      const jobId = jobJson.job.jobId as string
+      console.debug('Created ingest job', { jobId, expectedFiles })
+
+      // 1) Request presigned URLs for all files in a single call (new ingestion flow)
+      const signResp = await fetch('/api/upload-policy-reports/sign', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          jobId,
+          files: uploadedFiles.map(({ file }) => ({
+            fileName: file.name,
+            contentType: file.type || 'application/octet-stream',
+            size: file.size,
+          })),
+        }),
+      })
+      const signJson = await signResp.json().catch(() => null)
+      if (!signResp.ok || !Array.isArray(signJson?.files)) {
+        console.error('Presign failed', { status: signResp.status, body: signJson })
+        return { success: false, message: 'Could not generate upload URLs. Please try again.' }
+      }
+
+      // 2) Upload each file via its presigned URL (no chunking; URLs expire in 60s)
+      const results = await Promise.allSettled(
+        (signJson.files as Array<{ fileId: string; fileName: string; presignedUrl: string }>).
+          map(async (f) => {
+            const match = uploadedFiles.find(uf => uf.file.name === f.fileName)
+            if (!match) throw new Error(`Missing file for ${f.fileName}`)
+            const res = await putToSignedUrl(f.presignedUrl, match.file)
+            if (!res.ok) throw new Error(`Upload failed with status ${res.status}`)
+            return { fileName: f.fileName, fileId: f.fileId }
+          })
+      )
+
+      // 3) Summarize uploads
+      const successes: { carrier: string; file: string; paths: string[] }[] = [];
+      const failures: string[] = [];
+
+      results.forEach((r) => {
+        if (r.status === 'fulfilled') {
+          successes.push({ carrier: 'n/a', file: r.value.fileName, paths: [] });
+        } else {
+          const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
+          failures.push(reason)
         }
       })
 
-      const [bucketResponse, stagingResponse] = await Promise.all([
-        fetch('/api/upload-policy-reports/bucket', {
-          method: 'POST',
-          body: formData,
-        }),
-        fetch('/api/upload-policy-reports/staging', {
-          method: 'POST',
-          body: formData,
-        })
-      ])
+      if (successes.length) console.log('Uploaded:', successes);
+      if (failures.length) console.error('Failed uploads:', failures);
 
-      const bucketResult = await bucketResponse.json()
-      const stagingResult = await stagingResponse.json()
-
-      if (bucketResult.success && stagingResult.success) {
+      if (failures.length === 0) {
         return {
           success: true,
-          message: `Successfully uploaded ${stagingResult.totalRecordsInserted} policy records!`
+          message: `Successfully uploaded ${successes.length} file(s).`
         }
       } else {
         return {
           success: false,
-          message: bucketResult.errors?.join(', ') || stagingResult.errors?.join(', ') || 'Upload failed'
+          message: `Uploaded ${successes.length} file(s), but ${failures.length} failed: ${failures.join(', ')}`
         }
       }
-    } catch (error) {
-      console.error('Error uploading files:', error)
-      return { success: false, message: 'An error occurred while uploading files' }
+    } catch (err) {
+      console.error('Unexpected error during upload:', err);
+      return { success: false, message: 'An unexpected error occurred while uploading. Please try again.' }
     }
   }
 

@@ -20,7 +20,8 @@ import {
   BookOpen,
   UserCheck,
   Sparkles,
-  FolderOpen
+  FolderOpen,
+  DollarSign
 } from "lucide-react"
 import { createClient } from '@/lib/supabase/client'
 
@@ -33,6 +34,7 @@ const navigationItems = [
   { name: "Book of Business", href: "/policies/book", icon: BookOpen },
   { name: "Communication", href: "/communications/sms", icon: MessageSquare },
   { name: "Analytics", href: "/analytics", icon: TrendingUp },
+  { name: "Expected Payouts", href: "/expected-payouts", icon: DollarSign },
   { name: "Insurance Toolkits", href: "/insurance-toolkits", icon: ExternalLink },
   { name: "Resources", href: "/resources", icon: FolderOpen },
 ]

@@ -24,10 +24,13 @@ export async function GET(request: Request) {
     // This bypasses ALL RLS policies - replace with proper server client later
     const supabase = createAdminClient()
 
-    // Fetch user data from the users table using auth_user_id
+    // Fetch user data from the users table using auth_user_id, including position info
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('*')
+      .select(`
+        *,
+        position:positions(id, name, level)
+      `)
       .eq('auth_user_id', userId)
       .single()
 
@@ -166,11 +169,125 @@ export async function GET(request: Request) {
       status: userData.status,
       role: userData.role,
       is_admin: userData.is_admin,
+      // Include position information
+      position_id: userData.position_id || null,
+      position: userData.position || null,
     }
 
     return NextResponse.json({
       success: true,
       data: profileData
+    })
+
+  } catch (error) {
+    console.error('API Error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+// PUT endpoint to update user's position (admin only)
+export async function PUT(request: Request) {
+  try {
+    const supabase = createAdminClient()
+
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json(
+        { error: 'Unauthorized - No token provided' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.replace('Bearer ', '')
+
+    // Verify the token and get user info
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Invalid token' },
+        { status: 401 }
+      )
+    }
+
+    // Get user details to check if admin
+    const { data: currentUser, error: userError } = await supabase
+      .from('users')
+      .select('id, is_admin, role, perm_level, agency_id')
+      .eq('auth_user_id', user.id)
+      .single()
+
+    if (userError || !currentUser) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      )
+    }
+
+    // Check if user is admin
+    const isAdmin = currentUser.role === 'admin'
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Only admins can update positions' },
+        { status: 403 }
+      )
+    }
+
+    // Get the position_id from request body
+    const body = await request.json()
+    const { position_id } = body
+
+    if (!position_id) {
+      return NextResponse.json(
+        { error: 'position_id is required' },
+        { status: 400 }
+      )
+    }
+
+    // Verify the position belongs to the same agency
+    const { data: position, error: positionError } = await supabase
+      .from('positions')
+      .select('id, agency_id')
+      .eq('id', position_id)
+      .single()
+
+    if (positionError || !position) {
+      return NextResponse.json(
+        { error: 'Position not found' },
+        { status: 404 }
+      )
+    }
+
+    if (position.agency_id !== currentUser.agency_id) {
+      return NextResponse.json(
+        { error: 'Position does not belong to your agency' },
+        { status: 403 }
+      )
+    }
+
+    // Update the user's position
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ position_id: position_id, updated_at: new Date().toISOString() })
+      .eq('id', currentUser.id)
+
+    if (updateError) {
+      console.error('Error updating position:', updateError)
+      return NextResponse.json(
+        { error: 'Failed to update position' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Position updated successfully'
     })
 
   } catch (error) {

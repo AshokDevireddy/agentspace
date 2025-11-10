@@ -1,7 +1,6 @@
 "use client"
 
 import React, { useState, useEffect } from "react";
-import { FaRegClock } from "react-icons/fa6";
 import { useAuth } from "@/providers/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
 
@@ -13,38 +12,31 @@ interface ProfileData {
   createdAt: string;
   totalProduction: number;
   totalPoliciesSold: number;
+  is_admin: boolean;
+  position_id: string | null;
+  position: {
+    id: string;
+    name: string;
+    level: number;
+  } | null;
+}
+
+interface Position {
+  position_id: string;
+  name: string;
+  level: number;
+  description: string | null;
+  is_active: boolean;
 }
 
 export default function ProfilePage() {
   const { user, loading: authLoading } = useAuth();
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [selectedPositionId, setSelectedPositionId] = useState<string>("");
+  const [updatingPosition, setUpdatingPosition] = useState(false);
 
-  // Calculate tenure from created_at
-  const calculateTenure = (createdAt: string) => {
-    if (!createdAt) return "Unknown";
-
-    const created = new Date(createdAt);
-    const now = new Date();
-
-    let years = now.getFullYear() - created.getFullYear();
-    let months = now.getMonth() - created.getMonth();
-
-    if (months < 0) {
-      years--;
-      months += 12;
-    }
-
-    const parts = [];
-    if (years > 0) {
-      parts.push(`${years} year${years !== 1 ? 's' : ''}`);
-    }
-    if (months > 0) {
-      parts.push(`${months} month${months !== 1 ? 's' : ''}`);
-    }
-
-    return parts.length > 0 ? parts.join(', ') : "Less than a month";
-  };
 
   // Fetch user profile data from API
   useEffect(() => {
@@ -65,6 +57,7 @@ export default function ProfilePage() {
 
         if (result.success) {
           setProfileData(result.data);
+          setSelectedPositionId(result.data.position_id || "");
         } else {
           console.error('API Error:', result.error);
         }
@@ -78,13 +71,87 @@ export default function ProfilePage() {
     fetchProfileData();
   }, [user]);
 
-  // Helper for formatting currency
-  const formatCurrency = (amount: number) =>
-    `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // Fetch positions if admin
+  useEffect(() => {
+    const fetchPositions = async () => {
+      if (!profileData?.is_admin) return;
 
-  // Helper for formatting large numbers
-  const formatLargeNumber = (num: number) =>
-    num.toLocaleString();
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
+
+        if (!accessToken) {
+          console.error('No access token available');
+          return;
+        }
+
+        const response = await fetch('/api/positions', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setPositions(data || []);
+        } else {
+          console.error('Failed to fetch positions:', response.status, await response.text());
+        }
+      } catch (error) {
+        console.error('Error fetching positions:', error);
+      }
+    };
+
+    fetchPositions();
+  }, [profileData?.is_admin]);
+
+  // Handle position update
+  const handlePositionUpdate = async () => {
+    if (!selectedPositionId) return;
+
+    setUpdatingPosition(true);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
+      if (!accessToken) {
+        alert('Not authenticated');
+        return;
+      }
+
+      const response = await fetch('/api/user/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ position_id: selectedPositionId }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Refresh profile data
+        const profileResponse = await fetch(`/api/user/profile?user_id=${user?.id}`);
+        const profileResult = await profileResponse.json();
+        if (profileResult.success) {
+          setProfileData(profileResult.data);
+        }
+        alert('Position updated successfully!');
+      } else {
+        console.error('Failed to update position:', result.error);
+        alert('Failed to update position: ' + result.error);
+      }
+    } catch (error) {
+      console.error('Error updating position:', error);
+      alert('Error updating position');
+    } finally {
+      setUpdatingPosition(false);
+    }
+  };
+
 
   // Show loading screen until data is ready
   if (authLoading || loading || !profileData) {
@@ -99,17 +166,6 @@ export default function ProfilePage() {
   const user_profile = {
     name: profileData.fullName,
     avatarUrl: "", // Keep as empty for now
-    tenure: calculateTenure(profileData.createdAt),
-    allTimeProduction: profileData.totalProduction,
-    totalPoliciesSold: profileData.totalPoliciesSold,
-    weeklyStats: [
-      {
-        label: "This Week",
-        range: "May 26 - June 1, 2025", // Keep static for now
-        production: 0, // Keep static for now
-        policiesSold: 0, // Keep static for now
-      },
-    ],
   };
 
   return (
@@ -132,58 +188,42 @@ export default function ProfilePage() {
           {/* Info */}
           <div>
             <h1 className="text-4xl font-extrabold text-foreground mb-1">{user_profile.name}</h1>
-            <div className="flex items-center mb-4 mt-3">
-              <FaRegClock className="text-muted-foreground mr-2" />
-              <span className="text-foreground text-sm">{user_profile.tenure}</span>
-            </div>
-            <div className="flex gap-4">
-              <div className="bg-card rounded-xl px-6 py-3 shadow flex flex-col items-center border border-border">
-                <span className="text-sm font-semibold text-muted-foreground">All-Time Production</span>
-                <span className="text-2xl font-bold text-indigo-600 mt-1">
-                  {`$${(user_profile.allTimeProduction / 1_000_000).toFixed(2)}M`}
-                </span>
-              </div>
-              <div className="bg-card rounded-xl px-6 py-3 shadow flex flex-col items-center border border-border">
-                <span className="text-sm font-semibold text-muted-foreground">Total Policies Sold</span>
-                <span className="text-2xl font-bold text-indigo-600 mt-1">
-                  {formatLargeNumber(user_profile.totalPoliciesSold)}
-                </span>
-              </div>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Weekly Stats Tabs */}
-      <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border">
-        <div className="flex border-b border-border">
-          <button className="px-6 py-3 font-semibold text-primary border-b-2 border-primary bg-card rounded-tl-2xl">
-            This Week
-          </button>
-          <button className="px-6 py-3 font-semibold text-indigo-600 hover:text-indigo-800">
-            Last Week
-          </button>
-        </div>
-        <div className="p-8">
-          <div className="text-2xl font-extrabold text-foreground mb-4">
-            {user_profile.weeklyStats[0].range}
-          </div>
-          <div className="flex gap-8">
-            <div className="flex flex-col items-center bg-accent rounded-xl px-8 py-4">
-              <span className="font-semibold text-foreground">Production</span>
-              <span className="text-xl font-bold text-indigo-600 mt-1">
-                {formatCurrency(user_profile.weeklyStats[0].production)}
-              </span>
+      {/* Position Selection (Admin Only) */}
+      {profileData.is_admin && (
+        <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
+          <h2 className="text-xl font-bold text-foreground mb-4">Position</h2>
+          <div className="flex items-end gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-muted-foreground mb-2">
+                Current Position: {profileData.position?.name || 'Not Set'}
+              </label>
+              <select
+                value={selectedPositionId}
+                onChange={(e) => setSelectedPositionId(e.target.value)}
+                className="w-full px-4 py-2 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Select Position</option>
+                {positions.map((position) => (
+                  <option key={position.position_id} value={position.position_id}>
+                    {position.name} (Level {position.level})
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="flex flex-col items-center bg-accent rounded-xl px-8 py-4">
-              <span className="font-semibold text-foreground">Policies Sold</span>
-              <span className="text-xl font-bold text-indigo-600 mt-1">
-                {user_profile.weeklyStats[0].policiesSold}
-              </span>
-            </div>
+            <button
+              onClick={handlePositionUpdate}
+              disabled={updatingPosition || !selectedPositionId || selectedPositionId === profileData.position_id}
+              className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {updatingPosition ? 'Updating...' : 'Update Position'}
+            </button>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

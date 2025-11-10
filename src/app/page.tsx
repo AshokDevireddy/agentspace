@@ -1,43 +1,13 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, BarChart3, FileText, DollarSign, TrendingUp, Briefcase } from "lucide-react"
+import { Users, BarChart3, FileText, DollarSign, TrendingUp, Briefcase, UserCog } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { useState, useEffect } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import OnboardingWizard from "@/components/onboarding-wizard"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
-
-/**
- * Retrieves the agency ID for the current user
- *
- * @param supabase - Supabase client instance
- * @param userId - The authenticated user's ID (auth_user_id)
- * @returns Promise<string> - The agency ID
- */
-async function getAgencyId(supabase: ReturnType<typeof createClient>, userId: string): Promise<string> {
-  try {
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('agency_id')
-      .eq('auth_user_id', userId)
-      .single()
-
-    if (error || !user) {
-      throw new Error('Failed to fetch user agency')
-    }
-
-    if (!user.agency_id) {
-      throw new Error('User is not associated with an agency')
-    }
-
-    return user.agency_id
-  } catch (error) {
-    console.error('Error fetching agency ID:', error)
-    throw error instanceof Error ? error : new Error('Failed to retrieve agency ID')
-  }
-}
 
 export default function Home() {
   const router = useRouter()
@@ -106,52 +76,73 @@ export default function Home() {
       }
 
       try {
-        // Fetch current week's scoreboard data
-        const response = await fetch('/api/scoreboard')
+        // Calculate current week dates (Sunday to Saturday)
+        const today = new Date()
+        const dayOfWeek = today.getDay()
+        const sunday = new Date(today)
+        sunday.setDate(today.getDate() - dayOfWeek)
+        sunday.setHours(0, 0, 0, 0)
+        const saturday = new Date(sunday)
+        saturday.setDate(sunday.getDate() + 6)
+        saturday.setHours(23, 59, 59, 999)
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch scoreboard data')
+        const startDate = sunday.toISOString().split('T')[0]
+        const endDate = saturday.toISOString().split('T')[0]
+
+        // Use Supabase RPC function
+        const supabase = createClient()
+        const { data: rpcData, error: rpcError } = await supabase.rpc('get_scoreboard_data', {
+          p_user_id: user.id,
+          p_start_date: startDate,
+          p_end_date: endDate
+        })
+
+        if (rpcError) {
+          console.error('RPC Error:', rpcError)
+          throw new Error(rpcError.message || 'Failed to fetch scoreboard data')
         }
 
-        const result = await response.json()
+        if (!rpcData || !rpcData.success || !rpcData.data) {
+          throw new Error('Invalid response from scoreboard RPC')
+        }
 
-        if (result.success && result.data) {
-          // Set top 5 producers
-          const top5 = result.data.leaderboard.slice(0, 5).map((producer: any) => ({
-            rank: producer.rank,
-            name: producer.name,
-            amount: `$${producer.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        const result = rpcData.data
+
+        // Set top 5 producers
+        const top5 = result.leaderboard.slice(0, 5).map((producer: any) => ({
+          rank: producer.rank,
+          name: producer.name,
+          amount: `$${producer.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        }))
+        setTopProducers(top5)
+
+        // Set date range
+        setDateRange({
+          startDate: result.dateRange.startDate,
+          endDate: result.dateRange.endDate
+        })
+
+        // Calculate production chart data from daily breakdown
+        const dailyProductionMap = new Map<string, number>()
+
+        result.leaderboard.forEach((agent: any) => {
+          if (agent.dailyBreakdown) {
+            Object.entries(agent.dailyBreakdown).forEach(([date, amount]) => {
+              const current = dailyProductionMap.get(date) || 0
+              dailyProductionMap.set(date, current + (amount as number))
+            })
+          }
+        })
+
+        // Convert to chart data format
+        const chartData = Array.from(dailyProductionMap.entries())
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([date, production]) => ({
+            date: new Date(date + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }),
+            production: Math.round(production)
           }))
-          setTopProducers(top5)
 
-          // Set date range
-          setDateRange({
-            startDate: result.data.dateRange.startDate,
-            endDate: result.data.dateRange.endDate
-          })
-
-          // Calculate production chart data from daily breakdown
-          const dailyProductionMap = new Map<string, number>()
-
-          result.data.leaderboard.forEach((agent: any) => {
-            if (agent.dailyBreakdown) {
-              Object.entries(agent.dailyBreakdown).forEach(([date, amount]) => {
-                const current = dailyProductionMap.get(date) || 0
-                dailyProductionMap.set(date, current + (amount as number))
-              })
-            }
-          })
-
-          // Convert to chart data format
-          const chartData = Array.from(dailyProductionMap.entries())
-            .sort((a, b) => a[0].localeCompare(b[0]))
-            .map(([date, production]) => ({
-              date: new Date(date + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }),
-              production: Math.round(production)
-            }))
-
-          setProductionData(chartData)
-        }
+        setProductionData(chartData)
       } catch (error) {
         console.error('Error fetching scoreboard data:', error)
       } finally {
@@ -174,12 +165,9 @@ export default function Home() {
         // Create Supabase client
         const supabase = createClient()
 
-        // Get the agency ID for the current user
-        const agencyId = await getAgencyId(supabase, user.id)
-
-        // Call the RPC function to get dashboard data
+        // Call the RPC function to get dashboard data with user_id
         const { data, error } = await supabase.rpc('get_dashboard_data_with_agency_id', {
-          p_agency_id: agencyId
+          p_user_id: user.id
         })
 
         if (error) {
@@ -201,7 +189,8 @@ export default function Home() {
             "active_policies": 1285,
             "monthly_commissions": 52430.50,
             "new_policies_last_month": 94,
-            "clients_count": 312
+            "clients_count": 312,
+            "pending_positions": 0
           },
           "carriers_active": [
             {
@@ -338,7 +327,15 @@ export default function Home() {
 
       {/* Dashboard Stats Cards */}
       {loadingDashboard ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <Card className="professional-card">
+            <CardContent className="p-6">
+              <div className="animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
+                <div className="h-8 bg-gray-200 rounded w-1/2"></div>
+              </div>
+            </CardContent>
+          </Card>
           <Card className="professional-card">
             <CardContent className="p-6">
               <div className="animate-pulse">
@@ -373,7 +370,7 @@ export default function Home() {
           </Card>
         </div>
       ) : dashboardData ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {/* Active Policies */}
           <Card className="professional-card">
             <CardContent className="p-6">
@@ -437,7 +434,23 @@ export default function Home() {
                   <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
                     {(dashboardData.totals.clients_count ?? 0).toLocaleString()}
                   </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
+          {/* Pending Positions */}
+          <Card className="professional-card">
+            <CardContent className="p-6">
+              <div className="flex items-start justify-between">
+                <div className="w-full overflow-hidden">
+                  <div className="flex items-center gap-2 mb-4">
+                    <UserCog className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <p className="text-sm font-medium text-muted-foreground">Pending Positions</p>
+                  </div>
+                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
+                    {(dashboardData.totals.pending_positions ?? 0).toLocaleString()}
+                  </p>
                 </div>
               </div>
             </CardContent>

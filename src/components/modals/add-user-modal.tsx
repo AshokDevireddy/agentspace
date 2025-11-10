@@ -27,6 +27,7 @@ interface SearchOption {
   value: string
   label: string
   status?: string
+  level?: number
 }
 
 const permissionLevels = [
@@ -119,7 +120,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     email: "",
     phoneNumber: "",
     permissionLevel: "",
-    uplineAgentId: ""
+    uplineAgentId: "",
+    positionId: ""
   })
   const [isOpen, setIsOpen] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
@@ -130,6 +132,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const [nameSearchTerm, setNameSearchTerm] = useState("")
   const [nameSearchResults, setNameSearchResults] = useState<SearchOption[]>([])
   const [isNameSearching, setIsNameSearching] = useState(false)
+  const [positions, setPositions] = useState<SearchOption[]>([])
+  const [positionsLoading, setPositionsLoading] = useState(false)
+  const [currentUserPositionLevel, setCurrentUserPositionLevel] = useState<number | null>(null)
 
   // Use the custom agent search hook for upline selection
   const {
@@ -200,6 +205,64 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
     return () => clearTimeout(debounceTimer)
   }, [nameSearchTerm])
+
+  // Fetch positions when modal opens
+  useEffect(() => {
+    if (isOpen && !positionsLoading && positions.length === 0) {
+      fetchPositions()
+    }
+  }, [isOpen])
+
+  const fetchPositions = async () => {
+    try {
+      setPositionsLoading(true)
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) return
+
+      // Fetch current user's position level
+      let userPositionLevel: number | null = null
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const profileResponse = await fetch(`/api/user/profile?user_id=${user.id}`)
+        if (profileResponse.ok) {
+          const profileData = await profileResponse.json()
+          if (profileData.success && profileData.data.position) {
+            userPositionLevel = profileData.data.position.level
+            setCurrentUserPositionLevel(userPositionLevel)
+          }
+        }
+      }
+
+      const response = await fetch('/api/positions', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        // Filter positions: only show positions BELOW current user's level (not including their level)
+        const filteredData = userPositionLevel !== null
+          ? data.filter((pos: any) => pos.level < userPositionLevel)
+          : data
+
+        const positionOptions: SearchOption[] = filteredData.map((pos: any) => ({
+          value: pos.position_id,
+          label: `${pos.name} (Level ${pos.level})`,
+          level: pos.level
+        }))
+        setPositions(positionOptions)
+      }
+    } catch (error) {
+      console.error('Error fetching positions:', error)
+    } finally {
+      setPositionsLoading(false)
+    }
+  }
 
   useEffect(() => {
       if(upline && isOpen) {
@@ -287,6 +350,12 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       newErrorFields.permissionLevel = "Required"
     }
 
+    // Position validation
+    if (!formData.positionId) {
+      newErrors.push("Position is required")
+      newErrorFields.positionId = "Required"
+    }
+
     setErrors(newErrors)
     setErrorFields(newErrorFields)
     return newErrors.length === 0
@@ -316,6 +385,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           phoneNumber: formData.phoneNumber,
           permissionLevel: formData.permissionLevel,
           uplineAgentId: formData.uplineAgentId || null,
+          positionId: formData.positionId || null,
           preInviteUserId: selectedPreInviteUserId // Include pre-invite user ID if updating
         }),
         credentials: 'include'
@@ -341,7 +411,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         email: "",
         phoneNumber: "",
         permissionLevel: "",
-        uplineAgentId: ""
+        uplineAgentId: "",
+        positionId: ""
       })
       setErrors([])
       setErrorFields({})
@@ -395,7 +466,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         email: user.email || "",
         phoneNumber: user.phone_number || "",
         permissionLevel: user.perm_level || "",
-        uplineAgentId: user.upline_id || ""
+        uplineAgentId: user.upline_id || "",
+        positionId: user.position_id || ""
       })
 
       setSelectedPreInviteUserId(userId)
@@ -468,7 +540,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                       email: "",
                       phoneNumber: "",
                       permissionLevel: "",
-                      uplineAgentId: ""
+                      uplineAgentId: "",
+                      positionId: ""
                     })
                   }
                 }}
@@ -627,6 +700,23 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             {errorFields.permissionLevel && (
               <p className="text-red-500 text-sm">{errorFields.permissionLevel}</p>
             )}
+          </div>
+
+          {/* Position Selection (Optional) */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-foreground">
+              Position <span className="text-red-500">*</span>
+            </label>
+            <SimpleSearchableSelect
+              options={positions}
+              value={formData.positionId}
+              onValueChange={(value) => handleInputChange("positionId", value)}
+              placeholder="Select position..."
+              searchPlaceholder="Search positions..."
+            />
+            <p className="text-sm text-muted-foreground">
+              Select a position for this agent. Only positions below your level are shown.
+            </p>
           </div>
 
           {/* Upline Agent Selection */}

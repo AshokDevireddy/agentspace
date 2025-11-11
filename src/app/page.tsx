@@ -231,6 +231,9 @@ export default function Home() {
     window.location.reload()
   }
 
+  // Combined loading state - wait for both RPCs to complete
+  const isLoadingDashboardData = loadingScoreboard || loadingDashboard || !dateRange.startDate
+
   // Format date range for display
   const formatDateRange = () => {
     if (!dateRange.startDate || !dateRange.endDate) {
@@ -298,15 +301,6 @@ export default function Home() {
     )
   }
 
-  // Show loading screen until we have both auth and a valid firstName
-  if (authLoading || userDataLoading || !firstName) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
-    )
-  }
-
   // Show onboarding wizard if user is in onboarding status
   if (showOnboarding && userData) {
     return (
@@ -322,17 +316,25 @@ export default function Home() {
       {/* Header */}
       <div>
         <h1 className="text-4xl font-bold text-gradient mb-2">
-          Welcome, {firstName}.
+          Welcome, {authLoading || userDataLoading || !firstName ? (
+            <span className="inline-block h-10 w-32 bg-muted animate-pulse rounded" />
+          ) : (
+            `${firstName}.`
+          )}
         </h1>
         <div className="flex items-center space-x-2 text-sm text-muted-foreground">
           <span>This Week</span>
           <span>•</span>
-          <span>{formatDateRange()}</span>
+          {isLoadingDashboardData ? (
+            <span className="inline-block h-4 w-48 bg-muted animate-pulse rounded" />
+          ) : (
+            <span>{formatDateRange()}</span>
+          )}
         </div>
       </div>
 
       {/* Dashboard Stats Cards */}
-      {loadingDashboard ? (
+      {isLoadingDashboardData ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card className="professional-card">
             <CardContent className="p-6">
@@ -375,7 +377,7 @@ export default function Home() {
             </CardContent>
           </Card>
         </div>
-      ) : dashboardData ? (
+      ) : !isLoadingDashboardData && dashboardData ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {/* Active Policies */}
           <Card className="professional-card">
@@ -467,18 +469,21 @@ export default function Home() {
       {/* Pie Chart and Scoreboard Side by Side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Carrier Distribution Pie Chart */}
-        {loadingDashboard ? (
+        {isLoadingDashboardData ? (
           <Card className="professional-card">
             <CardHeader>
-              <CardTitle className="text-xl font-semibold text-foreground">Carrier Distribution</CardTitle>
+              <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
+                <BarChart3 className="h-5 w-5 text-primary" />
+                <span>Active Policies by Carrier</span>
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80 flex items-center justify-center">
-                <p className="text-muted-foreground">Loading...</p>
+                <div className="h-64 w-64 rounded-full bg-muted animate-pulse" />
               </div>
             </CardContent>
           </Card>
-        ) : dashboardData?.carriers_active ? (
+        ) : !isLoadingDashboardData && dashboardData?.carriers_active ? (
           <Card className="professional-card">
             <CardHeader>
               <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
@@ -500,7 +505,7 @@ export default function Home() {
                       fill="#8884d8"
                       dataKey="value"
                     >
-                      {getPieChartData().map((entry, index) => (
+                      {getPieChartData().map((entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
@@ -533,11 +538,24 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             <div className="text-sm text-muted-foreground mb-4">
-              {loadingScoreboard ? 'Loading...' : `Week of ${formatDateRange()}`}
+              {isLoadingDashboardData ? (
+                <span className="inline-block h-4 w-32 bg-muted animate-pulse rounded" />
+              ) : (
+                `Week of ${formatDateRange()}`
+              )}
             </div>
             <div className="space-y-4">
-              {loadingScoreboard ? (
-                <div className="text-center py-8 text-muted-foreground">Loading top producers...</div>
+              {isLoadingDashboardData ? (
+                // Skeleton loaders matching the producer item structure
+                Array.from({ length: 5 }).map((_, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
+                      <span className="h-4 w-24 bg-muted animate-pulse rounded" />
+                    </div>
+                    <span className="h-4 w-16 bg-muted animate-pulse rounded" />
+                  </div>
+                ))
               ) : topProducers.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">No production data available</div>
               ) : (

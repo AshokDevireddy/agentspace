@@ -658,6 +658,23 @@ function displayStateLabel(stateCode: string): string {
     return stateCode === "UNK" ? "Unknown" : stateCode
 }
 
+// Helper function to round Y-axis values to nice round numbers (ending in 0, preferably multiples of 1000, 2000, 10, 100, etc.)
+function roundToNiceNumber(value: number): number {
+    if (value === 0) return 0
+    
+    const magnitude = Math.pow(10, Math.floor(Math.log10(Math.abs(value))))
+    const normalized = value / magnitude
+    
+    // Round up to the next nice number
+    let niceNormalized: number
+    if (normalized <= 1) niceNormalized = 1
+    else if (normalized <= 2) niceNormalized = 2
+    else if (normalized <= 5) niceNormalized = 5
+    else niceNormalized = 10
+    
+    return niceNormalized * magnitude
+}
+
 	// Setting colors for main carrier pie chart here
 	const wedges = React.useMemo(() => {
 		let cursor = 0
@@ -1765,6 +1782,9 @@ function displayStateLabel(stateCode: string): string {
 								const padding = range * 0.1 || Math.abs(maxValue) * 0.1 || 1
 								minValue = Math.max(0, minValue - padding)
 								maxValue = maxValue + padding
+								
+								// Round maxValue to a nice round number
+								maxValue = roundToNiceNumber(maxValue)
 
 								const chartHeight = 240
 								const chartBottom = 260
@@ -2127,6 +2147,55 @@ function displayStateLabel(stateCode: string): string {
 								}
 							}
 
+							// Check if all avgprem values are 0.0 before handling edge cases
+							if (trendMetric === "avgprem") {
+								// Check if we have any non-zero values
+								let hasNonZeroValue = false
+								if (carrierFilter === "ALL") {
+									for (const data of trendData) {
+										if (data.carriers) {
+											for (const value of Object.values(data.carriers)) {
+												if (value !== undefined && value !== null && (value as number) > 0) {
+													hasNonZeroValue = true
+													break
+												}
+											}
+											// Also check cumulative
+											let cumulativeValue = 0
+											for (const carrierValue of Object.values(data.carriers)) {
+												if (carrierValue !== undefined && carrierValue !== null) {
+													cumulativeValue += carrierValue as number
+												}
+											}
+											if (cumulativeValue > 0) {
+												hasNonZeroValue = true
+												break
+											}
+										}
+										if (hasNonZeroValue) break
+									}
+								} else {
+									for (const data of trendData) {
+										if (data.value !== undefined && data.value !== null && data.value > 0) {
+											hasNonZeroValue = true
+											break
+										}
+									}
+								}
+								
+								if (!hasNonZeroValue && maxValue <= 0) {
+									return (
+										<div className="flex items-center justify-center h-[300px] w-full">
+											<div className="text-center">
+												<p className="text-muted-foreground text-sm">
+													There is not enough data on monthly premiums to gauge average premium
+												</p>
+											</div>
+										</div>
+									)
+								}
+							}
+
 							// Handle edge cases
 							if (minValue === Infinity || maxValue === -Infinity) {
 								minValue = 0
@@ -2143,6 +2212,9 @@ function displayStateLabel(stateCode: string): string {
 							if (trendMetric === "persistency") {
 								minValue = 0
 								maxValue = 1
+							} else {
+								// Round maxValue to a nice round number (except for persistency which is 0-1)
+								maxValue = roundToNiceNumber(maxValue)
 							}
 
 							// Format Y-axis label

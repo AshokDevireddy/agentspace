@@ -2033,8 +2033,13 @@ function roundToNiceNumber(value: number): number {
 										{/* Hover tooltip */}
 										{hoverTrendInfo && (
 											<div
-												className="pointer-events-none absolute -translate-x-1/2 -translate-y-full animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 mb-2"
-												style={{ left: hoverTrendInfo.x, top: hoverTrendInfo.y }}
+												className="pointer-events-none absolute rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 mb-2 transition-opacity duration-150"
+												style={{ 
+													left: hoverTrendInfo.x, 
+													top: hoverTrendInfo.y,
+													opacity: 1,
+													transform: 'translateX(-50%) translateY(-100%)'
+												}}
 											>
 												<div className="mb-1 text-sm font-semibold">
 													{(() => {
@@ -2398,32 +2403,58 @@ function roundToNiceNumber(value: number): number {
 																strokeLinecap="round"
 																strokeLinejoin="round"
 															/>
-															{/* Dots on line */}
+															{/* Dots on line with larger hover area (only for persistency when showing all carriers) */}
 															{points.map((p: any, i: number) => (
-																<circle
-																	key={i}
-																	cx={p.x}
-																	cy={p.y}
-																	r="4"
-																	fill={color}
-																	stroke="#fff"
-																	strokeWidth="2"
-																	className="cursor-pointer"
-																	onMouseEnter={(e) => {
-																		const circle = e.currentTarget
-																		const container = circle.closest(".relative")
-																		if (container) {
-																			const circleRect = circle.getBoundingClientRect()
-																			const containerRect = container.getBoundingClientRect()
-																			// Calculate position relative to the container
-																			const x = circleRect.left + circleRect.width / 2 - containerRect.left
-																			// Position above the point (center of circle minus height to place tooltip above)
-																			const y = circleRect.top - containerRect.top - 10
-																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: p.carrier, submitted: p.submitted, active: p.active, persistency: p.persistency })
-																		}
-																	}}
-																	onMouseLeave={() => setHoverTrendInfo(null)}
-																/>
+																<g key={i}>
+																	{/* Invisible larger circle for easier hovering - only for persistency when showing all */}
+																	{trendMetric === "persistency" && (
+																		<circle
+																			cx={p.x}
+																			cy={p.y}
+																			r="12"
+																			fill="transparent"
+																			className="cursor-pointer"
+																			onMouseEnter={(e) => {
+																				const circle = e.currentTarget
+																				const container = circle.closest(".relative")
+																				if (container) {
+																					const circleRect = circle.getBoundingClientRect()
+																					const containerRect = container.getBoundingClientRect()
+																					// Calculate position relative to the container - center horizontally
+																					const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																					// Position above the point
+																					const y = circleRect.top - containerRect.top - 10
+																					setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: p.carrier, submitted: p.submitted, active: p.active, persistency: p.persistency })
+																				}
+																			}}
+																			onMouseLeave={() => setHoverTrendInfo(null)}
+																		/>
+																	)}
+																	{/* Visible circle */}
+																	<circle
+																		cx={p.x}
+																		cy={p.y}
+																		r="4"
+																		fill={color}
+																		stroke="#fff"
+																		strokeWidth="2"
+																		className={trendMetric === "persistency" ? "pointer-events-none" : "cursor-pointer"}
+																		onMouseEnter={trendMetric !== "persistency" ? (e) => {
+																			const circle = e.currentTarget
+																			const container = circle.closest(".relative")
+																			if (container) {
+																				const circleRect = circle.getBoundingClientRect()
+																				const containerRect = container.getBoundingClientRect()
+																				// Calculate position relative to the container
+																				const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																				// Position tooltip from right (original behavior for non-persistency)
+																				const y = circleRect.top + circleRect.height / 2 - containerRect.top
+																				setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: p.carrier, submitted: p.submitted, active: p.active, persistency: p.persistency })
+																			}
+																		} : undefined}
+																		onMouseLeave={trendMetric !== "persistency" ? () => setHoverTrendInfo(null) : undefined}
+																	/>
+																</g>
 															))}
 														</g>
 													)
@@ -2509,32 +2540,58 @@ function roundToNiceNumber(value: number): number {
 																strokeDasharray="6 4"
 																opacity={0.9}
 															/>
-															{/* Dots on cumulative line */}
+															{/* Dots on cumulative line with larger hover area (only for persistency when showing all carriers) */}
 															{cumulativePoints.map((p: any, i: number) => (
-																<circle
-																	key={i}
-																	cx={p.x}
-																	cy={p.y}
-																	r="5"
-																	fill={cumulativeColor}
-																	stroke="#fff"
-																	strokeWidth="2"
-																	className="cursor-pointer"
-																	onMouseEnter={(e) => {
-																		const circle = e.currentTarget
-																		const container = circle.closest(".relative")
-																		if (container) {
-																			const circleRect = circle.getBoundingClientRect()
-																			const containerRect = container.getBoundingClientRect()
-																			// Calculate position relative to the container
-																			const x = circleRect.left + circleRect.width / 2 - containerRect.left
-																			// Position above the point (center of circle minus height to place tooltip above)
-																			const y = circleRect.top - containerRect.top - 10
-																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: "Cumulative", submitted: p.submitted, active: p.active, persistency: p.persistency })
-																		}
-																	}}
-																	onMouseLeave={() => setHoverTrendInfo(null)}
-																/>
+																<g key={i}>
+																	{/* Invisible larger circle for easier hovering - only for persistency */}
+																	{trendMetric === "persistency" && (
+																		<circle
+																			cx={p.x}
+																			cy={p.y}
+																			r="12"
+																			fill="transparent"
+																			className="cursor-pointer"
+																			onMouseEnter={(e) => {
+																				const circle = e.currentTarget
+																				const container = circle.closest(".relative")
+																				if (container) {
+																					const circleRect = circle.getBoundingClientRect()
+																					const containerRect = container.getBoundingClientRect()
+																					// Calculate position relative to the container - center horizontally
+																					const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																					// Position above the point
+																					const y = circleRect.top - containerRect.top - 10
+																					setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: "Cumulative", submitted: p.submitted, active: p.active, persistency: p.persistency })
+																				}
+																			}}
+																			onMouseLeave={() => setHoverTrendInfo(null)}
+																		/>
+																	)}
+																	{/* Visible circle */}
+																	<circle
+																		cx={p.x}
+																		cy={p.y}
+																		r="5"
+																		fill={cumulativeColor}
+																		stroke="#fff"
+																		strokeWidth="2"
+																		className={trendMetric === "persistency" ? "pointer-events-none" : "cursor-pointer"}
+																		onMouseEnter={trendMetric !== "persistency" ? (e) => {
+																			const circle = e.currentTarget
+																			const container = circle.closest(".relative")
+																			if (container) {
+																				const circleRect = circle.getBoundingClientRect()
+																				const containerRect = container.getBoundingClientRect()
+																				// Calculate position relative to the container
+																				const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																				// Position above the point (center of circle minus height to place tooltip above)
+																				const y = circleRect.top - containerRect.top - 10
+																				setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: "Cumulative", submitted: p.submitted, active: p.active, persistency: p.persistency })
+																			}
+																		} : undefined}
+																		onMouseLeave={trendMetric !== "persistency" ? () => setHoverTrendInfo(null) : undefined}
+																	/>
+																</g>
 															))}
 														</g>
 													)
@@ -2575,30 +2632,40 @@ function roundToNiceNumber(value: number): number {
 															strokeLinejoin="round"
 														/>
 														{points.map((p: any, i: number) => (
-															<circle
-																key={i}
-																cx={p.x}
-																cy={p.y}
-																r="4"
-																fill={color}
-																stroke="#fff"
-																strokeWidth="2"
-																className="cursor-pointer"
-																onMouseEnter={(e) => {
-																	const circle = e.currentTarget
-																	const container = circle.closest(".relative")
-																	if (container) {
-																		const circleRect = circle.getBoundingClientRect()
-																		const containerRect = container.getBoundingClientRect()
-																		// Calculate position relative to the container
-																		const x = circleRect.left + circleRect.width / 2 - containerRect.left
-																		// Position above the point (center of circle minus height to place tooltip above)
-																		const y = circleRect.top - containerRect.top - 10
-																		setHoverTrendInfo({ x, y, period: p.period, value: p.value, submitted: p.submitted, active: p.active, persistency: p.persistency })
-																	}
-																}}
-																onMouseLeave={() => setHoverTrendInfo(null)}
-															/>
+															<g key={i}>
+																{/* Invisible larger circle for easier hovering */}
+																<circle
+																	cx={p.x}
+																	cy={p.y}
+																	r="12"
+																	fill="transparent"
+																	className="cursor-pointer"
+																	onMouseEnter={(e) => {
+																		const circle = e.currentTarget
+																		const container = circle.closest(".relative")
+																		if (container) {
+																			const circleRect = circle.getBoundingClientRect()
+																			const containerRect = container.getBoundingClientRect()
+																			// Calculate position relative to the container - center horizontally
+																			const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																			// Position above the point
+																			const y = circleRect.top - containerRect.top - 10
+																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, submitted: p.submitted, active: p.active, persistency: p.persistency })
+																		}
+																	}}
+																	onMouseLeave={() => setHoverTrendInfo(null)}
+																/>
+																{/* Visible circle */}
+																<circle
+																	cx={p.x}
+																	cy={p.y}
+																	r="4"
+																	fill={color}
+																	stroke="#fff"
+																	strokeWidth="2"
+																	className="pointer-events-none"
+																/>
+															</g>
 														))}
 													</g>
 												)
@@ -2609,8 +2676,13 @@ function roundToNiceNumber(value: number): number {
 									{/* Hover tooltip */}
 									{hoverTrendInfo && (
 										<div
-											className="pointer-events-none absolute -translate-x-1/2 -translate-y-full animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 mb-2"
-											style={{ left: hoverTrendInfo.x, top: hoverTrendInfo.y }}
+											className="pointer-events-none absolute rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 mb-2 transition-opacity duration-150"
+											style={{ 
+												left: hoverTrendInfo.x, 
+												top: hoverTrendInfo.y,
+												opacity: 1,
+												transform: 'translateX(-50%) translateY(-100%)'
+											}}
 										>
 											<div className="mb-1 text-sm font-semibold">
 												{(() => {

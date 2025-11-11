@@ -213,23 +213,18 @@ export default function Scoreboard() {
     fetchScoreboardData()
   }, [user, timeframe, dateRange.startDate, dateRange.endDate])
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading scoreboard...</div>
-      </div>
-    )
-  }
+  // Calculate date range for display even when loading
+  const displayDateRange = useMemo(() => {
+    if (data?.dateRange) {
+      return data.dateRange
+    }
+    return {
+      startDate: dateRange.startDate,
+      endDate: dateRange.endDate
+    }
+  }, [data, dateRange])
 
-  if (error || !data) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg text-destructive">{error || 'No data available'}</div>
-      </div>
-    )
-  }
-
-  const topAgents = data.leaderboard.slice(0, 3)
+  const topAgents = data?.leaderboard?.slice(0, 3) || []
 
   // Generate all dates in the range
   const generateDateRange = (start: string, end: string): string[] => {
@@ -246,7 +241,7 @@ export default function Scoreboard() {
     return dates
   }
 
-  const sortedDates = generateDateRange(data.dateRange.startDate, data.dateRange.endDate)
+  const sortedDates = generateDateRange(displayDateRange.startDate, displayDateRange.endDate)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -356,7 +351,7 @@ export default function Scoreboard() {
           <div className="flex items-center space-x-2 text-sm text-muted-foreground">
             <span>{getTimeframeLabel()}</span>
             <span>•</span>
-            <span>{formatDateRange(data.dateRange.startDate, data.dateRange.endDate)}</span>
+            <span>{formatDateRange(displayDateRange.startDate, displayDateRange.endDate)}</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -498,27 +493,62 @@ export default function Scoreboard() {
         <Card className="professional-card">
           <CardContent className="p-6 text-center">
             <h3 className="text-sm font-medium text-muted-foreground mb-2">Production</h3>
-            <p className="text-3xl font-bold text-primary">{formatCurrency(data.stats.totalProduction)}</p>
+            <p className="text-3xl font-bold text-primary">
+              {loading ? (
+                <span className="inline-block h-8 w-32 bg-muted animate-pulse rounded" />
+              ) : (
+                formatCurrency(data?.stats?.totalProduction || 0)
+              )}
+            </p>
           </CardContent>
         </Card>
 
         <Card className="professional-card">
           <CardContent className="p-6 text-center">
             <h3 className="text-sm font-medium text-muted-foreground mb-2">Policies Sold</h3>
-            <p className="text-3xl font-bold text-green-400">{data.stats.totalDeals}</p>
+            <p className="text-3xl font-bold text-green-400">
+              {loading ? (
+                <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
+              ) : (
+                data?.stats?.totalDeals || 0
+              )}
+            </p>
           </CardContent>
         </Card>
 
         <Card className="professional-card">
           <CardContent className="p-6 text-center">
             <h3 className="text-sm font-medium text-muted-foreground mb-2">Active Agents</h3>
-            <p className="text-3xl font-bold text-blue-400">{data.stats.activeAgents}</p>
+            <p className="text-3xl font-bold text-blue-400">
+              {loading ? (
+                <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
+              ) : (
+                data?.stats?.activeAgents || 0
+              )}
+            </p>
           </CardContent>
         </Card>
       </div>
 
       {/* Top 3 Winners */}
-      {topAgents.length > 0 && (
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[0, 1, 2].map((index) => (
+            <Card key={index} className="professional-card relative overflow-hidden">
+              <CardContent className="p-6 text-center">
+                <div className="mb-4">
+                  <span className="text-4xl">
+                    {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+                  </span>
+                </div>
+                <div className="h-6 w-32 bg-muted animate-pulse rounded mx-auto mb-2" />
+                <div className="h-8 w-40 bg-muted animate-pulse rounded mx-auto mb-2" />
+                <div className="h-6 w-16 bg-muted animate-pulse rounded mx-auto mt-2" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : topAgents.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {topAgents.map((agent, index) => (
             <Card key={agent.agent_id} className="professional-card relative overflow-hidden">
@@ -552,7 +582,48 @@ export default function Scoreboard() {
           <CardTitle className="text-xl font-bold text-foreground">Production Leaderboard</CardTitle>
         </CardHeader>
         <CardContent>
-          {data.leaderboard.length === 0 ? (
+          {loading ? (
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full min-w-max">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-0">Rank</th>
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-[80px]">Name</th>
+                    {generateDateRange(displayDateRange.startDate, displayDateRange.endDate).map(date => (
+                      <th key={date} className="text-center py-3 px-4 font-medium text-muted-foreground whitespace-nowrap">
+                        {formatDateHeader(date)}
+                      </th>
+                    ))}
+                    <th className="text-right py-3 px-4 font-medium text-muted-foreground sticky right-0">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[0, 1, 2, 3, 4].map((index) => (
+                    <tr key={index} className="border-b border-border">
+                      <td className="py-3 px-4 sticky left-0">
+                        <div className="h-5 w-8 bg-muted animate-pulse rounded" />
+                      </td>
+                      <td className="py-3 px-4 sticky left-[80px]">
+                        <div className="h-5 w-32 bg-muted animate-pulse rounded" />
+                      </td>
+                      {generateDateRange(displayDateRange.startDate, displayDateRange.endDate).map(date => (
+                        <td key={date} className="py-3 px-4 text-center">
+                          <div className="h-5 w-20 bg-muted animate-pulse rounded mx-auto" />
+                        </td>
+                      ))}
+                      <td className="py-3 px-4 text-right sticky right-0">
+                        <div className="h-5 w-24 bg-muted animate-pulse rounded ml-auto" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : error ? (
+            <div className="text-center py-8 text-destructive">
+              {error}
+            </div>
+          ) : !data || data.leaderboard.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               No deals found for this period
             </div>

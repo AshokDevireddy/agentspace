@@ -209,27 +209,7 @@ export default function Clients() {
     return matchesClient && matchesAgent && matchesStatus && matchesDateRange
   })
 
-  // Show loading state
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-lg text-muted-foreground">Loading clients...</div>
-        </div>
-      </div>
-    )
-  }
-
-  // Show error state
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-lg text-destructive">Error: {error}</div>
-        </div>
-      </div>
-    )
-  }
+  // Error will be shown inline in the table, not blocking the whole page
 
   const clientOptions = generateClientOptions(allClients)
   const agentOptions = generateAgentOptions(allClients)
@@ -256,22 +236,26 @@ export default function Clients() {
               {/* Buttons */}
               <button
                 onClick={() => setViewMode('self')}
+                disabled={loading || !isAdminChecked}
                 className={cn(
                   "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
                   viewMode === 'self'
                     ? 'text-white'
-                    : 'text-muted-foreground hover:text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                  (loading || !isAdminChecked) && 'opacity-50 cursor-not-allowed'
                 )}
               >
                 Just Me
               </button>
               <button
                 onClick={() => setViewMode('downlines')}
+                disabled={loading || !isAdminChecked}
                 className={cn(
                   "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
                   viewMode === 'downlines'
                     ? 'text-white'
-                    : 'text-muted-foreground hover:text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                  (loading || !isAdminChecked) && 'opacity-50 cursor-not-allowed'
                 )}
               >
                 Downlines
@@ -296,6 +280,7 @@ export default function Clients() {
                 onValueChange={setLocalClientName}
                 placeholder="All Clients"
                 searchPlaceholder="Search..."
+                disabled={loading || !isAdminChecked}
               />
             </div>
 
@@ -310,6 +295,7 @@ export default function Clients() {
                 onValueChange={setLocalAgent}
                 placeholder="All Agents"
                 searchPlaceholder="Search..."
+                disabled={loading || !isAdminChecked}
               />
             </div>
 
@@ -324,6 +310,7 @@ export default function Clients() {
                 onValueChange={setLocalStatus}
                 placeholder="All Statuses"
                 searchPlaceholder="Search..."
+                disabled={loading || !isAdminChecked}
               />
             </div>
 
@@ -337,6 +324,7 @@ export default function Clients() {
                 value={localStartDate}
                 onChange={(e) => setLocalStartDate(e.target.value)}
                 className="h-8 text-sm"
+                disabled={loading || !isAdminChecked}
               />
             </div>
 
@@ -350,6 +338,7 @@ export default function Clients() {
                 value={localEndDate}
                 onChange={(e) => setLocalEndDate(e.target.value)}
                 className="h-8 text-sm"
+                disabled={loading || !isAdminChecked}
               />
             </div>
 
@@ -359,6 +348,7 @@ export default function Clients() {
                 onClick={handleApplyFilters}
                 size="sm"
                 className="btn-gradient h-8 px-4"
+                disabled={loading || !isAdminChecked}
               >
                 <Filter className="h-3.5 w-3.5 mr-1.5" />
                 Filter
@@ -393,7 +383,30 @@ export default function Clients() {
               </tr>
             </thead>
             <tbody>
-              {filteredClients.length === 0 ? (
+              {loading || !isAdminChecked ? (
+                // Skeleton loaders for table rows
+                Array.from({ length: 10 }).map((_, index) => (
+                  <tr key={index} className="animate-pulse">
+                    <td>
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 rounded-full bg-muted" />
+                        <div className="h-4 w-32 bg-muted rounded" />
+                      </div>
+                    </td>
+                    <td><div className="h-4 w-40 bg-muted rounded" /></td>
+                    <td><div className="h-4 w-24 bg-muted rounded" /></td>
+                    <td><div className="h-4 w-28 bg-muted rounded" /></td>
+                    <td><div className="h-5 w-16 bg-muted rounded" /></td>
+                    <td><div className="h-4 w-20 bg-muted rounded" /></td>
+                  </tr>
+                ))
+              ) : error ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-destructive">
+                    Error: {error}
+                  </td>
+                </tr>
+              ) : filteredClients.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-muted-foreground">
                     No clients found matching your criteria
@@ -439,29 +452,41 @@ export default function Clients() {
         <Card className="professional-card border-t-0 rounded-t-none">
           {/* Pagination */}
           <div className="flex items-center justify-between py-4 border-t border-border px-6">
-            <div className="text-sm text-muted-foreground">
-              Showing {((currentPage - 1) * 20) + 1} to {Math.min(currentPage * 20, totalCount)} of {totalCount} clients
-            </div>
+            {loading || !isAdminChecked ? (
+              <div className="h-4 w-48 bg-muted animate-pulse rounded" />
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                Showing {((currentPage - 1) * 20) + 1} to {Math.min(currentPage * 20, totalCount)} of {totalCount} clients
+              </div>
+            )}
             <div className="flex items-center space-x-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(1)}
-              >
-                «
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(currentPage - 1)}
-              >
-                ‹
-              </Button>
+              {loading || !isAdminChecked ? (
+                <div className="flex items-center space-x-2">
+                  {Array.from({ length: 7 }).map((_, i) => (
+                    <div key={i} className="h-8 w-8 bg-muted animate-pulse rounded" />
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(1)}
+                  >
+                    «
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(currentPage - 1)}
+                  >
+                    ‹
+                  </Button>
 
-              {/* Generate page numbers */}
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  {/* Generate page numbers */}
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                 let pageNum
                 if (totalPages <= 5) {
                   pageNum = i + 1
@@ -494,14 +519,16 @@ export default function Clients() {
               >
                 ›
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(totalPages)}
-              >
-                »
-              </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(totalPages)}
+                  >
+                    »
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </Card>

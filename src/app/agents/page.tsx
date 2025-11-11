@@ -539,26 +539,9 @@ export default function Agents() {
     }
   }
 
-  // Show loading state
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-lg text-muted-foreground">Loading agents...</div>
-        </div>
-      </div>
-    )
-  }
-
-  // Show error state
+  // Show error state (but still show the UI structure)
   if (error) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-lg text-destructive">Error: {error}</div>
-        </div>
-      </div>
-    )
+    // Error will be shown in the content area, not blocking the whole page
   }
 
   // Generate agent options for dropdowns
@@ -592,6 +575,7 @@ export default function Agents() {
                 variant={view === 'table' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setView('table')}
+                disabled={loading}
                 className={`flex items-center gap-2 ${view === 'table' ? 'btn-gradient' : ''}`}
               >
                 <List className="h-4 w-4" />
@@ -601,6 +585,7 @@ export default function Agents() {
                 variant={view === 'tree' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setView('tree')}
+                disabled={loading}
                 className={`flex items-center gap-2 ${view === 'tree' ? 'btn-gradient' : ''}`}
               >
                 <GitMerge className="h-4 w-4" />
@@ -610,11 +595,12 @@ export default function Agents() {
                 variant={view === 'pending-positions' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setView('pending-positions')}
+                disabled={loading}
                 className={`flex items-center gap-2 relative ${view === 'pending-positions' ? 'btn-gradient' : ''}`}
               >
                 <UserCog className="h-4 w-4" />
                 Pending Positions
-                {pendingCount > 0 && (
+                {!loading && pendingCount > 0 && (
                   <Badge
                     className="ml-1 h-5 min-w-5 flex items-center justify-center bg-amber-500 text-white border-0 text-xs px-1.5"
                   >
@@ -742,6 +728,7 @@ export default function Agents() {
                   onClick={handleApplyFilters}
                   size="sm"
                   className="btn-gradient h-8 px-4"
+                  disabled={loading}
                 >
                   <Filter className="h-3.5 w-3.5 mr-1.5" />
                   Filter
@@ -778,7 +765,34 @@ export default function Agents() {
                 </tr>
               </thead>
               <tbody>
-                {agentsData.length === 0 ? (
+                {loading ? (
+                  // Skeleton loaders for table rows
+                  Array.from({ length: 10 }).map((_, index) => (
+                    <tr key={index} className="animate-pulse">
+                      <td>
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 rounded-full bg-muted" />
+                          <div className="space-y-2">
+                            <div className="h-4 w-24 bg-muted rounded" />
+                            <div className="h-3 w-32 bg-muted rounded" />
+                          </div>
+                        </div>
+                      </td>
+                      <td><div className="h-5 w-20 bg-muted rounded" /></td>
+                      <td><div className="h-4 w-24 bg-muted rounded" /></td>
+                      <td><div className="h-5 w-16 bg-muted rounded" /></td>
+                      <td><div className="h-4 w-20 bg-muted rounded" /></td>
+                      <td><div className="h-4 w-20 bg-muted rounded" /></td>
+                      <td><div className="h-4 w-12 bg-muted rounded" /></td>
+                    </tr>
+                  ))
+                ) : error ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-destructive">
+                      Error: {error}
+                    </td>
+                  </tr>
+                ) : agentsData.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-muted-foreground">
                       No agents found matching your criteria
@@ -849,29 +863,41 @@ export default function Agents() {
 
             {/* Pagination */}
             <div className="flex items-center justify-between py-4 border-t border-border px-6">
-              <div className="text-sm text-muted-foreground">
-                Showing {((currentPage - 1) * 20) + 1} to {Math.min(currentPage * 20, totalCount)} of {totalCount} agents
-              </div>
+              {loading ? (
+                <div className="h-4 w-48 bg-muted animate-pulse rounded" />
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  Showing {((currentPage - 1) * 20) + 1} to {Math.min(currentPage * 20, totalCount)} of {totalCount} agents
+                </div>
+              )}
               <div className="flex items-center space-x-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(1)}
-                >
-                  «
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(currentPage - 1)}
-                >
-                  ‹
-                </Button>
+                {loading ? (
+                  <div className="flex items-center space-x-2">
+                    {Array.from({ length: 7 }).map((_, i) => (
+                      <div key={i} className="h-8 w-8 bg-muted animate-pulse rounded" />
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage(1)}
+                    >
+                      «
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage(currentPage - 1)}
+                    >
+                      ‹
+                    </Button>
 
-                {/* Generate page numbers */}
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    {/* Generate page numbers */}
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   let pageNum
                   if (totalPages <= 5) {
                     pageNum = i + 1
@@ -904,14 +930,16 @@ export default function Agents() {
                 >
                   ›
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(totalPages)}
-                >
-                  »
-                </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={currentPage === totalPages}
+                      onClick={() => setCurrentPage(totalPages)}
+                    >
+                      »
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </Card>
@@ -927,7 +955,18 @@ export default function Agents() {
           }}
           ref={containerRef}
         >
-            {treeData ? (
+            {loading ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <div className="h-64 w-64 mx-auto bg-muted animate-pulse rounded-lg mb-4" />
+                  <div className="h-4 w-32 bg-muted animate-pulse rounded mx-auto" />
+                </div>
+              </div>
+            ) : error ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-destructive">Error: {error}</div>
+              </div>
+            ) : treeData ? (
                 <Tree
                     data={treeData}
                     translate={translate}
@@ -951,13 +990,37 @@ export default function Agents() {
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <span>Agents Without Positions</span>
-              <Badge className="bg-amber-500 text-white border-0">
-                {pendingCount} Pending
-              </Badge>
+              {loading ? (
+                <div className="h-5 w-16 bg-muted animate-pulse rounded" />
+              ) : (
+                <Badge className="bg-amber-500 text-white border-0">
+                  {pendingCount} Pending
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {pendingAgents.length === 0 ? (
+            {loading ? (
+              // Skeleton loaders for pending positions
+              <div className="space-y-4">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-4 border border-border rounded-lg animate-pulse"
+                  >
+                    <div className="flex-1 space-y-2">
+                      <div className="h-5 w-32 bg-muted rounded" />
+                      <div className="h-4 w-48 bg-muted rounded" />
+                      <div className="h-3 w-24 bg-muted rounded" />
+                    </div>
+                    <div className="flex items-center gap-3 ml-4">
+                      <div className="h-10 w-48 bg-muted rounded" />
+                      <div className="h-10 w-32 bg-muted rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : pendingAgents.length === 0 ? (
               <div className="py-12 text-center">
                 <UserCog className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-lg font-medium text-foreground mb-2">

@@ -294,6 +294,7 @@ export default function BookOfBusiness() {
             onClick={handleApplyFilters}
             size="sm"
             className="btn-gradient h-8 px-4"
+            disabled={loading}
           >
             <Filter className="h-3.5 w-3.5 mr-1.5" />
             Filter
@@ -449,6 +450,7 @@ export default function BookOfBusiness() {
                   value={localEffectiveDateStart}
                   onChange={(e) => setLocalEffectiveDateStart(e.target.value)}
                   className="h-8 text-sm"
+                  disabled={loading}
                 />
               </div>
 
@@ -462,6 +464,7 @@ export default function BookOfBusiness() {
                   value={localEffectiveDateEnd}
                   onChange={(e) => setLocalEffectiveDateEnd(e.target.value)}
                   className="h-8 text-sm"
+                  disabled={loading}
                 />
               </div>
             </div>
@@ -472,34 +475,69 @@ export default function BookOfBusiness() {
       {/* Policies Table */}
       <div className="table-container">
         <div className="table-wrapper custom-scrollbar">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-muted-foreground">Loading deals...</span>
-            </div>
-          ) : (
-            <table className="jira-table min-w-full">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Agent</th>
-                  <th>Carrier / Product</th>
-                  <th>Policy / App #</th>
-                  <th>Client Info</th>
-                  <th>Premium / Effective Date</th>
-                  <th>Lead Source</th>
-                  <th className="text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {deals.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="py-8 text-center text-muted-foreground">
-                      No deals found matching your criteria
+          <table className="jira-table min-w-full">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Agent</th>
+                <th>Carrier / Product</th>
+                <th>Policy / App #</th>
+                <th>Client Info</th>
+                <th>Premium / Effective Date</th>
+                <th>Lead Source</th>
+                <th className="text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                // Skeleton loaders for table rows
+                Array.from({ length: 10 }).map((_, index) => (
+                  <tr key={index} className="animate-pulse">
+                    <td><div className="h-4 w-20 bg-muted rounded" /></td>
+                    <td><div className="h-4 w-24 bg-muted rounded" /></td>
+                    <td>
+                      <div className="space-y-1">
+                        <div className="h-4 w-32 bg-muted rounded" />
+                        <div className="h-3 w-24 bg-muted rounded" />
+                      </div>
                     </td>
+                    <td>
+                      <div className="space-y-1">
+                        <div className="h-4 w-28 bg-muted rounded" />
+                        <div className="h-3 w-20 bg-muted rounded" />
+                      </div>
+                    </td>
+                    <td>
+                      <div className="space-y-1">
+                        <div className="h-4 w-32 bg-muted rounded" />
+                        <div className="h-3 w-24 bg-muted rounded" />
+                      </div>
+                    </td>
+                    <td>
+                      <div className="space-y-1">
+                        <div className="h-5 w-24 bg-muted rounded" />
+                        <div className="h-3 w-28 bg-muted rounded" />
+                        <div className="h-5 w-20 bg-muted rounded" />
+                      </div>
+                    </td>
+                    <td><div className="h-6 w-24 bg-muted rounded" /></td>
+                    <td className="text-center"><div className="h-6 w-20 bg-muted rounded mx-auto" /></td>
                   </tr>
-                ) : (
-                  deals.map((deal) => (
+                ))
+              ) : error ? (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-destructive">
+                    Error: {error}
+                  </td>
+                </tr>
+              ) : deals.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-muted-foreground">
+                    No deals found matching your criteria
+                  </td>
+                </tr>
+              ) : (
+                deals.map((deal) => (
                     <tr
                       key={deal.id}
                       className="cursor-pointer hover:bg-accent/50 transition-colors"
@@ -572,7 +610,6 @@ export default function BookOfBusiness() {
                   )}
               </tbody>
             </table>
-          )}
         </div>
       </div>
         {!loading && deals.length > 0 ? (

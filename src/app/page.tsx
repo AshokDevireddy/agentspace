@@ -231,6 +231,9 @@ export default function Home() {
     window.location.reload()
   }
 
+  // Combined loading state - wait for auth, user data, and both RPCs to complete
+  const isLoadingDashboardData = authLoading || userDataLoading || !firstName || loadingScoreboard || loadingDashboard || !dateRange.startDate
+
   // Format date range for display
   const formatDateRange = () => {
     if (!dateRange.startDate || !dateRange.endDate) {
@@ -242,25 +245,71 @@ export default function Home() {
   }
 
   // Colors for pie chart
-  const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347']
+  const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347', '#d084d0', '#84d0d0', '#d0d084']
 
   // Format carriers data for pie chart
   const getPieChartData = () => {
     if (!dashboardData?.carriers_active) return []
 
     const totalPolicies = dashboardData.carriers_active.reduce((sum: number, carrier: any) => sum + carrier.active_policies, 0)
+    const GROUP_THRESHOLD = 3 // Group slices below 3% into "Others"
+    const LABEL_THRESHOLD = 5 // Only show labels for slices above 5%
 
-    return dashboardData.carriers_active.map((carrier: any, index: number) => ({
-      name: carrier.carrier,
-      value: carrier.active_policies,
-      percentage: ((carrier.active_policies / totalPolicies) * 100).toFixed(1),
-      fill: COLORS[index % COLORS.length] // Add color to each entry
-    }))
+    // Separate large and small carriers
+    const largeCarriers: any[] = []
+    const smallCarriers: any[] = []
+
+    dashboardData.carriers_active.forEach((carrier: any, index: number) => {
+      const percentage = (carrier.active_policies / totalPolicies) * 100
+      const carrierData = {
+        name: carrier.carrier,
+        value: carrier.active_policies,
+        percentage: percentage.toFixed(1),
+        fill: COLORS[index % COLORS.length],
+        showLabel: percentage >= LABEL_THRESHOLD
+      }
+
+      if (percentage >= GROUP_THRESHOLD) {
+        largeCarriers.push(carrierData)
+      } else {
+        smallCarriers.push(carrierData)
+      }
+    })
+
+    // Sort large carriers by value (descending)
+    largeCarriers.sort((a, b) => b.value - a.value)
+
+    // If there are small carriers, group them into "Others"
+    if (smallCarriers.length > 0) {
+      const othersValue = smallCarriers.reduce((sum, carrier) => sum + carrier.value, 0)
+      const othersPercentage = (othersValue / totalPolicies) * 100
+      
+      largeCarriers.push({
+        name: 'Others',
+        value: othersValue,
+        percentage: othersPercentage.toFixed(1),
+        fill: '#9ca3af', // Gray color for "Others"
+        showLabel: true, // Always show label for "Others"
+        isOthers: true,
+        originalCarriers: smallCarriers.map(c => ({
+          name: c.name,
+          value: c.value,
+          percentage: c.percentage
+        })) // Store full carrier data for detailed tooltip
+      })
+    }
+
+    return largeCarriers
   }
 
-  // Custom label renderer that wraps long names
+  // Custom label renderer that wraps long names and conditionally shows labels
   const renderCustomLabel = (entry: any) => {
-    const { name, percentage, fill, cx, cy, midAngle, innerRadius, outerRadius, x, y } = entry
+    const { name, percentage, fill, cx, cy, midAngle, innerRadius, outerRadius, x, y, showLabel } = entry
+
+    // Only show label if showLabel is true (for slices above threshold)
+    if (!showLabel) {
+      return null
+    }
 
     // Helper function to split name at the middle if too long
     const splitName = (text: string) => {
@@ -285,6 +334,8 @@ export default function Home() {
         textAnchor={textAnchor}
         fontSize={12}
         fill={fill || '#333'}
+        style={{ transition: 'none' }}
+        key={`label-${name}`}
       >
         {line2 ? (
           <>
@@ -295,15 +346,6 @@ export default function Home() {
           <tspan x={x} dy="0" fill={fill || '#333'}>{name}: {percentage}%</tspan>
         )}
       </text>
-    )
-  }
-
-  // Show loading screen until we have both auth and a valid firstName
-  if (authLoading || userDataLoading || !firstName) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
     )
   }
 
@@ -318,24 +360,37 @@ export default function Home() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       {/* Header */}
-      <div>
-        <h1 className="text-4xl font-bold text-gradient mb-2">
-          Welcome, {firstName}.
-        </h1>
-        <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-          <span>This Week</span>
-          <span>•</span>
-          <span>{formatDateRange()}</span>
+      {isLoadingDashboardData ? (
+        <div>
+          <h1 className="text-4xl font-bold text-gradient mb-2">
+            <span className="inline-block h-10 w-64 bg-muted animate-pulse rounded" />
+          </h1>
+          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+            <span>This Week</span>
+            <span>•</span>
+            <span className="inline-block h-4 w-48 bg-muted animate-pulse rounded" />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div>
+          <h1 className="text-4xl font-bold text-gradient mb-2">
+            Welcome, {firstName || 'User'}.
+          </h1>
+          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+            <span>This Week</span>
+            <span>•</span>
+            <span>{formatDateRange()}</span>
+          </div>
+        </div>
+      )}
 
       {/* Dashboard Stats Cards */}
-      {loadingDashboard ? (
+      {isLoadingDashboardData ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
                 <div className="h-8 bg-gray-200 rounded w-1/2"></div>
@@ -343,7 +398,7 @@ export default function Home() {
             </CardContent>
           </Card>
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
                 <div className="h-8 bg-gray-200 rounded w-1/2"></div>
@@ -351,7 +406,7 @@ export default function Home() {
             </CardContent>
           </Card>
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
                 <div className="h-8 bg-gray-200 rounded w-1/2"></div>
@@ -359,7 +414,7 @@ export default function Home() {
             </CardContent>
           </Card>
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
                 <div className="h-8 bg-gray-200 rounded w-1/2"></div>
@@ -367,7 +422,7 @@ export default function Home() {
             </CardContent>
           </Card>
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
                 <div className="h-8 bg-gray-200 rounded w-1/2"></div>
@@ -375,18 +430,18 @@ export default function Home() {
             </CardContent>
           </Card>
         </div>
-      ) : dashboardData ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      ) : !isLoadingDashboardData && dashboardData ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {/* Active Policies */}
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden">
-                  <div className="flex items-center gap-2 mb-4">
+                <div className="w-full overflow-hidden min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
                     <BarChart3 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground">Active Policies</p>
+                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Active Policies</p>
                   </div>
-                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
+                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     {(dashboardData.totals.active_policies ?? 0).toLocaleString()}
                   </p>
                 </div>
@@ -396,14 +451,14 @@ export default function Home() {
 
           {/* Monthly Commissions */}
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden">
-                  <div className="flex items-center gap-2 mb-4">
+                <div className="w-full overflow-hidden min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
                     <DollarSign className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground">Monthly Commissions</p>
+                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Monthly Commissions</p>
                   </div>
-                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
+                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     ${(dashboardData.totals.monthly_commissions ?? 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </p>
                 </div>
@@ -411,16 +466,16 @@ export default function Home() {
             </CardContent>
           </Card>
 
-          {/* New Policies Last Month */}
+          {/* New Policies */}
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden">
-                  <div className="flex items-center gap-2 mb-4">
+                <div className="w-full overflow-hidden min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
                     <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground">New Policies (Last Month)</p>
+                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>New Policies</p>
                   </div>
-                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
+                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     {(dashboardData.totals.new_policies_last_month ?? 0).toLocaleString()}
                   </p>
                 </div>
@@ -430,14 +485,14 @@ export default function Home() {
 
           {/* Clients Count */}
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden">
-                  <div className="flex items-center gap-2 mb-4">
+                <div className="w-full overflow-hidden min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
                     <Briefcase className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground">Total Clients</p>
+                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Total Clients</p>
                   </div>
-                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
+                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     {(dashboardData.totals.clients_count ?? 0).toLocaleString()}
                   </p>
                 </div>
@@ -447,14 +502,14 @@ export default function Home() {
 
           {/* Pending Positions */}
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden">
-                  <div className="flex items-center gap-2 mb-4">
+                <div className="w-full overflow-hidden min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
                     <UserCog className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground">Pending Positions</p>
+                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Pending Positions</p>
                   </div>
-                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
+                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     {(dashboardData.totals.pending_positions ?? 0).toLocaleString()}
                   </p>
                 </div>
@@ -467,18 +522,21 @@ export default function Home() {
       {/* Pie Chart and Scoreboard Side by Side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Carrier Distribution Pie Chart */}
-        {loadingDashboard ? (
+        {isLoadingDashboardData ? (
           <Card className="professional-card">
             <CardHeader>
-              <CardTitle className="text-xl font-semibold text-foreground">Carrier Distribution</CardTitle>
+              <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
+                <BarChart3 className="h-5 w-5 text-primary" />
+                <span>Active Policies by Carrier</span>
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-80 flex items-center justify-center">
-                <p className="text-muted-foreground">Loading...</p>
+                <div className="h-64 w-64 rounded-full bg-muted animate-pulse" />
               </div>
             </CardContent>
           </Card>
-        ) : dashboardData?.carriers_active ? (
+        ) : !isLoadingDashboardData && dashboardData?.carriers_active ? (
           <Card className="professional-card">
             <CardHeader>
               <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
@@ -499,21 +557,76 @@ export default function Home() {
                       outerRadius={100}
                       fill="#8884d8"
                       dataKey="value"
+                      isAnimationActive={false}
                     >
-                      {getPieChartData().map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      {getPieChartData().map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value, name) => [
-                        `${value} policies`,
-                        name
-                      ]}
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                        color: 'hsl(var(--foreground))'
+                      content={({ active, payload }) => {
+                        if (!active || !payload || !payload[0]) return null
+                        
+                        const data = payload[0].payload
+                        
+                        // If it's "Others", show detailed breakdown
+                        if (data?.isOthers && data?.originalCarriers && data.originalCarriers.length > 0) {
+                          return (
+                            <div
+                              style={{
+                                backgroundColor: 'hsl(var(--card))',
+                                border: '1px solid hsl(var(--border))',
+                                borderRadius: '8px',
+                                padding: '12px',
+                                color: 'hsl(var(--foreground))',
+                                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+                              }}
+                            >
+                              <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>
+                                Others: {data.value} policies ({data.percentage}%)
+                              </div>
+                              <div style={{ borderTop: '1px solid hsl(var(--border))', paddingTop: '8px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'hsl(var(--muted-foreground))' }}>
+                                  Breakdown:
+                                </div>
+                                {data.originalCarriers.map((carrier: any, idx: number) => (
+                                  <div
+                                    key={idx}
+                                    style={{
+                                      fontSize: '12px',
+                                      padding: '4px 0',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      gap: '12px'
+                                    }}
+                                  >
+                                    <span>{carrier.name}:</span>
+                                    <span style={{ fontWeight: '500' }}>
+                                      {carrier.value} policies ({carrier.percentage}%)
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        }
+                        
+                        // Regular tooltip for other slices
+                        return (
+                          <div
+                            style={{
+                              backgroundColor: 'hsl(var(--card))',
+                              border: '1px solid hsl(var(--border))',
+                              borderRadius: '8px',
+                              padding: '8px 12px',
+                              color: 'hsl(var(--foreground))'
+                            }}
+                          >
+                            <div style={{ fontWeight: '500' }}>
+                              {data.name}: {data.value} policies ({data.percentage}%)
+                            </div>
+                          </div>
+                        )
                       }}
                     />
                   </PieChart>
@@ -533,11 +646,24 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             <div className="text-sm text-muted-foreground mb-4">
-              {loadingScoreboard ? 'Loading...' : `Week of ${formatDateRange()}`}
+              {isLoadingDashboardData ? (
+                <span className="inline-block h-4 w-32 bg-muted animate-pulse rounded" />
+              ) : (
+                `Week of ${formatDateRange()}`
+              )}
             </div>
             <div className="space-y-4">
-              {loadingScoreboard ? (
-                <div className="text-center py-8 text-muted-foreground">Loading top producers...</div>
+              {isLoadingDashboardData ? (
+                // Skeleton loaders matching the producer item structure
+                Array.from({ length: 5 }).map((_, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
+                      <span className="h-4 w-24 bg-muted animate-pulse rounded" />
+                    </div>
+                    <span className="h-4 w-16 bg-muted animate-pulse rounded" />
+                  </div>
+                ))
               ) : topProducers.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">No production data available</div>
               ) : (

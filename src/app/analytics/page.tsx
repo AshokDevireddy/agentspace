@@ -370,8 +370,8 @@ export default function AnalyticsTestPage() {
 	const [carrierFilter, setCarrierFilter] = React.useState<string>("ALL")
 	const [selectedCarrier, setSelectedCarrier] = React.useState<string | null>(null)
 	const [hoverInfo, setHoverInfo] = React.useState<null | { x: number; y: number; label: string; submitted: number; sharePct: number; persistencyPct: number; active: number }>(null)
-	const [hoverStatusInfo, setHoverStatusInfo] = React.useState<null | { x: number; y: number; status: string; count: number; pct: number }>(null)
-	const [hoverBreakdownInfo, setHoverBreakdownInfo] = React.useState<null | { x: number; y: number; label: string; value: number; pct: number }>(null)
+	const [hoverStatusInfo, setHoverStatusInfo] = React.useState<null | { x: number; y: number; status: string; count: number; pct: number; groupedStatuses?: Array<{ status: string; count: number; pct: number }> }>(null)
+	const [hoverBreakdownInfo, setHoverBreakdownInfo] = React.useState<null | { x: number; y: number; label: string; value: number; pct: number; groupedStates?: Array<{ label: string; value: number; pct: number }>; groupedAgeBands?: Array<{ label: string; value: number; pct: number }> }>(null)
 	const [hoverPersistencyInfo, setHoverPersistencyInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
 	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; avgPremium?: number }>(null)
 	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
@@ -751,25 +751,80 @@ function roundToNiceNumber(value: number): number {
 		// Filter entries with count > 0 for donut chart
 		const entriesWithData = entries.filter(e => e.count > 0)
 
+		// Separate entries into those >= 3% and those < 3%
+		const majorEntries: Array<{ status: string; count: number; color: string; pct: number }> = []
+		const minorEntries: Array<{ status: string; count: number; color: string; pct: number }> = []
+
+		entriesWithData.forEach((e) => {
+			const pct = total > 0 ? e.count / total : 0
+			const entryWithPct = {
+				...e,
+				pct: Math.round(pct * 1000) / 10,
+			}
+			if (pct >= 0.03) {
+				majorEntries.push(entryWithPct)
+			} else {
+				minorEntries.push(entryWithPct)
+			}
+		})
+
+		// Create "Other" entry if there are 2+ minor entries (if only 1, keep it as its own slice)
+		const consolidatedEntries: Array<{ status: string; count: number; color: string; pct: number; groupedStatuses?: Array<{ status: string; count: number; pct: number }> }> = [...majorEntries]
+		
+		if (minorEntries.length >= 2) {
+			const otherCount = minorEntries.reduce((sum, e) => sum + e.count, 0)
+			const otherPct = total > 0 ? otherCount / total : 0
+			// Sort minor entries by percentage (highest to lowest)
+			const sortedMinorEntries = [...minorEntries].sort((a, b) => b.pct - a.pct)
+			consolidatedEntries.push({
+				status: "Other",
+				count: otherCount,
+				color: colorForStatus("Other"),
+				pct: Math.round(otherPct * 1000) / 10,
+				groupedStatuses: sortedMinorEntries.map(e => ({
+					status: e.status,
+					count: e.count,
+					pct: e.pct,
+				})),
+			})
+		} else if (minorEntries.length === 1) {
+			// If only one minor entry, add it as its own slice
+			consolidatedEntries.push(minorEntries[0])
+		}
+
 		let cursor = 0
-		const donutWedges = entriesWithData.map((e) => {
+		const donutWedges = consolidatedEntries.map((e) => {
 			const pct = total > 0 ? e.count / total : 0
 			const ang = pct * 360
 			const piece = {
 				...e,
 				start: cursor,
 				end: cursor + ang,
-				pct: Math.round(pct * 1000) / 10,
 			}
 			cursor += ang
 			return piece
 		})
 
-		// Calculate percentages for all entries for legend
+		// Calculate percentages for all entries for legend (including consolidated "Other" if it exists)
 		const allEntries = entries.map(e => ({
 			...e,
 			pct: total > 0 ? Math.round((e.count / total) * 1000) / 10 : 0,
 		}))
+		
+		// If we created an "Other" entry, add it to the legend
+		const otherEntry = consolidatedEntries.find(e => e.status === "Other")
+		if (otherEntry) {
+			// Remove the individual minor entries from legend and add "Other"
+			const minorStatuses = otherEntry.groupedStatuses?.map(s => s.status) || []
+			const filteredLegend = allEntries.filter(e => !minorStatuses.includes(e.status))
+			filteredLegend.push({
+				status: "Other",
+				count: otherEntry.count,
+				color: otherEntry.color,
+				pct: otherEntry.pct,
+			})
+			return { wedges: donutWedges, legendEntries: filteredLegend, total }
+		}
 
 		return { wedges: donutWedges, legendEntries: allEntries, total }
 	}, [detailCarrier, timeWindow, windowKey, groupBy])
@@ -842,15 +897,55 @@ function roundToNiceNumber(value: number): number {
 
 		const total = entries.reduce((sum, e) => sum + e.value, 0)
 
+		// Separate entries into those >= 3% and those < 3%
+		const majorEntries: Array<{ label: string; value: number; color: string; pct: number }> = []
+		const minorEntries: Array<{ label: string; value: number; color: string; pct: number }> = []
+
+		entries.forEach((e) => {
+			const pct = total > 0 ? e.value / total : 0
+			const entryWithPct = {
+				...e,
+				pct: Math.round(pct * 1000) / 10,
+			}
+			if (pct >= 0.03) {
+				majorEntries.push(entryWithPct)
+			} else {
+				minorEntries.push(entryWithPct)
+			}
+		})
+
+		// Create "Other" entry if there are 2+ minor entries (if only 1, keep it as its own slice)
+		const consolidatedEntries: Array<{ label: string; value: number; color: string; pct: number; groupedStates?: Array<{ label: string; value: number; pct: number }> }> = [...majorEntries]
+		
+		if (minorEntries.length >= 2) {
+			const otherValue = minorEntries.reduce((sum, e) => sum + e.value, 0)
+			const otherPct = total > 0 ? otherValue / total : 0
+			// Sort minor entries by percentage (highest to lowest)
+			const sortedMinorEntries = [...minorEntries].sort((a, b) => b.pct - a.pct)
+			consolidatedEntries.push({
+				label: "Other",
+				value: otherValue,
+				color: colorForLabel("Other"),
+				pct: Math.round(otherPct * 1000) / 10,
+				groupedStates: sortedMinorEntries.map(e => ({
+					label: e.label,
+					value: e.value,
+					pct: e.pct,
+				})),
+			})
+		} else if (minorEntries.length === 1) {
+			// If only one minor entry, add it as its own slice
+			consolidatedEntries.push(minorEntries[0])
+		}
+
 		let cursor = 0
-		const wedges = entries.map((e) => {
+		const wedges = consolidatedEntries.map((e) => {
 			const pct = total > 0 ? e.value / total : 0
 			const ang = pct * 360
 			const piece = {
 				...e,
 				start: cursor,
 				end: cursor + ang,
-				pct: Math.round(pct * 1000) / 10,
 			}
 			cursor += ang
 			return piece
@@ -864,11 +959,15 @@ function roundToNiceNumber(value: number): number {
 	const ageBreakdown = React.useMemo(() => {
 		if (groupBy !== "age") return null
 
+        // Distinct colors for age bands - each age band gets a unique, visually distinct color
         const ageColors: Record<string, string> = {
-            "18-29": colorForLabel("18-29"),
-            "30-44": colorForLabel("30-44"),
-            "45-64": colorForLabel("45-64"),
-            "65+": colorForLabel("65+"),
+            "18-30": "#3b82f6",   // Blue
+            "31-40": "#10b981",   // Green
+            "41-50": "#8b5cf6",   // Purple
+            "51-60": "#f59e0b",   // Orange/Amber
+            "61-70": "#ec4899",   // Pink
+            "71+": "#14b8a6",     // Teal
+            "Unknown": "#ef4444", // Red (for unknown/other age bands)
         }
 
 		const entries: { label: string; value: number; color: string }[] = []
@@ -950,16 +1049,57 @@ function roundToNiceNumber(value: number): number {
 
 		const total = entries.reduce((sum, e) => sum + e.value, 0)
 
-		let cursor = 0
-		const wedges = entries.map((e) => {
+		// Separate entries into those >= 3% and those < 3%
+		const majorEntries: Array<{ label: string; value: number; color: string; pct: number }> = []
+		const minorEntries: Array<{ label: string; value: number; color: string; pct: number }> = []
+
+		entries.forEach((e) => {
 			// If total is 0, give each entry equal portion so the graph structure is visible
 			const pct = total > 0 ? e.value / total : (entries.length > 0 ? 1 / entries.length : 0)
+			const entryWithPct = {
+				...e,
+				pct: Math.round(pct * 1000) / 10,
+			}
+			if (pct >= 0.03) {
+				majorEntries.push(entryWithPct)
+			} else {
+				minorEntries.push(entryWithPct)
+			}
+		})
+
+		// Create "Other" entry if there are 2+ minor entries (if only 1, keep it as its own slice)
+		const consolidatedEntries: Array<{ label: string; value: number; color: string; pct: number; groupedAgeBands?: Array<{ label: string; value: number; pct: number }> }> = [...majorEntries]
+		
+		if (minorEntries.length >= 2) {
+			const otherValue = minorEntries.reduce((sum, e) => sum + e.value, 0)
+			const otherPct = total > 0 ? otherValue / total : (consolidatedEntries.length > 0 ? 1 / consolidatedEntries.length : 0)
+			// Sort minor entries by percentage (highest to lowest)
+			const sortedMinorEntries = [...minorEntries].sort((a, b) => b.pct - a.pct)
+			consolidatedEntries.push({
+				label: "Other",
+				value: otherValue,
+				color: colorForLabel("Other"),
+				pct: Math.round(otherPct * 1000) / 10,
+				groupedAgeBands: sortedMinorEntries.map(e => ({
+					label: e.label,
+					value: e.value,
+					pct: e.pct,
+				})),
+			})
+		} else if (minorEntries.length === 1) {
+			// If only one minor entry, add it as its own slice
+			consolidatedEntries.push(minorEntries[0])
+		}
+
+		let cursor = 0
+		const wedges = consolidatedEntries.map((e) => {
+			// If total is 0, give each entry equal portion so the graph structure is visible
+			const pct = total > 0 ? e.value / total : (consolidatedEntries.length > 0 ? 1 / consolidatedEntries.length : 0)
 			const ang = pct * 360
 			const piece = {
 				...e,
 				start: cursor,
 				end: cursor + ang,
-				pct: Math.round(pct * 1000) / 10,
 			}
 			cursor += ang
 			return piece
@@ -1408,6 +1548,7 @@ function roundToNiceNumber(value: number): number {
 																status: w.status,
 																count: w.count,
 																pct: w.pct,
+																groupedStatuses: w.groupedStatuses,
 															})}
 															onMouseLeave={() => setHoverStatusInfo(null)}
 														/>
@@ -1417,13 +1558,41 @@ function roundToNiceNumber(value: number): number {
 										</svg>
 										{hoverStatusInfo && (
 											<div
-												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
-												style={{ left: hoverStatusInfo.x, top: hoverStatusInfo.y }}
+												className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 text-xs text-white shadow-lg backdrop-blur-sm z-10 ${
+													hoverStatusInfo.groupedStatuses && hoverStatusInfo.groupedStatuses.length > 0
+														? "p-4 min-w-[300px] max-w-[500px]"
+														: "p-3"
+												}`}
+												style={{ 
+													left: hoverStatusInfo.x, 
+													top: hoverStatusInfo.y,
+													maxHeight: hoverStatusInfo.groupedStatuses && hoverStatusInfo.groupedStatuses.length > 0 ? "80vh" : undefined,
+												}}
 											>
 												<div className="mb-1 text-sm font-semibold">{hoverStatusInfo.status}</div>
 												<div className="text-white/90">
 													{numberWithCommas(hoverStatusInfo.count)} ({hoverStatusInfo.pct}%)
 												</div>
+												{hoverStatusInfo.groupedStatuses && hoverStatusInfo.groupedStatuses.length > 0 && (
+													<div className="mt-3 pt-3 border-t border-white/20">
+														<div className="mb-2 text-xs font-semibold text-white/80">
+															Includes {hoverStatusInfo.groupedStatuses.length} status{hoverStatusInfo.groupedStatuses.length !== 1 ? "es" : ""}:
+														</div>
+														<div 
+															className="overflow-y-auto space-y-1.5 pr-2"
+															style={{ maxHeight: "60vh" }}
+														>
+															{hoverStatusInfo.groupedStatuses.map((status) => (
+																<div key={status.status} className="text-xs text-white/70 flex justify-between items-center gap-4">
+																	<span className="font-medium">{status.status}:</span>
+																	<span className="text-white/60">
+																		{numberWithCommas(status.count)} ({status.pct}%)
+																	</span>
+																</div>
+															))}
+														</div>
+													</div>
+												)}
 											</div>
 										)}
 									</div>
@@ -1487,6 +1656,7 @@ function roundToNiceNumber(value: number): number {
 																label: w.label,
 																value: w.value,
 																pct: w.pct,
+																groupedStates: w.groupedStates,
 															})}
 															onMouseLeave={() => setHoverBreakdownInfo(null)}
 														/>
@@ -1496,13 +1666,41 @@ function roundToNiceNumber(value: number): number {
 										</svg>
 										{hoverBreakdownInfo && (
 											<div
-												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
-												style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
+												className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 text-xs text-white shadow-lg backdrop-blur-sm z-10 ${
+													hoverBreakdownInfo.groupedStates && hoverBreakdownInfo.groupedStates.length > 0
+														? "p-4 min-w-[300px] max-w-[500px]"
+														: "p-3"
+												}`}
+												style={{ 
+													left: hoverBreakdownInfo.x, 
+													top: hoverBreakdownInfo.y,
+													maxHeight: hoverBreakdownInfo.groupedStates && hoverBreakdownInfo.groupedStates.length > 0 ? "80vh" : undefined,
+												}}
 											>
 												<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
 												<div className="text-white/90">
 													{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
 												</div>
+												{hoverBreakdownInfo.groupedStates && hoverBreakdownInfo.groupedStates.length > 0 && (
+													<div className="mt-3 pt-3 border-t border-white/20">
+														<div className="mb-2 text-xs font-semibold text-white/80">
+															Includes {hoverBreakdownInfo.groupedStates.length} state{hoverBreakdownInfo.groupedStates.length !== 1 ? "s" : ""}:
+														</div>
+														<div 
+															className="overflow-y-auto space-y-1.5 pr-2"
+															style={{ maxHeight: "60vh" }}
+														>
+															{hoverBreakdownInfo.groupedStates.map((state) => (
+																<div key={state.label} className="text-xs text-white/70 flex justify-between items-center gap-4">
+																	<span className="font-medium">{state.label}:</span>
+																	<span className="text-white/60">
+																		{numberWithCommas(state.value)} ({state.pct}%)
+																	</span>
+																</div>
+															))}
+														</div>
+													</div>
+												)}
 											</div>
 										)}
 									</div>
@@ -1576,6 +1774,7 @@ function roundToNiceNumber(value: number): number {
 																	label: w.label,
 																	value: w.value,
 																	pct: w.pct,
+																	groupedAgeBands: w.groupedAgeBands,
 																})}
 																onMouseLeave={() => setHoverBreakdownInfo(null)}
 															/>
@@ -1604,6 +1803,7 @@ function roundToNiceNumber(value: number): number {
 																label: w.label,
 																value: w.value,
 																pct: w.pct,
+																groupedAgeBands: w.groupedAgeBands,
 															})}
 															onMouseLeave={() => setHoverBreakdownInfo(null)}
 														/>
@@ -1613,13 +1813,41 @@ function roundToNiceNumber(value: number): number {
 										</svg>
 										{hoverBreakdownInfo && (
 											<div
-												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
-												style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
+												className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 text-xs text-white shadow-lg backdrop-blur-sm z-10 ${
+													hoverBreakdownInfo.groupedAgeBands && hoverBreakdownInfo.groupedAgeBands.length > 0
+														? "p-4 min-w-[300px] max-w-[500px]"
+														: "p-3"
+												}`}
+												style={{ 
+													left: hoverBreakdownInfo.x, 
+													top: hoverBreakdownInfo.y,
+													maxHeight: hoverBreakdownInfo.groupedAgeBands && hoverBreakdownInfo.groupedAgeBands.length > 0 ? "80vh" : undefined,
+												}}
 											>
 												<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
 												<div className="text-white/90">
 													{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
 												</div>
+												{hoverBreakdownInfo.groupedAgeBands && hoverBreakdownInfo.groupedAgeBands.length > 0 && (
+													<div className="mt-3 pt-3 border-t border-white/20">
+														<div className="mb-2 text-xs font-semibold text-white/80">
+															Includes {hoverBreakdownInfo.groupedAgeBands.length} age band{hoverBreakdownInfo.groupedAgeBands.length !== 1 ? "s" : ""}:
+														</div>
+														<div 
+															className="overflow-y-auto space-y-1.5 pr-2"
+															style={{ maxHeight: "60vh" }}
+														>
+															{hoverBreakdownInfo.groupedAgeBands.map((ageBand) => (
+																<div key={ageBand.label} className="text-xs text-white/70 flex justify-between items-center gap-4">
+																	<span className="font-medium">{ageBand.label}:</span>
+																	<span className="text-white/60">
+																		{numberWithCommas(ageBand.value)} ({ageBand.pct}%)
+																	</span>
+																</div>
+															))}
+														</div>
+													</div>
+												)}
 											</div>
 										)}
 									</div>

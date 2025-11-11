@@ -231,8 +231,8 @@ export default function Home() {
     window.location.reload()
   }
 
-  // Combined loading state - wait for both RPCs to complete
-  const isLoadingDashboardData = loadingScoreboard || loadingDashboard || !dateRange.startDate
+  // Combined loading state - wait for auth, user data, and both RPCs to complete
+  const isLoadingDashboardData = authLoading || userDataLoading || !firstName || loadingScoreboard || loadingDashboard || !dateRange.startDate
 
   // Format date range for display
   const formatDateRange = () => {
@@ -245,25 +245,71 @@ export default function Home() {
   }
 
   // Colors for pie chart
-  const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347']
+  const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347', '#d084d0', '#84d0d0', '#d0d084']
 
   // Format carriers data for pie chart
   const getPieChartData = () => {
     if (!dashboardData?.carriers_active) return []
 
     const totalPolicies = dashboardData.carriers_active.reduce((sum: number, carrier: any) => sum + carrier.active_policies, 0)
+    const GROUP_THRESHOLD = 3 // Group slices below 3% into "Others"
+    const LABEL_THRESHOLD = 5 // Only show labels for slices above 5%
 
-    return dashboardData.carriers_active.map((carrier: any, index: number) => ({
-      name: carrier.carrier,
-      value: carrier.active_policies,
-      percentage: ((carrier.active_policies / totalPolicies) * 100).toFixed(1),
-      fill: COLORS[index % COLORS.length] // Add color to each entry
-    }))
+    // Separate large and small carriers
+    const largeCarriers: any[] = []
+    const smallCarriers: any[] = []
+
+    dashboardData.carriers_active.forEach((carrier: any, index: number) => {
+      const percentage = (carrier.active_policies / totalPolicies) * 100
+      const carrierData = {
+        name: carrier.carrier,
+        value: carrier.active_policies,
+        percentage: percentage.toFixed(1),
+        fill: COLORS[index % COLORS.length],
+        showLabel: percentage >= LABEL_THRESHOLD
+      }
+
+      if (percentage >= GROUP_THRESHOLD) {
+        largeCarriers.push(carrierData)
+      } else {
+        smallCarriers.push(carrierData)
+      }
+    })
+
+    // Sort large carriers by value (descending)
+    largeCarriers.sort((a, b) => b.value - a.value)
+
+    // If there are small carriers, group them into "Others"
+    if (smallCarriers.length > 0) {
+      const othersValue = smallCarriers.reduce((sum, carrier) => sum + carrier.value, 0)
+      const othersPercentage = (othersValue / totalPolicies) * 100
+      
+      largeCarriers.push({
+        name: 'Others',
+        value: othersValue,
+        percentage: othersPercentage.toFixed(1),
+        fill: '#9ca3af', // Gray color for "Others"
+        showLabel: true, // Always show label for "Others"
+        isOthers: true,
+        originalCarriers: smallCarriers.map(c => ({
+          name: c.name,
+          value: c.value,
+          percentage: c.percentage
+        })) // Store full carrier data for detailed tooltip
+      })
+    }
+
+    return largeCarriers
   }
 
-  // Custom label renderer that wraps long names
+  // Custom label renderer that wraps long names and conditionally shows labels
   const renderCustomLabel = (entry: any) => {
-    const { name, percentage, fill, cx, cy, midAngle, innerRadius, outerRadius, x, y } = entry
+    const { name, percentage, fill, cx, cy, midAngle, innerRadius, outerRadius, x, y, showLabel } = entry
+
+    // Only show label if showLabel is true (for slices above threshold)
+    if (!showLabel) {
+      return null
+    }
 
     // Helper function to split name at the middle if too long
     const splitName = (text: string) => {
@@ -288,6 +334,8 @@ export default function Home() {
         textAnchor={textAnchor}
         fontSize={12}
         fill={fill || '#333'}
+        style={{ transition: 'none' }}
+        key={`label-${name}`}
       >
         {line2 ? (
           <>
@@ -314,24 +362,29 @@ export default function Home() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div>
-        <h1 className="text-4xl font-bold text-gradient mb-2">
-          Welcome, {authLoading || userDataLoading || !firstName ? (
-            <span className="inline-block h-10 w-32 bg-muted animate-pulse rounded" />
-          ) : (
-            `${firstName}.`
-          )}
-        </h1>
-        <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-          <span>This Week</span>
-          <span>•</span>
-          {isLoadingDashboardData ? (
+      {isLoadingDashboardData ? (
+        <div>
+          <h1 className="text-4xl font-bold text-gradient mb-2">
+            <span className="inline-block h-10 w-64 bg-muted animate-pulse rounded" />
+          </h1>
+          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+            <span>This Week</span>
+            <span>•</span>
             <span className="inline-block h-4 w-48 bg-muted animate-pulse rounded" />
-          ) : (
-            <span>{formatDateRange()}</span>
-          )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div>
+          <h1 className="text-4xl font-bold text-gradient mb-2">
+            Welcome, {firstName || 'User'}.
+          </h1>
+          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+            <span>This Week</span>
+            <span>•</span>
+            <span>{formatDateRange()}</span>
+          </div>
+        </div>
+      )}
 
       {/* Dashboard Stats Cards */}
       {isLoadingDashboardData ? (
@@ -504,21 +557,76 @@ export default function Home() {
                       outerRadius={100}
                       fill="#8884d8"
                       dataKey="value"
+                      isAnimationActive={false}
                     >
                       {getPieChartData().map((entry: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value, name) => [
-                        `${value} policies`,
-                        name
-                      ]}
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                        color: 'hsl(var(--foreground))'
+                      content={({ active, payload }) => {
+                        if (!active || !payload || !payload[0]) return null
+                        
+                        const data = payload[0].payload
+                        
+                        // If it's "Others", show detailed breakdown
+                        if (data?.isOthers && data?.originalCarriers && data.originalCarriers.length > 0) {
+                          return (
+                            <div
+                              style={{
+                                backgroundColor: 'hsl(var(--card))',
+                                border: '1px solid hsl(var(--border))',
+                                borderRadius: '8px',
+                                padding: '12px',
+                                color: 'hsl(var(--foreground))',
+                                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+                              }}
+                            >
+                              <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>
+                                Others: {data.value} policies ({data.percentage}%)
+                              </div>
+                              <div style={{ borderTop: '1px solid hsl(var(--border))', paddingTop: '8px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'hsl(var(--muted-foreground))' }}>
+                                  Breakdown:
+                                </div>
+                                {data.originalCarriers.map((carrier: any, idx: number) => (
+                                  <div
+                                    key={idx}
+                                    style={{
+                                      fontSize: '12px',
+                                      padding: '4px 0',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      gap: '12px'
+                                    }}
+                                  >
+                                    <span>{carrier.name}:</span>
+                                    <span style={{ fontWeight: '500' }}>
+                                      {carrier.value} policies ({carrier.percentage}%)
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        }
+                        
+                        // Regular tooltip for other slices
+                        return (
+                          <div
+                            style={{
+                              backgroundColor: 'hsl(var(--card))',
+                              border: '1px solid hsl(var(--border))',
+                              borderRadius: '8px',
+                              padding: '8px 12px',
+                              color: 'hsl(var(--foreground))'
+                            }}
+                          >
+                            <div style={{ fontWeight: '500' }}>
+                              {data.name}: {data.value} policies ({data.percentage}%)
+                            </div>
+                          </div>
+                        )
                       }}
                     />
                   </PieChart>

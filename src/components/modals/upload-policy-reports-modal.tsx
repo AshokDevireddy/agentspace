@@ -19,7 +19,8 @@ const carriers = [
   'Combined Insurance',
   'American Home Life',
   'Royal Neighbors',
-  'Liberty Bankers Life'
+  'Liberty Bankers Life',
+  'Foresters'
 ]
 
 export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {

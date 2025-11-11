@@ -324,6 +324,33 @@ function describeDonutArc(cx: number, cy: number, outerR: number, innerR: number
 	].join(" ")
 }
 
+// Helper function to create smooth curve path from points using cubic Bezier curves
+function createSmoothCurvePath(points: Array<{ x: number; y: number }>): string {
+	if (points.length === 0) return ""
+	if (points.length === 1) return `M ${points[0].x} ${points[0].y}`
+	if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`
+
+	let path = `M ${points[0].x} ${points[0].y}`
+
+	for (let i = 0; i < points.length - 1; i++) {
+		const p0 = points[Math.max(0, i - 1)]
+		const p1 = points[i]
+		const p2 = points[i + 1]
+		const p3 = points[Math.min(points.length - 1, i + 2)]
+
+		// Calculate control points for smooth curve
+		const cp1x = p1.x + (p2.x - p0.x) / 6
+		const cp1y = p1.y + (p2.y - p0.y) / 6
+		const cp2x = p2.x - (p3.x - p1.x) / 6
+		const cp2y = p2.y - (p3.y - p1.y) / 6
+
+		// Use cubic Bezier curve
+		path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+	}
+
+	return path
+}
+
 type AnalyticsTestValue = typeof analytics_test_value
 
 export default function AnalyticsTestPage() {
@@ -1722,7 +1749,7 @@ function displayStateLabel(stateCode: string): string {
 														return { x: xPos, y: yPos, value: cumulativeSubmitted, period: data.period, submitted: cumulativeSubmitted, active: totalActive, persistency: cumulativePersistency, avgPremium }
 													})
 
-												const pathData = submittedPoints.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
+												const pathData = createSmoothCurvePath(submittedPoints)
 
 												return (
 													<g key="cumulative-submitted">
@@ -1800,7 +1827,7 @@ function displayStateLabel(stateCode: string): string {
 														return { x: xPos, y: yPos, value: cumulativeActive, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency, avgPremium }
 													})
 
-												const pathData = activePoints.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
+												const pathData = createSmoothCurvePath(activePoints)
 
 												return (
 													<g key="cumulative-active">
@@ -2139,9 +2166,7 @@ function displayStateLabel(stateCode: string): string {
 													if (points.length === 0) return null
 
 													// Draw line
-													const pathData = points
-														.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
-														.join(" ")
+													const pathData = createSmoothCurvePath(points)
 
 													return (
 														<g key={carrier}>
@@ -2249,9 +2274,7 @@ function displayStateLabel(stateCode: string): string {
 
 													if (cumulativePoints.length === 0) return null
 
-													const pathData = cumulativePoints
-														.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
-														.join(" ")
+													const pathData = createSmoothCurvePath(cumulativePoints)
 
 													return (
 														<g key="cumulative">
@@ -2317,9 +2340,7 @@ function displayStateLabel(stateCode: string): string {
 														return { x: xPos, y: yPos, value, period: data.period, submitted, active, persistency }
 													})
 
-												const pathData = points
-													.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
-													.join(" ")
+												const pathData = createSmoothCurvePath(points)
 
 												return (
 													<g>
@@ -2558,4 +2579,6 @@ function displayStateLabel(stateCode: string): string {
 		)
 	)
 }
+
+
 

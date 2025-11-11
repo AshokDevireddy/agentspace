@@ -360,7 +360,7 @@ export default function Home() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       {/* Header */}
       {isLoadingDashboardData ? (
         <div>
@@ -390,7 +390,7 @@ export default function Home() {
       {isLoadingDashboardData ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
                 <div className="h-8 bg-gray-200 rounded w-1/2"></div>
@@ -398,7 +398,7 @@ export default function Home() {
             </CardContent>
           </Card>
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
                 <div className="h-8 bg-gray-200 rounded w-1/2"></div>
@@ -406,7 +406,7 @@ export default function Home() {
             </CardContent>
           </Card>
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
                 <div className="h-8 bg-gray-200 rounded w-1/2"></div>
@@ -414,7 +414,7 @@ export default function Home() {
             </CardContent>
           </Card>
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
                 <div className="h-8 bg-gray-200 rounded w-1/2"></div>
@@ -422,7 +422,7 @@ export default function Home() {
             </CardContent>
           </Card>
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
                 <div className="h-8 bg-gray-200 rounded w-1/2"></div>
@@ -431,17 +431,17 @@ export default function Home() {
           </Card>
         </div>
       ) : !isLoadingDashboardData && dashboardData ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {/* Active Policies */}
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden">
-                  <div className="flex items-center gap-2 mb-4">
+                <div className="w-full overflow-hidden min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
                     <BarChart3 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground">Active Policies</p>
+                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Active Policies</p>
                   </div>
-                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
+                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     {(dashboardData.totals.active_policies ?? 0).toLocaleString()}
                   </p>
                 </div>
@@ -451,14 +451,14 @@ export default function Home() {
 
           {/* Monthly Commissions */}
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden">
-                  <div className="flex items-center gap-2 mb-4">
+                <div className="w-full overflow-hidden min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
                     <DollarSign className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground">Monthly Commissions</p>
+                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Monthly Commissions</p>
                   </div>
-                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
+                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     ${(dashboardData.totals.monthly_commissions ?? 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </p>
                 </div>
@@ -466,16 +466,16 @@ export default function Home() {
             </CardContent>
           </Card>
 
-          {/* New Policies Last Month */}
+          {/* New Policies */}
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden">
-                  <div className="flex items-center gap-2 mb-4">
+                <div className="w-full overflow-hidden min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
                     <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground">New Policies (Last Month)</p>
+                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>New Policies</p>
                   </div>
-                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
+                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     {(dashboardData.totals.new_policies_last_month ?? 0).toLocaleString()}
                   </p>
                 </div>
@@ -485,14 +485,14 @@ export default function Home() {
 
           {/* Clients Count */}
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden">
-                  <div className="flex items-center gap-2 mb-4">
+                <div className="w-full overflow-hidden min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
                     <Briefcase className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground">Total Clients</p>
+                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Total Clients</p>
                   </div>
-                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
+                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     {(dashboardData.totals.clients_count ?? 0).toLocaleString()}
                   </p>
                 </div>
@@ -502,14 +502,14 @@ export default function Home() {
 
           {/* Pending Positions */}
           <Card className="professional-card">
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden">
-                  <div className="flex items-center gap-2 mb-4">
+                <div className="w-full overflow-hidden min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
                     <UserCog className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground">Pending Positions</p>
+                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Pending Positions</p>
                   </div>
-                  <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground break-all">
+                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     {(dashboardData.totals.pending_positions ?? 0).toLocaleString()}
                   </p>
                 </div>

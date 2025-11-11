@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
+import { CreateConversationModal } from "@/components/modals/create-conversation-modal"
 import {
   Search,
   Send,
@@ -15,7 +16,10 @@ import {
   Loader2,
   MessageSquare,
   GripVertical,
-  Filter
+  Filter,
+  Plus,
+  ChevronRight,
+  ChevronDown
 } from "lucide-react"
 import {
   Select,
@@ -107,10 +111,12 @@ function SMSMessagingPageContent() {
   const [rightPanelWidth, setRightPanelWidth] = useState(350)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const [isResizingRightPanel, setIsResizingRightPanel] = useState(false)
+  const [dealPanelCollapsed, setDealPanelCollapsed] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [isAdminChecked, setIsAdminChecked] = useState(false)
   const [viewMode, setViewMode] = useState<'downlines' | 'self'>('self')
   const [notificationFilter, setNotificationFilter] = useState<'all' | 'lapse' | 'needs_info'>('all')
+  const [createModalOpen, setCreateModalOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const conversationRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -148,13 +154,13 @@ function SMSMessagingPageContent() {
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isResizingSidebar) {
       const newWidth = e.clientX
-      if (newWidth >= 250 && newWidth <= 500) {
+      if (newWidth >= 200 && newWidth <= 800) {
         setSidebarWidth(newWidth)
       }
     }
     if (isResizingRightPanel) {
       const newWidth = window.innerWidth - e.clientX
-      if (newWidth >= 280 && newWidth <= 600) {
+      if (newWidth >= 200 && newWidth <= 800) {
         setRightPanelWidth(newWidth)
       }
     }
@@ -671,12 +677,32 @@ function SMSMessagingPageContent() {
     return nextBilling.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
+  const handleConversationCreated = async (conversationId: string) => {
+    // Refresh conversations list to include the new conversation
+    await fetchConversations()
+
+    // Find and select the new conversation
+    const conversation = conversations.find(c => c.id === conversationId)
+    if (conversation) {
+      handleConversationSelect(conversation)
+    } else {
+      // If not in the list yet, wait a bit and try again
+      setTimeout(async () => {
+        await fetchConversations()
+        const conv = conversations.find(c => c.id === conversationId)
+        if (conv) {
+          handleConversationSelect(conv)
+        }
+      }, 500)
+    }
+  }
+
   return (
     <div className="h-[calc(100vh-3rem)] flex bg-background relative">
       {/* Conversations Sidebar */}
       <div
         className="bg-card border-r border-border flex flex-col"
-        style={{ width: `${sidebarWidth}px`, minWidth: '250px', maxWidth: '500px' }}
+        style={{ width: `${sidebarWidth}px`, minWidth: '200px', maxWidth: '800px' }}
       >
         {/* Header */}
         <div className="p-4 border-b border-border">
@@ -733,15 +759,25 @@ function SMSMessagingPageContent() {
             </div>
           </div>
 
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input
-              placeholder="Search conversations..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-background"
-            />
+          {/* Search and New Button */}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input
+                placeholder="Search conversations..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 bg-background"
+              />
+            </div>
+            <Button
+              onClick={() => setCreateModalOpen(true)}
+              size="sm"
+              className="btn-gradient h-10 px-4 whitespace-nowrap"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              New
+            </Button>
           </div>
         </div>
 
@@ -754,7 +790,7 @@ function SMSMessagingPageContent() {
           ) : filteredConversations.length === 0 ? (
             <div className="p-8 text-center">
               <p className="text-muted-foreground text-sm">
-                {searchQuery ? 'No conversations found' : 'No conversations yet'}
+                {searchQuery ? 'No conversations found' : 'No conversations yet. Try creating a conversation.'}
               </p>
             </div>
           ) : (
@@ -954,12 +990,33 @@ function SMSMessagingPageContent() {
       {/* Deal Details Panel */}
       {selectedConversation && (
         <div
-          className="bg-card border-l border-border flex flex-col overflow-y-auto custom-scrollbar"
-          style={{ width: `${rightPanelWidth}px`, minWidth: '280px', maxWidth: '600px' }}
+          className="bg-card border-l border-border flex flex-col custom-scrollbar transition-all duration-300 ease-in-out"
+          style={{
+            width: dealPanelCollapsed ? '60px' : `${rightPanelWidth}px`,
+            minWidth: dealPanelCollapsed ? '60px' : '200px',
+            maxWidth: dealPanelCollapsed ? '60px' : '800px'
+          }}
         >
-          <div className="p-5 border-b border-border sticky top-0 bg-card z-10">
-            <h2 className="text-xl font-semibold text-foreground">Deal Information</h2>
+          <div className="p-5 border-b border-border sticky top-0 bg-card z-10 flex items-center justify-between">
+            {!dealPanelCollapsed && (
+              <h2 className="text-xl font-semibold text-foreground">Deal Information</h2>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDealPanelCollapsed(!dealPanelCollapsed)}
+              className={cn("hover:bg-accent", dealPanelCollapsed && "mx-auto")}
+            >
+              {dealPanelCollapsed ? (
+                <ChevronRight className="h-5 w-5" />
+              ) : (
+                <ChevronDown className="h-5 w-5 rotate-90" />
+              )}
+            </Button>
           </div>
+
+          {!dealPanelCollapsed && (
+            <div className="overflow-y-auto flex-1">
 
           {dealLoading ? (
             <div className="flex items-center justify-center p-8">
@@ -1095,8 +1152,17 @@ function SMSMessagingPageContent() {
               <p className="text-sm text-muted-foreground">Unable to load deal information</p>
             </div>
           )}
+            </div>
+          )}
         </div>
       )}
+
+      {/* Create Conversation Modal */}
+      <CreateConversationModal
+        open={createModalOpen}
+        onOpenChange={setCreateModalOpen}
+        onConversationCreated={handleConversationCreated}
+      />
     </div>
   )
 }

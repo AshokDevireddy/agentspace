@@ -89,6 +89,8 @@ export default function Home() {
         const startDate = sunday.toISOString().split('T')[0]
         const endDate = saturday.toISOString().split('T')[0]
 
+        // console.log('🔍 SCOREBOARD DEBUG - Calling RPC with user.id:', user.id, 'user.email:', user.email)
+
         // Use Supabase RPC function
         const supabase = createClient()
         const { data: rpcData, error: rpcError } = await supabase.rpc('get_scoreboard_data', {
@@ -96,6 +98,7 @@ export default function Home() {
           p_start_date: startDate,
           p_end_date: endDate
         })
+        // console.log('get_scoreboard_data', rpcData, rpcError)
 
         if (rpcError) {
           console.error('RPC Error:', rpcError)
@@ -162,6 +165,8 @@ export default function Home() {
       }
 
       try {
+        // console.log('🔍 DASHBOARD DEBUG - Calling RPC with user.id:', user.id, 'user.email:', user.email)
+
         // Create Supabase client
         const supabase = createClient()
 
@@ -169,6 +174,7 @@ export default function Home() {
         const { data, error } = await supabase.rpc('get_dashboard_data_with_agency_id', {
           p_user_id: user.id
         })
+        // console.log('get_dashboard_data_with_agency_id', data, error)
 
         if (error) {
           console.error('Error calling RPC:', error)

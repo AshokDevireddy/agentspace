@@ -707,7 +707,7 @@ function SMSMessagingPageContent() {
         {/* Header */}
         <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-semibold text-foreground">SMS Messages</h1>
+            <h1 className="text-xl font-semibold text-foreground">Messages</h1>
             {/* Filter Dropdown */}
             <Select value={notificationFilter} onValueChange={(value: 'all' | 'lapse' | 'needs_info') => setNotificationFilter(value)}>
               <SelectTrigger className="w-[160px] h-8 text-xs">

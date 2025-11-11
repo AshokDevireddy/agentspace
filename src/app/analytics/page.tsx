@@ -1106,19 +1106,14 @@ function roundToNiceNumber(value: number): number {
 	}, [periods, carrierFilter, trendMetric])
 
 	return (
-		isLoading ? (
-			<div className="flex min-h-screen w-full items-center justify-center p-6">
-				<div className="text-sm text-muted-foreground">Loading analytics…</div>
-			</div>
-		) : (
-			<div className="flex w-full flex-col gap-6 p-6">
+		<div className="flex w-full flex-col gap-6 p-6">
 			{/* Header */}
 			<div className="flex items-center justify-between">
 				<h1 className="text-xl font-semibold">Agency Analytics</h1>
 
 				<div className="flex items-center gap-2">
 					{/* Time window: 3,6,9,All Time */}
-					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
+					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)} disabled={isLoading}>
 						<SelectTrigger className="w-[120px] rounded-md h-9 text-sm"><SelectValue placeholder="3 Months" /></SelectTrigger>
 						<SelectContent className="rounded-md">
 							<SelectItem value="3">3 Months</SelectItem>
@@ -1136,7 +1131,7 @@ function roundToNiceNumber(value: number): number {
 						} else if (groupBy === "carrier") {
 							setSelectedCarrier(value)
 						}
-					}}>
+					}} disabled={isLoading}>
 						<SelectTrigger className="w-[160px] rounded-md h-9 text-sm"><SelectValue placeholder="All Carriers" /></SelectTrigger>
 						<SelectContent className="rounded-md">
 							{carriers.map((c) => (
@@ -1185,31 +1180,92 @@ function roundToNiceNumber(value: number): number {
 			{/* KPI tiles centered to middle 1/3rd */}
 			<div className="flex w-full justify-center">
 				<div className="grid w-full max-w-3xl grid-cols-3 gap-3">
-					<Card className="rounded-md">
-						<CardContent className="p-4">
-							<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
-							<div className="text-2xl font-bold mt-2">{(topStats.persistency * 100).toFixed(2)}%</div>
-						</CardContent>
-					</Card>
-					<Card className="rounded-md">
-						<CardContent className="p-4">
-							<div className="text-xs text-muted-foreground uppercase font-medium">Submitted</div>
-							<div className="text-2xl font-bold mt-2">{numberWithCommas(topStats.submitted)}</div>
-						</CardContent>
-					</Card>
-					<Card className="rounded-md">
-						<CardContent className="p-4">
-							<div className="text-xs text-muted-foreground uppercase font-medium">Active</div>
-							<div className="text-2xl font-bold mt-2">{numberWithCommas(topStats.active)}</div>
-						</CardContent>
-					</Card>
+					{isLoading ? (
+						<>
+							<Card className="rounded-md">
+								<CardContent className="p-4">
+									<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
+									<div className="text-2xl font-bold mt-2 h-8 w-20 bg-muted animate-pulse rounded" />
+								</CardContent>
+							</Card>
+							<Card className="rounded-md">
+								<CardContent className="p-4">
+									<div className="text-xs text-muted-foreground uppercase font-medium">Submitted</div>
+									<div className="text-2xl font-bold mt-2 h-8 w-20 bg-muted animate-pulse rounded" />
+								</CardContent>
+							</Card>
+							<Card className="rounded-md">
+								<CardContent className="p-4">
+									<div className="text-xs text-muted-foreground uppercase font-medium">Active</div>
+									<div className="text-2xl font-bold mt-2 h-8 w-20 bg-muted animate-pulse rounded" />
+								</CardContent>
+							</Card>
+						</>
+					) : (
+						<>
+							<Card className="rounded-md">
+								<CardContent className="p-4">
+									<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
+									<div className="text-2xl font-bold mt-2">{(topStats.persistency * 100).toFixed(2)}%</div>
+								</CardContent>
+							</Card>
+							<Card className="rounded-md">
+								<CardContent className="p-4">
+									<div className="text-xs text-muted-foreground uppercase font-medium">Submitted</div>
+									<div className="text-2xl font-bold mt-2">{numberWithCommas(topStats.submitted)}</div>
+								</CardContent>
+							</Card>
+							<Card className="rounded-md">
+								<CardContent className="p-4">
+									<div className="text-xs text-muted-foreground uppercase font-medium">Active</div>
+									<div className="text-2xl font-bold mt-2">{numberWithCommas(topStats.active)}</div>
+								</CardContent>
+							</Card>
+						</>
+					)}
 				</div>
 			</div>
 
 			{/* Total Submitted Business / Status Breakdown */}
 			<Card className="rounded-md">
 				<CardContent className="p-4 sm:p-6">
-					{(detailCarrier || groupBy === "state" || groupBy === "age" || groupBy === "persistency") ? (
+					{isLoading ? (
+						<>
+							<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">TOTAL SUBMITTED BUSINESS</div>
+							{/* Tabs */}
+							<div className="mb-4 flex flex-wrap gap-2 justify-center">
+								{[
+									{ key: "carrier", label: "By Carrier" },
+									{ key: "state", label: "By State" },
+									{ key: "age", label: "By Age" },
+									{ key: "persistency", label: "By Persistency" },
+								].map((g) => (
+									<Button
+										key={g.key}
+										variant={groupBy === g.key ? "blue" : "outline"}
+										size="sm"
+										disabled
+										className="rounded-md"
+									>
+										{g.label}
+									</Button>
+								))}
+							</div>
+							<div className="flex items-center justify-center gap-8">
+								<div className="relative h-[320px] w-[320px]">
+									<div className="h-full w-full rounded-full bg-muted animate-pulse" />
+								</div>
+								<div className="flex flex-col gap-3 min-w-[250px]">
+									<div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Carriers</div>
+									<div className="flex flex-col gap-2">
+										<div className="h-4 w-32 bg-muted animate-pulse rounded" />
+										<div className="h-4 w-28 bg-muted animate-pulse rounded" />
+										<div className="h-4 w-24 bg-muted animate-pulse rounded" />
+									</div>
+								</div>
+							</div>
+						</>
+					) : (detailCarrier || groupBy === "state" || groupBy === "age" || groupBy === "persistency") ? (
 						// Breakdown View (Status, State, Age, or Persistency)
 						<>
 							<div className="mb-4 flex items-center gap-3">
@@ -1714,10 +1770,14 @@ function roundToNiceNumber(value: number): number {
 							{ key: "avgprem", label: "Avg Premium" },
 							{ key: "all", label: "Show All" },
 						].map((m) => (
-							<Button key={m.key} variant={trendMetric === m.key ? "blue" : "outline"} size="sm" onClick={() => setTrendMetric(m.key)} className="rounded-md">{m.label}</Button>
+							<Button key={m.key} variant={trendMetric === m.key ? "blue" : "outline"} size="sm" onClick={() => setTrendMetric(m.key)} disabled={isLoading} className="rounded-md">{m.label}</Button>
 						))}
 					</div>
-					{trendData && trendData.length > 0 ? (
+					{isLoading ? (
+						<div className="h-[300px] w-full rounded-md border bg-muted/20 flex items-center justify-center">
+							<div className="text-sm text-muted-foreground">Loading trends...</div>
+						</div>
+					) : trendData && trendData.length > 0 ? (
 						(() => {
 							// Handle "Show All" case - show submitted and active together
 							if (trendMetric === "all") {
@@ -2872,7 +2932,6 @@ function roundToNiceNumber(value: number): number {
 				<TabsContent value="details" />
 			</Tabs>
 		</div>
-		)
 	)
 }
 

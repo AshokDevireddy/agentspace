@@ -303,9 +303,19 @@ function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
 }
 
 function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
+	// Handle full circle (360 degrees) - SVG arcs can't draw a full 360 in one command
+	const angleDiff = endAngle - startAngle
+	if (Math.abs(angleDiff) >= 360 || Math.abs(angleDiff - 360) < 0.001) {
+		// For a full circle, draw using two 180-degree arcs without the center-to-edge line
+		// Start at a point on the circle, draw two arcs to complete the circle, then close to center
+		const start = polarToCartesian(cx, cy, r, startAngle)
+		const midPoint = polarToCartesian(cx, cy, r, startAngle + 180)
+		// Move to start point, draw two arcs to complete circle, then line to center and close
+		return [`M ${start.x} ${start.y}`, `A ${r} ${r} 0 1 0 ${midPoint.x} ${midPoint.y}`, `A ${r} ${r} 0 1 0 ${start.x} ${start.y}`, `L ${cx} ${cy}`, "Z"].join(" ")
+	}
 	const start = polarToCartesian(cx, cy, r, endAngle)
 	const end = polarToCartesian(cx, cy, r, startAngle)
-	const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1
+	const largeArcFlag = angleDiff <= 180 ? 0 : 1
 	return [`M ${cx} ${cy}`, `L ${start.x} ${start.y}`, `A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`, "Z"].join(" ")
 }
 
@@ -496,113 +506,118 @@ const CARRIER_COLORS: Record<string, string> = {
 // Setting colors for status breakdown by carrier here - static mapping for known statuses per carrier
 // Maps carrier name -> status -> color hex
 const CARRIER_STATUS_COLORS: Record<string, Record<string, string>> = {
-    "Aetna": {
-        "Closed": "#616161",
-        "Reissue": "#3949AB",
-        "Rescind": "#C62828",
-        "Active": "#2E7D32",
-        "Decline": "#D32F2F",
-        "Withdrawn": "#757575",
-        "Lapsed": "#B71C1C",
-        "Pending": "#FFA000",
-        "LM App Decline": "#D32F2F",
-        "Reject": "#D32F2F",
-        "Issued Not In Force": "#E64A19",
-        "Not Taken": "#E64A19",
-        "Terminated": "#B71C1C",
-    },
-    "Aflac": {
-        "Reject": "#D32F2F",
-        "Rescind": "#C62828",
-        "Pending": "#FFA000",
-        "Active": "#2E7D32",
-        "Terminated": "#B71C1C",
-        "Decline": "#D32F2F",
-        "Not Taken": "#E64A19",
-        "Issued Not In Force": "#E64A19",
-        "Lapsed": "#B71C1C",
-        "Reissue": "#3949AB",
-        "LM App Decline": "#D32F2F",
-        "Withdrawn": "#757575",
-        "Closed": "#616161",
-    },
-    "American Amicable / Occidental": {
-        "DeathClaim": "#000000",
-        "Terminated": "#B71C1C",
-        "Pending": "#FFA000",
-        "Declined": "#D32F2F",
-        "NeedReqmnt": "#FFA000",
-        "NotTaken": "#E64A19",
-        "Act-Ret Item": "#FBC02D",
-        "RPU": "#546E7A",
-        "Withdrawn": "#757575",
-        "Active": "#2E7D32",
-        "InfNotTaken": "#E64A19",
-        "Incomplete": "#FFA000",
-        "IssNotPaid": "#E64A19",
-        "Act-Pastdue": "#FB8C00",
-    },
-    "American Home Life Insurance Company": {
-        "Terminated": "#B71C1C",
-        "Pending": "#FFA000",
-        "Not Taken": "#E64A19",
-        "Issued Not In Force": "#E64A19",
-        "Lapsed": "#B71C1C",
-        "Active": "#2E7D32",
-        "Closed": "#616161",
-        "LM App Decline": "#D32F2F",
-        "Decline": "#D32F2F",
-        "Withdrawn": "#757575",
-    },
-    "Combined": {
-        "Issued": "#1976D2",
-        "Terminated": "#B71C1C",
-        "Lapse-Pending": "#E64A19",
-        "In-Force": "#2E7D32",
-    },
-    "Liberty Bankers Life (LBL)": {
-        "Issued, Unpaid": "#E64A19",
-        "3rd Notice": "#FB8C00",
-        "Cancelled (Not Issued)": "#9E9E9E",
-        "Premium Paying (Active)": "#2E7D32",
-        "Lapsed": "#B71C1C",
-        "Not Taken": "#E64A19",
-    },
-    "RNA": {
-        "CON TERM MATURED": "#283593",
-        "CON TERM NOT TAKEN": "#E64A19",
-        "CON TERM DECLINED": "#D32F2F",
-        "CON TERM WITHDRAWN": "#757575",
-        "CON SUS DEATH PENDING": "#6A1B9A",
-        "CON TERM NT NO PAY": "#E64A19",
-        "CON TERM DEATH CLAIM": "#000000",
-        "CON SUS HOME OFFICE": "#FFA000",
-        "CON TERM DEC FULL UNDR": "#D32F2F",
-        "CON TERM POSTPONED": "#FFA000",
-        "CON TERM LAPSED": "#B71C1C",
-        "CONTRACT ACTIVE": "#2E7D32",
-        "CON TERM NOT ISSUED": "#9E9E9E",
-        "CON TERM DEC NO RE APP": "#D32F2F",
-        "CON TERM INCOMPLETE MIB": "#FFA000",
-        "CON TERM SURRENDERED": "#C62828",
-        "CON SUS RETURNED EFT": "#FB8C00",
-        "CON TERM INCOMPLETE": "#FFA000",
-        "CON ACT REINSTATEMENT": "#00897B",
-        "CON TERM DEC STAL DTE": "#D32F2F",
-    },
-    "Foresters Financial": {
-        "Active": "#2E7D32",
-        "Active - Preferred Draft Date": "#2E8B57",
-        "Declined": "#D32F2F",
-        "First Premium Pending": "#FFA000",
-        "Future Effective Date": "#1976D2",
-        "HO/Producer Withdrawn": "#757575",
-        "Lapsed": "#B71C1C",
-        "Not Proceeded With": "#757575",
-        "Not Taken": "#E64A19",
-        "Pending": "#FFA000",
-    },
-}
+	"Aetna": {
+	  "Active": "#2E7D32",
+	  "Pending": "#FFA000",
+	  "Closed": "#616161",
+	  "Withdrawn": "#8D6E63",
+	  "Reissue": "#3949AB",
+	  "Decline": "#5C6BC0",
+	  "Reject": "#42A5F5",
+	  "LM App Decline": "#7E57C2",
+	  "Rescind": "#FBC02D",
+	  "Lapsed": "#FFB74D",
+	  "Terminated": "#D32F2F",
+	  "Not Taken": "#BA68C8",
+	  "Issued Not In Force": "#4DB6AC"
+	},
+	"Aflac": {
+	  "Active": "#2E7D32",
+	  "Pending": "#FFA000",
+	  "Closed": "#616161",
+	  "Withdrawn": "#8D6E63",
+	  "Reissue": "#5C6BC0",
+	  "Decline": "#42A5F5",
+	  "Reject": "#7E57C2",
+	  "LM App Decline": "#FBC02D",
+	  "Rescind": "#FFB74D",
+	  "Lapsed": "#4DB6AC",
+	  "Terminated": "#D32F2F",
+	  "Not Taken": "#BA68C8",
+	  "Issued Not In Force": "#26A69A"
+	},
+	"American Amicable / Occidental": {
+	  "Active": "#2E7D32",
+	  "Pending": "#FFA000",
+	  "Declined": "#5C6BC0",
+	  "Rescind": "#42A5F5",
+	  "Withdrawn": "#8D6E63",
+	  "Incomplete": "#7E57C2",
+	  "NeedReqmnt": "#FBC02D",
+	  "Act-Pastdue": "#FFB74D",
+	  "Act-Ret Item": "#4DB6AC",
+	  "IssNotPaid": "#26A69A",
+	  "NotTaken": "#BA68C8",
+	  "InfNotTaken": "#AB47BC",
+	  "RPU": "#9E9E9E",
+	  "Terminated": "#D32F2F",
+	  "DeathClaim": "#000000"
+	},
+	"American Home Life Insurance Company": {
+	  "Active": "#2E7D32",
+	  "Pending": "#FFA000",
+	  "Decline": "#5C6BC0",
+	  "LM App Decline": "#42A5F5",
+	  "Withdrawn": "#8D6E63",
+	  "Closed": "#616161",
+	  "Lapsed": "#4DB6AC",
+	  "Terminated": "#D32F2F",
+	  "Not Taken": "#BA68C8",
+	  "Issued Not In Force": "#26A69A"
+	},
+	"Combined": {
+	  "In-Force": "#2E7D32",
+	  "Issued": "#5C6BC0",
+	  "Lapse-Pending": "#FFA000",
+	  "Terminated": "#D32F2F"
+	},
+	"Liberty Bankers Life (LBL)": {
+	  "Premium Paying (Active)": "#2E7D32",
+	  "Issued, Unpaid": "#5C6BC0",
+	  "3rd Notice": "#FFA000",
+	  "Not Taken": "#BA68C8",
+	  "Lapsed": "#4DB6AC",
+	  "Cancelled (Not Issued)": "#616161",
+	  "Terminated": "#D32F2F"
+	},
+	"RNA": {
+	  "CONTRACT ACTIVE": "#2E7D32",
+	  "CON ACT REINSTATEMENT": "#26A69A",
+	  "CON TERM MATURED": "#5C6BC0",
+	  "CON TERM NOT ISSUED": "#9E9E9E",
+	  "CON TERM NOT TAKEN": "#BA68C8",
+	  "CON TERM NT NO PAY": "#AB47BC",
+	  "CON TERM WITHDRAWN": "#8D6E63",
+	  "CON SUS HOME OFFICE": "#FFA000",
+	  "CON TERM INCOMPLETE": "#FFB74D",
+	  "CON TERM INCOMPLETE MIB": "#FBC02D",
+	  "CON TERM POSTPONED": "#4DB6AC",
+	  "CON SUS RETURNED EFT": "#42A5F5",
+	  "CON TERM DECLINED": "#7E57C2",
+	  "CON TERM DEC FULL UNDR": "#64B5F6",
+	  "CON TERM DEC NO RE APP": "#81D4FA",
+	  "CON TERM DEC STAL DTE": "#9575CD",
+	  "CON TERM LAPSED": "#FF8A65",
+	  "CON TERM SURRENDERED": "#26A69A",
+	  "CON SUS DEATH PENDING": "#8E24AA",
+	  "CON TERM DEATH CLAIM": "#000000",
+	  "Terminated": "#D32F2F"
+	},
+	"Foresters Financial": {
+	  "Active": "#2E7D32",
+	  "Active - Preferred Draft Date": "#388E3C",
+	  "Declined": "#5C6BC0",
+	  "Pending": "#FFA000",
+	  "First Premium Pending": "#FFB74D",
+	  "Future Effective Date": "#42A5F5",
+	  "HO/Producer Withdrawn": "#8D6E63",
+	  "Not Proceeded With": "#616161",
+	  "Not Taken": "#BA68C8",
+	  "Lapsed": "#4DB6AC",
+	  "Terminated": "#D32F2F"
+	}
+  };
+  
 
 // Fallback colors for any carrier not in the map
 // Setting colors for dynamic/hashed color generation here - used for status, state, age, and unknown carriers
@@ -878,15 +893,27 @@ function roundToNiceNumber(value: number): number {
 				}
 			}
 
+			// First, collect entries with > 0 values
 			Object.entries(ageTotals).forEach(([ageBand, data]) => {
 				if (data.submitted > 0) {
 					entries.push({
-						label: ageBand,
+						label: ageBand || "Unknown",
 						value: data.submitted,
-                        color: ageColors[ageBand] || colorForLabel(ageBand),
+                        color: ageColors[ageBand] || colorForLabel(ageBand || "Unknown"),
 					})
 				}
 			})
+
+			// If no entries with > 0 values, include all entries (even with 0) so graph structure is visible
+			if (entries.length === 0 && Object.keys(ageTotals).length > 0) {
+				Object.entries(ageTotals).forEach(([ageBand, data]) => {
+					entries.push({
+						label: ageBand || "Unknown",
+						value: data.submitted,
+                        color: ageColors[ageBand] || colorForLabel(ageBand || "Unknown"),
+					})
+				})
+			}
 		} else {
 			// Single carrier
 			const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
@@ -894,24 +921,39 @@ function roundToNiceNumber(value: number): number {
 			const carrierData = byCarrier[carrierFilter as keyof typeof byCarrier]
 			if (!carrierData) return null
 			const ageData = carrierData.age_band?.[windowKey]
+			console.log("ageData", ageData)
+			// If ageData doesn't exist, return null (no data available)
 			if (!ageData) return null
 
+			// First, collect entries with > 0 values
 			ageData.forEach((entry: { age_band: string; submitted: number }) => {
 				if (entry.submitted > 0) {
 					entries.push({
-						label: entry.age_band,
+						label: entry.age_band || "Unknown",
 						value: entry.submitted,
-                        color: ageColors[entry.age_band] || colorForLabel(entry.age_band),
+                        color: ageColors[entry.age_band] || colorForLabel(entry.age_band || "Unknown"),
 					})
 				}
 			})
+
+			// If no entries with > 0 values, include all entries (even with 0) so graph structure is visible
+			if (entries.length === 0) {
+				ageData.forEach((entry: { age_band: string; submitted: number }) => {
+					entries.push({
+						label: entry.age_band || "Unknown",
+						value: entry.submitted,
+                        color: ageColors[entry.age_band] || colorForLabel(entry.age_band || "Unknown"),
+					})
+				})
+			}
 		}
 
 		const total = entries.reduce((sum, e) => sum + e.value, 0)
 
 		let cursor = 0
 		const wedges = entries.map((e) => {
-			const pct = total > 0 ? e.value / total : 0
+			// If total is 0, give each entry equal portion so the graph structure is visible
+			const pct = total > 0 ? e.value / total : (entries.length > 0 ? 1 / entries.length : 0)
 			const ang = pct * 360
 			const piece = {
 				...e,
@@ -923,6 +965,7 @@ function roundToNiceNumber(value: number): number {
 			return piece
 		})
 
+		console.log("ageBreakdown result:", { entries: entries.length, total, wedges: wedges.length, wedgesData: wedges })
 		return { wedges, total }
 	}, [carrierFilter, windowKey, groupBy])
 
@@ -1494,11 +1537,50 @@ function roundToNiceNumber(value: number): number {
 											</defs>
 											<g filter="url(#shadow-age)">
 												{ageBreakdown.wedges.map((w, idx) => {
+													const angleDiff = w.end - w.start
+													const isFullCircle = Math.abs(angleDiff) >= 360 || Math.abs(angleDiff - 360) < 0.001
 													const path = describeArc(160, 160, 150, w.start, w.end)
 													const mid = (w.start + w.end) / 2
 													const center = polarToCartesian(160, 160, 90, mid)
 													const isHovered = hoverBreakdownInfo?.label === w.label
 													const isOtherHovered = hoverBreakdownInfo !== null && !isHovered
+
+													// Debug logging
+													if (isFullCircle) {
+														console.log("Full circle detected:", { label: w.label, start: w.start, end: w.end, angleDiff, path })
+													}
+
+													// For full circle, use a circle element to avoid the white line
+													if (isFullCircle) {
+														return (
+															<circle
+																key={w.label}
+																cx={160}
+																cy={160}
+																r={150}
+																fill={w.color}
+																stroke="#fff"
+																strokeWidth={2}
+																opacity={isOtherHovered ? 0.4 : 1}
+																filter={isHovered ? "url(#darken-age)" : undefined}
+																style={{
+																	transform: isHovered ? "scale(1.05)" : "scale(1)",
+																	transformOrigin: "160px 160px",
+																	transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+																	animationDelay: `${idx * 0.1}s`,
+																}}
+																className="cursor-pointer pie-slice-animate"
+																onMouseEnter={() => setHoverBreakdownInfo({
+																	x: 160,
+																	y: 160,
+																	label: w.label,
+																	value: w.value,
+																	pct: w.pct,
+																})}
+																onMouseLeave={() => setHoverBreakdownInfo(null)}
+															/>
+														)
+													}
 
 													return (
 														<path
@@ -1660,7 +1742,7 @@ function roundToNiceNumber(value: number): number {
 								))}
 							</div>
 
-					<div className="flex items-center justify-center gap-8">
+					<div className="flex flex-col items-center justify-center gap-6">
 						{/* SVG pie with hover */}
 						<div className="relative h-[320px] w-[320px]">
 							<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
@@ -1735,22 +1817,18 @@ function roundToNiceNumber(value: number): number {
 							)}
 						</div>
 
-						{/* Legend on the right */}
-						<div className="flex flex-col gap-3 min-w-[250px]">
-							<div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Carriers</div>
-							<div className="flex flex-col gap-2">
-								{wedges.length === 0 ? (
-									<div className="text-sm text-muted-foreground">No data in range</div>
-								) : (
-									wedges.map((l) => (
-										<div key={l.label} className="flex items-center gap-2 text-sm p-1.5 hover:bg-muted/50 rounded-md transition-colors">
-											<span className="h-3 w-3 rounded-sm flex-shrink-0" style={{ backgroundColor: l.color }} />
-											<span className="text-xs text-muted-foreground">{l.label}</span>
-											<span className="ml-auto text-xs font-semibold">{l.pct}%</span>
-										</div>
-									))
-								)}
-							</div>
+						{/* Legend below */}
+						<div className="flex flex-wrap justify-center gap-4 mt-4">
+							{wedges.length === 0 ? (
+								<div className="text-sm text-muted-foreground">No data in range</div>
+							) : (
+								wedges.map((l) => (
+									<div key={l.label} className="flex items-center gap-2 text-sm">
+										<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: l.color }} />
+										<span>{l.label} ({l.pct}%)</span>
+									</div>
+								))
+							)}
 						</div>
 					</div>
 						</>

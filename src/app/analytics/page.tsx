@@ -462,8 +462,10 @@ export default function AnalyticsTestPage() {
 		}
 	}, [periods, carrierFilter])
 
+// Setting colors for cumulative trend line here
 const CUMULATIVE_COLOR = "#8b5cf6" // Purple for cumulative
 
+// Setting colors for carrier charts here - static mapping for consistent carrier colors
 // Fixed carrier colors - distinct and consistent
 const CARRIER_COLORS: Record<string, string> = {
     "Aetna": "#2563eb",           // Blue
@@ -480,8 +482,10 @@ const CARRIER_COLORS: Record<string, string> = {
     "Ethos": "#6366f1",           // Indigo
     "FG Annuities": "#22c55e",    // Emerald
     "Foresters": "#eab308",       // Yellow
+    "Foresters Financial": "#eab308", // Yellow (alias)
     "Legal General": "#06b6d4",   // Sky Blue
     "Liberty Bankers": "#a855f7", // Purple (not cumulative purple)
+    "Liberty Bankers Life (LBL)": "#a855f7", // Purple (alias)
     "Mutual Omaha": "#f43f5e",    // Rose
     "National Life": "#059669",   // Green-600
     "SBLI": "#0ea5e9",            // Light Blue
@@ -489,13 +493,126 @@ const CARRIER_COLORS: Record<string, string> = {
     "United Home Life": "#34d399", // Emerald-400
 }
 
+// Setting colors for status breakdown by carrier here - static mapping for known statuses per carrier
+// Maps carrier name -> status -> color hex
+const CARRIER_STATUS_COLORS: Record<string, Record<string, string>> = {
+    "Aetna": {
+        "Closed": "#616161",
+        "Reissue": "#3949AB",
+        "Rescind": "#C62828",
+        "Active": "#2E7D32",
+        "Decline": "#D32F2F",
+        "Withdrawn": "#757575",
+        "Lapsed": "#B71C1C",
+        "Pending": "#FFA000",
+        "LM App Decline": "#D32F2F",
+        "Reject": "#D32F2F",
+        "Issued Not In Force": "#E64A19",
+        "Not Taken": "#E64A19",
+        "Terminated": "#B71C1C",
+    },
+    "Aflac": {
+        "Reject": "#D32F2F",
+        "Rescind": "#C62828",
+        "Pending": "#FFA000",
+        "Active": "#2E7D32",
+        "Terminated": "#B71C1C",
+        "Decline": "#D32F2F",
+        "Not Taken": "#E64A19",
+        "Issued Not In Force": "#E64A19",
+        "Lapsed": "#B71C1C",
+        "Reissue": "#3949AB",
+        "LM App Decline": "#D32F2F",
+        "Withdrawn": "#757575",
+        "Closed": "#616161",
+    },
+    "American Amicable / Occidental": {
+        "DeathClaim": "#000000",
+        "Terminated": "#B71C1C",
+        "Pending": "#FFA000",
+        "Declined": "#D32F2F",
+        "NeedReqmnt": "#FFA000",
+        "NotTaken": "#E64A19",
+        "Act-Ret Item": "#FBC02D",
+        "RPU": "#546E7A",
+        "Withdrawn": "#757575",
+        "Active": "#2E7D32",
+        "InfNotTaken": "#E64A19",
+        "Incomplete": "#FFA000",
+        "IssNotPaid": "#E64A19",
+        "Act-Pastdue": "#FB8C00",
+    },
+    "American Home Life Insurance Company": {
+        "Terminated": "#B71C1C",
+        "Pending": "#FFA000",
+        "Not Taken": "#E64A19",
+        "Issued Not In Force": "#E64A19",
+        "Lapsed": "#B71C1C",
+        "Active": "#2E7D32",
+        "Closed": "#616161",
+        "LM App Decline": "#D32F2F",
+        "Decline": "#D32F2F",
+        "Withdrawn": "#757575",
+    },
+    "Combined": {
+        "Issued": "#1976D2",
+        "Terminated": "#B71C1C",
+        "Lapse-Pending": "#E64A19",
+        "In-Force": "#2E7D32",
+    },
+    "Liberty Bankers Life (LBL)": {
+        "Issued, Unpaid": "#E64A19",
+        "3rd Notice": "#FB8C00",
+        "Cancelled (Not Issued)": "#9E9E9E",
+        "Premium Paying (Active)": "#2E7D32",
+        "Lapsed": "#B71C1C",
+        "Not Taken": "#E64A19",
+    },
+    "RNA": {
+        "CON TERM MATURED": "#283593",
+        "CON TERM NOT TAKEN": "#E64A19",
+        "CON TERM DECLINED": "#D32F2F",
+        "CON TERM WITHDRAWN": "#757575",
+        "CON SUS DEATH PENDING": "#6A1B9A",
+        "CON TERM NT NO PAY": "#E64A19",
+        "CON TERM DEATH CLAIM": "#000000",
+        "CON SUS HOME OFFICE": "#FFA000",
+        "CON TERM DEC FULL UNDR": "#D32F2F",
+        "CON TERM POSTPONED": "#FFA000",
+        "CON TERM LAPSED": "#B71C1C",
+        "CONTRACT ACTIVE": "#2E7D32",
+        "CON TERM NOT ISSUED": "#9E9E9E",
+        "CON TERM DEC NO RE APP": "#D32F2F",
+        "CON TERM INCOMPLETE MIB": "#FFA000",
+        "CON TERM SURRENDERED": "#C62828",
+        "CON SUS RETURNED EFT": "#FB8C00",
+        "CON TERM INCOMPLETE": "#FFA000",
+        "CON ACT REINSTATEMENT": "#00897B",
+        "CON TERM DEC STAL DTE": "#D32F2F",
+    },
+    "Foresters Financial": {
+        "Active": "#2E7D32",
+        "Active - Preferred Draft Date": "#2E8B57",
+        "Declined": "#D32F2F",
+        "First Premium Pending": "#FFA000",
+        "Future Effective Date": "#1976D2",
+        "HO/Producer Withdrawn": "#757575",
+        "Lapsed": "#B71C1C",
+        "Not Proceeded With": "#757575",
+        "Not Taken": "#E64A19",
+        "Pending": "#FFA000",
+    },
+}
+
 // Fallback colors for any carrier not in the map
+// Setting colors for dynamic/hashed color generation here - used for status, state, age, and unknown carriers
 const FALLBACK_COLORS = [
     "#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#0891b2", "#14b8a6",
     "#ec4899", "#84cc16", "#f97316", "#6366f1", "#22c55e", "#eab308",
     "#06b6d4", "#f43f5e", "#059669", "#0ea5e9", "#fb923c", "#34d399",
 ]
 
+// Dynamic color function - generates consistent colors based on label hash
 function colorForLabel(label: string, explicitIndex?: number): string {
     if (typeof explicitIndex === "number") return FALLBACK_COLORS[explicitIndex % FALLBACK_COLORS.length]
     let hash = 0
@@ -503,6 +620,7 @@ function colorForLabel(label: string, explicitIndex?: number): string {
     return FALLBACK_COLORS[hash % FALLBACK_COLORS.length]
 }
 
+// Setting colors for carrier pie chart here - uses static mapping first, then falls back to dynamic
 function carrierColorForLabel(label: string, explicitIndex?: number): string {
     // Check if we have a fixed color for this carrier
     if (CARRIER_COLORS[label]) {
@@ -512,10 +630,35 @@ function carrierColorForLabel(label: string, explicitIndex?: number): string {
     return colorForLabel(label, explicitIndex)
 }
 
+// Setting colors for status breakdown by carrier here - uses static mapping first, then falls back to dynamic
+function statusColorForCarrier(carrier: string, status: string): string {
+    // Check if we have a fixed color for this carrier-status combination
+    const carrierStatuses = CARRIER_STATUS_COLORS[carrier]
+    if (carrierStatuses && carrierStatuses[status]) {
+        return carrierStatuses[status]
+    }
+    // Also check common carrier name variations
+    const carrierAliases: Record<string, string[]> = {
+        "Liberty Bankers": ["Liberty Bankers Life (LBL)"],
+        "Foresters": ["Foresters Financial"],
+    }
+    for (const [baseCarrier, aliases] of Object.entries(carrierAliases)) {
+        if (aliases.includes(carrier)) {
+            const baseStatuses = CARRIER_STATUS_COLORS[baseCarrier]
+            if (baseStatuses && baseStatuses[status]) {
+                return baseStatuses[status]
+            }
+        }
+    }
+    // Fallback to dynamic hash-based color
+    return colorForLabel(status)
+}
+
 function displayStateLabel(stateCode: string): string {
     return stateCode === "UNK" ? "Unknown" : stateCode
 }
 
+	// Setting colors for main carrier pie chart here
 	const wedges = React.useMemo(() => {
 		let cursor = 0
     return (_analyticsData?.meta.carriers ?? [])
@@ -545,6 +688,7 @@ function displayStateLabel(stateCode: string): string {
 	const windowKey = React.useMemo(() => timeWindow === "all" ? "all_time" : `${timeWindow}m` as "3m" | "6m" | "9m" | "all_time", [timeWindow])
 
 	// Status breakdown for detail view (when groupBy === "carrier")
+	// Setting colors for status breakdown donut chart here - uses static carrier-status colors first, then falls back to dynamic
 	const statusBreakdown = React.useMemo(() => {
 		if (!detailCarrier || groupBy !== "carrier") return null
 		const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
@@ -552,8 +696,8 @@ function displayStateLabel(stateCode: string): string {
 		const carrierData = byCarrier[detailCarrier as keyof typeof byCarrier]?.status?.[windowKey]
 		if (!carrierData) return null
 
-		// Use large palette with deterministic mapping so we have many distinct colors
-		const colorForStatus = (status: string) => colorForLabel(status)
+		// Use static colors for known carrier-status combinations, fallback to dynamic for unknown statuses
+		const colorForStatus = (status: string) => statusColorForCarrier(detailCarrier, status)
 
 		// Only include statuses that exist in the breakdowns_status_over_time data for this carrier
 		const entries: { status: string; count: number; color: string }[] = []
@@ -599,6 +743,7 @@ function displayStateLabel(stateCode: string): string {
 	}, [detailCarrier, timeWindow, windowKey, groupBy])
 
 	// State breakdown for detail view (when groupBy === "state")
+	// Setting colors for state breakdown donut chart here - uses dynamic hash-based colors with predefined state mappings
 	const stateBreakdown = React.useMemo(() => {
 		if (groupBy !== "state") return null
 
@@ -683,6 +828,7 @@ function displayStateLabel(stateCode: string): string {
 	}, [carrierFilter, windowKey, groupBy])
 
 	// Age breakdown for detail view (when groupBy === "age")
+	// Setting colors for age breakdown donut chart here - uses dynamic hash-based colors with predefined age band mappings
 	const ageBreakdown = React.useMemo(() => {
 		if (groupBy !== "age") return null
 
@@ -764,6 +910,7 @@ function displayStateLabel(stateCode: string): string {
 	}, [carrierFilter, windowKey, groupBy])
 
 	// Persistency breakdown for detail view (when groupBy === "persistency")
+	// Setting colors for persistency breakdown donut chart here - uses static colors (green for Active, red for Inactive)
 	const persistencyBreakdown = React.useMemo(() => {
 		if (groupBy !== "persistency") return null
 
@@ -2143,6 +2290,7 @@ function displayStateLabel(stateCode: string): string {
 											<>
 												{/* Individual carrier lines */}
 								{(_analyticsData?.meta.carriers ?? []).filter(carrier => visibleCarriers.has(carrier)).map((carrier) => {
+									// Setting colors for individual carrier trend lines here - uses static carrier colors
 									const color = carrierColorForLabel(String(carrier))
 													const points = trendData
 														.map((data: any, idx: number) => {
@@ -2211,6 +2359,7 @@ function displayStateLabel(stateCode: string): string {
 
 												{/* Cumulative line */}
 												{(() => {
+													// Setting colors for cumulative trend line here - uses static purple color
 													const cumulativeColor = CUMULATIVE_COLOR // Purple for cumulative
 													const cumulativePoints = trendData
 														.map((data: any, idx: number) => {
@@ -2322,6 +2471,7 @@ function displayStateLabel(stateCode: string): string {
 										) : (
 											// Single line for selected carrier
 											(() => {
+									// Setting colors for single carrier trend line here - uses static carrier color
 									const color = carrierColorForLabel(String(carrierFilter))
 												const points = trendData
 													.map((data: any, idx: number) => {
@@ -2473,6 +2623,7 @@ function displayStateLabel(stateCode: string): string {
 															return hasData && visibleCarriers.has(carrier)
 														})
 														.map((carrier) => {
+															// Setting colors for trend chart legend items (visible carriers) here - uses static carrier colors
 															const color = carrierColorForLabel(String(carrier))
 															return (
 																<div
@@ -2509,6 +2660,7 @@ function displayStateLabel(stateCode: string): string {
 															return hasData && !visibleCarriers.has(carrier)
 														})
 														.map((carrier) => {
+															// Setting colors for trend chart legend items (hidden carriers) here - uses static carrier colors
 															const color = carrierColorForLabel(String(carrier))
 															return (
 																<div

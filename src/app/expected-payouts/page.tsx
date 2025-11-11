@@ -290,6 +290,7 @@ export default function ExpectedPayoutsPage() {
                 step={1}
                 minStepsBetweenThumbs={1}
                 className="w-full"
+                disabled={loading}
               />
               <div className="flex justify-between text-xs text-muted-foreground mt-1">
                 <span>-12m</span>
@@ -301,7 +302,8 @@ export default function ExpectedPayoutsPage() {
             {/* Filter Button */}
             <button
               onClick={handleApplyFilters}
-              className="px-6 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors font-medium whitespace-nowrap"
+              disabled={loading}
+              className="px-6 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors font-medium whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Apply Filters
             </button>
@@ -311,50 +313,87 @@ export default function ExpectedPayoutsPage() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="professional-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Expected Payout</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              ${totalExpectedPayout.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Based on {payouts.length} deals
-            </p>
-          </CardContent>
-        </Card>
+        {loading ? (
+          <>
+            <Card className="professional-card">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
+                <div className="h-3 w-24 bg-muted animate-pulse rounded" />
+              </CardContent>
+            </Card>
+            <Card className="professional-card">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
+                <div className="h-3 w-24 bg-muted animate-pulse rounded" />
+              </CardContent>
+            </Card>
+            <Card className="professional-card">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
+                <div className="h-3 w-24 bg-muted animate-pulse rounded" />
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <>
+            <Card className="professional-card">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Expected Payout</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  ${totalExpectedPayout.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Based on {payouts.length} deals
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card className="professional-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Average Per Month</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              ${averagePerMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Across {uniqueMonths} months
-            </p>
-          </CardContent>
-        </Card>
+            <Card className="professional-card">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Average Per Month</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  ${averagePerMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Across {uniqueMonths} months
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card className="professional-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Deals</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {payouts.length}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Pending & active policies
-            </p>
-          </CardContent>
-        </Card>
+            <Card className="professional-card">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Active Deals</CardTitle>
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {payouts.length}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Pending & active policies
+                </p>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       {/* Chart */}
@@ -364,8 +403,8 @@ export default function ExpectedPayoutsPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <p className="text-muted-foreground">Loading chart data...</p>
+            <div className="h-[400px] w-full flex items-center justify-center">
+              <div className="w-full h-full bg-muted animate-pulse rounded" />
             </div>
           ) : error ? (
             <div className="flex items-center justify-center h-64">

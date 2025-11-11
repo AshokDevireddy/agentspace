@@ -166,9 +166,9 @@ export default function ConfigurationPage() {
     }
   }, [carriersLoaded, allProductsLoaded])
 
-  // Check for existing policy files when policy reports tab is opened
+  // Check for existing policy files when policy reports tab is opened (only if we haven't checked yet)
   useEffect(() => {
-    if (activeTab === 'policy-reports') {
+    if (activeTab === 'policy-reports' && uploadedFilesInfo.length === 0 && !checkingExistingFiles) {
       checkExistingPolicyFiles()
     }
   }, [activeTab])
@@ -1799,7 +1799,7 @@ export default function ConfigurationPage() {
                     <p className="text-sm text-muted-foreground">Upload CSV or Excel files for each carrier to analyze persistency rates</p>
                   </div>
 
-                  {checkingExistingFiles && (
+                  {checkingExistingFiles && uploadedFilesInfo.length === 0 && (
                     <div className="flex items-center gap-2 text-muted-foreground mb-4">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       <span>Checking for existing uploads...</span>

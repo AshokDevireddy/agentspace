@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
+import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 
 // Types for carrier data
 interface Carrier {
@@ -102,7 +103,8 @@ export default function ConfigurationPage() {
     { carrier: 'Combined Insurance', file: null },
     { carrier: 'American Home Life', file: null },
     { carrier: 'Royal Neighbors', file: null },
-    { carrier: 'Liberty Bankers Life', file: null }
+    { carrier: 'Liberty Bankers Life', file: null },
+    { carrier: 'Foresters', file: null }
   ])
   const [uploadingReports, setUploadingReports] = useState(false)
   const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
@@ -164,9 +166,9 @@ export default function ConfigurationPage() {
     }
   }, [carriersLoaded, allProductsLoaded])
 
-  // Check for existing policy files when policy reports tab is opened
+  // Check for existing policy files when policy reports tab is opened (only if we haven't checked yet)
   useEffect(() => {
-    if (activeTab === 'policy-reports') {
+    if (activeTab === 'policy-reports' && uploadedFilesInfo.length === 0 && !checkingExistingFiles) {
       checkExistingPolicyFiles()
     }
   }, [activeTab])
@@ -985,7 +987,7 @@ export default function ConfigurationPage() {
   }
 
   const handleAnalyzePersistency = async () => {
-    const uploadedFiles = uploads.filter(upload => upload.file !== null)
+    const uploadedFiles = uploads.filter(u => u.file !== null) as Array<{ carrier: string; file: File }>;
     if (uploadedFiles.length === 0) {
       alert('Please upload at least one policy report before analyzing.')
       return
@@ -994,42 +996,109 @@ export default function ConfigurationPage() {
     try {
       setUploadingReports(true)
 
-      const formData = new FormData()
+      // 0) Create an ingest job first
+      const expectedFiles = uploadedFiles.length
+      const clientJobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-      uploadedFiles.forEach((upload) => {
-        if (upload.file) {
-          formData.append(`carrier_${upload.carrier}`, upload.file)
+      // Resolve agencyId from current session
+      let agencyId: string | null = null
+      try {
+        const supabase = createClient()
+        const { data: auth } = await supabase.auth.getUser()
+        const userId = auth?.user?.id
+        if (userId) {
+          const { data: userRow, error: userError } = await supabase
+            .from('users')
+            .select('agency_id')
+            .eq('auth_user_id', userId)
+            .single()
+          if (!userError) {
+            agencyId = userRow?.agency_id ?? null
+          }
+        }
+      } catch {}
+
+      if (!agencyId) {
+        alert('Could not resolve your agency. Please refresh and try again.')
+        return
+      }
+
+      const jobResp = await fetch('/api/upload-policy-reports/create-job', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          agencyId,
+          expectedFiles,
+          clientJobId,
+        }),
+      })
+      const jobJson = await jobResp.json().catch(() => null)
+      if (!jobResp.ok || !jobJson?.job?.jobId) {
+        console.error('Failed to create ingest job', { status: jobResp.status, body: jobJson })
+        alert('Could not start ingest job. Please try again.')
+        return
+      }
+      const jobId = jobJson.job.jobId as string
+      console.debug('Created ingest job', { jobId, expectedFiles })
+
+      // 1) Request presigned URLs for all files in a single call (new ingestion flow)
+      const signResp = await fetch('/api/upload-policy-reports/sign', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          jobId,
+          files: uploadedFiles.map(({ file }) => ({
+            fileName: file.name,
+            contentType: file.type || 'application/octet-stream',
+            size: file.size,
+          })),
+        }),
+      })
+      const signJson = await signResp.json().catch(() => null)
+      if (!signResp.ok || !Array.isArray(signJson?.files)) {
+        console.error('Presign failed', { status: signResp.status, body: signJson })
+        alert('Could not generate upload URLs. Please try again.')
+        return
+      }
+
+      // 2) Upload each file via its presigned URL (no chunking; URLs expire in 60s)
+      const results = await Promise.allSettled(
+        (signJson.files as Array<{ fileId: string; fileName: string; presignedUrl: string }>).
+          map(async (f) => {
+            const match = uploadedFiles.find(uf => uf.file.name === f.fileName)
+            if (!match) throw new Error(`Missing file for ${f.fileName}`)
+            const res = await putToSignedUrl(f.presignedUrl, match.file)
+            if (!res.ok) throw new Error(`Upload failed with status ${res.status}`)
+            return { fileName: f.fileName, fileId: f.fileId }
+          })
+      )
+
+      // 3) Summarize uploads
+      const successes: { carrier: string; file: string; paths: string[] }[] = [];
+      const failures: string[] = [];
+
+      results.forEach((r) => {
+        if (r.status === 'fulfilled') {
+          successes.push({ carrier: 'n/a', file: r.value.fileName, paths: [] });
+        } else {
+          const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
+          failures.push(reason)
         }
       })
 
-      const [bucketResponse, stagingResponse] = await Promise.all([
-        fetch('/api/upload-policy-reports/bucket', {
-          method: 'POST',
-          body: formData,
-        }),
-        fetch('/api/upload-policy-reports/staging', {
-          method: 'POST',
-          body: formData,
-        })
-      ])
+      if (successes.length) console.log('Uploaded:', successes);
+      if (failures.length) console.error('Failed uploads:', failures);
 
-      const bucketResult = await bucketResponse.json()
-      const stagingResult = await stagingResponse.json()
-
-      if (bucketResult.success && stagingResult.success) {
-        alert(`Successfully uploaded files and processed ${stagingResult.totalRecordsInserted} policy records!`)
+      if (failures.length === 0) {
+        alert(`Successfully uploaded ${successes.length} file(s).`)
         setUploads(uploads.map(u => ({ carrier: u.carrier, file: null })))
         checkExistingPolicyFiles()
       } else {
-        const errors = [
-          ...(bucketResult.errors || []),
-          ...(stagingResult.errors || [])
-        ]
-        alert(`Upload failed: ${errors.join(', ')}`)
+        alert(`Uploaded ${successes.length} file(s), but ${failures.length} failed: ${failures.join(', ')}`)
       }
-    } catch (error) {
-      console.error('Error uploading files:', error)
-      alert('An error occurred while uploading files. Please try again.')
+    } catch (err) {
+      console.error('Unexpected error during upload:', err);
+      alert('An unexpected error occurred while uploading. Please try again.')
     } finally {
       setUploadingReports(false)
     }
@@ -1730,7 +1799,7 @@ export default function ConfigurationPage() {
                     <p className="text-sm text-muted-foreground">Upload CSV or Excel files for each carrier to analyze persistency rates</p>
                   </div>
 
-                  {checkingExistingFiles && (
+                  {checkingExistingFiles && uploadedFilesInfo.length === 0 && (
                     <div className="flex items-center gap-2 text-muted-foreground mb-4">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       <span>Checking for existing uploads...</span>

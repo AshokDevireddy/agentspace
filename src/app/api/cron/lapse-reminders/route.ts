@@ -5,11 +5,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
-import { sendSMS } from '@/lib/telnyx';
 import {
-  getOrCreateConversation,
+  getConversationIfExists,
   logMessage,
-  getAgencyPhoneNumber,
 } from '@/lib/sms-helpers';
 
 export async function GET(request: NextRequest) {
@@ -29,33 +27,13 @@ export async function GET(request: NextRequest) {
 
     console.log('Running lapse reminders cron');
 
-    // Query deals with status_standardized = 'lapse_pending'
+    // Query deals using RPC function
+    console.log('🔍 Querying deals using RPC function...');
     const { data: deals, error: dealsError } = await supabase
-      .from('deals')
-      .select(`
-        id,
-        client_name,
-        client_phone,
-        status_standardized,
-        agent_id,
-        agent:agent_id (
-          id,
-          first_name,
-          last_name,
-          phone_number,
-          agency_id,
-          agency:agency_id (
-            id,
-            name,
-            phone_number,
-            messaging_enabled
-          )
-        )
-      `)
-      .eq('status_standardized', 'lapse_pending')
-      .not('client_phone', 'is', null);
+      .rpc('get_lapse_reminder_deals');
 
     if (dealsError) {
+      console.error('❌ Error querying deals:', dealsError);
       throw dealsError;
     }
 
@@ -72,62 +50,66 @@ export async function GET(request: NextRequest) {
 
     let successCount = 0;
     let errorCount = 0;
+    let skippedCount = 0;
 
     // Send lapse reminders
+    console.log('\n💌 Processing lapse reminders...');
     for (const deal of deals) {
       try {
-        const agent = deal.agent;
-        const agency = agent?.agency;
+        console.log(`\n📬 Processing: ${deal.client_name} (${deal.client_phone})`);
+        console.log(`  Agent: ${deal.agent_first_name} ${deal.agent_last_name} (ID: ${deal.agent_id})`);
+        console.log(`  Agency: ${deal.agency_name} (Phone: ${deal.agency_phone})`);
 
-        if (!agent || !agency?.phone_number) {
-          console.warn(`Skipping deal ${deal.id}: Missing agent or agency phone`);
-          errorCount++;
+        // Check if messaging is enabled (already filtered by RPC, but double-check)
+        if (!deal.messaging_enabled) {
+          console.log(`  ⚠️  SKIPPED: Messaging is disabled for agency ${deal.agency_name}`);
+          skippedCount++;
           continue;
         }
 
-        // Check if messaging is enabled for this agency
-        if (!agency.messaging_enabled) {
-          console.log(`Skipping deal ${deal.id}: Messaging is disabled for agency ${agency.name}`);
-          errorCount++;
-          continue;
-        }
-
-        // Get or create conversation (using client phone to prevent duplicates)
-        const conversation = await getOrCreateConversation(
-          agent.id,
-          deal.id,
-          agent.agency_id,
+        // Check if conversation exists (don't create new ones for cron jobs)
+        console.log(`  🔍 Checking for existing conversation...`);
+        const conversation = await getConversationIfExists(
+          deal.agent_id,
+          deal.deal_id,
+          deal.agency_id,
           deal.client_phone
         );
 
-        // Check opt-in status - only send to opted-in clients
-        if (conversation.sms_opt_in_status !== 'opted_in') {
-          console.log(`Skipping deal ${deal.id}: Client has not opted in (status: ${conversation.sms_opt_in_status})`);
-          errorCount++;
+        if (!conversation) {
+          console.log(`  ⏭️  SKIPPED: No existing conversation found for ${deal.client_name}`);
+          skippedCount++;
           continue;
         }
 
-        const agentName = `${agent.first_name} ${agent.last_name}`;
-        const agentPhone = agent.phone_number || 'your agent';
+        console.log(`  📞 Conversation ID: ${conversation.id}`);
+        console.log(`  📱 SMS Opt-in Status: ${conversation.sms_opt_in_status}`);
+
+        // Check opt-in status - only send to opted-in clients
+        if (conversation.sms_opt_in_status !== 'opted_in') {
+          console.log(`  ❌ SKIPPED: Client has not opted in (status: ${conversation.sms_opt_in_status})`);
+          skippedCount++;
+          continue;
+        }
+
+        const agentName = `${deal.agent_first_name} ${deal.agent_last_name}`;
+        const agentPhone = deal.agent_phone || 'your agent';
         const clientFirstName = deal.client_name.split(' ')[0]; // Extract first name
 
         const messageText = `Hi ${clientFirstName}, your policy is pending lapse. Your agent ${agentName} will reach out shortly at this number: ${agentPhone}`;
 
-        // Send SMS
-        await sendSMS({
-          from: agency.phone_number,
-          to: deal.client_phone,
-          text: messageText,
-        });
+        console.log(`  📝 Message: "${messageText}"`);
+        console.log(`  📤 Creating draft message (not sending yet)...`);
 
-        // Log the message
+        // Create draft message (don't send via Telnyx yet)
+        console.log(`  💾 Logging draft message to database...`);
         await logMessage({
           conversationId: conversation.id,
-          senderId: agent.id,
-          receiverId: agent.id, // Placeholder
+          senderId: deal.agent_id,
+          receiverId: deal.agent_id, // Placeholder
           body: messageText,
           direction: 'outbound',
-          status: 'sent',
+          status: 'draft', // Create as draft
           metadata: {
             automated: true,
             type: 'lapse_reminder',
@@ -135,31 +117,46 @@ export async function GET(request: NextRequest) {
             client_name: deal.client_name,
           },
         });
+        console.log(`  💾 Draft message created successfully!`);
 
-        // Update deal status_standardized to 'lapse_notified'
+        // Update deal status_standardized to 'lapse_notified' (status changes as normal)
         await supabase
           .from('deals')
           .update({ status_standardized: 'lapse_notified' })
-          .eq('id', deal.id);
+          .eq('id', deal.deal_id);
 
         successCount++;
-        console.log(`Sent lapse reminder to ${deal.client_name}`);
+        console.log(`  🎉 SUCCESS: Lapse reminder created as draft for ${deal.client_name}`);
 
       } catch (error) {
-        console.error(`Failed to send lapse reminder for deal ${deal.id}:`, error);
+        console.error(`  ❌ ERROR sending to ${deal.client_name}:`, error);
         errorCount++;
       }
     }
+
+    console.log('\n⚠️  ========================================');
+    console.log('⚠️  LAPSE REMINDERS CRON COMPLETED');
+    console.log('⚠️  ========================================');
+    console.log(`✅ Sent: ${successCount}`);
+    console.log(`❌ Failed: ${errorCount}`);
+    console.log(`⏭️  Skipped: ${skippedCount}`);
+    console.log(`📊 Total: ${deals.length}`);
+    console.log('⚠️  ========================================\n');
 
     return NextResponse.json({
       success: true,
       sent: successCount,
       failed: errorCount,
+      skipped: skippedCount,
       total: deals.length,
     });
 
   } catch (error) {
-    console.error('Lapse reminders cron error:', error);
+    console.error('\n❌ ========================================');
+    console.error('❌ LAPSE REMINDERS CRON FATAL ERROR');
+    console.error('❌ ========================================');
+    console.error('Error:', error);
+    console.error('❌ ========================================\n');
     return NextResponse.json(
       {
         success: false,

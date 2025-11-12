@@ -23,7 +23,7 @@ interface Message {
   conversation_id: string
   body: string
   direction: 'inbound' | 'outbound'
-  sent_at: string
+  sent_at: string | null
   status: string
   metadata: any
 }
@@ -272,7 +272,10 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', {
+    // Parse date as local time to avoid timezone shifts
+    const [year, month, day] = dateString.split('T')[0].split('-');
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -527,6 +530,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
                           {messages.map((message) => {
                             const isOutbound = message.direction === 'outbound'
                             const isAutomated = message.metadata?.automated
+                            const isDraft = message.status === 'draft'
 
                             return (
                               <div
@@ -539,25 +543,35 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
                                 <div
                                   className={cn(
                                     "max-w-[85%] rounded-lg px-3 py-1.5 shadow-sm",
-                                    isOutbound
+                                    isDraft
+                                      ? "bg-yellow-100 text-gray-900 border-2 border-yellow-400"
+                                      : isOutbound
                                       ? "bg-blue-600 text-white"
                                       : "bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-700"
                                   )}
                                 >
-                                  {isAutomated && (
+                                  {isDraft && (
+                                    <div className="text-xs font-semibold mb-1 text-yellow-800 flex items-center gap-1">
+                                      <span className="inline-block w-2 h-2 bg-yellow-500 rounded-full"></span>
+                                      DRAFT - Pending Approval
+                                    </div>
+                                  )}
+                                  {isAutomated && !isDraft && (
                                     <div className="text-xs opacity-75 mb-0.5 italic font-medium">
                                       🤖 Automated
                                     </div>
                                   )}
                                   <p className="text-sm whitespace-pre-wrap break-words leading-snug">{message.body}</p>
-                                  <div className="flex items-center justify-end mt-0.5">
-                                    <span className={cn(
-                                      "text-xs",
-                                      isOutbound ? "opacity-75" : "text-gray-500"
-                                    )}>
-                                      {formatMessageTime(message.sent_at)}
-                                    </span>
-                                  </div>
+                                  {!isDraft && (
+                                    <div className="flex items-center justify-end mt-0.5">
+                                      <span className={cn(
+                                        "text-xs",
+                                        isOutbound ? "opacity-75" : "text-gray-500"
+                                      )}>
+                                        {message.sent_at ? formatMessageTime(message.sent_at) : 'Pending'}
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )

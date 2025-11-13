@@ -57,6 +57,7 @@ const carriers = [
   'American Home Life',
   'Royal Neighbors',
   'Liberty Bankers Life',
+  'Transamerica',
   'Foresters'
 ]
 

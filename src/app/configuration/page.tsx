@@ -104,6 +104,7 @@ export default function ConfigurationPage() {
     { carrier: 'American Home Life', file: null },
     { carrier: 'Royal Neighbors', file: null },
     { carrier: 'Liberty Bankers Life', file: null },
+    { carrier: 'Transamerica', file: null },
     { carrier: 'Foresters', file: null }
   ])
   const [uploadingReports, setUploadingReports] = useState(false)

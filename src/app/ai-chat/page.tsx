@@ -600,36 +600,45 @@ export default function AIChat() {
                 Welcome to AI Mode
               </h2>
               <p className="text-slate-600 text-lg mb-12 max-w-2xl mx-auto">
-                I can help you analyze your agency data, generate insights, and create custom visualizations.
+                Create custom visualizations and interactive graphs from your data.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
                 <button
-                  onClick={() => setInput('Show me our top performing agents this month')}
+                  onClick={() => setInput('Create a bar graph for the policies sold for each carrier in the last 9 months')}
                   className="group p-5 text-left bg-white/80 backdrop-blur-sm border border-slate-200 rounded-2xl hover:bg-white hover:shadow-lg hover:shadow-purple-100 hover:border-purple-300 transition-all duration-200"
                 >
-                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-purple-600 transition-colors">Top Performers</div>
-                  <div className="text-sm text-slate-500">See your best agents</div>
+                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-purple-600 transition-colors">Carrier Performance</div>
+                  <div className="text-sm text-slate-500">Policies by carrier over time</div>
                 </button>
                 <button
-                  onClick={() => setInput('What is our persistency rate by carrier?')}
+                  onClick={() => setInput('Show me a line chart of monthly revenue trends')}
                   className="group p-5 text-left bg-white/80 backdrop-blur-sm border border-slate-200 rounded-2xl hover:bg-white hover:shadow-lg hover:shadow-blue-100 hover:border-blue-300 transition-all duration-200"
                 >
-                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-blue-600 transition-colors">Persistency Analysis</div>
-                  <div className="text-sm text-slate-500">Analyze retention rates</div>
+                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-blue-600 transition-colors">Revenue Trends</div>
+                  <div className="text-sm text-slate-500 flex items-center gap-1">
+                    Visualize growth patterns
+                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Coming Soon</span>
+                  </div>
                 </button>
                 <button
-                  onClick={() => setInput('Show me a graph of deal statuses')}
+                  onClick={() => setInput('Create a pie chart showing distribution by product type')}
                   className="group p-5 text-left bg-white/80 backdrop-blur-sm border border-slate-200 rounded-2xl hover:bg-white hover:shadow-lg hover:shadow-purple-100 hover:border-purple-300 transition-all duration-200"
                 >
-                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-purple-600 transition-colors">Deal Status Overview</div>
-                  <div className="text-sm text-slate-500">Visualize your pipeline</div>
+                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-purple-600 transition-colors">Product Distribution</div>
+                  <div className="text-sm text-slate-500 flex items-center gap-1">
+                    Compare product mix
+                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Coming Soon</span>
+                  </div>
                 </button>
                 <button
-                  onClick={() => setInput('Give me an agency summary')}
+                  onClick={() => setInput('Show me a heat map of activity by day and hour')}
                   className="group p-5 text-left bg-white/80 backdrop-blur-sm border border-slate-200 rounded-2xl hover:bg-white hover:shadow-lg hover:shadow-blue-100 hover:border-blue-300 transition-all duration-200"
                 >
-                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-blue-600 transition-colors">Agency Summary</div>
-                  <div className="text-sm text-slate-500">Get key metrics</div>
+                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-blue-600 transition-colors">Activity Patterns</div>
+                  <div className="text-sm text-slate-500 flex items-center gap-1">
+                    Peak engagement times
+                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Coming Soon</span>
+                  </div>
                 </button>
               </div>
             </div>

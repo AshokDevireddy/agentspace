@@ -2,6 +2,7 @@
 
 import React from "react"
 import UploadPolicyReportsModal from "@/components/modals/upload-policy-reports-modal"
+import DownlineProductionChart from "@/components/downline-production-chart"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -377,6 +378,7 @@ export default function AnalyticsTestPage() {
 	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
+	const [userId, setUserId] = React.useState<string | null>(null)
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
 	React.	useEffect(() => {
@@ -407,7 +409,10 @@ export default function AnalyticsTestPage() {
                 console.log("userRow", userRow)
                 console.log("user_id", userRow.id)
 
-				if (isMounted) setAnalyticsData(rpcData as AnalyticsTestValue)
+				if (isMounted) {
+					setAnalyticsData(rpcData as AnalyticsTestValue)
+					setUserId(userRow.id)
+				}
 			} catch (_) {
 				// swallow for now; can add toast/logging later
 			}
@@ -2063,6 +2068,30 @@ function roundToNiceNumber(value: number): number {
 					)}
 				</CardContent>
 			</Card>
+
+			{/* Downline Production Distribution */}
+			{userId ? (
+				<DownlineProductionChart userId={userId} timeWindow={timeWindow} />
+			) : (
+				<Card className="rounded-md">
+					<CardContent className="p-4 sm:p-6">
+						<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">
+							DOWNLINE PRODUCTION DISTRIBUTION
+						</div>
+						<div className="flex flex-col items-center justify-center gap-6">
+							<div className="h-5 w-64 bg-muted animate-pulse rounded" />
+							<div className="relative h-[320px] w-[320px]">
+								<div className="h-full w-full rounded-full bg-muted animate-pulse" />
+							</div>
+							<div className="flex flex-wrap justify-center gap-4 mt-4">
+								<div className="h-4 w-48 bg-muted animate-pulse rounded" />
+								<div className="h-4 w-40 bg-muted animate-pulse rounded" />
+								<div className="h-4 w-44 bg-muted animate-pulse rounded" />
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+			)}
 
 			{/* Performance Trends */}
 			<Card className="rounded-md">

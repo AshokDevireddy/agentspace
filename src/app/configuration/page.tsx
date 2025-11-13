@@ -2007,10 +2007,8 @@ export default function ConfigurationPage() {
                         </p>
                         <p className="text-gray-600 mt-2">
                           <strong>Agent:</strong> John Doe<br />
-                          <strong>Client:</strong> Jane Smith<br />
                           <strong>Carrier:</strong> Aetna<br />
                           <strong>Product:</strong> Term Life Insurance<br />
-                          <strong>Monthly Premium:</strong> $150.00<br />
                           <strong>Annual Premium:</strong> $1,800.00
                         </p>
                       </div>

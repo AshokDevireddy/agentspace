@@ -397,7 +397,7 @@ export default function DownlineProductionChart({ userId, timeWindow }: Downline
                     {hoverInfo.isClickable ? (
                       <div className="mt-2 text-[10px] italic text-white/70">Click to drill down</div>
                     ) : !hoverInfo.hasDownlines ? (
-                      <div className="mt-2 text-[10px] italic text-gray-400">No downlines</div>
+                      <div className="mt-2 text-[10px] italic text-gray-400">No downline data</div>
                     ) : (
                       <div className="mt-2 text-[10px] italic text-red-300">Agent not in current downline</div>
                     )}

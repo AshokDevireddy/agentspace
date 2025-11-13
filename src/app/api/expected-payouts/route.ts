@@ -56,8 +56,6 @@ export async function GET(req: NextRequest) {
         p_carrier_id: carrier_id
       });
 
-    console.log('payouts', payouts, userData.id, agent_id, months_past, months_future, carrier_id);
-
     if (rpcError) {
       console.error('[Expected Payouts] RPC error:', {
         message: rpcError.message,

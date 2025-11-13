@@ -10,6 +10,7 @@ import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select
 import AddUserModal from "@/components/modals/add-user-modal"
 import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 
 // Agent data type
 interface Agent {
@@ -230,23 +231,26 @@ const renderForeignObjectNode = ({
 
 
 export default function Agents() {
-  // Local filter state (what user selects but hasn't applied yet)
-  const [localInUpline, setLocalInUpline] = useState("all")
-  const [localDirectUpline, setLocalDirectUpline] = useState("all")
-  const [localInDownline, setLocalInDownline] = useState("all")
-  const [localDirectDownline, setLocalDirectDownline] = useState("all")
-  const [localAgentName, setLocalAgentName] = useState("all")
-  const [localStatus, setLocalStatus] = useState("all")
-  const [localPosition, setLocalPosition] = useState("all")
+  // Persisted filter state using custom hook (includes view/tab state)
+  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply] = usePersistedFilters(
+    'agents',
+    {
+      inUpline: "all",
+      directUpline: "all",
+      inDownline: "all",
+      directDownline: "all",
+      agentName: "all",
+      status: "all",
+      position: "all",
+      view: 'table' as 'table' | 'tree' | 'pending-positions'
+    }
+  )
 
-  // Active filter state (what's actually applied)
-  const [selectedInUpline, setSelectedInUpline] = useState("all")
-  const [selectedDirectUpline, setSelectedDirectUpline] = useState("all")
-  const [selectedInDownline, setSelectedInDownline] = useState("all")
-  const [selectedDirectDownline, setSelectedDirectDownline] = useState("all")
-  const [selectedAgentName, setSelectedAgentName] = useState("all")
-  const [selectedStatus, setSelectedStatus] = useState("all")
-  const [selectedPosition, setSelectedPosition] = useState("all")
+  // Use persisted view state - setAndApply updates immediately without double-click
+  const view = appliedFilters.view
+  const setView = (value: 'table' | 'tree' | 'pending-positions') => {
+    setAndApply({ view: value })
+  }
 
   const [agentsData, setAgentsData] = useState<Agent[]>([])
   const [allAgents, setAllAgents] = useState<Array<{ id: string; name: string }>>([])
@@ -256,7 +260,6 @@ export default function Agents() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
-  const [view, setView] = useState<'table' | 'tree' | 'pending-positions'>('table')
   const [translate, setTranslate] = useState({ x: 0, y: 0 })
 
   // Pending positions state
@@ -290,26 +293,26 @@ export default function Agents() {
         }
 
         // Add active filter parameters
-        if (selectedInUpline && selectedInUpline !== 'all') {
-          params.append('inUpline', selectedInUpline)
+        if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
+          params.append('inUpline', appliedFilters.inUpline)
         }
-        if (selectedDirectUpline && selectedDirectUpline !== 'all') {
-          params.append('directUpline', selectedDirectUpline)
+        if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
+          params.append('directUpline', appliedFilters.directUpline)
         }
-        if (selectedInDownline && selectedInDownline !== 'all') {
-          params.append('inDownline', selectedInDownline)
+        if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
+          params.append('inDownline', appliedFilters.inDownline)
         }
-        if (selectedDirectDownline && selectedDirectDownline !== 'all') {
-          params.append('directDownline', selectedDirectDownline)
+        if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
+          params.append('directDownline', appliedFilters.directDownline)
         }
-        if (selectedAgentName && selectedAgentName !== 'all') {
-          params.append('agentName', selectedAgentName)
+        if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
+          params.append('agentName', appliedFilters.agentName)
         }
-        if (selectedStatus && selectedStatus !== 'all') {
-          params.append('status', selectedStatus)
+        if (appliedFilters.status && appliedFilters.status !== 'all') {
+          params.append('status', appliedFilters.status)
         }
-        if (selectedPosition && selectedPosition !== 'all') {
-          params.append('positionId', selectedPosition)
+        if (appliedFilters.position && appliedFilters.position !== 'all') {
+          params.append('positionId', appliedFilters.position)
         }
 
         const url = `/api/agents?${params.toString()}`
@@ -338,7 +341,7 @@ export default function Agents() {
     }
 
     fetchAgents()
-  }, [currentPage, view, selectedInUpline, selectedDirectUpline, selectedInDownline, selectedDirectDownline, selectedAgentName, selectedStatus, selectedPosition])
+  }, [currentPage, view, appliedFilters])
 
   // Fetch pending agents count for badge (runs on mount and when view changes)
   useEffect(() => {
@@ -471,32 +474,13 @@ export default function Agents() {
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
-    setSelectedInUpline(localInUpline)
-    setSelectedDirectUpline(localDirectUpline)
-    setSelectedInDownline(localInDownline)
-    setSelectedDirectDownline(localDirectDownline)
-    setSelectedAgentName(localAgentName)
-    setSelectedStatus(localStatus)
-    setSelectedPosition(localPosition)
+    applyFilters()
     setCurrentPage(1)
   }
 
   // Clear all filters
   const handleClearFilters = () => {
-    setLocalInUpline("all")
-    setLocalDirectUpline("all")
-    setLocalInDownline("all")
-    setLocalDirectDownline("all")
-    setLocalAgentName("all")
-    setLocalStatus("all")
-    setLocalPosition("all")
-    setSelectedInUpline("all")
-    setSelectedDirectUpline("all")
-    setSelectedInDownline("all")
-    setSelectedDirectDownline("all")
-    setSelectedAgentName("all")
-    setSelectedStatus("all")
-    setSelectedPosition("all")
+    clearFilters()
     setCurrentPage(1)
   }
 
@@ -631,8 +615,8 @@ export default function Agents() {
                 </label>
                 <SimpleSearchableSelect
                   options={agentOptions}
-                  value={localInUpline}
-                  onValueChange={setLocalInUpline}
+                  value={localFilters.inUpline}
+                  onValueChange={(value) => setLocalFilters({ inUpline: value })}
                   placeholder="All Agents"
                   searchPlaceholder="Search..."
                 />
@@ -645,8 +629,8 @@ export default function Agents() {
                 </label>
                 <SimpleSearchableSelect
                   options={agentOptions}
-                  value={localDirectUpline}
-                  onValueChange={setLocalDirectUpline}
+                  value={localFilters.directUpline}
+                  onValueChange={(value) => setLocalFilters({ directUpline: value })}
                   placeholder="All Agents"
                   searchPlaceholder="Search..."
                 />
@@ -659,8 +643,8 @@ export default function Agents() {
                 </label>
                 <SimpleSearchableSelect
                   options={agentOptions}
-                  value={localInDownline}
-                  onValueChange={setLocalInDownline}
+                  value={localFilters.inDownline}
+                  onValueChange={(value) => setLocalFilters({ inDownline: value })}
                   placeholder="All Agents"
                   searchPlaceholder="Search..."
                 />
@@ -673,8 +657,8 @@ export default function Agents() {
                 </label>
                 <SimpleSearchableSelect
                   options={agentOptions}
-                  value={localDirectDownline}
-                  onValueChange={setLocalDirectDownline}
+                  value={localFilters.directDownline}
+                  onValueChange={(value) => setLocalFilters({ directDownline: value })}
                   placeholder="All Agents"
                   searchPlaceholder="Search..."
                 />
@@ -687,8 +671,8 @@ export default function Agents() {
                 </label>
                 <SimpleSearchableSelect
                   options={agentOptions}
-                  value={localAgentName}
-                  onValueChange={setLocalAgentName}
+                  value={localFilters.agentName}
+                  onValueChange={(value) => setLocalFilters({ agentName: value })}
                   placeholder="All Agents"
                   searchPlaceholder="Search..."
                 />
@@ -701,8 +685,8 @@ export default function Agents() {
                 </label>
                 <SimpleSearchableSelect
                   options={statusOptions}
-                  value={localStatus}
-                  onValueChange={setLocalStatus}
+                  value={localFilters.status}
+                  onValueChange={(value) => setLocalFilters({ status: value })}
                   placeholder="All Statuses"
                   searchPlaceholder="Search..."
                 />
@@ -715,8 +699,8 @@ export default function Agents() {
                 </label>
                 <SimpleSearchableSelect
                   options={[{ value: "all", label: "All Positions" }, ...filterPositions.map(p => ({ value: p.position_id, label: p.name }))]}
-                  value={localPosition}
-                  onValueChange={setLocalPosition}
+                  value={localFilters.position}
+                  onValueChange={(value) => setLocalFilters({ position: value })}
                   placeholder="All Positions"
                   searchPlaceholder="Search..."
                 />
@@ -733,7 +717,7 @@ export default function Agents() {
                   <Filter className="h-3.5 w-3.5 mr-1.5" />
                   Filter
                 </Button>
-                {(selectedInUpline !== 'all' || selectedDirectUpline !== 'all' || selectedInDownline !== 'all' || selectedDirectDownline !== 'all' || selectedAgentName !== 'all' || selectedStatus !== 'all' || selectedPosition !== 'all') && (
+                {(appliedFilters.inUpline !== 'all' || appliedFilters.directUpline !== 'all' || appliedFilters.inDownline !== 'all' || appliedFilters.directDownline !== 'all' || appliedFilters.agentName !== 'all' || appliedFilters.status !== 'all' || appliedFilters.position !== 'all') && (
                   <Button
                     onClick={handleClearFilters}
                     variant="outline"

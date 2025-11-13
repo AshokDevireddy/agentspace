@@ -5,77 +5,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
-import { sendSMS } from '@/lib/telnyx';
 import {
-  getOrCreateConversation,
+  getConversationIfExists,
   logMessage,
 } from '@/lib/sms-helpers';
-
-/**
- * Calculate next billing date based on policy effective date and billing cycle
- * Uses PST timezone for consistency
- */
-function getNextBillingDate(effectiveDate: Date, billingCycle: string): Date | null {
-  // Get today in PST
-  const todayPST = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-  todayPST.setHours(0, 0, 0, 0);
-
-  // Convert effective date to PST
-  const effectivePST = new Date(effectiveDate.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-  effectivePST.setHours(0, 0, 0, 0);
-
-  let nextBilling = new Date(effectivePST);
-
-  switch (billingCycle) {
-    case 'monthly':
-      // Find next monthly anniversary
-      while (nextBilling <= todayPST) {
-        nextBilling.setMonth(nextBilling.getMonth() + 1);
-      }
-      break;
-
-    case 'quarterly':
-      // Find next quarterly anniversary (every 3 months)
-      while (nextBilling <= todayPST) {
-        nextBilling.setMonth(nextBilling.getMonth() + 3);
-      }
-      break;
-
-    case 'semi-annually':
-      // Find next semi-annual anniversary (every 6 months)
-      while (nextBilling <= todayPST) {
-        nextBilling.setMonth(nextBilling.getMonth() + 6);
-      }
-      break;
-
-    case 'annually':
-      // Find next annual anniversary
-      while (nextBilling <= todayPST) {
-        nextBilling.setFullYear(nextBilling.getFullYear() + 1);
-      }
-      break;
-
-    default:
-      return null;
-  }
-
-  return nextBilling;
-}
-
-/**
- * Check if next billing date is exactly 3 days from now
- * Uses PST timezone for consistency
- */
-function isDueInThreeDays(nextBillingDate: Date): boolean {
-  // Get today in PST
-  const todayPST = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-  todayPST.setHours(0, 0, 0, 0);
-
-  const threeDaysFromNow = new Date(todayPST);
-  threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
-
-  return nextBillingDate.getTime() === threeDaysFromNow.getTime();
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -111,34 +44,10 @@ export async function GET(request: NextRequest) {
     console.log(`📅 Today (PST): ${todayPST.toLocaleDateString('en-US')}`);
     console.log(`📅 Looking for billing due on: ${threeDaysFromNow.toLocaleDateString('en-US')} (3 days from now)`);
 
-    // Query active deals with billing cycle information
-    console.log('🔍 Querying active deals with billing information...');
+    // Query deals using RPC function with proper status checking
+    console.log('🔍 Querying deals using RPC function with status_mapping...');
     const { data: deals, error: dealsError } = await supabase
-      .from('deals')
-      .select(`
-        id,
-        client_name,
-        client_phone,
-        billing_cycle,
-        policy_effective_date,
-        agent_id,
-        agent:agent_id (
-          id,
-          first_name,
-          last_name,
-          agency_id,
-          agency:agency_id (
-            id,
-            name,
-            phone_number,
-            messaging_enabled
-          )
-        )
-      `)
-      .eq('status', 'active')
-      .not('client_phone', 'is', null)
-      .not('billing_cycle', 'is', null)
-      .not('policy_effective_date', 'is', null);
+      .rpc('get_billing_reminder_deals');
 
     if (dealsError) {
       console.error('❌ Error querying deals:', dealsError);
@@ -146,79 +55,53 @@ export async function GET(request: NextRequest) {
     }
 
     if (!deals || deals.length === 0) {
-      console.log('⚠️  No active deals with billing information found');
+      console.log('⚠️  No deals with billing reminders due found');
       return NextResponse.json({
         success: true,
         sent: 0,
-        message: 'No active policies with billing info',
+        message: 'No billing reminders due',
       });
     }
 
-    console.log(`📊 Found ${deals.length} active deals to check`);
+    console.log(`📊 Found ${deals.length} deals with billing reminders due`);
 
     let successCount = 0;
     let errorCount = 0;
     let skippedCount = 0;
-    let dueInThreeDaysCount = 0;
 
     // Process each deal
     console.log('\n💌 Processing billing reminders...');
     for (const deal of deals) {
       try {
-        const agent = deal.agent;
-        const agency = agent?.agency;
-
-        // Calculate next billing date
-        const nextBillingDate = getNextBillingDate(
-          new Date(deal.policy_effective_date),
-          deal.billing_cycle
-        );
-
-        if (!nextBillingDate) {
-          console.log(`  ⏭️  ${deal.client_name}: Invalid billing cycle (${deal.billing_cycle})`);
-          skippedCount++;
-          continue;
-        }
-
-        const nextBillingDateStr = nextBillingDate.toLocaleDateString('en-US');
-        const isDue = isDueInThreeDays(nextBillingDate);
-
-        console.log(`  📋 ${deal.client_name}: Next billing ${nextBillingDateStr} ${isDue ? '✅ DUE IN 3 DAYS' : '⏭️'}`);
-
-        // Check if billing is due in 3 days
-        if (!isDue) {
-          skippedCount++;
-          continue;
-        }
-
-        dueInThreeDaysCount++;
+        // RPC returns flat structure with all fields
+        const nextBillingDateStr = new Date(deal.next_billing_date).toLocaleDateString('en-US');
+        console.log(`  📋 ${deal.client_name}: Next billing ${nextBillingDateStr} ✅ DUE IN 3 DAYS`);
         console.log(`\n  📬 Processing: ${deal.client_name} (${deal.client_phone})`);
+        console.log(`    Agent: ${deal.agent_first_name} ${deal.agent_last_name} (ID: ${deal.agent_id})`);
+        console.log(`    Agency: ${deal.agency_name} (Phone: ${deal.agency_phone})`);
 
-        if (!agent || !agency?.phone_number) {
-          console.warn(`    ⚠️  Skipping: Missing agent or agency phone`);
-          errorCount++;
-          continue;
-        }
-
-        console.log(`    Agent: ${agent.first_name} ${agent.last_name} (ID: ${agent.id})`);
-        console.log(`    Agency: ${agency.name} (Phone: ${agency.phone_number})`);
-
-        // Check if messaging is enabled for this agency
-        if (!agency.messaging_enabled) {
-          console.log(`    ⚠️  SKIPPED: Messaging is disabled for agency ${agency.name}`);
+        // Check if messaging is enabled (already filtered by RPC, but double-check)
+        if (!deal.messaging_enabled) {
+          console.log(`    ⚠️  SKIPPED: Messaging is disabled for agency ${deal.agency_name}`);
           skippedCount++;
-          dueInThreeDaysCount--;
           continue;
         }
 
-        // Get or create conversation (using client phone to prevent duplicates)
-        console.log(`    🔍 Getting/creating conversation...`);
-        const conversation = await getOrCreateConversation(
-          agent.id,
-          deal.id,
-          agent.agency_id,
+        // Check if conversation exists (don't create new ones for cron jobs)
+        console.log(`    🔍 Checking for existing conversation...`);
+        const conversation = await getConversationIfExists(
+          deal.agent_id,
+          deal.deal_id,
+          deal.agency_id,
           deal.client_phone
         );
+
+        if (!conversation) {
+          console.log(`    ⏭️  SKIPPED: No existing conversation found for ${deal.client_name}`);
+          skippedCount++;
+          continue;
+        }
+
         console.log(`    📞 Conversation ID: ${conversation.id}`);
         console.log(`    📱 SMS Opt-in Status: ${conversation.sms_opt_in_status}`);
 
@@ -226,7 +109,6 @@ export async function GET(request: NextRequest) {
         if (conversation.sms_opt_in_status !== 'opted_in') {
           console.log(`    ❌ SKIPPED: Client has not opted in (status: ${conversation.sms_opt_in_status})`);
           skippedCount++;
-          dueInThreeDaysCount--;
           continue;
         }
 
@@ -235,38 +117,30 @@ export async function GET(request: NextRequest) {
         const messageText = `Hi ${firstName}, this is a friendly reminder that your insurance premium is due soon. Please ensure funds are available for your scheduled payment. Thank you!`;
 
         console.log(`    📝 Message: "${messageText}"`);
-        console.log(`    📤 Sending from ${agency.phone_number} to ${deal.client_phone}...`);
+        console.log(`    📤 Creating draft message (not sending yet)...`);
 
-        // Send SMS
-        await sendSMS({
-          from: agency.phone_number,
-          to: deal.client_phone,
-          text: messageText,
-        });
-        console.log(`    ✅ SMS sent successfully!`);
-
-        // Log the message
-        console.log(`    💾 Logging message to database...`);
+        // Create draft message (don't send via Telnyx)
+        console.log(`    💾 Logging draft message to database...`);
         await logMessage({
           conversationId: conversation.id,
-          senderId: agent.id,
-          receiverId: agent.id, // Placeholder
+          senderId: deal.agent_id,
+          receiverId: deal.agent_id, // Placeholder
           body: messageText,
           direction: 'outbound',
-          status: 'sent',
+          status: 'draft', // Create as draft
           metadata: {
             automated: true,
             type: 'billing_reminder',
             client_phone: deal.client_phone,
             client_name: deal.client_name,
             billing_cycle: deal.billing_cycle,
-            next_billing_date: nextBillingDate.toISOString(),
+            next_billing_date: deal.next_billing_date,
           },
         });
-        console.log(`    💾 Message logged successfully!`);
+        console.log(`    💾 Draft message created successfully!`);
 
         successCount++;
-        console.log(`    🎉 SUCCESS: Billing reminder sent to ${deal.client_name}\n`);
+        console.log(`    🎉 SUCCESS: Billing reminder created as draft for ${deal.client_name}\n`);
 
       } catch (error) {
         console.error(`    ❌ ERROR sending to ${deal.client_name}:`, error);
@@ -280,7 +154,6 @@ export async function GET(request: NextRequest) {
     console.log(`✅ Sent: ${successCount}`);
     console.log(`❌ Failed: ${errorCount}`);
     console.log(`⏭️  Skipped: ${skippedCount}`);
-    console.log(`📊 Due in 3 days: ${dueInThreeDaysCount}`);
     console.log(`📊 Total deals checked: ${deals.length}`);
     console.log('💰 ========================================\n');
 

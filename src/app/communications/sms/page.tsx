@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
 import { CreateConversationModal } from "@/components/modals/create-conversation-modal"
+import { DraftListView } from "@/components/sms/draft-list-view"
 import {
   Search,
   Send,
@@ -28,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 
 interface Conversation {
   id: string
@@ -35,7 +37,7 @@ interface Conversation {
   clientName: string
   clientPhone: string
   lastMessage: string
-  lastMessageAt: string
+  lastMessageAt: string | null
   unreadCount: number
   smsOptInStatus?: string
   optedInAt?: string
@@ -51,7 +53,7 @@ interface Message {
   receiver_id: string
   body: string
   direction: 'inbound' | 'outbound'
-  sent_at: string
+  sent_at: string | null
   status: string
   metadata: any
 }
@@ -96,11 +98,35 @@ function SMSMessagingPageContent() {
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
 
+  // Persisted filter state using custom hook (for real-time filters, use setAndApply)
+  const [, appliedFilters, , , , setAndApply] = usePersistedFilters(
+    'communications',
+    {
+      searchQuery: "",
+      notificationFilter: 'all' as 'all' | 'lapse' | 'needs_info' | 'drafts',
+      viewMode: 'self' as 'downlines' | 'self'
+    }
+  )
+
+  // For real-time filters, use setAndApply which updates immediately
+  const searchQuery = appliedFilters.searchQuery
+  const notificationFilter = appliedFilters.notificationFilter
+  const viewMode = appliedFilters.viewMode
+
+  const setSearchQuery = (value: string) => {
+    setAndApply({ searchQuery: value })
+  }
+  const setNotificationFilter = (value: 'all' | 'lapse' | 'needs_info' | 'drafts') => {
+    setAndApply({ notificationFilter: value })
+  }
+  const setViewMode = (value: 'downlines' | 'self') => {
+    setAndApply({ viewMode: value })
+  }
+
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [dealDetails, setDealDetails] = useState<DealDetails | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
   const [messageInput, setMessageInput] = useState("")
   const [loading, setLoading] = useState(true)
   const [messagesLoading, setMessagesLoading] = useState(false)
@@ -114,11 +140,23 @@ function SMSMessagingPageContent() {
   const [dealPanelCollapsed, setDealPanelCollapsed] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [isAdminChecked, setIsAdminChecked] = useState(false)
-  const [viewMode, setViewMode] = useState<'downlines' | 'self'>('self')
-  const [notificationFilter, setNotificationFilter] = useState<'all' | 'lapse' | 'needs_info'>('all')
   const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
+  const [editingDraftBody, setEditingDraftBody] = useState("")
+  const [approvingDrafts, setApprovingDrafts] = useState<Set<string>>(new Set())
+  const [rejectingDrafts, setRejectingDrafts] = useState<Set<string>>(new Set())
+  const [isHydrated, setIsHydrated] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const conversationRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const messageInputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Update showDrafts based on filter selection
+  const shouldShowDrafts = notificationFilter === 'drafts'
+
+  // Set hydration flag after mount to prevent SSR/client mismatch
+  useEffect(() => {
+    setIsHydrated(true)
+  }, [])
 
   const filteredConversations = conversations.filter(conv => {
     const matchesSearch = conv.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -220,6 +258,16 @@ function SMSMessagingPageContent() {
     scrollToBottom()
   }, [messages])
 
+  // Auto-resize message input textarea
+  useEffect(() => {
+    const textarea = messageInputRef.current
+    if (textarea) {
+      textarea.style.height = 'auto'
+      const newHeight = Math.min(textarea.scrollHeight, 150) // Max 150px
+      textarea.style.height = `${newHeight}px`
+    }
+  }, [messageInput])
+
   const fetchConversations = useCallback(async () => {
     if (!isAdminChecked) return
 
@@ -280,7 +328,14 @@ function SMSMessagingPageContent() {
       }
 
       const data = await response.json()
-      setMessages(data.messages || [])
+      // Sort messages: sent messages by sent_at, drafts (sent_at=null) always at bottom
+      const sortedMessages = (data.messages || []).sort((a: Message, b: Message) => {
+        if (!a.sent_at && !b.sent_at) return 0
+        if (!a.sent_at) return 1
+        if (!b.sent_at) return -1
+        return new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
+      })
+      setMessages(sortedMessages)
     } catch (error) {
       console.error('Error fetching messages:', error)
     } finally {
@@ -416,10 +471,15 @@ function SMSMessagingPageContent() {
               return prev
             }
 
-            // Add new message and sort by sent_at
-            const updated = [...prev, newMessage].sort((a, b) =>
-              new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
-            )
+            // Add new message and sort: sent messages by sent_at, drafts (sent_at=null) always at bottom
+            const updated = [...prev, newMessage].sort((a, b) => {
+              // Drafts (null sent_at) always go to the bottom
+              if (!a.sent_at && !b.sent_at) return 0
+              if (!a.sent_at) return 1
+              if (!b.sent_at) return -1
+              // Both have sent_at, sort by time
+              return new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
+            })
             console.log('✅ Added message to UI, total messages:', updated.length)
             return updated
           })
@@ -471,13 +531,19 @@ function SMSMessagingPageContent() {
           console.log('📝 Message updated:', payload.new)
           const updatedMessage = payload.new as Message
 
-          // Update the message in the current view if it's visible
+          // Update the message in the current view if it's visible and re-sort
           setMessages(prev => {
             const index = prev.findIndex(m => m.id === updatedMessage.id)
             if (index !== -1) {
               const updated = [...prev]
               updated[index] = updatedMessage
-              return updated
+              // Re-sort after update (important for when drafts get approved)
+              return updated.sort((a, b) => {
+                if (!a.sent_at && !b.sent_at) return 0
+                if (!a.sent_at) return 1
+                if (!b.sent_at) return -1
+                return new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
+              })
             }
             return prev
           })
@@ -565,6 +631,11 @@ function SMSMessagingPageContent() {
 
       setMessages(prev => [...prev, optimisticMessage])
       setMessageInput("")
+
+      // Reset textarea height after sending
+      if (messageInputRef.current) {
+        messageInputRef.current.style.height = 'auto'
+      }
 
       const response = await fetch('/api/sms/send', {
         method: 'POST',
@@ -657,7 +728,9 @@ function SMSMessagingPageContent() {
   const calculateNextBillingDate = (effectiveDate: string | null, billingCycle: string | null): string => {
     if (!effectiveDate || !billingCycle) return 'N/A'
 
-    const effective = new Date(effectiveDate)
+    // Parse date as local time to avoid timezone shifts
+    const [year, month, day] = effectiveDate.split('T')[0].split('-')
+    const effective = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
     const today = new Date()
     let nextBilling = new Date(effective)
 
@@ -697,6 +770,112 @@ function SMSMessagingPageContent() {
     }
   }
 
+  const handleApproveDraft = async (messageId: string) => {
+    try {
+      setApprovingDrafts(prev => new Set(prev).add(messageId))
+
+      const response = await fetch('/api/sms/drafts/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ messageIds: [messageId] })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to approve draft')
+      }
+
+      // Remove the draft from the messages list (it will be updated via real-time)
+      // Or refresh messages to get updated status
+      if (selectedConversation) {
+        await fetchMessages(selectedConversation.id)
+      }
+
+      console.log('✅ Draft approved successfully')
+    } catch (error) {
+      console.error('Error approving draft:', error)
+      alert(error instanceof Error ? error.message : 'Failed to approve draft')
+    } finally {
+      setApprovingDrafts(prev => {
+        const next = new Set(prev)
+        next.delete(messageId)
+        return next
+      })
+    }
+  }
+
+  const handleRejectDraft = async (messageId: string) => {
+    try {
+      setRejectingDrafts(prev => new Set(prev).add(messageId))
+
+      const response = await fetch('/api/sms/drafts/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ messageIds: [messageId] })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to reject draft')
+      }
+
+      // Remove from messages list
+      setMessages(prev => prev.filter(m => m.id !== messageId))
+
+      console.log('✅ Draft rejected successfully')
+    } catch (error) {
+      console.error('Error rejecting draft:', error)
+      alert(error instanceof Error ? error.message : 'Failed to reject draft')
+    } finally {
+      setRejectingDrafts(prev => {
+        const next = new Set(prev)
+        next.delete(messageId)
+        return next
+      })
+    }
+  }
+
+  const handleStartEditDraft = (messageId: string, currentBody: string) => {
+    setEditingDraftId(messageId)
+    setEditingDraftBody(currentBody)
+  }
+
+  const handleCancelEditDraft = () => {
+    setEditingDraftId(null)
+    setEditingDraftBody("")
+  }
+
+  const handleSaveEditDraft = async (messageId: string) => {
+    try {
+      const response = await fetch('/api/sms/drafts/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ messageId, body: editingDraftBody })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to update draft')
+      }
+
+      // Update local message
+      setMessages(prev => prev.map(m =>
+        m.id === messageId ? { ...m, body: editingDraftBody } : m
+      ))
+
+      setEditingDraftId(null)
+      setEditingDraftBody("")
+
+      console.log('✅ Draft updated successfully')
+    } catch (error) {
+      console.error('Error updating draft:', error)
+      alert(error instanceof Error ? error.message : 'Failed to update draft')
+    }
+  }
+
   return (
     <div className="h-[calc(100vh-3rem)] flex bg-background relative">
       {/* Conversations Sidebar */}
@@ -708,9 +887,12 @@ function SMSMessagingPageContent() {
         <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-xl font-semibold text-foreground">Messages</h1>
-            {/* Filter Dropdown */}
-            <Select value={notificationFilter} onValueChange={(value: 'all' | 'lapse' | 'needs_info') => setNotificationFilter(value)}>
-              <SelectTrigger className="w-[160px] h-8 text-xs">
+          </div>
+
+          {/* Filter Dropdown */}
+          <div className="mb-4">
+            <Select value={notificationFilter} onValueChange={(value: 'all' | 'lapse' | 'needs_info' | 'drafts') => setNotificationFilter(value)}>
+              <SelectTrigger className="w-full h-8 text-xs">
                 <Filter className="h-3 w-3 mr-2" />
                 <SelectValue />
               </SelectTrigger>
@@ -718,6 +900,7 @@ function SMSMessagingPageContent() {
                 <SelectItem value="all">All Messages</SelectItem>
                 <SelectItem value="lapse">Lapse Notifications</SelectItem>
                 <SelectItem value="needs_info">Needs More Info</SelectItem>
+                <SelectItem value="drafts">View Drafts</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -725,20 +908,23 @@ function SMSMessagingPageContent() {
           {/* View Mode Toggle with Slider */}
           <div className="relative bg-accent/30 rounded-lg p-1 mb-4">
             <div className="grid grid-cols-2 gap-1 relative">
-              {/* Animated slider background */}
-              <div
-                className={cn(
-                  "absolute h-[calc(100%-8px)] bg-gradient-to-r from-blue-600 to-blue-500 rounded-md transition-all duration-300 ease-in-out top-1 shadow-md",
-                  viewMode === 'self' ? 'left-1 right-[calc(50%+2px)]' : 'left-[calc(50%+2px)] right-1'
-                )}
-              />
+              {/* Animated slider background - only render after hydration to prevent mismatch */}
+              {isHydrated && (
+                <div
+                  className={cn(
+                    "absolute h-[calc(100%-8px)] bg-gradient-to-r from-blue-600 to-blue-500 rounded-md top-1 shadow-md",
+                    "transition-all duration-300 ease-in-out",
+                    viewMode === 'self' ? 'left-1 right-[calc(50%+2px)]' : 'left-[calc(50%+2px)] right-1'
+                  )}
+                />
+              )}
 
               {/* Buttons */}
               <button
                 onClick={() => setViewMode('self')}
                 className={cn(
                   "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
-                  viewMode === 'self'
+                  isHydrated && viewMode === 'self'
                     ? 'text-white'
                     : 'text-muted-foreground hover:text-foreground'
                 )}
@@ -749,7 +935,7 @@ function SMSMessagingPageContent() {
                 onClick={() => setViewMode('downlines')}
                 className={cn(
                   "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
-                  viewMode === 'downlines'
+                  isHydrated && viewMode === 'downlines'
                     ? 'text-white'
                     : 'text-muted-foreground hover:text-foreground'
                 )}
@@ -759,30 +945,49 @@ function SMSMessagingPageContent() {
             </div>
           </div>
 
-          {/* Search and New Button */}
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input
-                placeholder="Search conversations..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-background"
-              />
+          {/* Search and New Button - Only show for regular conversations */}
+          {!shouldShowDrafts && (
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                <Input
+                  placeholder="Search conversations..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 bg-background"
+                />
+              </div>
+              <Button
+                onClick={() => setCreateModalOpen(true)}
+                size="sm"
+                className="btn-gradient h-10 px-4 whitespace-nowrap"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                New
+              </Button>
             </div>
-            <Button
-              onClick={() => setCreateModalOpen(true)}
-              size="sm"
-              className="btn-gradient h-10 px-4 whitespace-nowrap"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              New
-            </Button>
-          </div>
+          )}
         </div>
 
-        {/* Conversations List */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        {/* Conversations List or Drafts View */}
+        {shouldShowDrafts ? (
+          <DraftListView
+            viewMode={(isAdmin && viewMode === 'downlines') ? 'all' : viewMode}
+            onConversationClick={(conversationId) => {
+              // Find the conversation and select it
+              const conversation = conversations.find(c => c.id === conversationId)
+              if (conversation) {
+                handleConversationSelect(conversation)
+              } else {
+                // If conversation not in current list, fetch it
+                fetchMessages(conversationId)
+                // Also try to get deal details by fetching conversations again
+                fetchConversations()
+              }
+            }}
+          />
+        ) : (
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
           {loading ? (
             <div className="flex items-center justify-center p-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -823,7 +1028,7 @@ function SMSMessagingPageContent() {
                         conversation.unreadCount > 0 ? "text-foreground font-semibold" : "text-foreground"
                       )}>{conversation.clientName}</h3>
                       <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
-                        {formatTimestamp(conversation.lastMessageAt)}
+                        {conversation.lastMessageAt ? formatTimestamp(conversation.lastMessageAt) : ''}
                       </span>
                     </div>
                     <p className={cn(
@@ -838,7 +1043,8 @@ function SMSMessagingPageContent() {
               </div>
             ))
           )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Resize Handle for Sidebar */}
@@ -888,6 +1094,8 @@ function SMSMessagingPageContent() {
                   {messages.map((message) => {
                     const isOutbound = message.direction === 'outbound'
                     const isAutomated = message.metadata?.automated
+                    const isDraft = message.status === 'draft'
+                    const isEditing = editingDraftId === message.id
 
                     return (
                       <div
@@ -900,31 +1108,112 @@ function SMSMessagingPageContent() {
                         <div
                           className={cn(
                             "max-w-[70%] rounded-2xl px-4 py-2 shadow-sm",
-                            isOutbound
+                            isDraft
+                              ? "bg-yellow-100 text-gray-900 border-2 border-yellow-400"
+                              : isOutbound
                               ? "bg-blue-600 text-white"
                               : "bg-white text-gray-900 border border-gray-200"
                           )}
                         >
-                          {isAutomated && (
+                          {isDraft && (
+                            <div className="text-xs font-semibold mb-2 text-yellow-800 flex items-center gap-1">
+                              <span className="inline-block w-2 h-2 bg-yellow-500 rounded-full"></span>
+                              DRAFT - Pending Approval
+                            </div>
+                          )}
+                          {isAutomated && !isDraft && (
                             <div className="text-xs opacity-75 mb-1 italic">
                               Automated message
                             </div>
                           )}
-                          <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p>
-                          <div className="flex items-center justify-end mt-1 space-x-1">
-                            <span className={cn(
-                              "text-xs",
-                              isOutbound ? "opacity-75" : "text-gray-500"
-                            )}>
-                              {formatMessageTime(message.sent_at)}
-                            </span>
-                            {isOutbound && (
-                              <CheckCheck className={cn(
-                                "h-3 w-3",
-                                message.status === 'delivered' ? "opacity-100" : "opacity-50"
-                              )} />
-                            )}
-                          </div>
+
+                          {isEditing ? (
+                            <div className="space-y-3">
+                              <textarea
+                                value={editingDraftBody}
+                                onChange={(e) => setEditingDraftBody(e.target.value)}
+                                className="w-full text-sm p-3 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 resize-none"
+                                rows={8}
+                                style={{ minHeight: '150px' }}
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleSaveEditDraft(message.id)}
+                                  className="bg-green-600 hover:bg-green-700 text-white text-xs px-4"
+                                >
+                                  Save
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={handleCancelEditDraft}
+                                  className="text-xs px-4"
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p>
+
+                              {isDraft && (
+                                <div className="flex gap-2 mt-3 pt-2 border-t border-yellow-300">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleApproveDraft(message.id)}
+                                    disabled={approvingDrafts.has(message.id)}
+                                    className="bg-green-600 hover:bg-green-700 text-white text-xs flex-1"
+                                  >
+                                    {approvingDrafts.has(message.id) ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      'Approve & Send'
+                                    )}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleStartEditDraft(message.id, message.body)}
+                                    className="text-xs"
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => handleRejectDraft(message.id)}
+                                    disabled={rejectingDrafts.has(message.id)}
+                                    className="text-xs"
+                                  >
+                                    {rejectingDrafts.has(message.id) ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      'Reject'
+                                    )}
+                                  </Button>
+                                </div>
+                              )}
+
+                              {!isDraft && (
+                                <div className="flex items-center justify-end mt-1 space-x-1">
+                                  <span className={cn(
+                                    "text-xs",
+                                    isOutbound ? "opacity-75" : "text-gray-500"
+                                  )}>
+                                    {message.sent_at ? formatMessageTime(message.sent_at) : 'Pending'}
+                                  </span>
+                                  {isOutbound && (
+                                    <CheckCheck className={cn(
+                                      "h-3 w-3",
+                                      message.status === 'delivered' ? "opacity-100" : "opacity-50"
+                                    )} />
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                       </div>
                     )
@@ -936,22 +1225,26 @@ function SMSMessagingPageContent() {
 
             {/* Message Input */}
             <div className="p-4 bg-card border-t border-border">
-              <div className="flex items-center space-x-2">
-                <div className="flex-1 relative">
-                  <Input
-                    placeholder="Type a message..."
-                    value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    disabled={sending}
-                    className="pr-10"
-                  />
-                </div>
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={messageInputRef}
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyDown={handleKeyPress}
+                  placeholder="Type a message..."
+                  disabled={sending}
+                  rows={1}
+                  className="flex-1 min-h-[40px] max-h-[150px] px-3 py-2 text-sm rounded-lg border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/20 bg-white transition-all resize-none overflow-y-auto focus:outline-none"
+                  style={{
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: '#cbd5e1 transparent'
+                  }}
+                />
                 <Button
                   size="sm"
                   onClick={handleSendMessage}
                   disabled={!messageInput.trim() || sending}
-                  className="btn-gradient"
+                  className="btn-gradient h-10 px-4"
                 >
                   {sending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -1108,7 +1401,12 @@ function SMSMessagingPageContent() {
                   />
                   <DetailRow
                     label="Effective Date"
-                    value={dealDetails.policy_effective_date ? new Date(dealDetails.policy_effective_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                    value={dealDetails.policy_effective_date ? (() => {
+                      // Parse date as local time to avoid timezone shifts
+                      const [year, month, day] = dealDetails.policy_effective_date.split('T')[0].split('-')
+                      const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+                      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    })() : 'N/A'}
                   />
                   <DetailRow
                     label="Next Billing Date"

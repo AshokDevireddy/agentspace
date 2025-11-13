@@ -82,6 +82,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
+    // Clear all persisted filter data from localStorage before signing out
+    if (typeof window !== 'undefined') {
+      const keysToRemove: string[] = []
+      // Find all filter-related keys in localStorage
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && key.startsWith('filter_')) {
+          keysToRemove.push(key)
+        }
+      }
+      // Remove all filter keys
+      keysToRemove.forEach(key => localStorage.removeItem(key))
+    }
+
     const { error } = await supabase.auth.signOut()
     if (error) throw error
     router.push('/login')

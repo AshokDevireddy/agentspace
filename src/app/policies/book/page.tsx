@@ -9,6 +9,7 @@ import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select
 import { AsyncSearchableSelect } from "@/components/ui/async-searchable-select"
 import { Loader2, Filter, X } from "lucide-react"
 import { PolicyDetailsModal } from "@/components/modals/policy-details-modal"
+import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 
 // Types for the API responses
 interface Deal {
@@ -79,29 +80,22 @@ const billingCycleColors: Record<string, string> = {
 }
 
 export default function BookOfBusiness() {
-  // Local filter state (what user selects but hasn't applied yet)
-  const [localAgent, setLocalAgent] = useState("all")
-  const [localCarrier, setLocalCarrier] = useState("all")
-  const [localProduct, setLocalProduct] = useState("all")
-  const [localClient, setLocalClient] = useState("all")
-  const [localPolicyNumber, setLocalPolicyNumber] = useState("all")
-  const [localStatus, setLocalStatus] = useState("all")
-  const [localBillingCycle, setLocalBillingCycle] = useState("all")
-  const [localLeadSource, setLocalLeadSource] = useState("all")
-  const [localEffectiveDateStart, setLocalEffectiveDateStart] = useState("")
-  const [localEffectiveDateEnd, setLocalEffectiveDateEnd] = useState("")
-
-  // Active filter state (what's actually applied)
-  const [selectedAgent, setSelectedAgent] = useState("all")
-  const [selectedCarrier, setSelectedCarrier] = useState("all")
-  const [selectedProduct, setSelectedProduct] = useState("all")
-  const [selectedClient, setSelectedClient] = useState("all")
-  const [selectedPolicyNumber, setSelectedPolicyNumber] = useState("all")
-  const [selectedStatus, setSelectedStatus] = useState("all")
-  const [selectedBillingCycle, setSelectedBillingCycle] = useState("all")
-  const [selectedLeadSource, setSelectedLeadSource] = useState("all")
-  const [selectedEffectiveDateStart, setSelectedEffectiveDateStart] = useState("")
-  const [selectedEffectiveDateEnd, setSelectedEffectiveDateEnd] = useState("")
+  // Persisted filter state using custom hook
+  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters] = usePersistedFilters(
+    'book-of-business',
+    {
+      agent: "all",
+      carrier: "all",
+      product: "all",
+      client: "all",
+      policyNumber: "all",
+      status: "all",
+      billingCycle: "all",
+      leadSource: "all",
+      effectiveDateStart: "",
+      effectiveDateEnd: ""
+    }
+  )
 
   // Modal state
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null)
@@ -160,16 +154,16 @@ export default function BookOfBusiness() {
     else setIsLoadingMore(true)
     try {
       const params = new URLSearchParams()
-      if (selectedAgent !== 'all') params.append('agent_id', selectedAgent)
-      if (selectedCarrier !== 'all') params.append('carrier_id', selectedCarrier)
-      if (selectedProduct !== 'all') params.append('product_id', selectedProduct)
-      if (selectedClient !== 'all') params.append('client_id', selectedClient)
-      if (selectedPolicyNumber !== 'all') params.append('policy_number', selectedPolicyNumber)
-      if (selectedStatus !== 'all') params.append('status', selectedStatus)
-      if (selectedBillingCycle !== 'all') params.append('billing_cycle', selectedBillingCycle)
-      if (selectedLeadSource !== 'all') params.append('lead_source', selectedLeadSource)
-      if (selectedEffectiveDateStart) params.append('effective_date_start', selectedEffectiveDateStart)
-      if (selectedEffectiveDateEnd) params.append('effective_date_end', selectedEffectiveDateEnd)
+      if (appliedFilters.agent !== 'all') params.append('agent_id', appliedFilters.agent)
+      if (appliedFilters.carrier !== 'all') params.append('carrier_id', appliedFilters.carrier)
+      if (appliedFilters.product !== 'all') params.append('product_id', appliedFilters.product)
+      if (appliedFilters.client !== 'all') params.append('client_id', appliedFilters.client)
+      if (appliedFilters.policyNumber !== 'all') params.append('policy_number', appliedFilters.policyNumber)
+      if (appliedFilters.status !== 'all') params.append('status', appliedFilters.status)
+      if (appliedFilters.billingCycle !== 'all') params.append('billing_cycle', appliedFilters.billingCycle)
+      if (appliedFilters.leadSource !== 'all') params.append('lead_source', appliedFilters.leadSource)
+      if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
+      if (appliedFilters.effectiveDateEnd) params.append('effective_date_end', appliedFilters.effectiveDateEnd)
       params.append('limit', '50')
       if (!reset && nextCursorRef.current) {
         params.append('cursor_created_at', nextCursorRef.current.cursor_created_at)
@@ -195,7 +189,7 @@ export default function BookOfBusiness() {
       if (reset) setLoading(false)
       else setIsLoadingMore(false)
     }
-  }, [selectedAgent, selectedCarrier, selectedProduct, selectedClient, selectedPolicyNumber, selectedStatus, selectedBillingCycle, selectedLeadSource, selectedEffectiveDateStart, selectedEffectiveDateEnd])
+  }, [appliedFilters])
 
   // Fetch deals when active filters change
   useEffect(() => {
@@ -205,40 +199,12 @@ export default function BookOfBusiness() {
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
-    setSelectedAgent(localAgent)
-    setSelectedCarrier(localCarrier)
-    setSelectedProduct(localProduct)
-    setSelectedClient(localClient)
-    setSelectedPolicyNumber(localPolicyNumber)
-    setSelectedStatus(localStatus)
-    setSelectedBillingCycle(localBillingCycle)
-    setSelectedLeadSource(localLeadSource)
-    setSelectedEffectiveDateStart(localEffectiveDateStart)
-    setSelectedEffectiveDateEnd(localEffectiveDateEnd)
+    applyFilters()
   }
 
   // Clear all filters
   const handleClearFilters = () => {
-    setLocalAgent("all")
-    setLocalCarrier("all")
-    setLocalProduct("all")
-    setLocalClient("all")
-    setLocalPolicyNumber("all")
-    setLocalStatus("all")
-    setLocalBillingCycle("all")
-    setLocalLeadSource("all")
-    setLocalEffectiveDateStart("")
-    setLocalEffectiveDateEnd("")
-    setSelectedAgent("all")
-    setSelectedCarrier("all")
-    setSelectedProduct("all")
-    setSelectedClient("all")
-    setSelectedPolicyNumber("all")
-    setSelectedStatus("all")
-    setSelectedBillingCycle("all")
-    setSelectedLeadSource("all")
-    setSelectedEffectiveDateStart("")
-    setSelectedEffectiveDateEnd("")
+    clearFilters()
   }
 
   const handleRowClick = (deal: Deal) => {
@@ -299,7 +265,7 @@ export default function BookOfBusiness() {
             <Filter className="h-3.5 w-3.5 mr-1.5" />
             Filter
           </Button>
-          {(selectedAgent !== 'all' || selectedCarrier !== 'all' || selectedProduct !== 'all' || selectedClient !== 'all' || selectedPolicyNumber !== 'all' || selectedStatus !== 'all' || selectedBillingCycle !== 'all' || selectedLeadSource !== 'all' || selectedEffectiveDateStart || selectedEffectiveDateEnd) && (
+          {(appliedFilters.agent !== 'all' || appliedFilters.carrier !== 'all' || appliedFilters.product !== 'all' || appliedFilters.client !== 'all' || appliedFilters.policyNumber !== 'all' || appliedFilters.status !== 'all' || appliedFilters.billingCycle !== 'all' || appliedFilters.leadSource !== 'all' || appliedFilters.effectiveDateStart || appliedFilters.effectiveDateEnd) && (
             <Button
               onClick={handleClearFilters}
               variant="outline"
@@ -331,8 +297,8 @@ export default function BookOfBusiness() {
                   Agent
                 </label>
                 <AsyncSearchableSelect
-                  value={localAgent}
-                  onValueChange={setLocalAgent}
+                  value={localFilters.agent}
+                  onValueChange={(value) => setLocalFilters({ agent: value })}
                   placeholder="All Agents"
                   searchPlaceholder="Type to search agents..."
                   searchEndpoint="/api/deals/search-agents"
@@ -346,8 +312,8 @@ export default function BookOfBusiness() {
                 </label>
                 <SimpleSearchableSelect
                   options={filterOptions.carriers}
-                  value={localCarrier}
-                  onValueChange={setLocalCarrier}
+                  value={localFilters.carrier}
+                  onValueChange={(value) => setLocalFilters({ carrier: value })}
                   placeholder="All Carriers"
                   searchPlaceholder="Search..."
                 />
@@ -360,8 +326,8 @@ export default function BookOfBusiness() {
                 </label>
                 <SimpleSearchableSelect
                   options={filterOptions.products}
-                  value={localProduct}
-                  onValueChange={setLocalProduct}
+                  value={localFilters.product}
+                  onValueChange={(value) => setLocalFilters({ product: value })}
                   placeholder="All Products"
                   searchPlaceholder="Search..."
                 />
@@ -373,8 +339,8 @@ export default function BookOfBusiness() {
                   Client
                 </label>
                 <AsyncSearchableSelect
-                  value={localClient}
-                  onValueChange={setLocalClient}
+                  value={localFilters.client}
+                  onValueChange={(value) => setLocalFilters({ client: value })}
                   placeholder="All Clients"
                   searchPlaceholder="Type to search clients..."
                   searchEndpoint="/api/deals/search-clients"
@@ -387,8 +353,8 @@ export default function BookOfBusiness() {
                   Policy #
                 </label>
                 <AsyncSearchableSelect
-                  value={localPolicyNumber}
-                  onValueChange={setLocalPolicyNumber}
+                  value={localFilters.policyNumber}
+                  onValueChange={(value) => setLocalFilters({ policyNumber: value })}
                   placeholder="All Policy Numbers"
                   searchPlaceholder="Type to search policy numbers..."
                   searchEndpoint="/api/deals/search-policy-numbers"
@@ -405,8 +371,8 @@ export default function BookOfBusiness() {
                 </label>
                 <SimpleSearchableSelect
                   options={filterOptions.statuses}
-                  value={localStatus}
-                  onValueChange={setLocalStatus}
+                  value={localFilters.status}
+                  onValueChange={(value) => setLocalFilters({ status: value })}
                   placeholder="All Statuses"
                   searchPlaceholder="Search..."
                 />
@@ -419,8 +385,8 @@ export default function BookOfBusiness() {
                 </label>
                 <SimpleSearchableSelect
                   options={filterOptions.billingCycles}
-                  value={localBillingCycle}
-                  onValueChange={setLocalBillingCycle}
+                  value={localFilters.billingCycle}
+                  onValueChange={(value) => setLocalFilters({ billingCycle: value })}
                   placeholder="All Billing Cycles"
                   searchPlaceholder="Search..."
                 />
@@ -433,8 +399,8 @@ export default function BookOfBusiness() {
                 </label>
                 <SimpleSearchableSelect
                   options={filterOptions.leadSources}
-                  value={localLeadSource}
-                  onValueChange={setLocalLeadSource}
+                  value={localFilters.leadSource}
+                  onValueChange={(value) => setLocalFilters({ leadSource: value })}
                   placeholder="All Lead Sources"
                   searchPlaceholder="Search..."
                 />
@@ -447,8 +413,8 @@ export default function BookOfBusiness() {
                 </label>
                 <Input
                   type="date"
-                  value={localEffectiveDateStart}
-                  onChange={(e) => setLocalEffectiveDateStart(e.target.value)}
+                  value={localFilters.effectiveDateStart}
+                  onChange={(e) => setLocalFilters({ effectiveDateStart: e.target.value })}
                   className="h-8 text-sm"
                   disabled={loading}
                 />
@@ -461,8 +427,8 @@ export default function BookOfBusiness() {
                 </label>
                 <Input
                   type="date"
-                  value={localEffectiveDateEnd}
-                  onChange={(e) => setLocalEffectiveDateEnd(e.target.value)}
+                  value={localFilters.effectiveDateEnd}
+                  onChange={(e) => setLocalFilters({ effectiveDateEnd: e.target.value })}
                   className="h-8 text-sm"
                   disabled={loading}
                 />

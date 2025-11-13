@@ -30,18 +30,13 @@ export function SimpleSearchableSelect({
 
   // Filter options based on search term
   React.useEffect(() => {
-    console.log('SimpleSearchableSelect - options:', options)
-    console.log('SimpleSearchableSelect - searchTerm:', searchTerm)
-
     if (!options || !Array.isArray(options)) {
-      console.warn('SimpleSearchableSelect - options is not an array:', options)
       setFilteredOptions([])
       return
     }
 
     const filtered = options.filter(option => {
       if (!option || typeof option.label !== 'string') {
-        console.warn('SimpleSearchableSelect - invalid option:', option)
         return false
       }
       return option.label.toLowerCase().includes(searchTerm.toLowerCase())
@@ -74,7 +69,9 @@ export function SimpleSearchableSelect({
         className={cn("w-full justify-between h-8 text-xs")}
         onClick={() => setOpen(!open)}
       >
-        {selectedOption ? selectedOption.label : placeholder}
+        <span className="truncate flex-1 text-left">
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
         <ChevronDown className={cn("ml-2 h-4 w-4 shrink-0 opacity-50", open && "rotate-180")} />
       </Button>
 

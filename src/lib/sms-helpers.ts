@@ -35,6 +35,57 @@ interface MessageResult {
 }
 
 /**
+ * Gets an existing conversation without creating one
+ * Returns null if conversation doesn't exist
+ * Used by cron jobs that should only send to existing conversations
+ */
+export async function getConversationIfExists(
+  agentId: string,
+  dealId: string,
+  agencyId: string,
+  clientPhone?: string
+): Promise<ConversationResult | null> {
+  const supabase = createAdminClient();
+
+  // Normalize phone number for consistent lookups (remove +1 prefix)
+  const normalizedPhone = clientPhone ? normalizePhoneForStorage(clientPhone) : null;
+
+  // First, check if conversation exists for this specific agent-deal pair (matches unique constraint)
+  const { data: existingByDeal } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('agent_id', agentId)
+    .eq('deal_id', dealId)
+    .eq('type', 'sms')
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (existingByDeal) {
+    return existingByDeal as ConversationResult;
+  }
+
+  // If not found by deal, check if conversation exists for this phone number
+  // (to handle case where client has multiple deals but we want one conversation)
+  if (normalizedPhone) {
+    const { data: existingByPhone } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('agency_id', agencyId)
+      .eq('client_phone', normalizedPhone)
+      .eq('type', 'sms')
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (existingByPhone) {
+      return existingByPhone as ConversationResult;
+    }
+  }
+
+  // Return null instead of creating a new conversation
+  return null;
+}
+
+/**
  * Gets or creates a conversation for an agent-client pair
  * Uses client phone number to prevent duplicate conversations
  */
@@ -135,6 +186,7 @@ export async function logMessage(params: {
   const supabase = createAdminClient();
 
   const now = new Date().toISOString();
+  const isDraft = params.status === 'draft';
 
   const { data, error } = await supabase
     .from('messages')
@@ -147,8 +199,11 @@ export async function logMessage(params: {
       message_type: 'sms',
       status: params.status || 'delivered',
       metadata: params.metadata || {},
+      // Draft messages should have null sent_at until approved
+      sent_at: isDraft ? null : now,
       // Automatically mark outbound messages as read (agent already knows what they sent)
-      read_at: params.direction === 'outbound' ? now : null,
+      // But don't mark drafts as read yet
+      read_at: params.direction === 'outbound' && !isDraft ? now : null,
     })
     .select()
     .single();
@@ -157,11 +212,13 @@ export async function logMessage(params: {
     throw new Error(`Failed to log message: ${error.message}`);
   }
 
-  // Update last_message_at in conversation
-  await supabase
-    .from('conversations')
-    .update({ last_message_at: now })
-    .eq('id', params.conversationId);
+  // Update last_message_at in conversation (only for non-draft messages)
+  if (!isDraft) {
+    await supabase
+      .from('conversations')
+      .update({ last_message_at: now })
+      .eq('id', params.conversationId);
+  }
 
   return data as MessageResult;
 }
@@ -435,26 +492,21 @@ export async function sendWelcomeMessage(
 
   const welcomeMessage = `Welcome ${clientFirstName}! Thank you for choosing ${agency.name} for your life insurance needs. Your agent ${displayAgentName} is here to help. You'll receive policy updates and reminders by text. Complete your account setup by clicking the invitation sent to ${displayEmail}. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
 
-  // Send SMS via Telnyx
-  await sendSMS({
-    from: agency.phone_number,
-    to: clientPhone,
-    text: welcomeMessage,
-  });
-
-  // Log the message
+  // Create draft message (don't send via Telnyx yet)
   await logMessage({
     conversationId,
     senderId: agentId,
     receiverId: agentId, // Placeholder
     body: welcomeMessage,
     direction: 'outbound',
-    status: 'sent',
+    status: 'draft', // Create as draft instead of sending
     metadata: {
       automated: true,
       type: 'welcome_message',
       client_phone: normalizePhoneForStorage(clientPhone),
     },
   });
+
+  console.log('✅ Welcome message created as draft');
 }
 

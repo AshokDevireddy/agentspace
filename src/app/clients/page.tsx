@@ -10,6 +10,7 @@ import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
 import { Filter, X, User } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 
 // Client data type
 interface Client {
@@ -66,19 +67,25 @@ const generateStatusOptions = () => {
 }
 
 export default function Clients() {
-  // Local filter state (what user selects but hasn't applied yet)
-  const [localClientName, setLocalClientName] = useState("all")
-  const [localAgent, setLocalAgent] = useState("all")
-  const [localStatus, setLocalStatus] = useState("all")
-  const [localStartDate, setLocalStartDate] = useState("")
-  const [localEndDate, setLocalEndDate] = useState("")
+  // Persisted filter state using custom hook (includes view mode)
+  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply] = usePersistedFilters(
+    'clients',
+    {
+      clientName: "all",
+      agent: "all",
+      status: "all",
+      startDate: "",
+      endDate: "",
+      viewMode: 'self' as 'downlines' | 'self'
+    },
+    ['viewMode'] // Preserve viewMode when clearing filters
+  )
 
-  // Active filter state (what's actually applied)
-  const [selectedClientName, setSelectedClientName] = useState("all")
-  const [selectedAgent, setSelectedAgent] = useState("all")
-  const [selectedStatus, setSelectedStatus] = useState("all")
-  const [selectedStartDate, setSelectedStartDate] = useState("")
-  const [selectedEndDate, setSelectedEndDate] = useState("")
+  // Use persisted view mode - setAndApply updates immediately
+  const viewMode = appliedFilters.viewMode
+  const setViewMode = (value: 'downlines' | 'self') => {
+    setAndApply({ viewMode: value })
+  }
 
   const [clientsData, setClientsData] = useState<Client[]>([])
   const [allClients, setAllClients] = useState<Client[]>([])
@@ -89,7 +96,6 @@ export default function Clients() {
   const [totalCount, setTotalCount] = useState(0)
   const [isAdmin, setIsAdmin] = useState(false)
   const [isAdminChecked, setIsAdminChecked] = useState(false)
-  const [viewMode, setViewMode] = useState<'downlines' | 'self'>('self')
   const { user } = useAuth()
   const supabase = createClient()
 
@@ -167,42 +173,29 @@ export default function Clients() {
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
-    setSelectedClientName(localClientName)
-    setSelectedAgent(localAgent)
-    setSelectedStatus(localStatus)
-    setSelectedStartDate(localStartDate)
-    setSelectedEndDate(localEndDate)
+    applyFilters()
     setCurrentPage(1)
   }
 
   // Clear all filters
   const handleClearFilters = () => {
-    setLocalClientName("all")
-    setLocalAgent("all")
-    setLocalStatus("all")
-    setLocalStartDate("")
-    setLocalEndDate("")
-    setSelectedClientName("all")
-    setSelectedAgent("all")
-    setSelectedStatus("all")
-    setSelectedStartDate("")
-    setSelectedEndDate("")
+    clearFilters()
     setCurrentPage(1)
   }
 
   const filteredClients = clientsData.filter((client: Client) => {
-    const matchesClient = selectedClientName === "all" || client.id === selectedClientName
-    const matchesAgent = selectedAgent === "all" || client.supportingAgent === selectedAgent
-    const matchesStatus = selectedStatus === "all" || client.status === selectedStatus
+    const matchesClient = appliedFilters.clientName === "all" || client.id === appliedFilters.clientName
+    const matchesAgent = appliedFilters.agent === "all" || client.supportingAgent === appliedFilters.agent
+    const matchesStatus = appliedFilters.status === "all" || client.status === appliedFilters.status
 
     let matchesDateRange = true
-    if (selectedStartDate || selectedEndDate) {
+    if (appliedFilters.startDate || appliedFilters.endDate) {
       const clientDate = new Date(client.created)
-      if (selectedStartDate) {
-        matchesDateRange = matchesDateRange && clientDate >= new Date(selectedStartDate)
+      if (appliedFilters.startDate) {
+        matchesDateRange = matchesDateRange && clientDate >= new Date(appliedFilters.startDate)
       }
-      if (selectedEndDate) {
-        matchesDateRange = matchesDateRange && clientDate <= new Date(selectedEndDate)
+      if (appliedFilters.endDate) {
+        matchesDateRange = matchesDateRange && clientDate <= new Date(appliedFilters.endDate)
       }
     }
 
@@ -276,8 +269,8 @@ export default function Clients() {
               </label>
               <SimpleSearchableSelect
                 options={clientOptions}
-                value={localClientName}
-                onValueChange={setLocalClientName}
+                value={localFilters.clientName}
+                onValueChange={(value) => setLocalFilters({ clientName: value })}
                 placeholder="All Clients"
                 searchPlaceholder="Search..."
                 disabled={loading || !isAdminChecked}
@@ -291,8 +284,8 @@ export default function Clients() {
               </label>
               <SimpleSearchableSelect
                 options={agentOptions}
-                value={localAgent}
-                onValueChange={setLocalAgent}
+                value={localFilters.agent}
+                onValueChange={(value) => setLocalFilters({ agent: value })}
                 placeholder="All Agents"
                 searchPlaceholder="Search..."
                 disabled={loading || !isAdminChecked}
@@ -306,8 +299,8 @@ export default function Clients() {
               </label>
               <SimpleSearchableSelect
                 options={statusOptions}
-                value={localStatus}
-                onValueChange={setLocalStatus}
+                value={localFilters.status}
+                onValueChange={(value) => setLocalFilters({ status: value })}
                 placeholder="All Statuses"
                 searchPlaceholder="Search..."
                 disabled={loading || !isAdminChecked}
@@ -321,8 +314,8 @@ export default function Clients() {
               </label>
               <Input
                 type="date"
-                value={localStartDate}
-                onChange={(e) => setLocalStartDate(e.target.value)}
+                value={localFilters.startDate}
+                onChange={(e) => setLocalFilters({ startDate: e.target.value })}
                 className="h-8 text-sm"
                 disabled={loading || !isAdminChecked}
               />
@@ -335,8 +328,8 @@ export default function Clients() {
               </label>
               <Input
                 type="date"
-                value={localEndDate}
-                onChange={(e) => setLocalEndDate(e.target.value)}
+                value={localFilters.endDate}
+                onChange={(e) => setLocalFilters({ endDate: e.target.value })}
                 className="h-8 text-sm"
                 disabled={loading || !isAdminChecked}
               />
@@ -353,7 +346,7 @@ export default function Clients() {
                 <Filter className="h-3.5 w-3.5 mr-1.5" />
                 Filter
               </Button>
-              {(selectedClientName !== 'all' || selectedAgent !== 'all' || selectedStatus !== 'all' || selectedStartDate || selectedEndDate) && (
+              {(appliedFilters.clientName !== 'all' || appliedFilters.agent !== 'all' || appliedFilters.status !== 'all' || appliedFilters.startDate || appliedFilters.endDate) && (
                 <Button
                   onClick={handleClearFilters}
                   variant="outline"

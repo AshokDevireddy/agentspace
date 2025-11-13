@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 
 interface Conversation {
   id: string
@@ -97,11 +98,35 @@ function SMSMessagingPageContent() {
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
 
+  // Persisted filter state using custom hook (for real-time filters, use setAndApply)
+  const [, appliedFilters, , , , setAndApply] = usePersistedFilters(
+    'communications',
+    {
+      searchQuery: "",
+      notificationFilter: 'all' as 'all' | 'lapse' | 'needs_info' | 'drafts',
+      viewMode: 'self' as 'downlines' | 'self'
+    }
+  )
+
+  // For real-time filters, use setAndApply which updates immediately
+  const searchQuery = appliedFilters.searchQuery
+  const notificationFilter = appliedFilters.notificationFilter
+  const viewMode = appliedFilters.viewMode
+
+  const setSearchQuery = (value: string) => {
+    setAndApply({ searchQuery: value })
+  }
+  const setNotificationFilter = (value: 'all' | 'lapse' | 'needs_info' | 'drafts') => {
+    setAndApply({ notificationFilter: value })
+  }
+  const setViewMode = (value: 'downlines' | 'self') => {
+    setAndApply({ viewMode: value })
+  }
+
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [dealDetails, setDealDetails] = useState<DealDetails | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
   const [messageInput, setMessageInput] = useState("")
   const [loading, setLoading] = useState(true)
   const [messagesLoading, setMessagesLoading] = useState(false)
@@ -115,19 +140,23 @@ function SMSMessagingPageContent() {
   const [dealPanelCollapsed, setDealPanelCollapsed] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [isAdminChecked, setIsAdminChecked] = useState(false)
-  const [viewMode, setViewMode] = useState<'downlines' | 'self'>('self')
-  const [notificationFilter, setNotificationFilter] = useState<'all' | 'lapse' | 'needs_info' | 'drafts'>('all')
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
   const [editingDraftBody, setEditingDraftBody] = useState("")
   const [approvingDrafts, setApprovingDrafts] = useState<Set<string>>(new Set())
   const [rejectingDrafts, setRejectingDrafts] = useState<Set<string>>(new Set())
+  const [isHydrated, setIsHydrated] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const conversationRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const messageInputRef = useRef<HTMLTextAreaElement>(null)
 
   // Update showDrafts based on filter selection
   const shouldShowDrafts = notificationFilter === 'drafts'
+
+  // Set hydration flag after mount to prevent SSR/client mismatch
+  useEffect(() => {
+    setIsHydrated(true)
+  }, [])
 
   const filteredConversations = conversations.filter(conv => {
     const matchesSearch = conv.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -879,20 +908,23 @@ function SMSMessagingPageContent() {
           {/* View Mode Toggle with Slider */}
           <div className="relative bg-accent/30 rounded-lg p-1 mb-4">
             <div className="grid grid-cols-2 gap-1 relative">
-              {/* Animated slider background */}
-              <div
-                className={cn(
-                  "absolute h-[calc(100%-8px)] bg-gradient-to-r from-blue-600 to-blue-500 rounded-md transition-all duration-300 ease-in-out top-1 shadow-md",
-                  viewMode === 'self' ? 'left-1 right-[calc(50%+2px)]' : 'left-[calc(50%+2px)] right-1'
-                )}
-              />
+              {/* Animated slider background - only render after hydration to prevent mismatch */}
+              {isHydrated && (
+                <div
+                  className={cn(
+                    "absolute h-[calc(100%-8px)] bg-gradient-to-r from-blue-600 to-blue-500 rounded-md top-1 shadow-md",
+                    "transition-all duration-300 ease-in-out",
+                    viewMode === 'self' ? 'left-1 right-[calc(50%+2px)]' : 'left-[calc(50%+2px)] right-1'
+                  )}
+                />
+              )}
 
               {/* Buttons */}
               <button
                 onClick={() => setViewMode('self')}
                 className={cn(
                   "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
-                  viewMode === 'self'
+                  isHydrated && viewMode === 'self'
                     ? 'text-white'
                     : 'text-muted-foreground hover:text-foreground'
                 )}
@@ -903,7 +935,7 @@ function SMSMessagingPageContent() {
                 onClick={() => setViewMode('downlines')}
                 className={cn(
                   "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
-                  viewMode === 'downlines'
+                  isHydrated && viewMode === 'downlines'
                     ? 'text-white'
                     : 'text-muted-foreground hover:text-foreground'
                 )}

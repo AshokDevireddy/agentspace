@@ -3,10 +3,11 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
-import { Slider } from "@/components/ui/slider"
+import { MonthRangePicker } from "@/components/ui/month-range-picker"
 import { createClient } from "@/lib/supabase/client"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { DollarSign, TrendingUp, Calendar } from "lucide-react"
+import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 
 interface PayoutData {
   month: string
@@ -35,20 +36,36 @@ interface AgentOption {
 export default function ExpectedPayoutsPage() {
   const supabase = createClient()
 
+  // Calculate default date range (current year: Jan to Dec)
+  const getDefaultDateRange = () => {
+    const now = new Date()
+    const currentYear = now.getFullYear()
+
+    // Default to full current year (January to December)
+    const startMonth = `${currentYear}-01`
+    const endMonth = `${currentYear}-12`
+
+    return { startMonth, endMonth }
+  }
+
+  const defaultRange = getDefaultDateRange()
+
+  // Persisted filter state using custom hook
+  // Changed key to 'expected-payouts-v2' to clear old cached data with wrong calculations
+  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters] = usePersistedFilters(
+    'expected-payouts-v2',
+    {
+      startMonth: defaultRange.startMonth,
+      endMonth: defaultRange.endMonth,
+      carrier: "all",
+      agent: ""
+    }
+  )
+
   const [payouts, setPayouts] = useState<PayoutData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-
-  // Filter states (temporary - not applied until filter button clicked)
-  const [tempDateRange, setTempDateRange] = useState<[number, number]>([-12, 12]) // Past, Future
-  const [tempCarrier, setTempCarrier] = useState("all")
-  const [tempAgent, setTempAgent] = useState<string>("")
-
-  // Applied filter states (used for API calls)
-  const [appliedDateRange, setAppliedDateRange] = useState<[number, number]>([-12, 12])
-  const [appliedCarrier, setAppliedCarrier] = useState("all")
-  const [appliedAgent, setAppliedAgent] = useState<string>("")
 
   // Options
   const [carrierOptions, setCarrierOptions] = useState<CarrierOption[]>([{ value: "all", label: "All Carriers" }])
@@ -79,8 +96,11 @@ export default function ExpectedPayoutsPage() {
         if (!userData) return
 
         setCurrentUserId(userData.id)
-        setTempAgent(userData.id)
-        setAppliedAgent(userData.id) // Default to current user
+        // Set default agent if not already set (first time load)
+        if (!appliedFilters.agent) {
+          setLocalFilters({ agent: userData.id })
+          applyFilters() // Apply the default immediately
+        }
 
         // Fetch available agents based on role
         if (userData.role === 'admin') {
@@ -124,7 +144,6 @@ export default function ExpectedPayoutsPage() {
           ])
         }
       } catch (err) {
-        console.error('Error fetching user and agents:', err)
         setError(err instanceof Error ? err.message : 'Failed to load user data')
       }
     }
@@ -135,7 +154,7 @@ export default function ExpectedPayoutsPage() {
   // Fetch payouts data (only when applied filters change)
   useEffect(() => {
     const fetchPayouts = async () => {
-      if (!appliedAgent) return // Wait for agent to be set
+      if (!appliedFilters.agent) return // Wait for agent to be set
 
       try {
         setLoading(true)
@@ -149,14 +168,31 @@ export default function ExpectedPayoutsPage() {
           return
         }
 
-        const [monthsPast, monthsFuture] = appliedDateRange
+        // Calculate months difference from now using proper month arithmetic
+        // Important: We need to calculate from the START of the current month
+        const now = new Date()
+        const nowYear = now.getFullYear()
+        const nowMonth = now.getMonth() // 0-indexed (0 = January)
+
+        // Parse start and end months from the filter (format: "YYYY-MM")
+        const [startYear, startMonthStr] = appliedFilters.startMonth.split('-').map(Number)
+        const [endYear, endMonthStr] = appliedFilters.endMonth.split('-').map(Number)
+        const startMonthIdx = startMonthStr - 1 // Convert to 0-indexed
+        const endMonthIdx = endMonthStr - 1 // Convert to 0-indexed
+
+        // Calculate month differences from current month
+        // For inclusive range: if selecting Jan-Dec, and current is Jan,
+        // we want past=0 (include Jan) and future=11 (include Dec)
+        const monthsPast = (nowYear - startYear) * 12 + (nowMonth - startMonthIdx)
+        const monthsFuture = (endYear - nowYear) * 12 + (endMonthIdx - nowMonth)
+
         const params = new URLSearchParams()
         params.append('months_past', Math.abs(monthsPast).toString())
-        params.append('months_future', monthsFuture.toString())
-        params.append('agent_id', appliedAgent)
+        params.append('months_future', Math.abs(monthsFuture).toString())
+        params.append('agent_id', appliedFilters.agent)
 
-        if (appliedCarrier !== "all") {
-          params.append('carrier_id', appliedCarrier)
+        if (appliedFilters.carrier !== "all") {
+          params.append('carrier_id', appliedFilters.carrier)
         }
 
         const response = await fetch(`/api/expected-payouts?${params.toString()}`, {
@@ -167,18 +203,12 @@ export default function ExpectedPayoutsPage() {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-          console.error('Expected payouts API error:', {
-            status: response.status,
-            statusText: response.statusText,
-            error: errorData
-          })
           throw new Error(errorData.error || errorData.message || 'Failed to fetch expected payouts')
         }
 
         const data = await response.json()
         setPayouts(data.payouts || [])
       } catch (err) {
-        console.error('Error fetching payouts:', err)
         setError(err instanceof Error ? err.message : 'Failed to load payouts')
       } finally {
         setLoading(false)
@@ -186,34 +216,41 @@ export default function ExpectedPayoutsPage() {
     }
 
     fetchPayouts()
-  }, [appliedDateRange, appliedCarrier, appliedAgent])
+  }, [appliedFilters, supabase.auth])
 
   // Apply filters handler
   const handleApplyFilters = () => {
-    setAppliedDateRange(tempDateRange)
-    setAppliedCarrier(tempCarrier)
-    setAppliedAgent(tempAgent)
+    applyFilters()
   }
 
-  // Aggregate data by month for chart
+  // Aggregate data by month for chart - only include months within the selected date range
   const monthlyTotals = payouts.reduce((acc, payout) => {
     const monthKey = payout.month
 
-    if (!acc[monthKey]) {
-      acc[monthKey] = 0
+    // Filter out months outside the selected range
+    // Compare month strings in YYYY-MM format (e.g., "2025-01" >= "2025-01" and <= "2025-12")
+    const payoutMonth = monthKey.substring(0, 7) // Get YYYY-MM from YYYY-MM-DD
+    if (payoutMonth >= appliedFilters.startMonth && payoutMonth <= appliedFilters.endMonth) {
+      if (!acc[monthKey]) {
+        acc[monthKey] = 0
+      }
+      acc[monthKey] += payout.expected_payout
     }
-    acc[monthKey] += payout.expected_payout
 
     return acc
   }, {} as Record<string, number>)
 
   // Convert to array and sort by date
   const chartData = Object.entries(monthlyTotals)
-    .map(([month, totalPayout]) => ({
-      month: new Date(month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-      monthDate: new Date(month), // Keep for sorting
-      totalPayout
-    }))
+    .map(([month, totalPayout]) => {
+      const [year, monthStr] = month.substring(0, 7).split('-')
+      const date = new Date(parseInt(year), parseInt(monthStr) - 1, 1)
+      return {
+        month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+        monthDate: date, // Keep for sorting
+        totalPayout
+      }
+    })
     .sort((a, b) => a.monthDate.getTime() - b.monthDate.getTime())
     .map(({ month, totalPayout }) => ({ month, totalPayout })) // Remove monthDate after sorting
 
@@ -245,8 +282,8 @@ export default function ExpectedPayoutsPage() {
               </label>
               <SimpleSearchableSelect
                 options={agentOptions}
-                value={tempAgent}
-                onValueChange={setTempAgent}
+                value={localFilters.agent}
+                onValueChange={(value) => setLocalFilters({ agent: value })}
                 placeholder="Select agent"
                 searchPlaceholder="Search agents..."
               />
@@ -259,44 +296,26 @@ export default function ExpectedPayoutsPage() {
               </label>
               <SimpleSearchableSelect
                 options={carrierOptions}
-                value={tempCarrier}
-                onValueChange={setTempCarrier}
+                value={localFilters.carrier}
+                onValueChange={(value) => setLocalFilters({ carrier: value })}
                 placeholder="All Carriers"
                 searchPlaceholder="Search carriers..."
               />
             </div>
 
-            {/* Combined Date Range Slider */}
+            {/* Month Range Picker */}
             <div className="flex-[2] min-w-[280px]">
               <label className="block text-sm font-medium text-muted-foreground mb-2">
-                Date Range:{" "}
-                {tempDateRange[0] === 0 ? (
-                  <span className="text-foreground font-semibold">Now</span>
-                ) : (
-                  <span className="text-foreground font-semibold">{Math.abs(tempDateRange[0])}m past</span>
-                )}{" "}
-                to{" "}
-                {tempDateRange[1] === 0 ? (
-                  <span className="text-foreground font-semibold">Now</span>
-                ) : (
-                  <span className="text-foreground font-semibold">{tempDateRange[1]}m future</span>
-                )}
+                Date Range
               </label>
-              <Slider
-                value={tempDateRange}
-                onValueChange={(value) => setTempDateRange(value as [number, number])}
-                min={-12}
-                max={12}
-                step={1}
-                minStepsBetweenThumbs={1}
-                className="w-full"
+              <MonthRangePicker
+                startMonth={localFilters.startMonth}
+                endMonth={localFilters.endMonth}
+                onRangeChange={(startMonth, endMonth) => {
+                  setLocalFilters({ startMonth, endMonth })
+                }}
                 disabled={loading}
               />
-              <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                <span>-12m</span>
-                <span className="text-foreground font-medium">Now</span>
-                <span>+12m</span>
-              </div>
             </div>
 
             {/* Filter Button */}

@@ -99,14 +99,14 @@ export default function BookOfBusiness() {
       leadSource: "all",
       effectiveDateStart: "",
       effectiveDateEnd: "",
-      statusMode: 'active' as 'active' | 'pending' | 'inactive'
+      statusMode: 'all' as 'all' | 'active' | 'pending' | 'inactive'
     },
     ['statusMode'] // Preserve statusMode when clearing filters
   )
 
   // Use persisted status mode - setAndApply updates immediately
   const statusMode = appliedFilters.statusMode
-  const setStatusMode = (value: 'active' | 'pending' | 'inactive') => {
+  const setStatusMode = (value: 'all' | 'active' | 'pending' | 'inactive') => {
     setAndApply({ statusMode: value })
   }
 
@@ -197,7 +197,7 @@ export default function BookOfBusiness() {
       if (appliedFilters.product !== 'all') params.append('product_id', appliedFilters.product)
       if (appliedFilters.client !== 'all') params.append('client_id', appliedFilters.client)
       if (appliedFilters.policyNumber !== 'all') params.append('policy_number', appliedFilters.policyNumber)
-      if (appliedFilters.statusMode) params.append('status_mode', appliedFilters.statusMode)
+      if (appliedFilters.statusMode && appliedFilters.statusMode !== 'all') params.append('status_mode', appliedFilters.statusMode)
       if (appliedFilters.billingCycle !== 'all') params.append('billing_cycle', appliedFilters.billingCycle)
       if (appliedFilters.leadSource !== 'all') params.append('lead_source', appliedFilters.leadSource)
       if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
@@ -366,16 +366,29 @@ export default function BookOfBusiness() {
             <div
               className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out"
               style={{
-                left: statusMode === 'active' ? '4px' : statusMode === 'pending' ? 'calc(33.33% + 2px)' : 'calc(66.66%)',
-                width: 'calc(33.33% - 4px)'
+                left: statusMode === 'all' ? '4px' : statusMode === 'active' ? 'calc(25%)' : statusMode === 'pending' ? 'calc(50%)' : 'calc(75% - 4px)',
+                width: 'calc(25% - 4px)'
               }}
             />
             <div className="relative z-10 flex">
               <button
+                onClick={() => setStatusMode('all')}
+                disabled={loading}
+                className={cn(
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[80px]",
+                  statusMode === 'all'
+                    ? 'text-white'
+                    : 'text-muted-foreground hover:text-foreground',
+                  loading && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                All
+              </button>
+              <button
                 onClick={() => setStatusMode('active')}
                 disabled={loading}
                 className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[80px]",
                   statusMode === 'active'
                     ? 'text-white'
                     : 'text-muted-foreground hover:text-foreground',
@@ -388,7 +401,7 @@ export default function BookOfBusiness() {
                 onClick={() => setStatusMode('pending')}
                 disabled={loading}
                 className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[80px]",
                   statusMode === 'pending'
                     ? 'text-white'
                     : 'text-muted-foreground hover:text-foreground',
@@ -401,7 +414,7 @@ export default function BookOfBusiness() {
                 onClick={() => setStatusMode('inactive')}
                 disabled={loading}
                 className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[80px]",
                   statusMode === 'inactive'
                     ? 'text-white'
                     : 'text-muted-foreground hover:text-foreground',

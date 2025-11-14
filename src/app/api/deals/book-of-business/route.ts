@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     const productId = searchParams.get('product_id');
     const clientId = searchParams.get('client_id');
     const policyNumber = searchParams.get('policy_number');
-    const status = searchParams.get('status');
+    const statusMode = searchParams.get('status_mode');
     const billingCycle = searchParams.get('billing_cycle');
     const leadSource = searchParams.get('lead_source');
     const effectiveDateStart = searchParams.get('effective_date_start');
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
       product_id: productId && productId !== 'all' ? productId : null,
       client_id: clientId && clientId !== 'all' ? clientId : null,
       policy_number: policyNumber && policyNumber !== 'all' ? policyNumber.trim() : null,
-      status: status && status !== 'all' ? status : null,
+      status_mode: statusMode || null,
       billing_cycle: billingCycle && billingCycle !== 'all' ? billingCycle : null,
       lead_source: leadSource && leadSource !== 'all' ? leadSource : null,
       effective_date_start: effectiveDateStart || null,

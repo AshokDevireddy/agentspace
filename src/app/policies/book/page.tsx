@@ -4,12 +4,18 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { AsyncSearchableSelect } from "@/components/ui/async-searchable-select"
-import { Loader2, Filter, X } from "lucide-react"
+import { DateRangePicker } from "@/components/ui/date-range-picker"
+import { Loader2, Plus, X } from "lucide-react"
 import { PolicyDetailsModal } from "@/components/modals/policy-details-modal"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
+import { cn } from "@/lib/utils"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 
 // Types for the API responses
 interface Deal {
@@ -81,7 +87,7 @@ const billingCycleColors: Record<string, string> = {
 
 export default function BookOfBusiness() {
   // Persisted filter state using custom hook
-  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters] = usePersistedFilters(
+  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply] = usePersistedFilters(
     'book-of-business',
     {
       agent: "all",
@@ -89,13 +95,45 @@ export default function BookOfBusiness() {
       product: "all",
       client: "all",
       policyNumber: "all",
-      status: "all",
       billingCycle: "all",
       leadSource: "all",
       effectiveDateStart: "",
-      effectiveDateEnd: ""
-    }
+      effectiveDateEnd: "",
+      statusMode: 'active' as 'active' | 'pending' | 'inactive'
+    },
+    ['statusMode'] // Preserve statusMode when clearing filters
   )
+
+  // Use persisted status mode - setAndApply updates immediately
+  const statusMode = appliedFilters.statusMode
+  const setStatusMode = (value: 'active' | 'pending' | 'inactive') => {
+    setAndApply({ statusMode: value })
+  }
+
+  // Track which filters are visible (showing input fields) - load from localStorage
+  const [visibleFilters, setVisibleFilters] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('book-of-business-visible-filters')
+      if (stored) {
+        try {
+          return new Set(JSON.parse(stored))
+        } catch {
+          return new Set()
+        }
+      }
+    }
+    return new Set()
+  })
+
+  // Track if the add filter menu is open
+  const [addFilterMenuOpen, setAddFilterMenuOpen] = useState(false)
+
+  // Persist visible filters to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('book-of-business-visible-filters', JSON.stringify(Array.from(visibleFilters)))
+    }
+  }, [visibleFilters])
 
   // Modal state
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null)
@@ -109,7 +147,7 @@ export default function BookOfBusiness() {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     carriers: [{ value: "all", label: "All Carriers" }],
     products: [{ value: "all", label: "All Products" }],
-    statuses: [{ value: "all", label: "All Statuses" }],
+    statuses: [],
     billingCycles: [{ value: "all", label: "All Billing Cycles" }],
     leadSources: [{ value: "all", label: "All Lead Sources" }]
   })
@@ -130,7 +168,7 @@ export default function BookOfBusiness() {
         setFilterOptions({
           carriers: data.carriers || [{ value: "all", label: "All Carriers" }],
           products: data.products || [{ value: "all", label: "All Products" }],
-          statuses: data.statuses || [{ value: "all", label: "All Statuses" }],
+          statuses: [],
           billingCycles: data.billingCycles || [{ value: "all", label: "All Billing Cycles" }],
           leadSources: data.leadSources || [{ value: "all", label: "All Lead Sources" }]
         })
@@ -159,7 +197,7 @@ export default function BookOfBusiness() {
       if (appliedFilters.product !== 'all') params.append('product_id', appliedFilters.product)
       if (appliedFilters.client !== 'all') params.append('client_id', appliedFilters.client)
       if (appliedFilters.policyNumber !== 'all') params.append('policy_number', appliedFilters.policyNumber)
-      if (appliedFilters.status !== 'all') params.append('status', appliedFilters.status)
+      if (appliedFilters.statusMode) params.append('status_mode', appliedFilters.statusMode)
       if (appliedFilters.billingCycle !== 'all') params.append('billing_cycle', appliedFilters.billingCycle)
       if (appliedFilters.leadSource !== 'all') params.append('lead_source', appliedFilters.leadSource)
       if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
@@ -205,6 +243,8 @@ export default function BookOfBusiness() {
   // Clear all filters
   const handleClearFilters = () => {
     clearFilters()
+    // Also hide all filter input fields
+    setVisibleFilters(new Set())
   }
 
   const handleRowClick = (deal: Deal) => {
@@ -250,31 +290,128 @@ export default function BookOfBusiness() {
     return phone;
   }
 
+  const hasActiveFilters =
+    appliedFilters.agent !== 'all' ||
+    appliedFilters.carrier !== 'all' ||
+    appliedFilters.product !== 'all' ||
+    appliedFilters.client !== 'all' ||
+    appliedFilters.policyNumber !== 'all' ||
+    appliedFilters.billingCycle !== 'all' ||
+    appliedFilters.leadSource !== 'all' ||
+    appliedFilters.effectiveDateStart ||
+    appliedFilters.effectiveDateEnd
+
+  const addFilter = (filterName: string) => {
+    const newVisibleFilters = new Set(visibleFilters)
+    newVisibleFilters.add(filterName)
+    setVisibleFilters(newVisibleFilters)
+    setAddFilterMenuOpen(false)
+  }
+
+  const removeFilter = (filterName: string) => {
+    const newVisibleFilters = new Set(visibleFilters)
+    newVisibleFilters.delete(filterName)
+    setVisibleFilters(newVisibleFilters)
+
+    // Reset the filter value when removing
+    switch(filterName) {
+      case 'agent':
+        setLocalFilters({ agent: 'all' })
+        break
+      case 'carrier':
+        setLocalFilters({ carrier: 'all' })
+        break
+      case 'product':
+        setLocalFilters({ product: 'all' })
+        break
+      case 'client':
+        setLocalFilters({ client: 'all' })
+        break
+      case 'policyNumber':
+        setLocalFilters({ policyNumber: 'all' })
+        break
+      case 'billingCycle':
+        setLocalFilters({ billingCycle: 'all' })
+        break
+      case 'leadSource':
+        setLocalFilters({ leadSource: 'all' })
+        break
+      case 'dateRange':
+        setLocalFilters({ effectiveDateStart: '', effectiveDateEnd: '' })
+        break
+    }
+  }
+
+  const availableFilters = [
+    { id: 'agent', label: 'Agent' },
+    { id: 'carrier', label: 'Carrier' },
+    { id: 'product', label: 'Product' },
+    { id: 'client', label: 'Client' },
+    { id: 'policyNumber', label: 'Policy #' },
+    { id: 'billingCycle', label: 'Billing Cycle' },
+    { id: 'leadSource', label: 'Lead Source' },
+    { id: 'dateRange', label: 'Date Range' },
+  ]
+
   return (
     <div className="space-y-6 max-w-full overflow-hidden">
-      {/* Header */}
+      {/* Header with Status Slider */}
       <div className="flex items-center justify-between">
         <h1 className="text-4xl font-bold text-gradient">Book of Business</h1>
-        <div className="flex gap-2 items-center">
-          <Button
-            onClick={handleApplyFilters}
-            size="sm"
-            className="btn-gradient h-8 px-4"
-            disabled={loading}
-          >
-            <Filter className="h-3.5 w-3.5 mr-1.5" />
-            Filter
-          </Button>
-          {(appliedFilters.agent !== 'all' || appliedFilters.carrier !== 'all' || appliedFilters.product !== 'all' || appliedFilters.client !== 'all' || appliedFilters.policyNumber !== 'all' || appliedFilters.status !== 'all' || appliedFilters.billingCycle !== 'all' || appliedFilters.leadSource !== 'all' || appliedFilters.effectiveDateStart || appliedFilters.effectiveDateEnd) && (
-            <Button
-              onClick={handleClearFilters}
-              variant="outline"
-              size="sm"
-              className="h-8 px-3"
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          )}
+
+        {/* Status Mode Slider */}
+        <div className="flex items-center gap-4">
+          <div className="relative bg-muted/50 p-1 rounded-lg">
+            {/* Animated background */}
+            <div
+              className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out"
+              style={{
+                left: statusMode === 'active' ? '4px' : statusMode === 'pending' ? 'calc(33.33% + 2px)' : 'calc(66.66%)',
+                width: 'calc(33.33% - 4px)'
+              }}
+            />
+            <div className="relative z-10 flex">
+              <button
+                onClick={() => setStatusMode('active')}
+                disabled={loading}
+                className={cn(
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
+                  statusMode === 'active'
+                    ? 'text-white'
+                    : 'text-muted-foreground hover:text-foreground',
+                  loading && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setStatusMode('pending')}
+                disabled={loading}
+                className={cn(
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
+                  statusMode === 'pending'
+                    ? 'text-white'
+                    : 'text-muted-foreground hover:text-foreground',
+                  loading && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                Pending
+              </button>
+              <button
+                onClick={() => setStatusMode('inactive')}
+                disabled={loading}
+                className={cn(
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
+                  statusMode === 'inactive'
+                    ? 'text-white'
+                    : 'text-muted-foreground hover:text-foreground',
+                  loading && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                Inactive
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -285,155 +422,264 @@ export default function BookOfBusiness() {
         </div>
       )}
 
-      {/* Filters */}
-      <Card className="professional-card filter-container !rounded-md">
-        <CardContent className="p-2">
-          <div className="space-y-2">
-            {/* First Row - 5 filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
-              {/* Agent */}
-              <div>
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+      {/* Filter Controls */}
+      <Card className="professional-card !rounded-md">
+        <CardContent className="p-4">
+          <div className="space-y-4">
+            {/* Add Filter Button and Active Filters */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Popover open={addFilterMenuOpen} onOpenChange={setAddFilterMenuOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />
+                    Add Filter
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-2" align="start">
+                  <div className="space-y-1">
+                    {availableFilters.map((filter) => (
+                      <button
+                        key={filter.id}
+                        onClick={() => addFilter(filter.id)}
+                        disabled={visibleFilters.has(filter.id)}
+                        className={cn(
+                          "w-full text-left px-3 py-2 text-sm rounded-md transition-colors",
+                          visibleFilters.has(filter.id)
+                            ? "opacity-50 cursor-not-allowed"
+                            : "hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                        )}
+                      >
+                        {filter.label}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Filter chips for visible filters */}
+              {visibleFilters.has('agent') && (
+                <Badge variant="outline" className="h-8 px-3">
                   Agent
-                </label>
-                <AsyncSearchableSelect
-                  value={localFilters.agent}
-                  onValueChange={(value) => setLocalFilters({ agent: value })}
-                  placeholder="All Agents"
-                  searchPlaceholder="Type to search agents..."
-                  searchEndpoint="/api/deals/search-agents"
-                />
-              </div>
-
-              {/* Carrier */}
-              <div>
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('agent')}
+                  />
+                </Badge>
+              )}
+              {visibleFilters.has('carrier') && (
+                <Badge variant="outline" className="h-8 px-3">
                   Carrier
-                </label>
-                <SimpleSearchableSelect
-                  options={filterOptions.carriers}
-                  value={localFilters.carrier}
-                  onValueChange={(value) => setLocalFilters({ carrier: value })}
-                  placeholder="All Carriers"
-                  searchPlaceholder="Search..."
-                />
-              </div>
-
-              {/* Product */}
-              <div>
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('carrier')}
+                  />
+                </Badge>
+              )}
+              {visibleFilters.has('product') && (
+                <Badge variant="outline" className="h-8 px-3">
                   Product
-                </label>
-                <SimpleSearchableSelect
-                  options={filterOptions.products}
-                  value={localFilters.product}
-                  onValueChange={(value) => setLocalFilters({ product: value })}
-                  placeholder="All Products"
-                  searchPlaceholder="Search..."
-                />
-              </div>
-
-              {/* Client */}
-              <div>
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('product')}
+                  />
+                </Badge>
+              )}
+              {visibleFilters.has('client') && (
+                <Badge variant="outline" className="h-8 px-3">
                   Client
-                </label>
-                <AsyncSearchableSelect
-                  value={localFilters.client}
-                  onValueChange={(value) => setLocalFilters({ client: value })}
-                  placeholder="All Clients"
-                  searchPlaceholder="Type to search clients..."
-                  searchEndpoint="/api/deals/search-clients"
-                />
-              </div>
-
-              {/* Policy Number */}
-              <div>
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('client')}
+                  />
+                </Badge>
+              )}
+              {visibleFilters.has('policyNumber') && (
+                <Badge variant="outline" className="h-8 px-3">
                   Policy #
-                </label>
-                <AsyncSearchableSelect
-                  value={localFilters.policyNumber}
-                  onValueChange={(value) => setLocalFilters({ policyNumber: value })}
-                  placeholder="All Policy Numbers"
-                  searchPlaceholder="Type to search policy numbers..."
-                  searchEndpoint="/api/deals/search-policy-numbers"
-                />
-              </div>
-            </div>
-
-            {/* Second Row - 5 filters + buttons */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 items-end">
-              {/* Status */}
-              <div>
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
-                  Status
-                </label>
-                <SimpleSearchableSelect
-                  options={filterOptions.statuses}
-                  value={localFilters.status}
-                  onValueChange={(value) => setLocalFilters({ status: value })}
-                  placeholder="All Statuses"
-                  searchPlaceholder="Search..."
-                />
-              </div>
-
-              {/* Billing Cycle */}
-              <div>
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('policyNumber')}
+                  />
+                </Badge>
+              )}
+              {visibleFilters.has('billingCycle') && (
+                <Badge variant="outline" className="h-8 px-3">
                   Billing Cycle
-                </label>
-                <SimpleSearchableSelect
-                  options={filterOptions.billingCycles}
-                  value={localFilters.billingCycle}
-                  onValueChange={(value) => setLocalFilters({ billingCycle: value })}
-                  placeholder="All Billing Cycles"
-                  searchPlaceholder="Search..."
-                />
-              </div>
-
-              {/* Lead Source */}
-              <div>
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('billingCycle')}
+                  />
+                </Badge>
+              )}
+              {visibleFilters.has('leadSource') && (
+                <Badge variant="outline" className="h-8 px-3">
                   Lead Source
-                </label>
-                <SimpleSearchableSelect
-                  options={filterOptions.leadSources}
-                  value={localFilters.leadSource}
-                  onValueChange={(value) => setLocalFilters({ leadSource: value })}
-                  placeholder="All Lead Sources"
-                  searchPlaceholder="Search..."
-                />
-              </div>
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('leadSource')}
+                  />
+                </Badge>
+              )}
+              {visibleFilters.has('dateRange') && (
+                <Badge variant="outline" className="h-8 px-3">
+                  Date Range
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('dateRange')}
+                  />
+                </Badge>
+              )}
 
-              {/* Effective Date Start */}
-              <div>
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
-                  Effective Date Start
-                </label>
-                <Input
-                  type="date"
-                  value={localFilters.effectiveDateStart}
-                  onChange={(e) => setLocalFilters({ effectiveDateStart: e.target.value })}
-                  className="h-8 text-sm"
-                  disabled={loading}
-                />
-              </div>
+              {hasActiveFilters && (
+                <Button
+                  onClick={handleClearFilters}
+                  variant="ghost"
+                  size="sm"
+                  className="h-8"
+                >
+                  Clear All
+                </Button>
+              )}
 
-              {/* Effective Date End */}
-              <div>
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
-                  Effective Date End
-                </label>
-                <Input
-                  type="date"
-                  value={localFilters.effectiveDateEnd}
-                  onChange={(e) => setLocalFilters({ effectiveDateEnd: e.target.value })}
-                  className="h-8 text-sm"
+              <div className="ml-auto">
+                <Button
+                  onClick={handleApplyFilters}
+                  size="sm"
+                  className="btn-gradient h-8 px-4"
                   disabled={loading}
-                />
+                >
+                  Apply Filters
+                </Button>
               </div>
             </div>
+
+            {/* Collapsible Filter Fields */}
+            {visibleFilters.size > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {visibleFilters.has('agent') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Agent
+                    </label>
+                    <AsyncSearchableSelect
+                      value={localFilters.agent}
+                      onValueChange={(value) => setLocalFilters({ agent: value })}
+                      placeholder="All Agents"
+                      searchPlaceholder="Type to search agents..."
+                      searchEndpoint="/api/deals/search-agents"
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('carrier') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Carrier
+                    </label>
+                    <SimpleSearchableSelect
+                      options={filterOptions.carriers}
+                      value={localFilters.carrier}
+                      onValueChange={(value) => setLocalFilters({ carrier: value })}
+                      placeholder="All Carriers"
+                      searchPlaceholder="Search..."
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('product') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Product
+                    </label>
+                    <SimpleSearchableSelect
+                      options={filterOptions.products}
+                      value={localFilters.product}
+                      onValueChange={(value) => setLocalFilters({ product: value })}
+                      placeholder="All Products"
+                      searchPlaceholder="Search..."
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('client') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Client
+                    </label>
+                    <AsyncSearchableSelect
+                      value={localFilters.client}
+                      onValueChange={(value) => setLocalFilters({ client: value })}
+                      placeholder="All Clients"
+                      searchPlaceholder="Type to search clients..."
+                      searchEndpoint="/api/deals/search-clients"
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('policyNumber') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Policy #
+                    </label>
+                    <AsyncSearchableSelect
+                      value={localFilters.policyNumber}
+                      onValueChange={(value) => setLocalFilters({ policyNumber: value })}
+                      placeholder="All Policy Numbers"
+                      searchPlaceholder="Type to search policy numbers..."
+                      searchEndpoint="/api/deals/search-policy-numbers"
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('billingCycle') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Billing Cycle
+                    </label>
+                    <SimpleSearchableSelect
+                      options={filterOptions.billingCycles}
+                      value={localFilters.billingCycle}
+                      onValueChange={(value) => setLocalFilters({ billingCycle: value })}
+                      placeholder="All Billing Cycles"
+                      searchPlaceholder="Search..."
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('leadSource') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Lead Source
+                    </label>
+                    <SimpleSearchableSelect
+                      options={filterOptions.leadSources}
+                      value={localFilters.leadSource}
+                      onValueChange={(value) => setLocalFilters({ leadSource: value })}
+                      placeholder="All Lead Sources"
+                      searchPlaceholder="Search..."
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('dateRange') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Effective Date Range
+                    </label>
+                    <DateRangePicker
+                      startDate={localFilters.effectiveDateStart}
+                      endDate={localFilters.effectiveDateEnd}
+                      onRangeChange={(start, end) => setLocalFilters({ effectiveDateStart: start, effectiveDateEnd: end })}
+                      disabled={loading}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

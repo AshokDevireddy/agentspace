@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
     const leadSource = searchParams.get('lead_source');
     const effectiveDateStart = searchParams.get('effective_date_start');
     const effectiveDateEnd = searchParams.get('effective_date_end');
+    const view = searchParams.get('view') || 'downlines';
     const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 200);
     const cursorCreatedAt = searchParams.get('cursor_created_at');
     const cursorId = searchParams.get('cursor_id');
@@ -62,7 +63,8 @@ export async function GET(req: NextRequest) {
       p_filters: filters,
       p_limit: limit,
       p_cursor_id: cursorId,
-      p_cursor_created_at: cursorCreatedAt
+      p_cursor_created_at: cursorCreatedAt,
+      p_view: view
     })
 
     if (rpcError) {

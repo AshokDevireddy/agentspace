@@ -18,7 +18,6 @@ import {
   MessageSquare,
   ExternalLink,
   BookOpen,
-  UserCheck,
   Sparkles,
   FolderOpen,
   DollarSign
@@ -29,7 +28,6 @@ const navigationItems = [
   { name: "Dashboard", href: "/", icon: Home },
   { name: "Scoreboard", href: "/scoreboard", icon: BarChart3 },
   { name: "Agents", href: "/agents", icon: Users },
-  { name: "Clients", href: "/clients", icon: UserCheck },
   { name: "Post a Deal", href: "/policies/post", icon: FileText },
   { name: "Book of Business", href: "/policies/book", icon: BookOpen },
   { name: "Communication", href: "/communications/sms", icon: MessageSquare },

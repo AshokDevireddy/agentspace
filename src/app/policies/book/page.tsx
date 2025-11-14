@@ -99,15 +99,22 @@ export default function BookOfBusiness() {
       leadSource: "all",
       effectiveDateStart: "",
       effectiveDateEnd: "",
-      statusMode: 'all' as 'all' | 'active' | 'pending' | 'inactive'
+      statusMode: 'all' as 'all' | 'active' | 'pending' | 'inactive',
+      viewMode: 'downlines' as 'downlines' | 'self'
     },
-    ['statusMode'] // Preserve statusMode when clearing filters
+    ['statusMode', 'viewMode'] // Preserve statusMode and viewMode when clearing filters
   )
 
   // Use persisted status mode - setAndApply updates immediately
   const statusMode = appliedFilters.statusMode
   const setStatusMode = (value: 'all' | 'active' | 'pending' | 'inactive') => {
     setAndApply({ statusMode: value })
+  }
+
+  // Use persisted view mode - setAndApply updates immediately
+  const viewMode = appliedFilters.viewMode
+  const setViewMode = (value: 'downlines' | 'self') => {
+    setAndApply({ viewMode: value })
   }
 
   // Track which filters are visible (showing input fields) - load from localStorage
@@ -202,6 +209,7 @@ export default function BookOfBusiness() {
       if (appliedFilters.leadSource !== 'all') params.append('lead_source', appliedFilters.leadSource)
       if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
       if (appliedFilters.effectiveDateEnd) params.append('effective_date_end', appliedFilters.effectiveDateEnd)
+      if (appliedFilters.viewMode) params.append('view', appliedFilters.viewMode)
       params.append('limit', '50')
       if (!reset && nextCursorRef.current) {
         params.append('cursor_created_at', nextCursorRef.current.cursor_created_at)
@@ -355,12 +363,52 @@ export default function BookOfBusiness() {
 
   return (
     <div className="space-y-6 max-w-full overflow-hidden">
-      {/* Header with Status Slider */}
+      {/* Header with Status Slider and View Mode Slider */}
       <div className="flex items-center justify-between">
         <h1 className="text-4xl font-bold text-gradient">Book of Business</h1>
 
-        {/* Status Mode Slider */}
         <div className="flex items-center gap-4">
+          {/* View Mode Slider */}
+          <div className="relative bg-muted/50 p-1 rounded-lg">
+            {/* Animated background */}
+            <div
+              className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out"
+              style={{
+                left: viewMode === 'self' ? '4px' : 'calc(50%)',
+                width: 'calc(50% - 4px)'
+              }}
+            />
+            <div className="relative z-10 flex">
+              <button
+                onClick={() => setViewMode('self')}
+                disabled={loading}
+                className={cn(
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px]",
+                  viewMode === 'self'
+                    ? 'text-white'
+                    : 'text-muted-foreground hover:text-foreground',
+                  loading && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                Just Me
+              </button>
+              <button
+                onClick={() => setViewMode('downlines')}
+                disabled={loading}
+                className={cn(
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px]",
+                  viewMode === 'downlines'
+                    ? 'text-white'
+                    : 'text-muted-foreground hover:text-foreground',
+                  loading && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                Downlines
+              </button>
+            </div>
+          </div>
+
+          {/* Status Mode Slider */}
           <div className="relative bg-muted/50 p-1 rounded-lg">
             {/* Animated background */}
             <div

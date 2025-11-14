@@ -9,6 +9,7 @@ import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
 import { CreateConversationModal } from "@/components/modals/create-conversation-modal"
 import { DraftListView } from "@/components/sms/draft-list-view"
+import { InitialsAvatar } from "@/components/ui/initials-avatar"
 import {
   Search,
   Send,
@@ -315,11 +316,13 @@ function SMSMessagingPageContent() {
     }, 500) // Wait 500ms before refreshing
   }, [fetchConversations])
 
-  const fetchMessages = async (conversationId: string) => {
+  const fetchMessages = useCallback(async (conversationId: string) => {
     try {
       setMessagesLoading(true)
+      // Use same view mode logic as conversations
+      const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
       const response = await fetch(
-        `/api/sms/messages?conversationId=${conversationId}`,
+        `/api/sms/messages?conversationId=${conversationId}&view=${effectiveViewMode}`,
         { credentials: 'include' }
       )
 
@@ -341,7 +344,7 @@ function SMSMessagingPageContent() {
     } finally {
       setMessagesLoading(false)
     }
-  }
+  }, [isAdmin, viewMode])
 
   const fetchDealDetails = async (dealId: string) => {
     try {
@@ -1009,8 +1012,8 @@ function SMSMessagingPageContent() {
                 )}
               >
                 <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center flex-shrink-0 relative">
-                    <UserCircle className="h-8 w-8 text-primary" />
+                  <div className="relative">
+                    <InitialsAvatar name={conversation.clientName} size="md" />
                     {conversation.unreadCount > 0 && (
                       <div className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
                         {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
@@ -1065,9 +1068,7 @@ function SMSMessagingPageContent() {
             <div className="p-4 bg-card border-b border-border">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center">
-                    <UserCircle className="h-6 w-6 text-primary" />
-                  </div>
+                  <InitialsAvatar name={selectedConversation.clientName} size="sm" />
                   <div>
                     <h2 className="font-semibold text-foreground">{selectedConversation.clientName}</h2>
                     <p className="text-sm text-muted-foreground">{selectedConversation.clientPhone}</p>

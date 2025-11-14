@@ -33,9 +33,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get conversationId from query params
+    // Get conversationId and view from query params
     const searchParams = request.nextUrl.searchParams;
     const conversationId = searchParams.get('conversationId');
+    const view = searchParams.get('view') || 'downlines';
 
     if (!conversationId) {
       return NextResponse.json(
@@ -46,7 +47,8 @@ export async function GET(request: NextRequest) {
 
     const { data: messages, error: rpcError } = await supabase.rpc('get_conversation_messages', {
       p_user_id: (userData as any).id,
-      p_conversation_id: conversationId
+      p_conversation_id: conversationId,
+      p_view: view
     });
 
     if (rpcError) {

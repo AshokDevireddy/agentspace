@@ -23,6 +23,21 @@ interface PayoutData {
   expected_payout: number
 }
 
+interface ProductionBreakdown {
+  your: {
+    payouts: PayoutData[]
+    total: number
+    count: number
+  }
+  downline: {
+    payouts: PayoutData[]
+    total: number
+    count: number
+  }
+  total: number
+  totalCount: number
+}
+
 interface CarrierOption {
   value: string
   label: string
@@ -63,6 +78,7 @@ export default function ExpectedPayoutsPage() {
   )
 
   const [payouts, setPayouts] = useState<PayoutData[]>([])
+  const [production, setProduction] = useState<ProductionBreakdown | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -208,6 +224,7 @@ export default function ExpectedPayoutsPage() {
 
         const data = await response.json()
         setPayouts(data.payouts || [])
+        setProduction(data.production || null)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load payouts')
       } finally {
@@ -374,40 +391,40 @@ export default function ExpectedPayoutsPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  ${totalExpectedPayout.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${(production?.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Based on {payouts.length} deals
+                  Based on {production?.totalCount || 0} deals
                 </p>
               </CardContent>
             </Card>
 
             <Card className="professional-card">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Average Per Month</CardTitle>
+                <CardTitle className="text-sm font-medium">Your Production</CardTitle>
                 <TrendingUp className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  ${averagePerMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${(production?.your.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Across {uniqueMonths} months
+                  From {production?.your.count || 0} deals you wrote
                 </p>
               </CardContent>
             </Card>
 
             <Card className="professional-card">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Active Deals</CardTitle>
+                <CardTitle className="text-sm font-medium">Downline Production</CardTitle>
                 <Calendar className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {payouts.length}
+                  ${(production?.downline.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Pending & active policies
+                  From {production?.downline.count || 0} downline deals
                 </p>
               </CardContent>
             </Card>

@@ -29,6 +29,8 @@ interface Deal {
   appNumber: string
   clientName: string
   clientPhone: string
+  phoneHidden?: boolean
+  agentId?: string
   effectiveDate: string
   annualPremium: string
   leadSource: string
@@ -839,9 +841,16 @@ export default function BookOfBusiness() {
                         <td>
                           <div className="flex flex-col gap-0.5">
                             <span className="text-sm font-medium">{deal.clientName}</span>
-                            {deal.clientPhone && (
+                            {deal.phoneHidden ? (
+                              <Badge
+                                className="bg-yellow-500/20 text-yellow-600 border-yellow-500/30 text-xs w-fit"
+                                variant="outline"
+                              >
+                                Hidden
+                              </Badge>
+                            ) : deal.clientPhone ? (
                               <span className="text-xs text-muted-foreground">{formatPhoneNumber(deal.clientPhone)}</span>
-                            )}
+                            ) : null}
                           </div>
                         </td>
                         <td>
@@ -910,6 +919,7 @@ export default function BookOfBusiness() {
           onOpenChange={handleModalClose}
           dealId={selectedDealId}
           onUpdate={handlePolicyUpdate}
+          viewMode={viewMode}
         />
       )}
     </div>

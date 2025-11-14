@@ -16,6 +16,7 @@ interface PolicyDetailsModalProps {
   onOpenChange: (open: boolean) => void
   dealId: string
   onUpdate?: () => void
+  viewMode?: 'self' | 'downlines'
 }
 
 interface Message {
@@ -55,7 +56,7 @@ const getStatusColor = (status: string) => {
   return "bg-slate-500 text-white border-slate-600";
 }
 
-export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: PolicyDetailsModalProps) {
+export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewMode = 'downlines' }: PolicyDetailsModalProps) {
   const [deal, setDeal] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -110,7 +111,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
   const fetchDealDetails = async () => {
     setLoading(true)
     try {
-      const response = await fetch(`/api/deals/${dealId}`, {
+      const response = await fetch(`/api/deals/${dealId}?view=${viewMode}`, {
         credentials: 'include'
       })
 
@@ -390,12 +391,22 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate }: Pol
                         Client Phone
                       </label>
                       {isEditing ? (
-                        <Input
-                          type="text"
-                          value={editedData?.client_phone || ''}
-                          onChange={(e) => setEditedData({ ...editedData, client_phone: e.target.value })}
-                          className="mt-1"
-                        />
+                        deal.phone_hidden ? (
+                          <Badge className="bg-yellow-500/20 text-yellow-600 border-yellow-500/30">
+                            Hidden
+                          </Badge>
+                        ) : (
+                          <Input
+                            type="text"
+                            value={editedData?.client_phone || ''}
+                            onChange={(e) => setEditedData({ ...editedData, client_phone: e.target.value })}
+                            className="mt-1"
+                          />
+                        )
+                      ) : deal.phone_hidden ? (
+                        <Badge className="bg-yellow-500/20 text-yellow-600 border-yellow-500/30">
+                          Hidden
+                        </Badge>
                       ) : (
                         <p className="text-lg font-semibold text-foreground">{deal.client_phone || 'N/A'}</p>
                       )}

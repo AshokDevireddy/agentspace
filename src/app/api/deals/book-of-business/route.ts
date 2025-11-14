@@ -72,37 +72,50 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: rpcError.message }, { status: 500 })
     }
 
-    const transformedDeals = (deals || []).map((deal: any) => ({
-      id: deal.id,
-      carrierId: deal.carrier_id || '',
-      date: deal.created_at
-        ? new Date(deal.created_at).toLocaleDateString('en-US', {
-            month: 'numeric',
-            day: 'numeric',
-            year: '2-digit'
-          })
-        : 'N/A',
-      agent: deal.agent_last_name
-        ? `${deal.agent_last_name}, ${deal.agent_first_name || 'Agent'}`
-        : 'Unknown, Agent',
-      carrier: deal.carrier_display_name || 'Unknown Carrier',
-      product: deal.product_name || 'Unknown Product',
-      policyNumber: deal.policy_number || '',
-      appNumber: deal.application_number || '',
-      clientName: deal.client_name,
-      clientPhone: deal.client_phone || '',
-      effectiveDate: deal.policy_effective_date
-        ? new Date(deal.policy_effective_date).toLocaleDateString('en-US', {
-            month: 'numeric',
-            day: 'numeric',
-            year: '2-digit'
-          })
-        : 'N/A',
-      annualPremium: `$${Number(deal.annual_premium || 0).toFixed(2)}`,
-      billingCycle: deal.billing_cycle || '',
-      leadSource: deal.lead_source || '',
-      status: deal.status || 'draft'
-    }))
+    // Check if user is admin
+    const isAdmin = currentUser.perm_level === 'admin' || currentUser.role === 'admin';
+
+    const transformedDeals = (deals || []).map((deal: any) => {
+      // Determine if phone should be hidden
+      // Hide if: view is 'downlines' AND user is not admin AND user is not the writing agent AND deal is active/pending
+      const isWritingAgent = deal.agent_id === currentUser.id;
+      const isActiveOrPending = deal.status_impact === 'positive' || deal.status_impact === 'neutral';
+      const shouldHidePhone = view === 'downlines' && !isAdmin && !isWritingAgent && isActiveOrPending;
+
+      return {
+        id: deal.id,
+        carrierId: deal.carrier_id || '',
+        date: deal.created_at
+          ? new Date(deal.created_at).toLocaleDateString('en-US', {
+              month: 'numeric',
+              day: 'numeric',
+              year: '2-digit'
+            })
+          : 'N/A',
+        agent: deal.agent_last_name
+          ? `${deal.agent_last_name}, ${deal.agent_first_name || 'Agent'}`
+          : 'Unknown, Agent',
+        carrier: deal.carrier_display_name || 'Unknown Carrier',
+        product: deal.product_name || 'Unknown Product',
+        policyNumber: deal.policy_number || '',
+        appNumber: deal.application_number || '',
+        clientName: deal.client_name,
+        clientPhone: shouldHidePhone ? 'HIDDEN' : (deal.client_phone || ''),
+        phoneHidden: shouldHidePhone,
+        agentId: deal.agent_id,
+        effectiveDate: deal.policy_effective_date
+          ? new Date(deal.policy_effective_date).toLocaleDateString('en-US', {
+              month: 'numeric',
+              day: 'numeric',
+              year: '2-digit'
+            })
+          : 'N/A',
+        annualPremium: `$${Number(deal.annual_premium || 0).toFixed(2)}`,
+        billingCycle: deal.billing_cycle || '',
+        leadSource: deal.lead_source || '',
+        status: deal.status || 'draft'
+      };
+    })
 
     const last = (deals || [])[deals.length - 1]
     const nextCursor = last

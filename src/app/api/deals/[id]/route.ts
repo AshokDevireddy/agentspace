@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, createServerClient } from "@/lib/supabase/server";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createAdminClient();
+  const admin = createAdminClient();
+  const server = await createServerClient();
+
   try {
     const { id: dealId } = await params;
 
@@ -13,8 +15,33 @@ export async function GET(
       return NextResponse.json({ error: "Deal ID is required" }, { status: 400 });
     }
 
+    // Get current user
+    const {
+      data: { user },
+    } = await server.auth.getUser();
+
+    if (!user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Map auth user to `users` row
+    const { data: currentUser, error: currentUserError } = await admin
+      .from('users')
+      .select('id, agency_id, perm_level, role, is_admin')
+      .eq('auth_user_id', user.id)
+      .single();
+
+    if (currentUserError || !currentUser) {
+      console.error('Error fetching current user:', currentUserError);
+      return NextResponse.json({ error: 'Failed to resolve current user' }, { status: 500 });
+    }
+
+    // Get view mode from query parameter
+    const { searchParams } = new URL(req.url);
+    const view = searchParams.get('view') || 'downlines';
+
     // Fetch deal with related agent, carrier, and product information
-    const { data: deal, error } = await supabase
+    const { data: deal, error } = await admin
       .from("deals")
       .select(`
         *,
@@ -33,7 +60,30 @@ export async function GET(
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ deal }, { status: 200 });
+    // Fetch status_mapping separately
+    const { data: statusMapping } = await admin
+      .from("status_mapping")
+      .select("impact")
+      .eq("carrier_id", deal.carrier_id)
+      .eq("raw_status", deal.status)
+      .maybeSingle();
+
+    // Determine if phone should be hidden
+    const isAdmin = currentUser.perm_level === 'admin' || currentUser.role === 'admin' || currentUser.is_admin;
+    const isWritingAgent = deal.agent_id === currentUser.id;
+    const statusImpact = statusMapping?.impact;
+    const isActiveOrPending = statusImpact === 'positive' || statusImpact === 'neutral';
+    const shouldHidePhone = view === 'downlines' && !isAdmin && !isWritingAgent && isActiveOrPending;
+
+    // Mask phone if needed
+    const dealWithMaskedPhone = {
+      ...deal,
+      client_phone: shouldHidePhone ? 'HIDDEN' : deal.client_phone,
+      phone_hidden: shouldHidePhone,
+      is_writing_agent: isWritingAgent
+    };
+
+    return NextResponse.json({ deal: dealWithMaskedPhone }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || "Failed to fetch deal" },

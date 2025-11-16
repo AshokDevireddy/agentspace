@@ -1918,11 +1918,7 @@ export default function ConfigurationPage() {
                         </div>
 
                         {/* Info about color extraction */}
-                        <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                          <p className="text-sm text-blue-800">
-                            <strong>💡 Tip:</strong> When you upload a logo, we'll automatically suggest a color based on your logo's colors!
-                          </p>
-                        </div>
+
                       </div>
                     </div>
 

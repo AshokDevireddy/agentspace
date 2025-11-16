@@ -2,7 +2,6 @@
 
 import React from "react"
 import UploadPolicyReportsModal from "@/components/modals/upload-policy-reports-modal"
-import DownlineProductionChart from "@/components/downline-production-chart"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -304,19 +303,9 @@ function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
 }
 
 function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
-	// Handle full circle (360 degrees) - SVG arcs can't draw a full 360 in one command
-	const angleDiff = endAngle - startAngle
-	if (Math.abs(angleDiff) >= 360 || Math.abs(angleDiff - 360) < 0.001) {
-		// For a full circle, draw using two 180-degree arcs without the center-to-edge line
-		// Start at a point on the circle, draw two arcs to complete the circle, then close to center
-		const start = polarToCartesian(cx, cy, r, startAngle)
-		const midPoint = polarToCartesian(cx, cy, r, startAngle + 180)
-		// Move to start point, draw two arcs to complete circle, then line to center and close
-		return [`M ${start.x} ${start.y}`, `A ${r} ${r} 0 1 0 ${midPoint.x} ${midPoint.y}`, `A ${r} ${r} 0 1 0 ${start.x} ${start.y}`, `L ${cx} ${cy}`, "Z"].join(" ")
-	}
 	const start = polarToCartesian(cx, cy, r, endAngle)
 	const end = polarToCartesian(cx, cy, r, startAngle)
-	const largeArcFlag = angleDiff <= 180 ? 0 : 1
+	const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1
 	return [`M ${cx} ${cy}`, `L ${start.x} ${start.y}`, `A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`, "Z"].join(" ")
 }
 
@@ -371,14 +360,13 @@ export default function AnalyticsTestPage() {
 	const [carrierFilter, setCarrierFilter] = React.useState<string>("ALL")
 	const [selectedCarrier, setSelectedCarrier] = React.useState<string | null>(null)
 	const [hoverInfo, setHoverInfo] = React.useState<null | { x: number; y: number; label: string; submitted: number; sharePct: number; persistencyPct: number; active: number }>(null)
-	const [hoverStatusInfo, setHoverStatusInfo] = React.useState<null | { x: number; y: number; status: string; count: number; pct: number; groupedStatuses?: Array<{ status: string; count: number; pct: number }> }>(null)
-	const [hoverBreakdownInfo, setHoverBreakdownInfo] = React.useState<null | { x: number; y: number; label: string; value: number; pct: number; groupedStates?: Array<{ label: string; value: number; pct: number }>; groupedAgeBands?: Array<{ label: string; value: number; pct: number }> }>(null)
+	const [hoverStatusInfo, setHoverStatusInfo] = React.useState<null | { x: number; y: number; status: string; count: number; pct: number }>(null)
+	const [hoverBreakdownInfo, setHoverBreakdownInfo] = React.useState<null | { x: number; y: number; label: string; value: number; pct: number }>(null)
 	const [hoverPersistencyInfo, setHoverPersistencyInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
 	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; avgPremium?: number }>(null)
 	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
-	const [userId, setUserId] = React.useState<string | null>(null)
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
 	React.	useEffect(() => {
@@ -409,10 +397,7 @@ export default function AnalyticsTestPage() {
                 console.log("userRow", userRow)
                 console.log("user_id", userRow.id)
 
-				if (isMounted) {
-					setAnalyticsData(rpcData as AnalyticsTestValue)
-					setUserId(userRow.id)
-				}
+				if (isMounted) setAnalyticsData(rpcData as AnalyticsTestValue)
 			} catch (_) {
 				// swallow for now; can add toast/logging later
 			}
@@ -477,10 +462,8 @@ export default function AnalyticsTestPage() {
 		}
 	}, [periods, carrierFilter])
 
-// Setting colors for cumulative trend line here
 const CUMULATIVE_COLOR = "#8b5cf6" // Purple for cumulative
 
-// Setting colors for carrier charts here - static mapping for consistent carrier colors
 // Fixed carrier colors - distinct and consistent
 const CARRIER_COLORS: Record<string, string> = {
     "Aetna": "#2563eb",           // Blue
@@ -497,10 +480,8 @@ const CARRIER_COLORS: Record<string, string> = {
     "Ethos": "#6366f1",           // Indigo
     "FG Annuities": "#22c55e",    // Emerald
     "Foresters": "#eab308",       // Yellow
-    "Foresters Financial": "#eab308", // Yellow (alias)
     "Legal General": "#06b6d4",   // Sky Blue
     "Liberty Bankers": "#a855f7", // Purple (not cumulative purple)
-    "Liberty Bankers Life (LBL)": "#a855f7", // Purple (alias)
     "Mutual Omaha": "#f43f5e",    // Rose
     "National Life": "#059669",   // Green-600
     "SBLI": "#0ea5e9",            // Light Blue
@@ -508,131 +489,13 @@ const CARRIER_COLORS: Record<string, string> = {
     "United Home Life": "#34d399", // Emerald-400
 }
 
-// Setting colors for status breakdown by carrier here - static mapping for known statuses per carrier
-// Maps carrier name -> status -> color hex
-const CARRIER_STATUS_COLORS: Record<string, Record<string, string>> = {
-	"Aetna": {
-	  "Active": "#2E7D32",
-	  "Pending": "#FFA000",
-	  "Closed": "#616161",
-	  "Withdrawn": "#8D6E63",
-	  "Reissue": "#3949AB",
-	  "Decline": "#5C6BC0",
-	  "Reject": "#42A5F5",
-	  "LM App Decline": "#7E57C2",
-	  "Rescind": "#FBC02D",
-	  "Lapsed": "#FFB74D",
-	  "Terminated": "#D32F2F",
-	  "Not Taken": "#BA68C8",
-	  "Issued Not In Force": "#4DB6AC"
-	},
-	"Aflac": {
-	  "Active": "#2E7D32",
-	  "Pending": "#FFA000",
-	  "Closed": "#616161",
-	  "Withdrawn": "#8D6E63",
-	  "Reissue": "#5C6BC0",
-	  "Decline": "#42A5F5",
-	  "Reject": "#7E57C2",
-	  "LM App Decline": "#FBC02D",
-	  "Rescind": "#FFB74D",
-	  "Lapsed": "#4DB6AC",
-	  "Terminated": "#D32F2F",
-	  "Not Taken": "#BA68C8",
-	  "Issued Not In Force": "#26A69A"
-	},
-	"American Amicable / Occidental": {
-	  "Active": "#2E7D32",
-	  "Pending": "#FFA000",
-	  "Declined": "#5C6BC0",
-	  "Rescind": "#42A5F5",
-	  "Withdrawn": "#8D6E63",
-	  "Incomplete": "#7E57C2",
-	  "NeedReqmnt": "#FBC02D",
-	  "Act-Pastdue": "#FFB74D",
-	  "Act-Ret Item": "#4DB6AC",
-	  "IssNotPaid": "#26A69A",
-	  "NotTaken": "#BA68C8",
-	  "InfNotTaken": "#AB47BC",
-	  "RPU": "#9E9E9E",
-	  "Terminated": "#D32F2F",
-	  "DeathClaim": "#000000"
-	},
-	"American Home Life Insurance Company": {
-	  "Active": "#2E7D32",
-	  "Pending": "#FFA000",
-	  "Decline": "#5C6BC0",
-	  "LM App Decline": "#42A5F5",
-	  "Withdrawn": "#8D6E63",
-	  "Closed": "#616161",
-	  "Lapsed": "#4DB6AC",
-	  "Terminated": "#D32F2F",
-	  "Not Taken": "#BA68C8",
-	  "Issued Not In Force": "#26A69A"
-	},
-	"Combined": {
-	  "In-Force": "#2E7D32",
-	  "Issued": "#5C6BC0",
-	  "Lapse-Pending": "#FFA000",
-	  "Terminated": "#D32F2F"
-	},
-	"Liberty Bankers Life (LBL)": {
-	  "Premium Paying (Active)": "#2E7D32",
-	  "Issued, Unpaid": "#5C6BC0",
-	  "3rd Notice": "#FFA000",
-	  "Not Taken": "#BA68C8",
-	  "Lapsed": "#4DB6AC",
-	  "Cancelled (Not Issued)": "#616161",
-	  "Terminated": "#D32F2F"
-	},
-	"RNA": {
-	  "CONTRACT ACTIVE": "#2E7D32",
-	  "CON ACT REINSTATEMENT": "#26A69A",
-	  "CON TERM MATURED": "#5C6BC0",
-	  "CON TERM NOT ISSUED": "#9E9E9E",
-	  "CON TERM NOT TAKEN": "#BA68C8",
-	  "CON TERM NT NO PAY": "#AB47BC",
-	  "CON TERM WITHDRAWN": "#8D6E63",
-	  "CON SUS HOME OFFICE": "#FFA000",
-	  "CON TERM INCOMPLETE": "#FFB74D",
-	  "CON TERM INCOMPLETE MIB": "#FBC02D",
-	  "CON TERM POSTPONED": "#4DB6AC",
-	  "CON SUS RETURNED EFT": "#42A5F5",
-	  "CON TERM DECLINED": "#7E57C2",
-	  "CON TERM DEC FULL UNDR": "#64B5F6",
-	  "CON TERM DEC NO RE APP": "#81D4FA",
-	  "CON TERM DEC STAL DTE": "#9575CD",
-	  "CON TERM LAPSED": "#FF8A65",
-	  "CON TERM SURRENDERED": "#26A69A",
-	  "CON SUS DEATH PENDING": "#8E24AA",
-	  "CON TERM DEATH CLAIM": "#000000",
-	  "Terminated": "#D32F2F"
-	},
-	"Foresters Financial": {
-	  "Active": "#2E7D32",
-	  "Active - Preferred Draft Date": "#388E3C",
-	  "Declined": "#5C6BC0",
-	  "Pending": "#FFA000",
-	  "First Premium Pending": "#FFB74D",
-	  "Future Effective Date": "#42A5F5",
-	  "HO/Producer Withdrawn": "#8D6E63",
-	  "Not Proceeded With": "#616161",
-	  "Not Taken": "#BA68C8",
-	  "Lapsed": "#4DB6AC",
-	  "Terminated": "#D32F2F"
-	}
-  };
-  
-
 // Fallback colors for any carrier not in the map
-// Setting colors for dynamic/hashed color generation here - used for status, state, age, and unknown carriers
 const FALLBACK_COLORS = [
     "#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#0891b2", "#14b8a6",
     "#ec4899", "#84cc16", "#f97316", "#6366f1", "#22c55e", "#eab308",
     "#06b6d4", "#f43f5e", "#059669", "#0ea5e9", "#fb923c", "#34d399",
 ]
 
-// Dynamic color function - generates consistent colors based on label hash
 function colorForLabel(label: string, explicitIndex?: number): string {
     if (typeof explicitIndex === "number") return FALLBACK_COLORS[explicitIndex % FALLBACK_COLORS.length]
     let hash = 0
@@ -640,7 +503,6 @@ function colorForLabel(label: string, explicitIndex?: number): string {
     return FALLBACK_COLORS[hash % FALLBACK_COLORS.length]
 }
 
-// Setting colors for carrier pie chart here - uses static mapping first, then falls back to dynamic
 function carrierColorForLabel(label: string, explicitIndex?: number): string {
     // Check if we have a fixed color for this carrier
     if (CARRIER_COLORS[label]) {
@@ -650,52 +512,10 @@ function carrierColorForLabel(label: string, explicitIndex?: number): string {
     return colorForLabel(label, explicitIndex)
 }
 
-// Setting colors for status breakdown by carrier here - uses static mapping first, then falls back to dynamic
-function statusColorForCarrier(carrier: string, status: string): string {
-    // Check if we have a fixed color for this carrier-status combination
-    const carrierStatuses = CARRIER_STATUS_COLORS[carrier]
-    if (carrierStatuses && carrierStatuses[status]) {
-        return carrierStatuses[status]
-    }
-    // Also check common carrier name variations
-    const carrierAliases: Record<string, string[]> = {
-        "Liberty Bankers": ["Liberty Bankers Life (LBL)"],
-        "Foresters": ["Foresters Financial"],
-    }
-    for (const [baseCarrier, aliases] of Object.entries(carrierAliases)) {
-        if (aliases.includes(carrier)) {
-            const baseStatuses = CARRIER_STATUS_COLORS[baseCarrier]
-            if (baseStatuses && baseStatuses[status]) {
-                return baseStatuses[status]
-            }
-        }
-    }
-    // Fallback to dynamic hash-based color
-    return colorForLabel(status)
-}
-
 function displayStateLabel(stateCode: string): string {
     return stateCode === "UNK" ? "Unknown" : stateCode
 }
 
-// Helper function to round Y-axis values to nice round numbers (ending in 0, preferably multiples of 1000, 2000, 10, 100, etc.)
-function roundToNiceNumber(value: number): number {
-    if (value === 0) return 0
-    
-    const magnitude = Math.pow(10, Math.floor(Math.log10(Math.abs(value))))
-    const normalized = value / magnitude
-    
-    // Round up to the next nice number
-    let niceNormalized: number
-    if (normalized <= 1) niceNormalized = 1
-    else if (normalized <= 2) niceNormalized = 2
-    else if (normalized <= 5) niceNormalized = 5
-    else niceNormalized = 10
-    
-    return niceNormalized * magnitude
-}
-
-	// Setting colors for main carrier pie chart here
 	const wedges = React.useMemo(() => {
 		let cursor = 0
     return (_analyticsData?.meta.carriers ?? [])
@@ -725,7 +545,6 @@ function roundToNiceNumber(value: number): number {
 	const windowKey = React.useMemo(() => timeWindow === "all" ? "all_time" : `${timeWindow}m` as "3m" | "6m" | "9m" | "all_time", [timeWindow])
 
 	// Status breakdown for detail view (when groupBy === "carrier")
-	// Setting colors for status breakdown donut chart here - uses static carrier-status colors first, then falls back to dynamic
 	const statusBreakdown = React.useMemo(() => {
 		if (!detailCarrier || groupBy !== "carrier") return null
 		const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
@@ -733,8 +552,8 @@ function roundToNiceNumber(value: number): number {
 		const carrierData = byCarrier[detailCarrier as keyof typeof byCarrier]?.status?.[windowKey]
 		if (!carrierData) return null
 
-		// Use static colors for known carrier-status combinations, fallback to dynamic for unknown statuses
-		const colorForStatus = (status: string) => statusColorForCarrier(detailCarrier, status)
+		// Use large palette with deterministic mapping so we have many distinct colors
+		const colorForStatus = (status: string) => colorForLabel(status)
 
 		// Only include statuses that exist in the breakdowns_status_over_time data for this carrier
 		const entries: { status: string; count: number; color: string }[] = []
@@ -756,86 +575,30 @@ function roundToNiceNumber(value: number): number {
 		// Filter entries with count > 0 for donut chart
 		const entriesWithData = entries.filter(e => e.count > 0)
 
-		// Separate entries into those >= 3% and those < 3%
-		const majorEntries: Array<{ status: string; count: number; color: string; pct: number }> = []
-		const minorEntries: Array<{ status: string; count: number; color: string; pct: number }> = []
-
-		entriesWithData.forEach((e) => {
-			const pct = total > 0 ? e.count / total : 0
-			const entryWithPct = {
-				...e,
-				pct: Math.round(pct * 1000) / 10,
-			}
-			if (pct >= 0.03) {
-				majorEntries.push(entryWithPct)
-			} else {
-				minorEntries.push(entryWithPct)
-			}
-		})
-
-		// Create "Other" entry if there are 2+ minor entries (if only 1, keep it as its own slice)
-		const consolidatedEntries: Array<{ status: string; count: number; color: string; pct: number; groupedStatuses?: Array<{ status: string; count: number; pct: number }> }> = [...majorEntries]
-		
-		if (minorEntries.length >= 2) {
-			const otherCount = minorEntries.reduce((sum, e) => sum + e.count, 0)
-			const otherPct = total > 0 ? otherCount / total : 0
-			// Sort minor entries by percentage (highest to lowest)
-			const sortedMinorEntries = [...minorEntries].sort((a, b) => b.pct - a.pct)
-			consolidatedEntries.push({
-				status: "Other",
-				count: otherCount,
-				color: colorForStatus("Other"),
-				pct: Math.round(otherPct * 1000) / 10,
-				groupedStatuses: sortedMinorEntries.map(e => ({
-					status: e.status,
-					count: e.count,
-					pct: e.pct,
-				})),
-			})
-		} else if (minorEntries.length === 1) {
-			// If only one minor entry, add it as its own slice
-			consolidatedEntries.push(minorEntries[0])
-		}
-
 		let cursor = 0
-		const donutWedges = consolidatedEntries.map((e) => {
+		const donutWedges = entriesWithData.map((e) => {
 			const pct = total > 0 ? e.count / total : 0
 			const ang = pct * 360
 			const piece = {
 				...e,
 				start: cursor,
 				end: cursor + ang,
+				pct: Math.round(pct * 1000) / 10,
 			}
 			cursor += ang
 			return piece
 		})
 
-		// Calculate percentages for all entries for legend (including consolidated "Other" if it exists)
+		// Calculate percentages for all entries for legend
 		const allEntries = entries.map(e => ({
 			...e,
 			pct: total > 0 ? Math.round((e.count / total) * 1000) / 10 : 0,
 		}))
-		
-		// If we created an "Other" entry, add it to the legend
-		const otherEntry = consolidatedEntries.find(e => e.status === "Other")
-		if (otherEntry) {
-			// Remove the individual minor entries from legend and add "Other"
-			const minorStatuses = otherEntry.groupedStatuses?.map(s => s.status) || []
-			const filteredLegend = allEntries.filter(e => !minorStatuses.includes(e.status))
-			filteredLegend.push({
-				status: "Other",
-				count: otherEntry.count,
-				color: otherEntry.color,
-				pct: otherEntry.pct,
-			})
-			return { wedges: donutWedges, legendEntries: filteredLegend, total }
-		}
 
 		return { wedges: donutWedges, legendEntries: allEntries, total }
 	}, [detailCarrier, timeWindow, windowKey, groupBy])
 
 	// State breakdown for detail view (when groupBy === "state")
-	// Setting colors for state breakdown donut chart here - uses dynamic hash-based colors with predefined state mappings
 	const stateBreakdown = React.useMemo(() => {
 		if (groupBy !== "state") return null
 
@@ -902,55 +665,15 @@ function roundToNiceNumber(value: number): number {
 
 		const total = entries.reduce((sum, e) => sum + e.value, 0)
 
-		// Separate entries into those >= 3% and those < 3%
-		const majorEntries: Array<{ label: string; value: number; color: string; pct: number }> = []
-		const minorEntries: Array<{ label: string; value: number; color: string; pct: number }> = []
-
-		entries.forEach((e) => {
-			const pct = total > 0 ? e.value / total : 0
-			const entryWithPct = {
-				...e,
-				pct: Math.round(pct * 1000) / 10,
-			}
-			if (pct >= 0.03) {
-				majorEntries.push(entryWithPct)
-			} else {
-				minorEntries.push(entryWithPct)
-			}
-		})
-
-		// Create "Other" entry if there are 2+ minor entries (if only 1, keep it as its own slice)
-		const consolidatedEntries: Array<{ label: string; value: number; color: string; pct: number; groupedStates?: Array<{ label: string; value: number; pct: number }> }> = [...majorEntries]
-		
-		if (minorEntries.length >= 2) {
-			const otherValue = minorEntries.reduce((sum, e) => sum + e.value, 0)
-			const otherPct = total > 0 ? otherValue / total : 0
-			// Sort minor entries by percentage (highest to lowest)
-			const sortedMinorEntries = [...minorEntries].sort((a, b) => b.pct - a.pct)
-			consolidatedEntries.push({
-				label: "Other",
-				value: otherValue,
-				color: colorForLabel("Other"),
-				pct: Math.round(otherPct * 1000) / 10,
-				groupedStates: sortedMinorEntries.map(e => ({
-					label: e.label,
-					value: e.value,
-					pct: e.pct,
-				})),
-			})
-		} else if (minorEntries.length === 1) {
-			// If only one minor entry, add it as its own slice
-			consolidatedEntries.push(minorEntries[0])
-		}
-
 		let cursor = 0
-		const wedges = consolidatedEntries.map((e) => {
+		const wedges = entries.map((e) => {
 			const pct = total > 0 ? e.value / total : 0
 			const ang = pct * 360
 			const piece = {
 				...e,
 				start: cursor,
 				end: cursor + ang,
+				pct: Math.round(pct * 1000) / 10,
 			}
 			cursor += ang
 			return piece
@@ -960,19 +683,14 @@ function roundToNiceNumber(value: number): number {
 	}, [carrierFilter, windowKey, groupBy])
 
 	// Age breakdown for detail view (when groupBy === "age")
-	// Setting colors for age breakdown donut chart here - uses dynamic hash-based colors with predefined age band mappings
 	const ageBreakdown = React.useMemo(() => {
 		if (groupBy !== "age") return null
 
-        // Distinct colors for age bands - each age band gets a unique, visually distinct color
         const ageColors: Record<string, string> = {
-            "18-30": "#3b82f6",   // Blue
-            "31-40": "#10b981",   // Green
-            "41-50": "#8b5cf6",   // Purple
-            "51-60": "#f59e0b",   // Orange/Amber
-            "61-70": "#ec4899",   // Pink
-            "71+": "#14b8a6",     // Teal
-            "Unknown": "#ef4444", // Red (for unknown/other age bands)
+            "18-29": colorForLabel("18-29"),
+            "30-44": colorForLabel("30-44"),
+            "45-64": colorForLabel("45-64"),
+            "65+": colorForLabel("65+"),
         }
 
 		const entries: { label: string; value: number; color: string }[] = []
@@ -997,27 +715,15 @@ function roundToNiceNumber(value: number): number {
 				}
 			}
 
-			// First, collect entries with > 0 values
 			Object.entries(ageTotals).forEach(([ageBand, data]) => {
 				if (data.submitted > 0) {
 					entries.push({
-						label: ageBand || "Unknown",
+						label: ageBand,
 						value: data.submitted,
-                        color: ageColors[ageBand] || colorForLabel(ageBand || "Unknown"),
+                        color: ageColors[ageBand] || colorForLabel(ageBand),
 					})
 				}
 			})
-
-			// If no entries with > 0 values, include all entries (even with 0) so graph structure is visible
-			if (entries.length === 0 && Object.keys(ageTotals).length > 0) {
-				Object.entries(ageTotals).forEach(([ageBand, data]) => {
-					entries.push({
-						label: ageBand || "Unknown",
-						value: data.submitted,
-                        color: ageColors[ageBand] || colorForLabel(ageBand || "Unknown"),
-					})
-				})
-			}
 		} else {
 			// Single carrier
 			const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
@@ -1025,97 +731,39 @@ function roundToNiceNumber(value: number): number {
 			const carrierData = byCarrier[carrierFilter as keyof typeof byCarrier]
 			if (!carrierData) return null
 			const ageData = carrierData.age_band?.[windowKey]
-			console.log("ageData", ageData)
-			// If ageData doesn't exist, return null (no data available)
 			if (!ageData) return null
 
-			// First, collect entries with > 0 values
 			ageData.forEach((entry: { age_band: string; submitted: number }) => {
 				if (entry.submitted > 0) {
 					entries.push({
-						label: entry.age_band || "Unknown",
+						label: entry.age_band,
 						value: entry.submitted,
-                        color: ageColors[entry.age_band] || colorForLabel(entry.age_band || "Unknown"),
+                        color: ageColors[entry.age_band] || colorForLabel(entry.age_band),
 					})
 				}
 			})
-
-			// If no entries with > 0 values, include all entries (even with 0) so graph structure is visible
-			if (entries.length === 0) {
-				ageData.forEach((entry: { age_band: string; submitted: number }) => {
-					entries.push({
-						label: entry.age_band || "Unknown",
-						value: entry.submitted,
-                        color: ageColors[entry.age_band] || colorForLabel(entry.age_band || "Unknown"),
-					})
-				})
-			}
 		}
 
 		const total = entries.reduce((sum, e) => sum + e.value, 0)
 
-		// Separate entries into those >= 3% and those < 3%
-		const majorEntries: Array<{ label: string; value: number; color: string; pct: number }> = []
-		const minorEntries: Array<{ label: string; value: number; color: string; pct: number }> = []
-
-		entries.forEach((e) => {
-			// If total is 0, give each entry equal portion so the graph structure is visible
-			const pct = total > 0 ? e.value / total : (entries.length > 0 ? 1 / entries.length : 0)
-			const entryWithPct = {
-				...e,
-				pct: Math.round(pct * 1000) / 10,
-			}
-			if (pct >= 0.03) {
-				majorEntries.push(entryWithPct)
-			} else {
-				minorEntries.push(entryWithPct)
-			}
-		})
-
-		// Create "Other" entry if there are 2+ minor entries (if only 1, keep it as its own slice)
-		const consolidatedEntries: Array<{ label: string; value: number; color: string; pct: number; groupedAgeBands?: Array<{ label: string; value: number; pct: number }> }> = [...majorEntries]
-		
-		if (minorEntries.length >= 2) {
-			const otherValue = minorEntries.reduce((sum, e) => sum + e.value, 0)
-			const otherPct = total > 0 ? otherValue / total : (consolidatedEntries.length > 0 ? 1 / consolidatedEntries.length : 0)
-			// Sort minor entries by percentage (highest to lowest)
-			const sortedMinorEntries = [...minorEntries].sort((a, b) => b.pct - a.pct)
-			consolidatedEntries.push({
-				label: "Other",
-				value: otherValue,
-				color: colorForLabel("Other"),
-				pct: Math.round(otherPct * 1000) / 10,
-				groupedAgeBands: sortedMinorEntries.map(e => ({
-					label: e.label,
-					value: e.value,
-					pct: e.pct,
-				})),
-			})
-		} else if (minorEntries.length === 1) {
-			// If only one minor entry, add it as its own slice
-			consolidatedEntries.push(minorEntries[0])
-		}
-
 		let cursor = 0
-		const wedges = consolidatedEntries.map((e) => {
-			// If total is 0, give each entry equal portion so the graph structure is visible
-			const pct = total > 0 ? e.value / total : (consolidatedEntries.length > 0 ? 1 / consolidatedEntries.length : 0)
+		const wedges = entries.map((e) => {
+			const pct = total > 0 ? e.value / total : 0
 			const ang = pct * 360
 			const piece = {
 				...e,
 				start: cursor,
 				end: cursor + ang,
+				pct: Math.round(pct * 1000) / 10,
 			}
 			cursor += ang
 			return piece
 		})
 
-		console.log("ageBreakdown result:", { entries: entries.length, total, wedges: wedges.length, wedgesData: wedges })
 		return { wedges, total }
 	}, [carrierFilter, windowKey, groupBy])
 
 	// Persistency breakdown for detail view (when groupBy === "persistency")
-	// Setting colors for persistency breakdown donut chart here - uses static colors (green for Active, red for Inactive)
 	const persistencyBreakdown = React.useMemo(() => {
 		if (groupBy !== "persistency") return null
 
@@ -1294,14 +942,19 @@ function roundToNiceNumber(value: number): number {
 	}, [periods, carrierFilter, trendMetric])
 
 	return (
-		<div className="flex w-full flex-col gap-6 p-6">
+		isLoading ? (
+			<div className="flex min-h-screen w-full items-center justify-center p-6">
+				<div className="text-sm text-muted-foreground">Loading analytics…</div>
+			</div>
+		) : (
+			<div className="flex w-full flex-col gap-6 p-6">
 			{/* Header */}
 			<div className="flex items-center justify-between">
 				<h1 className="text-xl font-semibold text-primary">Agency Analytics</h1>
 
 				<div className="flex items-center gap-2">
 					{/* Time window: 3,6,9,All Time */}
-					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)} disabled={isLoading}>
+					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
 						<SelectTrigger className="w-[120px] rounded-md h-9 text-sm"><SelectValue placeholder="3 Months" /></SelectTrigger>
 						<SelectContent className="rounded-md">
 							<SelectItem value="3">3 Months</SelectItem>
@@ -1319,7 +972,7 @@ function roundToNiceNumber(value: number): number {
 						} else if (groupBy === "carrier") {
 							setSelectedCarrier(value)
 						}
-					}} disabled={isLoading}>
+					}}>
 						<SelectTrigger className="w-[160px] rounded-md h-9 text-sm"><SelectValue placeholder="All Carriers" /></SelectTrigger>
 						<SelectContent className="rounded-md">
 							{carriers.map((c) => (
@@ -1359,49 +1012,24 @@ function roundToNiceNumber(value: number): number {
 			{/* KPI tiles centered to middle 1/3rd */}
 			<div className="flex w-full justify-center">
 				<div className="grid w-full max-w-3xl grid-cols-3 gap-3">
-					{isLoading ? (
-						<>
-							<Card className="rounded-md">
-								<CardContent className="p-4">
-									<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
-									<div className="text-2xl font-bold mt-2 h-8 w-20 bg-muted animate-pulse rounded" />
-								</CardContent>
-							</Card>
-							<Card className="rounded-md">
-								<CardContent className="p-4">
-									<div className="text-xs text-muted-foreground uppercase font-medium">Submitted</div>
-									<div className="text-2xl font-bold mt-2 h-8 w-20 bg-muted animate-pulse rounded" />
-								</CardContent>
-							</Card>
-							<Card className="rounded-md">
-								<CardContent className="p-4">
-									<div className="text-xs text-muted-foreground uppercase font-medium">Active</div>
-									<div className="text-2xl font-bold mt-2 h-8 w-20 bg-muted animate-pulse rounded" />
-								</CardContent>
-							</Card>
-						</>
-					) : (
-						<>
-							<Card className="rounded-md">
-								<CardContent className="p-4">
-									<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
-									<div className="text-2xl font-bold mt-2">{(topStats.persistency * 100).toFixed(2)}%</div>
-								</CardContent>
-							</Card>
-							<Card className="rounded-md">
-								<CardContent className="p-4">
-									<div className="text-xs text-muted-foreground uppercase font-medium">Submitted</div>
-									<div className="text-2xl font-bold mt-2">{numberWithCommas(topStats.submitted)}</div>
-								</CardContent>
-							</Card>
-							<Card className="rounded-md">
-								<CardContent className="p-4">
-									<div className="text-xs text-muted-foreground uppercase font-medium">Active</div>
-									<div className="text-2xl font-bold mt-2">{numberWithCommas(topStats.active)}</div>
-								</CardContent>
-							</Card>
-						</>
-					)}
+					<Card className="rounded-md">
+						<CardContent className="p-4">
+							<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
+							<div className="text-2xl font-bold mt-2">{(topStats.persistency * 100).toFixed(2)}%</div>
+						</CardContent>
+					</Card>
+					<Card className="rounded-md">
+						<CardContent className="p-4">
+							<div className="text-xs text-muted-foreground uppercase font-medium">Submitted</div>
+							<div className="text-2xl font-bold mt-2">{numberWithCommas(topStats.submitted)}</div>
+						</CardContent>
+					</Card>
+					<Card className="rounded-md">
+						<CardContent className="p-4">
+							<div className="text-xs text-muted-foreground uppercase font-medium">Active</div>
+							<div className="text-2xl font-bold mt-2">{numberWithCommas(topStats.active)}</div>
+						</CardContent>
+					</Card>
 				</div>
 			</div>
 
@@ -1445,6 +1073,7 @@ function roundToNiceNumber(value: number): number {
 							</div>
 						</>
 					) : (detailCarrier || groupBy === "state" || groupBy === "age" || groupBy === "persistency") ? (
+					{(detailCarrier || groupBy === "state" || groupBy === "age" || groupBy === "persistency") ? (
 						// Breakdown View (Status, State, Age, or Persistency)
 						<>
 							<div className="mb-4 flex items-center gap-3">
@@ -1544,7 +1173,6 @@ function roundToNiceNumber(value: number): number {
 																status: w.status,
 																count: w.count,
 																pct: w.pct,
-																groupedStatuses: w.groupedStatuses,
 															})}
 															onMouseLeave={() => setHoverStatusInfo(null)}
 														/>
@@ -1554,41 +1182,13 @@ function roundToNiceNumber(value: number): number {
 										</svg>
 										{hoverStatusInfo && (
 											<div
-												className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 text-xs text-white shadow-lg backdrop-blur-sm z-10 ${
-													hoverStatusInfo.groupedStatuses && hoverStatusInfo.groupedStatuses.length > 0
-														? "p-4 min-w-[300px] max-w-[500px]"
-														: "p-3"
-												}`}
-												style={{ 
-													left: hoverStatusInfo.x, 
-													top: hoverStatusInfo.y,
-													maxHeight: hoverStatusInfo.groupedStatuses && hoverStatusInfo.groupedStatuses.length > 0 ? "80vh" : undefined,
-												}}
+												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+												style={{ left: hoverStatusInfo.x, top: hoverStatusInfo.y }}
 											>
 												<div className="mb-1 text-sm font-semibold">{hoverStatusInfo.status}</div>
 												<div className="text-white/90">
 													{numberWithCommas(hoverStatusInfo.count)} ({hoverStatusInfo.pct}%)
 												</div>
-												{hoverStatusInfo.groupedStatuses && hoverStatusInfo.groupedStatuses.length > 0 && (
-													<div className="mt-3 pt-3 border-t border-white/20">
-														<div className="mb-2 text-xs font-semibold text-white/80">
-															Includes {hoverStatusInfo.groupedStatuses.length} status{hoverStatusInfo.groupedStatuses.length !== 1 ? "es" : ""}:
-														</div>
-														<div 
-															className="overflow-y-auto space-y-1.5 pr-2"
-															style={{ maxHeight: "60vh" }}
-														>
-															{hoverStatusInfo.groupedStatuses.map((status) => (
-																<div key={status.status} className="text-xs text-white/70 flex justify-between items-center gap-4">
-																	<span className="font-medium">{status.status}:</span>
-																	<span className="text-white/60">
-																		{numberWithCommas(status.count)} ({status.pct}%)
-																	</span>
-																</div>
-															))}
-														</div>
-													</div>
-												)}
 											</div>
 										)}
 									</div>
@@ -1652,7 +1252,6 @@ function roundToNiceNumber(value: number): number {
 																label: w.label,
 																value: w.value,
 																pct: w.pct,
-																groupedStates: w.groupedStates,
 															})}
 															onMouseLeave={() => setHoverBreakdownInfo(null)}
 														/>
@@ -1662,41 +1261,13 @@ function roundToNiceNumber(value: number): number {
 										</svg>
 										{hoverBreakdownInfo && (
 											<div
-												className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 text-xs text-white shadow-lg backdrop-blur-sm z-10 ${
-													hoverBreakdownInfo.groupedStates && hoverBreakdownInfo.groupedStates.length > 0
-														? "p-4 min-w-[300px] max-w-[500px]"
-														: "p-3"
-												}`}
-												style={{ 
-													left: hoverBreakdownInfo.x, 
-													top: hoverBreakdownInfo.y,
-													maxHeight: hoverBreakdownInfo.groupedStates && hoverBreakdownInfo.groupedStates.length > 0 ? "80vh" : undefined,
-												}}
+												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+												style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
 											>
 												<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
 												<div className="text-white/90">
 													{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
 												</div>
-												{hoverBreakdownInfo.groupedStates && hoverBreakdownInfo.groupedStates.length > 0 && (
-													<div className="mt-3 pt-3 border-t border-white/20">
-														<div className="mb-2 text-xs font-semibold text-white/80">
-															Includes {hoverBreakdownInfo.groupedStates.length} state{hoverBreakdownInfo.groupedStates.length !== 1 ? "s" : ""}:
-														</div>
-														<div 
-															className="overflow-y-auto space-y-1.5 pr-2"
-															style={{ maxHeight: "60vh" }}
-														>
-															{hoverBreakdownInfo.groupedStates.map((state) => (
-																<div key={state.label} className="text-xs text-white/70 flex justify-between items-center gap-4">
-																	<span className="font-medium">{state.label}:</span>
-																	<span className="text-white/60">
-																		{numberWithCommas(state.value)} ({state.pct}%)
-																	</span>
-																</div>
-															))}
-														</div>
-													</div>
-												)}
 											</div>
 										)}
 									</div>
@@ -1731,51 +1302,11 @@ function roundToNiceNumber(value: number): number {
 											</defs>
 											<g filter="url(#shadow-age)">
 												{ageBreakdown.wedges.map((w, idx) => {
-													const angleDiff = w.end - w.start
-													const isFullCircle = Math.abs(angleDiff) >= 360 || Math.abs(angleDiff - 360) < 0.001
 													const path = describeArc(160, 160, 150, w.start, w.end)
 													const mid = (w.start + w.end) / 2
 													const center = polarToCartesian(160, 160, 90, mid)
 													const isHovered = hoverBreakdownInfo?.label === w.label
 													const isOtherHovered = hoverBreakdownInfo !== null && !isHovered
-
-													// Debug logging
-													if (isFullCircle) {
-														console.log("Full circle detected:", { label: w.label, start: w.start, end: w.end, angleDiff, path })
-													}
-
-													// For full circle, use a circle element to avoid the white line
-													if (isFullCircle) {
-														return (
-															<circle
-																key={w.label}
-																cx={160}
-																cy={160}
-																r={150}
-																fill={w.color}
-																stroke="#fff"
-																strokeWidth={2}
-																opacity={isOtherHovered ? 0.4 : 1}
-																filter={isHovered ? "url(#darken-age)" : undefined}
-																style={{
-																	transform: isHovered ? "scale(1.05)" : "scale(1)",
-																	transformOrigin: "160px 160px",
-																	transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-																	animationDelay: `${idx * 0.1}s`,
-																}}
-																className="cursor-pointer pie-slice-animate"
-																onMouseEnter={() => setHoverBreakdownInfo({
-																	x: 160,
-																	y: 160,
-																	label: w.label,
-																	value: w.value,
-																	pct: w.pct,
-																	groupedAgeBands: w.groupedAgeBands,
-																})}
-																onMouseLeave={() => setHoverBreakdownInfo(null)}
-															/>
-														)
-													}
 
 													return (
 														<path
@@ -1799,7 +1330,6 @@ function roundToNiceNumber(value: number): number {
 																label: w.label,
 																value: w.value,
 																pct: w.pct,
-																groupedAgeBands: w.groupedAgeBands,
 															})}
 															onMouseLeave={() => setHoverBreakdownInfo(null)}
 														/>
@@ -1809,41 +1339,13 @@ function roundToNiceNumber(value: number): number {
 										</svg>
 										{hoverBreakdownInfo && (
 											<div
-												className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 text-xs text-white shadow-lg backdrop-blur-sm z-10 ${
-													hoverBreakdownInfo.groupedAgeBands && hoverBreakdownInfo.groupedAgeBands.length > 0
-														? "p-4 min-w-[300px] max-w-[500px]"
-														: "p-3"
-												}`}
-												style={{ 
-													left: hoverBreakdownInfo.x, 
-													top: hoverBreakdownInfo.y,
-													maxHeight: hoverBreakdownInfo.groupedAgeBands && hoverBreakdownInfo.groupedAgeBands.length > 0 ? "80vh" : undefined,
-												}}
+												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+												style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
 											>
 												<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
 												<div className="text-white/90">
 													{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
 												</div>
-												{hoverBreakdownInfo.groupedAgeBands && hoverBreakdownInfo.groupedAgeBands.length > 0 && (
-													<div className="mt-3 pt-3 border-t border-white/20">
-														<div className="mb-2 text-xs font-semibold text-white/80">
-															Includes {hoverBreakdownInfo.groupedAgeBands.length} age band{hoverBreakdownInfo.groupedAgeBands.length !== 1 ? "s" : ""}:
-														</div>
-														<div 
-															className="overflow-y-auto space-y-1.5 pr-2"
-															style={{ maxHeight: "60vh" }}
-														>
-															{hoverBreakdownInfo.groupedAgeBands.map((ageBand) => (
-																<div key={ageBand.label} className="text-xs text-white/70 flex justify-between items-center gap-4">
-																	<span className="font-medium">{ageBand.label}:</span>
-																	<span className="text-white/60">
-																		{numberWithCommas(ageBand.value)} ({ageBand.pct}%)
-																	</span>
-																</div>
-															))}
-														</div>
-													</div>
-												)}
 											</div>
 										)}
 									</div>
@@ -1966,6 +1468,7 @@ function roundToNiceNumber(value: number): number {
 								))}
 							</div>
 
+					{/* WARNING: DO NOT CHANGE THE LEGEND POSITION - Legend MUST be below the pie chart, NOT next to it */}
 					<div className="flex flex-col items-center justify-center gap-6">
 						{/* SVG pie with hover */}
 						<div className="relative h-[320px] w-[320px]">
@@ -2041,7 +1544,7 @@ function roundToNiceNumber(value: number): number {
 							)}
 						</div>
 
-						{/* Legend below */}
+						{/* Legend below the pie chart - DO NOT MOVE THIS TO THE SIDE */}
 						<div className="flex flex-wrap justify-center gap-4 mt-4">
 							{wedges.length === 0 ? (
 								<div className="text-sm text-muted-foreground">No data in range</div>
@@ -2060,30 +1563,6 @@ function roundToNiceNumber(value: number): number {
 				</CardContent>
 			</Card>
 
-			{/* Downline Production Distribution */}
-			{userId ? (
-				<DownlineProductionChart userId={userId} timeWindow={timeWindow} />
-			) : (
-				<Card className="rounded-md">
-					<CardContent className="p-4 sm:p-6">
-						<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">
-							DOWNLINE PRODUCTION DISTRIBUTION
-						</div>
-						<div className="flex flex-col items-center justify-center gap-6">
-							<div className="h-5 w-64 bg-muted animate-pulse rounded" />
-							<div className="relative h-[320px] w-[320px]">
-								<div className="h-full w-full rounded-full bg-muted animate-pulse" />
-							</div>
-							<div className="flex flex-wrap justify-center gap-4 mt-4">
-								<div className="h-4 w-48 bg-muted animate-pulse rounded" />
-								<div className="h-4 w-40 bg-muted animate-pulse rounded" />
-								<div className="h-4 w-44 bg-muted animate-pulse rounded" />
-							</div>
-						</div>
-					</CardContent>
-				</Card>
-			)}
-
 			{/* Performance Trends */}
 			<Card className="rounded-md">
 				<CardContent className="p-4 sm:p-6">
@@ -2096,14 +1575,10 @@ function roundToNiceNumber(value: number): number {
 							{ key: "avgprem", label: "Avg Premium" },
 							{ key: "all", label: "Show All" },
 						].map((m) => (
-							<Button key={m.key} variant={trendMetric === m.key ? "default" : "outline"} size="sm" onClick={() => setTrendMetric(m.key)} disabled={isLoading} className={`rounded-md ${trendMetric === m.key ? 'bg-foreground hover:bg-foreground/90 text-background' : ''}`}>{m.label}</Button>
+							<Button key={m.key} variant={trendMetric === m.key ? "blue" : "outline"} size="sm" onClick={() => setTrendMetric(m.key)} className="rounded-md">{m.label}</Button>
 						))}
 					</div>
-					{isLoading ? (
-						<div className="h-[300px] w-full rounded-md border bg-muted/20 flex items-center justify-center">
-							<div className="text-sm text-muted-foreground">Loading trends...</div>
-						</div>
-					) : trendData && trendData.length > 0 ? (
+					{trendData && trendData.length > 0 ? (
 						(() => {
 							// Handle "Show All" case - show submitted and active together
 							if (trendMetric === "all") {
@@ -2168,9 +1643,6 @@ function roundToNiceNumber(value: number): number {
 								const padding = range * 0.1 || Math.abs(maxValue) * 0.1 || 1
 								minValue = Math.max(0, minValue - padding)
 								maxValue = maxValue + padding
-								
-								// Round maxValue to a nice round number
-								maxValue = roundToNiceNumber(maxValue)
 
 								const chartHeight = 240
 								const chartBottom = 260
@@ -2419,13 +1891,8 @@ function roundToNiceNumber(value: number): number {
 										{/* Hover tooltip */}
 										{hoverTrendInfo && (
 											<div
-												className="pointer-events-none absolute rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 mb-2 transition-opacity duration-150"
-												style={{ 
-													left: hoverTrendInfo.x, 
-													top: hoverTrendInfo.y,
-													opacity: 1,
-													transform: 'translateX(-50%) translateY(-100%)'
-												}}
+												className="pointer-events-none absolute -translate-x-1/2 -translate-y-full animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 mb-2"
+												style={{ left: hoverTrendInfo.x, top: hoverTrendInfo.y }}
 											>
 												<div className="mb-1 text-sm font-semibold">
 													{(() => {
@@ -2538,55 +2005,6 @@ function roundToNiceNumber(value: number): number {
 								}
 							}
 
-							// Check if all avgprem values are 0.0 before handling edge cases
-							if (trendMetric === "avgprem") {
-								// Check if we have any non-zero values
-								let hasNonZeroValue = false
-								if (carrierFilter === "ALL") {
-									for (const data of trendData) {
-										if (data.carriers) {
-											for (const value of Object.values(data.carriers)) {
-												if (value !== undefined && value !== null && (value as number) > 0) {
-													hasNonZeroValue = true
-													break
-												}
-											}
-											// Also check cumulative
-											let cumulativeValue = 0
-											for (const carrierValue of Object.values(data.carriers)) {
-												if (carrierValue !== undefined && carrierValue !== null) {
-													cumulativeValue += carrierValue as number
-												}
-											}
-											if (cumulativeValue > 0) {
-												hasNonZeroValue = true
-												break
-											}
-										}
-										if (hasNonZeroValue) break
-									}
-								} else {
-									for (const data of trendData) {
-										if (data.value !== undefined && data.value !== null && data.value > 0) {
-											hasNonZeroValue = true
-											break
-										}
-									}
-								}
-								
-								if (!hasNonZeroValue && maxValue <= 0) {
-									return (
-										<div className="flex items-center justify-center h-[300px] w-full">
-											<div className="text-center">
-												<p className="text-muted-foreground text-sm">
-													There is not enough data on monthly premiums to gauge average premium
-												</p>
-											</div>
-										</div>
-									)
-								}
-							}
-
 							// Handle edge cases
 							if (minValue === Infinity || maxValue === -Infinity) {
 								minValue = 0
@@ -2603,9 +2021,6 @@ function roundToNiceNumber(value: number): number {
 							if (trendMetric === "persistency") {
 								minValue = 0
 								maxValue = 1
-							} else {
-								// Round maxValue to a nice round number (except for persistency which is 0-1)
-								maxValue = roundToNiceNumber(maxValue)
 							}
 
 							// Format Y-axis label
@@ -2753,7 +2168,6 @@ function roundToNiceNumber(value: number): number {
 											<>
 												{/* Individual carrier lines */}
 								{(_analyticsData?.meta.carriers ?? []).filter(carrier => visibleCarriers.has(carrier)).map((carrier) => {
-									// Setting colors for individual carrier trend lines here - uses static carrier colors
 									const color = carrierColorForLabel(String(carrier))
 													const points = trendData
 														.map((data: any, idx: number) => {
@@ -2789,58 +2203,32 @@ function roundToNiceNumber(value: number): number {
 																strokeLinecap="round"
 																strokeLinejoin="round"
 															/>
-															{/* Dots on line with larger hover area (only for persistency when showing all carriers) */}
+															{/* Dots on line */}
 															{points.map((p: any, i: number) => (
-																<g key={i}>
-																	{/* Invisible larger circle for easier hovering - only for persistency when showing all */}
-																	{trendMetric === "persistency" && (
-																		<circle
-																			cx={p.x}
-																			cy={p.y}
-																			r="12"
-																			fill="transparent"
-																			className="cursor-pointer"
-																			onMouseEnter={(e) => {
-																				const circle = e.currentTarget
-																				const container = circle.closest(".relative")
-																				if (container) {
-																					const circleRect = circle.getBoundingClientRect()
-																					const containerRect = container.getBoundingClientRect()
-																					// Calculate position relative to the container - center horizontally
-																					const x = circleRect.left + circleRect.width / 2 - containerRect.left
-																					// Position above the point
-																					const y = circleRect.top - containerRect.top - 10
-																					setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: p.carrier, submitted: p.submitted, active: p.active, persistency: p.persistency })
-																				}
-																			}}
-																			onMouseLeave={() => setHoverTrendInfo(null)}
-																		/>
-																	)}
-																	{/* Visible circle */}
-																	<circle
-																		cx={p.x}
-																		cy={p.y}
-																		r="4"
-																		fill={color}
-																		stroke="#fff"
-																		strokeWidth="2"
-																		className={trendMetric === "persistency" ? "pointer-events-none" : "cursor-pointer"}
-																		onMouseEnter={trendMetric !== "persistency" ? (e) => {
-																			const circle = e.currentTarget
-																			const container = circle.closest(".relative")
-																			if (container) {
-																				const circleRect = circle.getBoundingClientRect()
-																				const containerRect = container.getBoundingClientRect()
-																				// Calculate position relative to the container
-																				const x = circleRect.left + circleRect.width / 2 - containerRect.left
-																				// Position tooltip from right (original behavior for non-persistency)
-																				const y = circleRect.top + circleRect.height / 2 - containerRect.top
-																				setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: p.carrier, submitted: p.submitted, active: p.active, persistency: p.persistency })
-																			}
-																		} : undefined}
-																		onMouseLeave={trendMetric !== "persistency" ? () => setHoverTrendInfo(null) : undefined}
-																	/>
-																</g>
+																<circle
+																	key={i}
+																	cx={p.x}
+																	cy={p.y}
+																	r="4"
+																	fill={color}
+																	stroke="#fff"
+																	strokeWidth="2"
+																	className="cursor-pointer"
+																	onMouseEnter={(e) => {
+																		const circle = e.currentTarget
+																		const container = circle.closest(".relative")
+																		if (container) {
+																			const circleRect = circle.getBoundingClientRect()
+																			const containerRect = container.getBoundingClientRect()
+																			// Calculate position relative to the container
+																			const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																			// Position above the point (center of circle minus height to place tooltip above)
+																			const y = circleRect.top - containerRect.top - 10
+																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: p.carrier, submitted: p.submitted, active: p.active, persistency: p.persistency })
+																		}
+																	}}
+																	onMouseLeave={() => setHoverTrendInfo(null)}
+																/>
 															))}
 														</g>
 													)
@@ -2848,7 +2236,6 @@ function roundToNiceNumber(value: number): number {
 
 												{/* Cumulative line */}
 												{(() => {
-													// Setting colors for cumulative trend line here - uses static purple color
 													const cumulativeColor = CUMULATIVE_COLOR // Purple for cumulative
 													const cumulativePoints = trendData
 														.map((data: any, idx: number) => {
@@ -2926,58 +2313,32 @@ function roundToNiceNumber(value: number): number {
 																strokeDasharray="6 4"
 																opacity={0.9}
 															/>
-															{/* Dots on cumulative line with larger hover area (only for persistency when showing all carriers) */}
+															{/* Dots on cumulative line */}
 															{cumulativePoints.map((p: any, i: number) => (
-																<g key={i}>
-																	{/* Invisible larger circle for easier hovering - only for persistency */}
-																	{trendMetric === "persistency" && (
-																		<circle
-																			cx={p.x}
-																			cy={p.y}
-																			r="12"
-																			fill="transparent"
-																			className="cursor-pointer"
-																			onMouseEnter={(e) => {
-																				const circle = e.currentTarget
-																				const container = circle.closest(".relative")
-																				if (container) {
-																					const circleRect = circle.getBoundingClientRect()
-																					const containerRect = container.getBoundingClientRect()
-																					// Calculate position relative to the container - center horizontally
-																					const x = circleRect.left + circleRect.width / 2 - containerRect.left
-																					// Position above the point
-																					const y = circleRect.top - containerRect.top - 10
-																					setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: "Cumulative", submitted: p.submitted, active: p.active, persistency: p.persistency })
-																				}
-																			}}
-																			onMouseLeave={() => setHoverTrendInfo(null)}
-																		/>
-																	)}
-																	{/* Visible circle */}
-																	<circle
-																		cx={p.x}
-																		cy={p.y}
-																		r="5"
-																		fill={cumulativeColor}
-																		stroke="#fff"
-																		strokeWidth="2"
-																		className={trendMetric === "persistency" ? "pointer-events-none" : "cursor-pointer"}
-																		onMouseEnter={trendMetric !== "persistency" ? (e) => {
-																			const circle = e.currentTarget
-																			const container = circle.closest(".relative")
-																			if (container) {
-																				const circleRect = circle.getBoundingClientRect()
-																				const containerRect = container.getBoundingClientRect()
-																				// Calculate position relative to the container
-																				const x = circleRect.left + circleRect.width / 2 - containerRect.left
-																				// Position above the point (center of circle minus height to place tooltip above)
-																				const y = circleRect.top - containerRect.top - 10
-																				setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: "Cumulative", submitted: p.submitted, active: p.active, persistency: p.persistency })
-																			}
-																		} : undefined}
-																		onMouseLeave={trendMetric !== "persistency" ? () => setHoverTrendInfo(null) : undefined}
-																	/>
-																</g>
+																<circle
+																	key={i}
+																	cx={p.x}
+																	cy={p.y}
+																	r="5"
+																	fill={cumulativeColor}
+																	stroke="#fff"
+																	strokeWidth="2"
+																	className="cursor-pointer"
+																	onMouseEnter={(e) => {
+																		const circle = e.currentTarget
+																		const container = circle.closest(".relative")
+																		if (container) {
+																			const circleRect = circle.getBoundingClientRect()
+																			const containerRect = container.getBoundingClientRect()
+																			// Calculate position relative to the container
+																			const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																			// Position above the point (center of circle minus height to place tooltip above)
+																			const y = circleRect.top - containerRect.top - 10
+																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: "Cumulative", submitted: p.submitted, active: p.active, persistency: p.persistency })
+																		}
+																	}}
+																	onMouseLeave={() => setHoverTrendInfo(null)}
+																/>
 															))}
 														</g>
 													)
@@ -2986,7 +2347,6 @@ function roundToNiceNumber(value: number): number {
 										) : (
 											// Single line for selected carrier
 											(() => {
-									// Setting colors for single carrier trend line here - uses static carrier color
 									const color = carrierColorForLabel(String(carrierFilter))
 												const points = trendData
 													.map((data: any, idx: number) => {
@@ -3018,40 +2378,30 @@ function roundToNiceNumber(value: number): number {
 															strokeLinejoin="round"
 														/>
 														{points.map((p: any, i: number) => (
-															<g key={i}>
-																{/* Invisible larger circle for easier hovering */}
-																<circle
-																	cx={p.x}
-																	cy={p.y}
-																	r="12"
-																	fill="transparent"
-																	className="cursor-pointer"
-																	onMouseEnter={(e) => {
-																		const circle = e.currentTarget
-																		const container = circle.closest(".relative")
-																		if (container) {
-																			const circleRect = circle.getBoundingClientRect()
-																			const containerRect = container.getBoundingClientRect()
-																			// Calculate position relative to the container - center horizontally
-																			const x = circleRect.left + circleRect.width / 2 - containerRect.left
-																			// Position above the point
-																			const y = circleRect.top - containerRect.top - 10
-																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, submitted: p.submitted, active: p.active, persistency: p.persistency })
-																		}
-																	}}
-																	onMouseLeave={() => setHoverTrendInfo(null)}
-																/>
-																{/* Visible circle */}
-																<circle
-																	cx={p.x}
-																	cy={p.y}
-																	r="4"
-																	fill={color}
-																	stroke="#fff"
-																	strokeWidth="2"
-																	className="pointer-events-none"
-																/>
-															</g>
+															<circle
+																key={i}
+																cx={p.x}
+																cy={p.y}
+																r="4"
+																fill={color}
+																stroke="#fff"
+																strokeWidth="2"
+																className="cursor-pointer"
+																onMouseEnter={(e) => {
+																	const circle = e.currentTarget
+																	const container = circle.closest(".relative")
+																	if (container) {
+																		const circleRect = circle.getBoundingClientRect()
+																		const containerRect = container.getBoundingClientRect()
+																		// Calculate position relative to the container
+																		const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																		// Position above the point (center of circle minus height to place tooltip above)
+																		const y = circleRect.top - containerRect.top - 10
+																		setHoverTrendInfo({ x, y, period: p.period, value: p.value, submitted: p.submitted, active: p.active, persistency: p.persistency })
+																	}
+																}}
+																onMouseLeave={() => setHoverTrendInfo(null)}
+															/>
 														))}
 													</g>
 												)
@@ -3062,13 +2412,8 @@ function roundToNiceNumber(value: number): number {
 									{/* Hover tooltip */}
 									{hoverTrendInfo && (
 										<div
-											className="pointer-events-none absolute rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 mb-2 transition-opacity duration-150"
-											style={{ 
-												left: hoverTrendInfo.x, 
-												top: hoverTrendInfo.y,
-												opacity: 1,
-												transform: 'translateX(-50%) translateY(-100%)'
-											}}
+											className="pointer-events-none absolute -translate-x-1/2 -translate-y-full animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 mb-2"
+											style={{ left: hoverTrendInfo.x, top: hoverTrendInfo.y }}
 										>
 											<div className="mb-1 text-sm font-semibold">
 												{(() => {
@@ -3153,7 +2498,6 @@ function roundToNiceNumber(value: number): number {
 															return hasData && visibleCarriers.has(carrier)
 														})
 														.map((carrier) => {
-															// Setting colors for trend chart legend items (visible carriers) here - uses static carrier colors
 															const color = carrierColorForLabel(String(carrier))
 															return (
 																<div
@@ -3190,7 +2534,6 @@ function roundToNiceNumber(value: number): number {
 															return hasData && !visibleCarriers.has(carrier)
 														})
 														.map((carrier) => {
-															// Setting colors for trend chart legend items (hidden carriers) here - uses static carrier colors
 															const color = carrierColorForLabel(String(carrier))
 															return (
 																<div
@@ -3258,6 +2601,7 @@ function roundToNiceNumber(value: number): number {
 				<TabsContent value="details" />
 			</Tabs>
 		</div>
+		)
 	)
 }
 

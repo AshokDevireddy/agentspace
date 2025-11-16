@@ -72,7 +72,7 @@ export default function ResetPassword() {
   return (
     <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md mx-auto">
-        <div className="bg-card shadow-lg rounded-lg p-8">
+        <div className="bg-card shadow-lg rounded-md p-8 border border-border">
           {/* Title */}
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-foreground mb-2">Reset Password</h1>
@@ -109,7 +109,7 @@ export default function ResetPassword() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50"
+              className="w-full h-12 bg-foreground hover:bg-foreground/90 text-background font-medium rounded-md disabled:opacity-50"
             >
               {loading ? 'Sending...' : 'Send Password Reset Email'}
             </Button>

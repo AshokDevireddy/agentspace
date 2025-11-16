@@ -175,19 +175,20 @@ export default function ConfigurationPage() {
   const [selectedCommissionCarrier, setSelectedCommissionCarrier] = useState<string>("")
   const [commissionEdits, setCommissionEdits] = useState<Record<string, number>>({})
   const [savingCommissions, setSavingCommissions] = useState(false)
+  const [syncingMissingCommissions, setSyncingMissingCommissions] = useState(false)
 
   // Load data on mount
   useEffect(() => {
-    if (!carriersLoaded || !allProductsLoaded) {
-      fetchAllData()
-    }
-  }, [carriersLoaded, allProductsLoaded])
+    fetchAllData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Check for existing policy files when policy reports tab is opened (only if we haven't checked yet)
   useEffect(() => {
     if (activeTab === 'policy-reports' && uploadedFilesInfo.length === 0 && !checkingExistingFiles) {
       checkExistingPolicyFiles()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
   // Load positions when positions tab is opened
@@ -195,6 +196,7 @@ export default function ConfigurationPage() {
     if (activeTab === 'positions') {
       fetchPositions()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
   // Load commissions when commissions tab is opened
@@ -202,6 +204,7 @@ export default function ConfigurationPage() {
     if (activeTab === 'commissions' && !commissionsLoading) {
       fetchCommissions()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
   // Filter products when carrier is selected
@@ -930,6 +933,50 @@ export default function ConfigurationPage() {
     }
   }
 
+  const handleSyncMissingCommissions = async () => {
+    if (!selectedCommissionCarrier) {
+      alert('Please select a carrier first')
+      return
+    }
+
+    try {
+      setSyncingMissingCommissions(true)
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        throw new Error('No access token available')
+      }
+
+      const response = await fetch(`/api/positions/product-commissions/sync?carrier_id=${selectedCommissionCarrier}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to sync commissions')
+      }
+
+      if (data.created === 0) {
+        alert('All products for this carrier already have commission entries!')
+      } else {
+        alert(`Successfully created ${data.created} missing commission entries for this carrier!`)
+        // Refresh the commissions view
+        fetchCommissions(selectedCommissionCarrier)
+      }
+    } catch (error) {
+      console.error('Error syncing commissions:', error)
+      alert(error instanceof Error ? error.message : 'Failed to sync commissions')
+    } finally {
+      setSyncingMissingCommissions(false)
+    }
+  }
+
   // Product management functions (keeping existing code)
   const handleProductCreated = async (newProduct: Product) => {
     setAllProducts(prev => [...prev, newProduct])
@@ -1002,10 +1049,19 @@ export default function ConfigurationPage() {
     try {
       setUpdatingProduct(true)
 
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        throw new Error('No access token available')
+      }
+
       const response = await fetch(`/api/products/${editingProductId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
         },
         body: JSON.stringify({
           name: editProductFormData.name,
@@ -1064,8 +1120,19 @@ export default function ConfigurationPage() {
     try {
       setDeletingProduct(true)
 
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        throw new Error('No access token available')
+      }
+
       const response = await fetch(`/api/products/${productToDelete.id}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        },
         credentials: 'include'
       })
 
@@ -1535,35 +1602,36 @@ export default function ConfigurationPage() {
           <p className="text-sm text-muted-foreground">Manage your agency configuration</p>
         </div>
 
-        {/* Main Content with Vertical Tabs */}
-        <div className="flex gap-6">
-          {/* Vertical Sidebar Navigation */}
-          <div className="w-64 flex-shrink-0">
-            <div className="bg-card rounded-lg shadow-sm border border-border p-2 space-y-1 sticky top-6">
-              {tabs.map((tab) => {
-                const Icon = tab.icon
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all",
-                      activeTab === tab.id
-                        ? "bg-blue-50 text-blue-700 font-medium shadow-sm"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    )}
-                  >
-                    <Icon className="h-5 w-5 flex-shrink-0" />
-                    <span className="text-sm">{tab.label}</span>
-                  </button>
-                )
-              })}
+        {/* Horizontal Tabs Navigation */}
+        <div className="mb-6">
+          <div className="bg-card rounded-lg shadow-sm border border-border">
+            <div className="overflow-x-auto">
+              <div className="flex min-w-max border-b border-border">
+                {tabs.map((tab) => {
+                  const Icon = tab.icon
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={cn(
+                        "flex items-center gap-2 px-6 py-4 text-sm font-medium transition-all whitespace-nowrap border-b-2",
+                        activeTab === tab.id
+                          ? "border-blue-600 text-blue-700 bg-blue-50/50"
+                          : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent"
+                      )}
+                    >
+                      <Icon className="h-5 w-5 flex-shrink-0" />
+                      <span>{tab.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </div>
+        </div>
 
-          {/* Tab Content Area */}
-          <div className="flex-1">
-            <div className="bg-card rounded-lg shadow-sm border border-border p-6">
+        {/* Tab Content Area */}
+        <div className="bg-card rounded-lg shadow-sm border border-border p-6">
               {/* Agency Profile Tab - NEW */}
               {activeTab === "agency-profile" && (
                 <div>
@@ -2118,23 +2186,45 @@ export default function ConfigurationPage() {
 
                   {/* Carrier Selector */}
                   <div className="mb-6">
-                    <label className="block text-sm font-medium text-foreground mb-2">Select Carrier</label>
-                    <select
-                      value={selectedCommissionCarrier}
-                      onChange={(e) => {
-                        setSelectedCommissionCarrier(e.target.value)
-                        fetchCommissions(e.target.value || undefined)
-                        setCommissionEdits({})
-                      }}
-                      className="w-full md:w-96 h-12 px-4 rounded-lg border border-border bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">-- Select a carrier --</option>
-                      {carriers.map((carrier) => (
-                        <option key={carrier.id} value={carrier.id}>
-                          {carrier.display_name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-end justify-between gap-4">
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-foreground mb-2">Select Carrier</label>
+                        <select
+                          value={selectedCommissionCarrier}
+                          onChange={(e) => {
+                            setSelectedCommissionCarrier(e.target.value)
+                            fetchCommissions(e.target.value || undefined)
+                            setCommissionEdits({})
+                          }}
+                          className="w-full md:w-96 h-12 px-4 rounded-lg border border-border bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">-- Select a carrier --</option>
+                          {carriers.map((carrier) => (
+                            <option key={carrier.id} value={carrier.id}>
+                              {carrier.display_name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {selectedCommissionCarrier && (
+                        <Button
+                          onClick={handleSyncMissingCommissions}
+                          disabled={syncingMissingCommissions}
+                          className="bg-gray-900 hover:bg-gray-800 text-white h-12"
+                        >
+                          {syncingMissingCommissions ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Syncing...
+                            </>
+                          ) : (
+                            <>
+                              Not seeing all products? Click to sync
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Commissions Grid */}
@@ -2154,11 +2244,11 @@ export default function ConfigurationPage() {
                     </div>
                   ) : (
                     <>
-                      <div className="overflow-x-auto rounded-lg border border-border mb-4">
+                      <div className="overflow-auto rounded-lg border border-border mb-4 max-h-[600px]">
                         <table className="w-full">
-                          <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                          <thead className="bg-gradient-to-r from-gray-50 to-gray-100 sticky top-0 z-20">
                             <tr className="border-b-2 border-border">
-                              <th className="text-left py-4 px-6 font-bold text-gray-800 sticky left-0 bg-gray-50 z-10">Position</th>
+                              <th className="text-left py-4 px-6 font-bold text-gray-800 sticky left-0 bg-gray-50 z-30">Position</th>
                               {gridData.products.map((product) => (
                                 <th key={product.id} className="text-center py-4 px-4 font-bold text-gray-800 min-w-[150px]">
                                   {product.name}
@@ -2169,7 +2259,7 @@ export default function ConfigurationPage() {
                           <tbody>
                             {gridData.positions.map((position) => (
                               <tr key={position.id} className="border-b border-border hover:bg-blue-50 transition-colors">
-                                <td className="py-4 px-6 font-semibold text-foreground sticky left-0 bg-white z-10">
+                                <td className="py-4 px-6 font-semibold text-foreground sticky left-0 bg-white hover:bg-blue-50 z-10">
                                   {position.name}
                                   <span className="ml-2 text-xs text-muted-foreground">(Level {position.level})</span>
                                 </td>
@@ -2739,7 +2829,6 @@ export default function ConfigurationPage() {
                 </div>
               )}
             </div>
-          </div>
         </div>
 
         {/* Products Modal - KEEPING EXISTING */}
@@ -2944,7 +3033,6 @@ export default function ConfigurationPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
     </div>
   )
 }

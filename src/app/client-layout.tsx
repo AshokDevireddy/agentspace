@@ -64,13 +64,10 @@ export default function ClientLayout({
         <div className="fixed top-0 left-0 right-0 z-50 bg-background border-b border-border">
           <div className="container mx-auto px-4 py-4">
             <Link href="/" className="flex items-center space-x-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary text-primary-foreground font-bold text-lg">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-foreground text-background font-bold text-lg">
                 <Building2 className="h-6 w-6" />
               </div>
-              <div className="flex flex-col">
-                <span className="text-lg font-bold text-foreground">AgentSpace</span>
-                <span className="text-xs text-muted-foreground">CRM Platform</span>
-              </div>
+              <span className="text-lg font-bold text-foreground" style={{ fontFamily: 'Times New Roman, serif' }}>AgentSpace</span>
             </Link>
           </div>
         </div>

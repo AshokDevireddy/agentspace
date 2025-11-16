@@ -125,7 +125,7 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
-        <div className="bg-card shadow-lg rounded-lg p-8 border border-border">
+        <div className="bg-card shadow-lg rounded-md p-8 border border-border">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-foreground mb-2">Create Admin Account</h1>
             <p className="text-muted-foreground">Register as an administrator for AgentSpace</p>
@@ -238,7 +238,7 @@ export default function RegisterPage() {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg disabled:opacity-50"
+                className="w-full h-12 bg-foreground hover:bg-foreground/90 text-background font-medium rounded-md disabled:opacity-50"
               >
                 {submitting ? 'Sending invitation...' : 'Create Admin Account'}
               </Button>
@@ -252,7 +252,7 @@ export default function RegisterPage() {
               <button
                 type="button"
                 onClick={() => router.push('/login')}
-                className="text-indigo-600 hover:text-indigo-700 font-medium"
+                className="text-foreground hover:text-foreground/80 font-medium"
               >
                 Back to Login
               </button>

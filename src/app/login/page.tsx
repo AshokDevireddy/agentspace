@@ -94,7 +94,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-background">
-      <div className="flex w-full max-w-3xl rounded-2xl shadow-lg overflow-hidden border border-border">
+      <div className="flex w-full max-w-3xl rounded-md shadow-lg overflow-hidden border border-border">
         {/* Left: Form */}
         <div className="w-3/5 bg-card p-10 flex flex-col justify-center">
           <h2 className="text-3xl font-bold mb-6 text-foreground">Log In</h2>
@@ -108,7 +108,7 @@ export default function LoginPage() {
                 onClick={() => setActiveTab(tab.value)}
                 className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
                   activeTab === tab.value
-                    ? 'border-b-2 border-primary text-primary'
+                    ? 'border-b-2 border-foreground text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -151,14 +151,14 @@ export default function LoginPage() {
             )}
             <button
               type="submit"
-              className="w-full py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-lg hover:bg-primary/90 transition disabled:opacity-60"
+              className="w-full py-2 rounded-md bg-foreground text-background font-semibold text-lg hover:bg-foreground/90 transition disabled:opacity-60"
               disabled={submitting}
             >
               {submitting ? 'Signing in...' : 'Sign In'}
             </button>
             <button
               type="button"
-              className="w-full py-2 rounded-lg border border-border text-foreground font-semibold hover:bg-accent transition"
+              className="w-full py-2 rounded-md border border-border text-foreground font-semibold hover:bg-accent transition"
               onClick={() => router.push('/reset-password')}
             >
               Forgot Password?
@@ -166,7 +166,7 @@ export default function LoginPage() {
             {activeTab === 'admin' && (
               <button
                 type="button"
-                className="w-full py-2 rounded-lg bg-secondary text-secondary-foreground font-semibold hover:bg-secondary/80 transition"
+                className="w-full py-2 rounded-md bg-secondary text-secondary-foreground font-semibold hover:bg-secondary/80 transition"
                 onClick={() => router.push('/register')}
               >
                 Create Admin Account
@@ -175,8 +175,8 @@ export default function LoginPage() {
           </form>
         </div>
         {/* Right: Logo/Brand */}
-        <div className="w-2/5 bg-primary flex items-center justify-center">
-          <span className="text-5xl font-extrabold text-primary-foreground select-none">AgentSpace</span>
+        <div className="w-2/5 bg-foreground flex items-center justify-center">
+          <span className="text-5xl font-extrabold text-background select-none" style={{ fontFamily: 'Times New Roman, serif' }}>AgentSpace</span>
         </div>
       </div>
     </div>

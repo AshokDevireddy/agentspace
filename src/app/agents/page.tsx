@@ -552,7 +552,7 @@ export default function Agents() {
       {/* Header */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-4xl font-bold text-gradient">Agents</h1>
+          <h1 className="text-4xl font-bold text-primary">Agents</h1>
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
               <Button
@@ -560,7 +560,7 @@ export default function Agents() {
                 size="sm"
                 onClick={() => setView('table')}
                 disabled={loading}
-                className={`flex items-center gap-2 ${view === 'table' ? 'btn-gradient' : ''}`}
+                className={`flex items-center gap-2 ${view === 'table' ? 'bg-primary hover:bg-primary/90 text-primary-foreground' : ''}`}
               >
                 <List className="h-4 w-4" />
                 Table
@@ -570,7 +570,7 @@ export default function Agents() {
                 size="sm"
                 onClick={() => setView('tree')}
                 disabled={loading}
-                className={`flex items-center gap-2 ${view === 'tree' ? 'btn-gradient' : ''}`}
+                className={`flex items-center gap-2 ${view === 'tree' ? 'bg-primary hover:bg-primary/90 text-primary-foreground' : ''}`}
               >
                 <GitMerge className="h-4 w-4" />
                 Graph
@@ -580,7 +580,7 @@ export default function Agents() {
                 size="sm"
                 onClick={() => setView('pending-positions')}
                 disabled={loading}
-                className={`flex items-center gap-2 relative ${view === 'pending-positions' ? 'btn-gradient' : ''}`}
+                className={`flex items-center gap-2 relative ${view === 'pending-positions' ? 'bg-primary hover:bg-primary/90 text-primary-foreground' : ''}`}
               >
                 <UserCog className="h-4 w-4" />
                 Pending Positions
@@ -594,7 +594,7 @@ export default function Agents() {
               </Button>
             </div>
             <AddUserModal trigger={
-              <Button className="btn-gradient" size="sm">
+              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" size="sm">
                 <Plus className="h-4 w-4 mr-2" />
                 Add User
               </Button>
@@ -711,7 +711,7 @@ export default function Agents() {
                 <Button
                   onClick={handleApplyFilters}
                   size="sm"
-                  className="btn-gradient h-8 px-4"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 px-4"
                   disabled={loading}
                 >
                   <Filter className="h-3.5 w-3.5 mr-1.5" />
@@ -899,7 +899,7 @@ export default function Agents() {
                       variant={currentPage === pageNum ? "default" : "ghost"}
                       size="sm"
                       onClick={() => setCurrentPage(pageNum)}
-                      className={currentPage === pageNum ? "btn-gradient" : ""}
+                      className={currentPage === pageNum ? "bg-primary hover:bg-primary/90 text-primary-foreground" : ""}
                     >
                       {pageNum}
                     </Button>
@@ -1060,7 +1060,7 @@ export default function Agents() {
                       <Button
                         onClick={() => handleAssignPosition(agent.agent_id, selectedPositionId)}
                         disabled={assigningAgentId !== agent.agent_id || !selectedPositionId}
-                        className="btn-gradient"
+                        className="bg-foreground hover:bg-foreground/90 text-background"
                         size="sm"
                       >
                         {assigningAgentId === agent.agent_id && selectedPositionId ? 'Assign' : 'Select Position'}

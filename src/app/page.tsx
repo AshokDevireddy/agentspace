@@ -375,8 +375,8 @@ export default function Home() {
         </div>
       ) : (
         <div>
-          <h1 className="text-4xl font-bold text-gradient mb-2">
-            Welcome, {firstName || 'User'}.
+          <h1 className="text-4xl font-bold mb-2">
+            <span className="text-primary">Welcome, {firstName || 'User'}.</span>
           </h1>
           <div className="flex items-center space-x-2 text-sm text-muted-foreground">
             <span>This Week</span>
@@ -389,7 +389,7 @@ export default function Home() {
       {/* Dashboard Stats Cards */}
       {isLoadingDashboardData ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
@@ -397,7 +397,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
@@ -405,7 +405,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
@@ -413,7 +413,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
@@ -421,7 +421,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardContent className="p-4">
               <div className="animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
@@ -433,7 +433,7 @@ export default function Home() {
       ) : !isLoadingDashboardData && dashboardData ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {/* Active Policies */}
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="w-full overflow-hidden min-w-0">
@@ -450,7 +450,7 @@ export default function Home() {
           </Card>
 
           {/* Monthly Commissions */}
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="w-full overflow-hidden min-w-0">
@@ -467,7 +467,7 @@ export default function Home() {
           </Card>
 
           {/* New Policies */}
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="w-full overflow-hidden min-w-0">
@@ -484,7 +484,7 @@ export default function Home() {
           </Card>
 
           {/* Clients Count */}
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="w-full overflow-hidden min-w-0">
@@ -501,7 +501,7 @@ export default function Home() {
           </Card>
 
           {/* Pending Positions */}
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="w-full overflow-hidden min-w-0">
@@ -523,10 +523,10 @@ export default function Home() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Carrier Distribution Pie Chart */}
         {isLoadingDashboardData ? (
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardHeader>
               <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
-                <BarChart3 className="h-5 w-5 text-primary" />
+                <BarChart3 className="h-5 w-5 text-foreground" />
                 <span>Active Policies by Carrier</span>
               </CardTitle>
             </CardHeader>
@@ -537,10 +537,10 @@ export default function Home() {
             </CardContent>
           </Card>
         ) : !isLoadingDashboardData && dashboardData?.carriers_active ? (
-          <Card className="professional-card">
+          <Card className="professional-card rounded-md">
             <CardHeader>
               <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
-                <BarChart3 className="h-5 w-5 text-primary" />
+                <BarChart3 className="h-5 w-5 text-foreground" />
                 <span>Active Policies by Carrier</span>
               </CardTitle>
             </CardHeader>
@@ -637,10 +637,10 @@ export default function Home() {
         ) : null}
 
         {/* Top Producers */}
-        <Card className="professional-card">
+        <Card className="professional-card rounded-md">
           <CardHeader>
             <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
-              <Users className="h-5 w-5 text-primary" />
+              <Users className="h-5 w-5 text-foreground" />
               <span>Top Producers</span>
             </CardTitle>
           </CardHeader>
@@ -682,7 +682,7 @@ export default function Home() {
                         {producer.name}
                       </span>
                     </div>
-                    <span className="text-sm font-semibold text-primary">
+                    <span className="text-sm font-semibold text-foreground">
                       {producer.amount}
                     </span>
                   </div>

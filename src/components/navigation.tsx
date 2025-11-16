@@ -47,10 +47,14 @@ export default function Navigation() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [agencyName, setAgencyName] = useState<string>("AgentSpace")
+  const [agencyLogo, setAgencyLogo] = useState<string | null>(null)
+  const [agencyColor, setAgencyColor] = useState<string>("217 91% 60%")
+  const [isLoadingAgency, setIsLoadingAgency] = useState(true)
 
-  // Check if user is admin by querying the database
+  // Check if user is admin and fetch agency data
   useEffect(() => {
-    const checkAdminStatus = async () => {
+    const checkAdminAndFetchAgency = async () => {
       if (!user?.id) {
         setIsAdmin(false)
         return
@@ -60,7 +64,7 @@ export default function Navigation() {
         const supabase = createClient()
         const { data: userData, error } = await supabase
           .from('users')
-          .select('is_admin')
+          .select('is_admin, agency_id')
           .eq('auth_user_id', user.id)
           .maybeSingle()
 
@@ -69,14 +73,36 @@ export default function Navigation() {
           setIsAdmin(false)
         } else {
           setIsAdmin(userData?.is_admin || false)
+
+          // Fetch agency data if user has an agency
+          if (userData?.agency_id) {
+            const { data: agencyData } = await supabase
+              .from('agencies')
+              .select('display_name, name, logo_url, primary_color')
+              .eq('id', userData.agency_id)
+              .maybeSingle()
+
+            if (agencyData) {
+              setAgencyName(agencyData.display_name || agencyData.name || "AgentSpace")
+              setAgencyLogo(agencyData.logo_url || null)
+              setAgencyColor(agencyData.primary_color || "217 91% 60%")
+
+              // Apply agency color to CSS variable
+              if (agencyData.primary_color) {
+                document.documentElement.style.setProperty('--primary', agencyData.primary_color)
+              }
+            }
+          }
         }
       } catch (error) {
         // Silently handle error - user may not exist in users table yet
         setIsAdmin(false)
+      } finally {
+        setIsLoadingAgency(false)
       }
     }
 
-    checkAdminStatus()
+    checkAdminAndFetchAgency()
   }, [user])
 
   // Fetch unread message count
@@ -165,24 +191,69 @@ export default function Navigation() {
     return pathname === item.href || pathname.startsWith(item.href + '/')
   }
 
+  // Calculate lighter background color from agency primary color
+  const getLighterBackground = (hslColor: string) => {
+    const [h, s, l] = hslColor.split(' ').map(v => parseFloat(v.replace('%', '')))
+    // Use light version: increase lightness to 94% and reduce saturation to 50%
+    return `hsl(${h} ${s * 0.5}% 94%)`
+  }
+
   return (
-    <aside className={cn(
-      "sidebar fixed left-0 top-0 z-50 flex flex-col transition-all duration-300 custom-scrollbar overflow-y-auto",
-      "lg:translate-x-0", // Always visible on desktop
-      "-translate-x-full lg:translate-x-0", // Hidden on mobile, visible on desktop
-      isSidebarCollapsed ? "w-16" : "w-64"
-    )}>
+    <aside
+      className={cn(
+        "sidebar fixed left-0 top-0 z-50 flex flex-col transition-all duration-300 custom-scrollbar overflow-y-auto",
+        "lg:translate-x-0", // Always visible on desktop
+        "-translate-x-full lg:translate-x-0", // Hidden on mobile, visible on desktop
+        isSidebarCollapsed ? "w-16" : "w-64"
+      )}
+      style={{
+        backgroundColor: getLighterBackground(agencyColor)
+      }}
+    >
       {/* Logo Section */}
       <div className="flex items-center justify-between p-6 border-b border-sidebar-border">
         <Link href="/" className="flex items-center space-x-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary text-primary-foreground font-bold text-lg">
-            <Building2 className="h-6 w-6" />
-          </div>
-          {!isSidebarCollapsed && (
-            <div className="flex flex-col">
-              <span className="text-lg font-bold text-sidebar-foreground">AgentSpace</span>
-              <span className="text-xs text-muted-foreground">CRM Platform</span>
-            </div>
+          {isLoadingAgency ? (
+            <>
+              {/* Loading skeleton for logo */}
+              <div className="w-10 h-10 rounded-xl bg-gray-200 animate-pulse" />
+              {!isSidebarCollapsed && (
+                <div className="flex flex-col gap-2">
+                  <div className="h-5 w-32 bg-gray-200 rounded animate-pulse" />
+                  <div className="h-3 w-40 bg-gray-200 rounded animate-pulse" />
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {agencyLogo ? (
+                <img
+                  src={agencyLogo}
+                  alt={`${agencyName} Logo`}
+                  className="w-10 h-10 rounded-xl object-contain"
+                  crossOrigin="anonymous"
+                  onError={(e) => {
+                    console.error('Error loading logo in navigation:', agencyLogo)
+                    e.currentTarget.style.display = 'none'
+                  }}
+                />
+              ) : (
+                <div
+                  className="flex items-center justify-center w-10 h-10 rounded-xl text-primary-foreground font-bold text-lg"
+                  style={{ backgroundColor: `hsl(${agencyColor})` }}
+                >
+                  <Building2 className="h-6 w-6" />
+                </div>
+              )}
+              {!isSidebarCollapsed && (
+                <div className="flex flex-col">
+                  <span className="text-lg font-bold text-sidebar-foreground">{agencyName}</span>
+                  <span className="text-xs text-muted-foreground" style={{ fontFamily: 'Times New Roman, serif' }}>
+                    Powered by AgentSpace
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </Link>
       </div>

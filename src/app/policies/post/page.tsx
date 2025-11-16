@@ -583,7 +583,7 @@ export default function PostDeal() {
     <div className="space-y-8 max-w-5xl mx-auto">
       {/* Header */}
       <div>
-        <h1 className="text-4xl font-bold text-gradient mb-2">Post a Deal</h1>
+        <h1 className="text-4xl font-bold text-primary mb-2">Post a Deal</h1>
         <p className="text-muted-foreground">Submit a new policy in {STEPS.length} easy steps</p>
       </div>
 
@@ -1051,7 +1051,7 @@ export default function PostDeal() {
                 <Button
                   type="button"
                   onClick={nextStep}
-                  className="h-12 px-6 btn-gradient"
+                  className="h-12 px-6 bg-foreground hover:bg-foreground/90 text-background"
                 >
                   Next
                   <ArrowRight className="ml-2 h-4 w-4" />
@@ -1063,7 +1063,7 @@ export default function PostDeal() {
                     submitIntentRef.current = true
                   }}
                   disabled={submitting}
-                  className="h-12 px-6 btn-gradient disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="h-12 px-6 bg-foreground hover:bg-foreground/90 text-background disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? (
                     <>

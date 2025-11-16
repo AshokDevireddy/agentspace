@@ -367,7 +367,7 @@ export default function BookOfBusiness() {
     <div className="space-y-6 max-w-full overflow-hidden">
       {/* Header with Status Slider and View Mode Slider */}
       <div className="flex items-center justify-between">
-        <h1 className="text-4xl font-bold text-gradient">Book of Business</h1>
+        <h1 className="text-4xl font-bold text-primary">Book of Business</h1>
 
         <div className="flex items-center gap-4">
           {/* View Mode Slider */}
@@ -612,7 +612,7 @@ export default function BookOfBusiness() {
                 <Button
                   onClick={handleApplyFilters}
                   size="sm"
-                  className="btn-gradient h-8 px-4"
+                  className="bg-foreground hover:bg-foreground/90 text-background h-8 px-4"
                   disabled={loading}
                 >
                   Apply Filters
@@ -855,7 +855,7 @@ export default function BookOfBusiness() {
                         </td>
                         <td>
                           <div className="flex flex-col gap-1">
-                            <span className="text-primary font-bold text-base">{deal.annualPremium}</span>
+                            <span className="text-foreground font-bold text-base">{deal.annualPremium}</span>
                             <span className="text-xs text-muted-foreground">{deal.effectiveDate}</span>
                             {deal.billingCycle ? (
                               <Badge

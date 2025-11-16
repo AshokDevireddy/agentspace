@@ -346,7 +346,7 @@ export default function Scoreboard() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-4xl font-bold text-gradient mb-2">Scoreboard</h1>
+        <h1 className="text-4xl font-bold text-primary mb-2">Scoreboard</h1>
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center space-x-2 text-sm text-muted-foreground">
             <span>{getTimeframeLabel()}</span>
@@ -490,10 +490,10 @@ export default function Scoreboard() {
 
       {/* Weekly Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="professional-card">
+        <Card className="professional-card rounded-md">
           <CardContent className="p-6 text-center">
             <h3 className="text-sm font-medium text-muted-foreground mb-2">Production</h3>
-            <p className="text-3xl font-bold text-primary">
+            <p className="text-3xl font-bold text-foreground">
               {loading ? (
                 <span className="inline-block h-8 w-32 bg-muted animate-pulse rounded" />
               ) : (
@@ -503,10 +503,10 @@ export default function Scoreboard() {
           </CardContent>
         </Card>
 
-        <Card className="professional-card">
+        <Card className="professional-card rounded-md">
           <CardContent className="p-6 text-center">
             <h3 className="text-sm font-medium text-muted-foreground mb-2">Policies Sold</h3>
-            <p className="text-3xl font-bold text-green-400">
+            <p className="text-3xl font-bold text-foreground">
               {loading ? (
                 <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
               ) : (
@@ -516,10 +516,10 @@ export default function Scoreboard() {
           </CardContent>
         </Card>
 
-        <Card className="professional-card">
+        <Card className="professional-card rounded-md">
           <CardContent className="p-6 text-center">
             <h3 className="text-sm font-medium text-muted-foreground mb-2">Active Agents</h3>
-            <p className="text-3xl font-bold text-blue-400">
+            <p className="text-3xl font-bold text-foreground">
               {loading ? (
                 <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
               ) : (
@@ -534,7 +534,7 @@ export default function Scoreboard() {
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[0, 1, 2].map((index) => (
-            <Card key={index} className="professional-card relative overflow-hidden">
+            <Card key={index} className="professional-card rounded-md relative overflow-hidden">
               <CardContent className="p-6 text-center">
                 <div className="mb-4">
                   <span className="text-4xl">
@@ -551,7 +551,7 @@ export default function Scoreboard() {
       ) : topAgents.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {topAgents.map((agent, index) => (
-            <Card key={agent.agent_id} className="professional-card relative overflow-hidden">
+            <Card key={agent.agent_id} className="professional-card rounded-md relative overflow-hidden">
               <CardContent className="p-6 text-center">
                 <div className="mb-4">
                   <span className="text-4xl">
@@ -559,7 +559,7 @@ export default function Scoreboard() {
                   </span>
                 </div>
                 <h3 className="text-xl font-bold text-foreground mb-2">{agent.name}</h3>
-                <p className="text-2xl font-bold text-green-400">{formatCurrency(agent.total)}</p>
+                <p className="text-2xl font-bold text-foreground">{formatCurrency(agent.total)}</p>
                 <Badge
                   variant="outline"
                   className={`mt-2 ${
@@ -577,7 +577,7 @@ export default function Scoreboard() {
       )}
 
       {/* Leaderboard Table */}
-      <Card className="professional-card">
+      <Card className="professional-card rounded-md">
         <CardHeader>
           <CardTitle className="text-xl font-bold text-foreground">Production Leaderboard</CardTitle>
         </CardHeader>
@@ -663,7 +663,7 @@ export default function Scoreboard() {
                             : '--'}
                         </td>
                       ))}
-                      <td className="py-3 px-4 text-right font-bold text-green-400 sticky right-0 whitespace-nowrap">
+                      <td className="py-3 px-4 text-right font-bold text-foreground sticky right-0 whitespace-nowrap">
                         {formatCurrency(agent.total)}
                       </td>
                     </tr>

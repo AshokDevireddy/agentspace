@@ -372,7 +372,7 @@ function SMSMessagingPageContent() {
     await fetchMessages(conversation.id)
     fetchDealDetails(conversation.dealId)
     // Real-time subscription will handle updating unread counts
-  }, [])
+  }, [fetchMessages])
 
   // Subscribe to real-time updates - Global subscription for all conversations
   useEffect(() => {
@@ -915,7 +915,7 @@ function SMSMessagingPageContent() {
               {isHydrated && (
                 <div
                   className={cn(
-                    "absolute h-[calc(100%-8px)] bg-gradient-to-r from-blue-600 to-blue-500 rounded-md top-1 shadow-md",
+                    "absolute h-[calc(100%-8px)] bg-primary rounded-md top-1 shadow-md",
                     "transition-all duration-300 ease-in-out",
                     viewMode === 'self' ? 'left-1 right-[calc(50%+2px)]' : 'left-[calc(50%+2px)] right-1'
                   )}
@@ -963,7 +963,7 @@ function SMSMessagingPageContent() {
               <Button
                 onClick={() => setCreateModalOpen(true)}
                 size="sm"
-                className="btn-gradient h-10 px-4 whitespace-nowrap"
+                className="bg-primary hover:bg-primary/90 text-primary-foreground h-10 px-4 whitespace-nowrap"
               >
                 <Plus className="h-4 w-4 mr-1" />
                 New

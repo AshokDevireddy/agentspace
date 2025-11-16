@@ -1297,7 +1297,7 @@ function roundToNiceNumber(value: number): number {
 		<div className="flex w-full flex-col gap-6 p-6">
 			{/* Header */}
 			<div className="flex items-center justify-between">
-				<h1 className="text-xl font-semibold">Agency Analytics</h1>
+				<h1 className="text-xl font-semibold text-primary">Agency Analytics</h1>
 
 				<div className="flex items-center gap-2">
 					{/* Time window: 3,6,9,All Time */}
@@ -1328,17 +1328,8 @@ function roundToNiceNumber(value: number): number {
 						</SelectContent>
 					</Select>
 
-					{/* Downlines: single option for now */}
-					<Select value="all" onValueChange={() => {}}>
-						<SelectTrigger className="w-[140px] rounded-md h-9 text-sm"><SelectValue placeholder="All Downlines" /></SelectTrigger>
-						<SelectContent className="rounded-md">
-							<SelectItem value="all">All Downlines</SelectItem>
-						</SelectContent>
-					</Select>
-
 					<Button
-						variant="blue"
-						className="rounded-md h-9 text-sm"
+						className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-md h-9 text-sm"
 						onClick={() => setIsUploadModalOpen(true)}
 					>
 						Upload Reports
@@ -1430,10 +1421,10 @@ function roundToNiceNumber(value: number): number {
 								].map((g) => (
 									<Button
 										key={g.key}
-										variant={groupBy === g.key ? "blue" : "outline"}
+										variant={groupBy === g.key ? "default" : "outline"}
 										size="sm"
 										disabled
-										className="rounded-md"
+										className={`rounded-md ${groupBy === g.key ? 'bg-foreground hover:bg-foreground/90 text-background' : ''}`}
 									>
 										{g.label}
 									</Button>
@@ -1493,7 +1484,7 @@ function roundToNiceNumber(value: number): number {
 								].map((g) => (
 									<Button
 										key={g.key}
-										variant={groupBy === g.key ? "blue" : "outline"}
+										variant={groupBy === g.key ? "default" : "outline"}
 										size="sm"
 										onClick={() => {
 											setGroupBy(g.key)
@@ -1501,7 +1492,7 @@ function roundToNiceNumber(value: number): number {
 												setSelectedCarrier(null)
 											}
 										}}
-										className="rounded-md"
+										className={`rounded-md ${groupBy === g.key ? 'bg-foreground hover:bg-foreground/90 text-background' : ''}`}
 									>
 										{g.label}
 									</Button>
@@ -1965,10 +1956,10 @@ function roundToNiceNumber(value: number): number {
 								].map((g) => (
 									<Button
 										key={g.key}
-										variant={groupBy === g.key ? "blue" : "outline"}
+										variant={groupBy === g.key ? "default" : "outline"}
 										size="sm"
 										onClick={() => setGroupBy(g.key)}
-										className="rounded-md"
+										className={`rounded-md ${groupBy === g.key ? 'bg-foreground hover:bg-foreground/90 text-background' : ''}`}
 									>
 										{g.label}
 									</Button>
@@ -2105,7 +2096,7 @@ function roundToNiceNumber(value: number): number {
 							{ key: "avgprem", label: "Avg Premium" },
 							{ key: "all", label: "Show All" },
 						].map((m) => (
-							<Button key={m.key} variant={trendMetric === m.key ? "blue" : "outline"} size="sm" onClick={() => setTrendMetric(m.key)} disabled={isLoading} className="rounded-md">{m.label}</Button>
+							<Button key={m.key} variant={trendMetric === m.key ? "default" : "outline"} size="sm" onClick={() => setTrendMetric(m.key)} disabled={isLoading} className={`rounded-md ${trendMetric === m.key ? 'bg-foreground hover:bg-foreground/90 text-background' : ''}`}>{m.label}</Button>
 						))}
 					</div>
 					{isLoading ? (

@@ -4,12 +4,13 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell } from "lucide-react"
+import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
+import { HexColorPicker } from 'react-colorful'
 
 // Types for carrier data
 interface Carrier {
@@ -39,6 +40,9 @@ interface Agency {
   phone_number?: string
   messaging_enabled?: boolean
   discord_webhook_url?: string
+  display_name?: string
+  logo_url?: string
+  primary_color?: string
 }
 
 // Types for position data
@@ -64,15 +68,27 @@ interface Commission {
   commission_percentage: number
 }
 
-type TabType = "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord"
+type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord"
 
 export default function ConfigurationPage() {
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabType>("carriers")
+  const [activeTab, setActiveTab] = useState<TabType>("agency-profile")
+
+  // Agency Profile state
+  const [agency, setAgency] = useState<Agency | null>(null)
+  const [displayName, setDisplayName] = useState("")
+  const [editingDisplayName, setEditingDisplayName] = useState(false)
+  const [displayNameValue, setDisplayNameValue] = useState("")
+  const [savingDisplayName, setSavingDisplayName] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [primaryColor, setPrimaryColor] = useState("217 91% 60%") // Default blue
+  const [editingColor, setEditingColor] = useState(false)
+  const [colorValue, setColorValue] = useState("")
+  const [savingColor, setSavingColor] = useState(false)
+  const [loadingAgencyProfile, setLoadingAgencyProfile] = useState(true)
 
   // Lead Sources state
-  const [agency, setAgency] = useState<Agency | null>(null)
   const [leadSources, setLeadSources] = useState<string[]>([])
   const [newLeadSource, setNewLeadSource] = useState("")
   const [editingLeadSourceIndex, setEditingLeadSourceIndex] = useState<number | null>(null)
@@ -231,17 +247,20 @@ export default function ConfigurationPage() {
         if (userData?.agency_id) {
           const { data: agencyInfo } = await supabase
             .from('agencies')
-            .select('id, name, lead_sources, phone_number, messaging_enabled, discord_webhook_url')
+            .select('id, name, display_name, logo_url, primary_color, lead_sources, phone_number, messaging_enabled, discord_webhook_url')
             .eq('id', userData.agency_id)
             .single()
 
           if (agencyInfo) {
             agencyData = agencyInfo
             setAgency(agencyInfo)
+            setDisplayName(agencyInfo.display_name || agencyInfo.name)
+            setPrimaryColor(agencyInfo.primary_color || "217 91% 60%")
             setLeadSources(agencyInfo.lead_sources || [])
             setAgencyPhoneNumber(agencyInfo.phone_number || "")
             setMessagingEnabled(agencyInfo.messaging_enabled || false)
             setDiscordWebhookUrl(agencyInfo.discord_webhook_url || "")
+            setLoadingAgencyProfile(false)
           }
         }
       }
@@ -357,6 +376,367 @@ export default function ConfigurationPage() {
     } finally {
       setCommissionsLoading(false)
     }
+  }
+
+  // Agency Profile Management Functions
+  const handleEditDisplayName = () => {
+    setEditingDisplayName(true)
+    setDisplayNameValue(displayName)
+  }
+
+  const handleSaveDisplayName = async () => {
+    if (!agency) return
+
+    try {
+      setSavingDisplayName(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ display_name: displayNameValue.trim() })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setDisplayName(displayNameValue.trim())
+      setEditingDisplayName(false)
+      setDisplayNameValue("")
+    } catch (error) {
+      console.error('Error updating display name:', error)
+      alert('Failed to update display name')
+    } finally {
+      setSavingDisplayName(false)
+    }
+  }
+
+  const handleCancelDisplayNameEdit = () => {
+    setEditingDisplayName(false)
+    setDisplayNameValue("")
+  }
+
+  const handleLogoUpload = async (file: File) => {
+    if (!agency) {
+      alert('Agency information not loaded. Please refresh the page.')
+      return
+    }
+
+    // Validate file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024 // 5MB
+    if (file.size > maxSize) {
+      alert('File size must be less than 5MB')
+      return
+    }
+
+    // Validate file type
+    const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp']
+    if (!validTypes.includes(file.type)) {
+      alert('Please upload a valid image file (PNG, JPG, SVG, or WebP)')
+      return
+    }
+
+    try {
+      setUploadingLogo(true)
+      const supabase = createClient()
+
+      console.log('Starting logo upload...', {
+        agencyId: agency.id,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type
+      })
+
+      // Upload to storage
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${agency.id}/logo.${fileExt}`
+
+      console.log('Uploading to storage path:', fileName)
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(fileName, file, {
+          upsert: true,
+          contentType: file.type
+        })
+
+      if (uploadError) {
+        console.error('Storage upload error:', {
+          error: uploadError,
+          message: uploadError.message,
+          statusCode: uploadError.statusCode,
+          details: uploadError
+        })
+        throw new Error(`Upload failed: ${uploadError.message}`)
+      }
+
+      console.log('Upload successful:', uploadData)
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('logos')
+        .getPublicUrl(fileName)
+
+      console.log('Public URL generated:', publicUrl)
+
+      // Update agency with logo URL
+      const { error: updateError } = await supabase
+        .from('agencies')
+        .update({ logo_url: publicUrl })
+        .eq('id', agency.id)
+
+      if (updateError) {
+        console.error('Database update error:', updateError)
+        throw new Error(`Failed to update database: ${updateError.message}`)
+      }
+
+      console.log('Logo URL saved to database successfully')
+      console.log('Public URL:', publicUrl)
+
+      // Update local state with public URL
+      setAgency({ ...agency, logo_url: publicUrl })
+
+      // Extract dominant color from the uploaded image
+      await extractDominantColor(publicUrl)
+
+      alert('Logo uploaded successfully! Please refresh the page to see it in the navigation.')
+    } catch (error) {
+      console.error('Error uploading logo:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      alert(`Failed to upload logo: ${errorMessage}. Check console for details.`)
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  // Extract dominant color from logo
+  const extractDominantColor = async (imageUrl: string) => {
+    try {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.src = imageUrl
+
+      await new Promise((resolve, reject) => {
+        img.onload = resolve
+        img.onerror = reject
+      })
+
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      canvas.width = img.width
+      canvas.height = img.height
+      ctx.drawImage(img, 0, 0)
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const data = imageData.data
+
+      let r = 0, g = 0, b = 0, count = 0
+
+      // Sample pixels and calculate average
+      for (let i = 0; i < data.length; i += 4) {
+        const alpha = data[i + 3]
+        if (alpha > 128) { // Only count non-transparent pixels
+          r += data[i]
+          g += data[i + 1]
+          b += data[i + 2]
+          count++
+        }
+      }
+
+      if (count > 0) {
+        r = Math.round(r / count)
+        g = Math.round(g / count)
+        b = Math.round(b / count)
+
+        const hsl = rgbToHSL(r, g, b)
+        const suggestedColor = `${hsl.h} ${hsl.s}% ${hsl.l}%`
+
+        // Ask user if they want to use the suggested color
+        const useSuggested = window.confirm(
+          `We detected a color from your logo. Would you like to use it as your primary color?`
+        )
+
+        if (useSuggested && agency) {
+          const supabase = createClient()
+          const { error } = await supabase
+            .from('agencies')
+            .update({ primary_color: suggestedColor })
+            .eq('id', agency.id)
+
+          if (!error) {
+            setPrimaryColor(suggestedColor)
+            setColorValue(suggestedColor)
+            document.documentElement.style.setProperty('--primary', suggestedColor)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error extracting color:', error)
+      // Silently fail - color extraction is optional
+    }
+  }
+
+  // Convert RGB to HSL
+  const rgbToHSL = (r: number, g: number, b: number) => {
+    r /= 255
+    g /= 255
+    b /= 255
+
+    const max = Math.max(r, g, b)
+    const min = Math.min(r, g, b)
+    let h = 0, s = 0, l = (max + min) / 2
+
+    if (max !== min) {
+      const d = max - min
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+
+      switch (max) {
+        case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break
+        case g: h = ((b - r) / d + 2) / 6; break
+        case b: h = ((r - g) / d + 4) / 6; break
+      }
+    }
+
+    return {
+      h: Math.round(h * 360),
+      s: Math.round(s * 100),
+      l: Math.round(l * 100)
+    }
+  }
+
+  const handleRemoveLogo = async () => {
+    if (!agency || !agency.logo_url) return
+
+    const confirmed = window.confirm('Are you sure you want to remove the agency logo?')
+    if (!confirmed) return
+
+    try {
+      setUploadingLogo(true)
+      const supabase = createClient()
+
+      // Update agency to remove logo URL
+      const { error } = await supabase
+        .from('agencies')
+        .update({ logo_url: null })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setAgency({ ...agency, logo_url: undefined })
+    } catch (error) {
+      console.error('Error removing logo:', error)
+      alert('Failed to remove logo')
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  const handleEditColor = () => {
+    setEditingColor(true)
+    setColorValue(primaryColor)
+  }
+
+  const handleSaveColor = async () => {
+    if (!agency) return
+
+    try {
+      setSavingColor(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ primary_color: colorValue.trim() })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setPrimaryColor(colorValue.trim())
+      setEditingColor(false)
+      setColorValue("")
+
+      // Update CSS variable
+      document.documentElement.style.setProperty('--primary', colorValue.trim())
+    } catch (error) {
+      console.error('Error updating color:', error)
+      alert('Failed to update color')
+    } finally {
+      setSavingColor(false)
+    }
+  }
+
+  const handleCancelColorEdit = () => {
+    setEditingColor(false)
+    setColorValue("")
+  }
+
+  // Helper function to convert hex to HSL
+  const hexToHSL = (hex: string): string => {
+    // Remove # if present
+    hex = hex.replace('#', '')
+
+    // Convert to RGB
+    const r = parseInt(hex.substring(0, 2), 16) / 255
+    const g = parseInt(hex.substring(2, 4), 16) / 255
+    const b = parseInt(hex.substring(4, 6), 16) / 255
+
+    const max = Math.max(r, g, b)
+    const min = Math.min(r, g, b)
+    let h = 0, s = 0, l = (max + min) / 2
+
+    if (max !== min) {
+      const d = max - min
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+
+      switch (max) {
+        case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break
+        case g: h = ((b - r) / d + 2) / 6; break
+        case b: h = ((r - g) / d + 4) / 6; break
+      }
+    }
+
+    h = Math.round(h * 360)
+    s = Math.round(s * 100)
+    l = Math.round(l * 100)
+
+    return `${h} ${s}% ${l}%`
+  }
+
+  // Helper function to convert HSL to hex
+  const hslToHex = (hslString: string): string => {
+    const match = hslString.match(/(\d+)\s+(\d+)%\s+(\d+)%/)
+    if (!match) return '#000000'
+
+    const h = parseInt(match[1]) / 360
+    const s = parseInt(match[2]) / 100
+    const l = parseInt(match[3]) / 100
+
+    let r, g, b
+
+    if (s === 0) {
+      r = g = b = l
+    } else {
+      const hue2rgb = (p: number, q: number, t: number) => {
+        if (t < 0) t += 1
+        if (t > 1) t -= 1
+        if (t < 1/6) return p + (q - p) * 6 * t
+        if (t < 1/2) return q
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6
+        return p
+      }
+
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+      const p = 2 * l - q
+      r = hue2rgb(p, q, h + 1/3)
+      g = hue2rgb(p, q, h)
+      b = hue2rgb(p, q, h - 1/3)
+    }
+
+    const toHex = (x: number) => {
+      const hex = Math.round(x * 255).toString(16)
+      return hex.length === 1 ? '0' + hex : hex
+    }
+
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`
   }
 
   // Position management functions
@@ -1107,6 +1487,7 @@ export default function ConfigurationPage() {
 
   // Tab configuration with icons
   const tabs = [
+    { id: "agency-profile" as TabType, label: "Agency Profile", icon: Building2 },
     { id: "carriers" as TabType, label: "Carriers & Products", icon: Package },
     { id: "positions" as TabType, label: "Positions", icon: Users },
     { id: "commissions" as TabType, label: "Commissions", icon: DollarSign },
@@ -1183,6 +1564,337 @@ export default function ConfigurationPage() {
           {/* Tab Content Area */}
           <div className="flex-1">
             <div className="bg-card rounded-lg shadow-sm border border-border p-6">
+              {/* Agency Profile Tab - NEW */}
+              {activeTab === "agency-profile" && (
+                <div>
+                  <div className="mb-6">
+                    <h2 className="text-xl font-semibold text-foreground mb-1">Agency Profile</h2>
+                    <p className="text-sm text-muted-foreground">Customize your agency branding and appearance</p>
+                  </div>
+
+                  {loadingAgencyProfile ? (
+                    /* Loading Skeleton */
+                    <div className="space-y-6">
+                      {/* Display Name Skeleton */}
+                      <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                        <div className="h-7 w-48 bg-gray-200 rounded animate-pulse mb-4" />
+                        <div className="h-4 w-full max-w-2xl bg-gray-200 rounded animate-pulse mb-4" />
+                        <div className="h-12 w-full bg-gray-200 rounded animate-pulse" />
+                      </div>
+
+                      {/* Logo Skeleton */}
+                      <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                        <div className="h-7 w-32 bg-gray-200 rounded animate-pulse mb-4" />
+                        <div className="h-4 w-full max-w-2xl bg-gray-200 rounded animate-pulse mb-4" />
+                        <div className="flex flex-col md:flex-row gap-6">
+                          <div className="w-full md:w-48 h-48 bg-gray-200 rounded-lg animate-pulse" />
+                          <div className="flex-1 space-y-3">
+                            <div className="h-12 w-full bg-gray-200 rounded animate-pulse" />
+                            <div className="h-4 w-48 bg-gray-200 rounded animate-pulse" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Color Picker Skeleton */}
+                      <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                        <div className="h-7 w-56 bg-gray-200 rounded animate-pulse mb-4" />
+                        <div className="h-4 w-full max-w-2xl bg-gray-200 rounded animate-pulse mb-6" />
+                        <div className="flex flex-col md:flex-row gap-6">
+                          <div className="w-56 h-56 bg-gray-200 rounded-lg animate-pulse" />
+                          <div className="flex-1 space-y-4">
+                            <div className="flex items-center gap-4">
+                              <div className="w-20 h-20 bg-gray-200 rounded-lg animate-pulse" />
+                              <div className="flex-1 space-y-2">
+                                <div className="h-4 w-24 bg-gray-200 rounded animate-pulse" />
+                                <div className="h-6 w-40 bg-gray-200 rounded animate-pulse" />
+                                <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {/* Agency Display Name */}
+                      <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                        <h3 className="text-xl font-semibold text-foreground mb-4">Agency Display Name</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          This name will be displayed in the navigation sidebar and throughout the platform.
+                        </p>
+
+                        {editingDisplayName ? (
+                        <div className="flex gap-3">
+                          <Input
+                            type="text"
+                            value={displayNameValue}
+                            onChange={(e) => setDisplayNameValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveDisplayName()
+                              if (e.key === 'Escape') handleCancelDisplayNameEdit()
+                            }}
+                            placeholder="Enter agency display name"
+                            className="flex-1 h-12 text-lg"
+                            disabled={savingDisplayName}
+                          />
+                          <button
+                            onClick={handleSaveDisplayName}
+                            disabled={savingDisplayName || !displayNameValue.trim()}
+                            className="text-green-600 hover:text-green-800 p-3 disabled:opacity-50 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
+                          >
+                            <Check className="h-6 w-6" />
+                          </button>
+                          <button
+                            onClick={handleCancelDisplayNameEdit}
+                            disabled={savingDisplayName}
+                            className="text-muted-foreground hover:text-foreground p-3 disabled:opacity-50 bg-accent rounded-lg hover:bg-accent/80 transition-colors"
+                          >
+                            <X className="h-6 w-6" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 bg-white rounded-lg border-2 border-gray-200 p-4">
+                            <p className="text-xl font-semibold text-foreground">
+                              {displayName || <span className="text-muted-foreground italic">Not set</span>}
+                            </p>
+                          </div>
+                          <button
+                            onClick={handleEditDisplayName}
+                            className="text-blue-600 hover:text-blue-800 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                          >
+                            <Edit className="h-6 w-6" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Agency Logo */}
+                    <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                      <h3 className="text-xl font-semibold text-foreground mb-4">Agency Logo</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Upload your agency logo. This will replace the default icon in the navigation sidebar. Recommended size: 200x200px or larger, square format.
+                      </p>
+
+                      <div className="flex flex-col md:flex-row gap-6">
+                        {/* Logo Preview */}
+                        <div className="flex items-center justify-center w-full md:w-48 h-48 bg-white rounded-lg border-2 border-gray-200">
+                          {agency?.logo_url ? (
+                            <img
+                              src={agency.logo_url}
+                              alt="Agency Logo"
+                              className="max-w-full max-h-full object-contain p-2"
+                              crossOrigin="anonymous"
+                              onError={(e) => {
+                                console.error('Error loading logo:', agency.logo_url)
+                                e.currentTarget.style.display = 'none'
+                              }}
+                            />
+                          ) : (
+                            <div className="text-center text-muted-foreground">
+                              <Image className="h-16 w-16 mx-auto mb-2 opacity-50" />
+                              <p className="text-sm">No logo uploaded</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Upload Controls */}
+                        <div className="flex-1 flex flex-col justify-center gap-3">
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (file) handleLogoUpload(file)
+                            }}
+                            className="hidden"
+                            id="logo-upload"
+                            disabled={uploadingLogo}
+                          />
+                          <label
+                            htmlFor="logo-upload"
+                            className={cn(
+                              "cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors text-center font-medium",
+                              uploadingLogo && "opacity-50 cursor-not-allowed"
+                            )}
+                          >
+                            {uploadingLogo ? (
+                              <>
+                                <Loader2 className="h-5 w-5 animate-spin inline mr-2" />
+                                Uploading...
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="h-5 w-5 inline mr-2" />
+                                {agency?.logo_url ? 'Replace Logo' : 'Upload Logo'}
+                              </>
+                            )}
+                          </label>
+                          {agency?.logo_url && (
+                            <Button
+                              onClick={handleRemoveLogo}
+                              disabled={uploadingLogo}
+                              variant="outline"
+                              className="border-red-300 text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-5 w-5 mr-2" />
+                              Remove Logo
+                            </Button>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            Supported formats: PNG, JPG, SVG, WebP
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Primary Color Scheme */}
+                    <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                      <h3 className="text-xl font-semibold text-foreground mb-4">
+                        <Palette className="h-5 w-5 inline mr-2" />
+                        Primary Color Scheme
+                      </h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Choose your agency's primary brand color. This color will be used for buttons, links, and highlights throughout the platform.
+                      </p>
+
+                      <div className="space-y-6">
+                        {/* Color Picker */}
+                        <div className="flex flex-col md:flex-row gap-6">
+                          {/* Visual Color Picker */}
+                          <div className="flex-shrink-0">
+                            <HexColorPicker
+                              color={hslToHex(editingColor ? colorValue : primaryColor)}
+                              onChange={(hex) => {
+                                const hsl = hexToHSL(hex)
+                                if (editingColor) {
+                                  setColorValue(hsl)
+                                } else {
+                                  setColorValue(hsl)
+                                  setEditingColor(true)
+                                }
+                              }}
+                              style={{ width: '220px', height: '220px' }}
+                            />
+                          </div>
+
+                          {/* Color Info and Controls */}
+                          <div className="flex-1 space-y-4">
+                            {/* Current/Selected Color Display */}
+                            <div className="flex items-center gap-4">
+                              <div
+                                className="w-20 h-20 rounded-lg border-2 border-gray-200 shadow-sm"
+                                style={{ backgroundColor: `hsl(${editingColor ? colorValue : primaryColor})` }}
+                              />
+                              <div className="flex-1">
+                                <p className="text-sm text-muted-foreground mb-1">
+                                  {editingColor ? 'Selected Color' : 'Current Color'}
+                                </p>
+                                <p className="text-lg font-mono text-foreground">
+                                  {editingColor ? colorValue : primaryColor}
+                                </p>
+                                <p className="text-sm font-mono text-muted-foreground">
+                                  {hslToHex(editingColor ? colorValue : primaryColor)}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Manual Input */}
+                            <div>
+                              <label className="block text-sm font-medium text-foreground mb-2">
+                                Or enter manually (HSL format):
+                              </label>
+                              <Input
+                                type="text"
+                                value={editingColor ? colorValue : primaryColor}
+                                onChange={(e) => {
+                                  setColorValue(e.target.value)
+                                  setEditingColor(true)
+                                }}
+                                placeholder="e.g., 217 91% 60%"
+                                className="h-10 font-mono"
+                                disabled={savingColor}
+                              />
+                            </div>
+
+                            {/* Action Buttons */}
+                            {editingColor && (
+                              <div className="flex gap-2">
+                                <Button
+                                  onClick={handleSaveColor}
+                                  disabled={savingColor || !colorValue.trim()}
+                                  className="bg-green-600 hover:bg-green-700"
+                                >
+                                  {savingColor ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                      Saving...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Check className="h-4 w-4 mr-2" />
+                                      Save Color
+                                    </>
+                                  )}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  onClick={handleCancelColorEdit}
+                                  disabled={savingColor}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Info about color extraction */}
+                        <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                          <p className="text-sm text-blue-800">
+                            <strong>💡 Tip:</strong> When you upload a logo, we'll automatically suggest a color based on your logo's colors!
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Preview Section */}
+                    <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
+                      <h3 className="text-lg font-semibold text-blue-900 mb-3">Preview</h3>
+                      <p className="text-sm text-blue-800 mb-4">
+                        Your agency branding will appear in the navigation sidebar at the top:
+                      </p>
+                      <div className="bg-white rounded-lg p-6 border-2 border-gray-200">
+                        <div className="flex items-center space-x-3">
+                          {agency?.logo_url ? (
+                            <img
+                              src={agency.logo_url}
+                              alt="Logo Preview"
+                              className="w-10 h-10 rounded-xl object-contain"
+                              crossOrigin="anonymous"
+                            />
+                          ) : (
+                            <div
+                              className="flex items-center justify-center w-10 h-10 rounded-xl text-white font-bold text-lg"
+                              style={{ backgroundColor: `hsl(${primaryColor})` }}
+                            >
+                              <Building2 className="h-6 w-6" />
+                            </div>
+                          )}
+                          <div className="flex flex-col">
+                            <span className="text-lg font-bold text-foreground">{displayName || 'Your Agency'}</span>
+                            <span className="text-xs text-muted-foreground" style={{ fontFamily: 'Times New Roman, serif' }}>
+                              Powered by AgentSpace
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  )}
+                </div>
+              )}
+
               {/* Carriers Tab - KEEPING EXISTING CONTENT */}
               {activeTab === "carriers" && (
                 <div>

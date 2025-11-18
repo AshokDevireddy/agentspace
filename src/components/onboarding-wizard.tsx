@@ -75,6 +75,9 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   const supabase = createClient()
   const router = useRouter()
 
+  // Agency branding state
+  const [primaryColor, setPrimaryColor] = useState<string>("217 91% 60%")
+
   // Policy reports upload state
   const [uploads, setUploads] = useState<CarrierUpload[]>(
     carriers.map(carrier => ({ carrier, file: null }))
@@ -114,6 +117,24 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     }
   }, [errors])
 
+  // Fetch agency primary color
+  useEffect(() => {
+    const fetchAgencyColor = async () => {
+      if (userData.agency_id) {
+        const { data: agencyData } = await supabase
+          .from('agencies')
+          .select('primary_color')
+          .eq('id', userData.agency_id)
+          .single()
+
+        if (agencyData?.primary_color) {
+          setPrimaryColor(agencyData.primary_color)
+        }
+      }
+    }
+    fetchAgencyColor()
+  }, [userData.agency_id, supabase])
+
   // Agent search debounce (for upline selection)
   useEffect(() => {
     if (agentSearchTerm.length < 2) {
@@ -124,7 +145,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     const debounceTimer = setTimeout(async () => {
       try {
         setIsSearching(true)
-        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(agentSearchTerm)}&limit=10`, {
+        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(agentSearchTerm)}&limit=10&type=downline`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include'
@@ -162,7 +183,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         setIsNameSearching(true)
         console.log('[ONBOARDING] Starting name search for:', nameSearchTerm)
 
-        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(nameSearchTerm)}&limit=10`, {
+        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(nameSearchTerm)}&limit=10&type=pre-invite`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -591,7 +612,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Header */}
         <div>
-          <h1 className="text-4xl font-bold text-gradient mb-2">
+          <h1 className="text-4xl font-bold mb-2" style={{ color: `hsl(${primaryColor})` }}>
             Complete Your Setup
           </h1>
           <p className="text-muted-foreground">
@@ -615,7 +636,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         )}
 
         {/* Content Card */}
-        <div className="bg-card rounded-xl shadow-lg border border-border p-8">
+        <div className="bg-card rounded-lg shadow-lg border border-border p-8">
           {/* Step 1: Upload Policy Reports (Admin only) */}
           {currentStep === 1 && userData.is_admin && (
             <div className="space-y-6">
@@ -719,7 +740,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                   <Button
                     type="button"
                     onClick={nextStep}
-                    className="h-12 px-6 btn-gradient"
+                    className="h-12 px-6 bg-black hover:bg-black/90 text-white"
                   >
                     Next
                   </Button>
@@ -1032,7 +1053,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
                   <Button
                     onClick={handleAddAgent}
-                    className="w-full btn-gradient"
+                    className="w-full bg-black hover:bg-black/90 text-white"
                   >
                     <Plus className="h-4 w-4 mr-2" />
                     Add to List
@@ -1073,7 +1094,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                     type="button"
                     onClick={handleComplete}
                     disabled={submitting}
-                    className="h-12 px-6 btn-gradient"
+                    className="h-12 px-6 bg-black hover:bg-black/90 text-white"
                   >
                     {submitting ? (
                       <>

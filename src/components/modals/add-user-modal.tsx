@@ -30,7 +30,8 @@ interface SearchOption {
   level?: number
 }
 
-const permissionLevels = [
+// Permission levels - will be filtered based on current user's role
+const allPermissionLevels = [
   { value: "agent", label: "Agent" },
   { value: "admin", label: "Admin" }
 ]
@@ -56,8 +57,8 @@ function useAgentSearch() {
         setIsSearching(true)
         setSearchError(null)
 
-        // API ROUTE CALL - This calls the secure endpoint
-        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(searchTerm)}&limit=10`, {
+        // API ROUTE CALL - This calls the secure endpoint for upline search (current user + downline)
+        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(searchTerm)}&limit=10&type=downline`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -135,6 +136,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const [positions, setPositions] = useState<SearchOption[]>([])
   const [positionsLoading, setPositionsLoading] = useState(false)
   const [currentUserPositionLevel, setCurrentUserPositionLevel] = useState<number | null>(null)
+  const [selectedUplineLabel, setSelectedUplineLabel] = useState<string>("")
+  const [hasSetDefaultUpline, setHasSetDefaultUpline] = useState(false)
+  const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState<boolean>(false)
 
   // Use the custom agent search hook for upline selection
   const {
@@ -144,6 +148,12 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     isSearching,
     searchError
   } = useAgentSearch()
+
+  // Filter permission levels based on current user's admin status
+  // Admins can add both agents and admins, but agents can only add agents
+  const permissionLevels = isCurrentUserAdmin
+    ? allPermissionLevels
+    : allPermissionLevels.filter(level => level.value === 'agent')
 
   // Name search for pre-invite users
   useEffect(() => {
@@ -157,7 +167,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         setIsNameSearching(true)
         console.log('[ADD-USER-MODAL] Starting name search for:', nameSearchTerm)
 
-        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(nameSearchTerm)}&limit=10`, {
+        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(nameSearchTerm)}&limit=10&type=pre-invite`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -264,68 +274,147 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     }
   }
 
+  // Reset default upline flag when modal closes
   useEffect(() => {
-      if(upline && isOpen) {
-          // Small delay to ensure modal is fully loaded before triggering search
-          const timer = setTimeout(() => {
-              // Convert "Last, First" format to "First Last" format for better search matching
-              let searchQuery = upline;
-              if (upline.includes(',')) {
-                  const parts = upline.split(',').map(part => part.trim());
-                  if (parts.length === 2) {
-                      searchQuery = `${parts[1]} ${parts[0]}`; // "Devireddy, Ashok" -> "Ashok Devireddy"
-                  }
+    if (!isOpen) {
+      setHasSetDefaultUpline(false)
+    }
+  }, [isOpen])
+
+  // Fetch current user's admin status when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const fetchCurrentUserAdminStatus = async () => {
+        try {
+          const supabase = createClient()
+          const { data: { user } } = await supabase.auth.getUser()
+
+          if (user) {
+            const { data: userData } = await supabase
+              .from('users')
+              .select('is_admin, perm_level')
+              .eq('auth_user_id', user.id)
+              .single()
+
+            if (userData) {
+              const isAdmin = userData.is_admin || userData.perm_level === 'admin'
+              setIsCurrentUserAdmin(isAdmin)
+
+              // If not an admin, automatically set permission level to 'agent' (the only option)
+              if (!isAdmin && !formData.permissionLevel) {
+                setFormData(prev => ({ ...prev, permissionLevel: 'agent' }))
               }
-
-              // Auto-populate search term with converted name to trigger search
-              setSearchTerm(searchQuery);
-          }, 100); // Small delay to prevent race conditions
-
-          return () => clearTimeout(timer);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching current user admin status:', error)
+        }
       }
+
+      fetchCurrentUserAdminStatus()
+    }
+  }, [isOpen])
+
+  // Fetch current user as default upline when no upline is provided (only once per modal open)
+  useEffect(() => {
+    if (!upline && isOpen && !hasSetDefaultUpline) {
+      const fetchCurrentUser = async () => {
+        try {
+          const supabase = createClient()
+          const { data: { user } } = await supabase.auth.getUser()
+
+          if (user) {
+            const { data: userData } = await supabase
+              .from('users')
+              .select('id, first_name, last_name, email, is_admin, perm_level')
+              .eq('auth_user_id', user.id)
+              .single()
+
+            if (userData) {
+              // Set current user as default upline
+              const userLabel = `${userData.first_name} ${userData.last_name} - ${userData.email}`
+              setFormData(prev => ({ ...prev, uplineAgentId: userData.id }))
+              setSelectedUplineLabel(userLabel)
+              setHasSetDefaultUpline(true)
+
+              // Check if current user is admin
+              setIsCurrentUserAdmin(userData.is_admin || userData.perm_level === 'admin')
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching current user for default upline:', error)
+        }
+      }
+
+      fetchCurrentUser()
+    }
+  }, [upline, isOpen, hasSetDefaultUpline])
+
+  // When upline is provided from graph view, trigger search to find the user
+  useEffect(() => {
+    if (upline && isOpen) {
+      // Small delay to ensure modal is fully loaded before triggering search
+      const timer = setTimeout(() => {
+        // Convert "Last, First" format to "First Last" format for better search matching
+        let searchQuery = upline;
+        if (upline.includes(',')) {
+          const parts = upline.split(',').map(part => part.trim());
+          if (parts.length === 2) {
+            searchQuery = `${parts[1]} ${parts[0]}`; // "Devireddy, Ashok" -> "Ashok Devireddy"
+          }
+        }
+
+        // Auto-populate search term with converted name to trigger search
+        setSearchTerm(searchQuery);
+      }, 100); // Small delay to prevent race conditions
+
+      return () => clearTimeout(timer);
+    }
   }, [upline, isOpen]);
 
-    // Auto-select upline agent when search results include the upline
+  // Auto-select upline agent when search results include the upline
   useEffect(() => {
-      if(upline && searchResults.length > 0) {
-          // Try to find the upline user using multiple matching strategies
-          let uplineUser = null;
+    if (upline && searchResults.length > 0) {
+      // Try to find the upline user using multiple matching strategies
+      let uplineUser = null;
 
-          // Strategy 1: Direct match with original format (case insensitive)
+      // Strategy 1: Direct match with original format (case insensitive)
+      uplineUser = searchResults.find(agent =>
+        agent.label.toLowerCase().includes(upline.toLowerCase())
+      );
+
+      // Strategy 2: Convert and match "Last, First" -> "First Last"
+      if (!uplineUser && upline.includes(',')) {
+        const parts = upline.split(',').map(part => part.trim());
+        if (parts.length === 2) {
+          const convertedName = `${parts[1]} ${parts[0]}`;
           uplineUser = searchResults.find(agent =>
-              agent.label.toLowerCase().includes(upline.toLowerCase())
+            agent.label.toLowerCase().includes(convertedName.toLowerCase())
           );
-
-          // Strategy 2: Convert and match "Last, First" -> "First Last"
-          if (!uplineUser && upline.includes(',')) {
-              const parts = upline.split(',').map(part => part.trim());
-              if (parts.length === 2) {
-                  const convertedName = `${parts[1]} ${parts[0]}`;
-                  uplineUser = searchResults.find(agent =>
-                      agent.label.toLowerCase().includes(convertedName.toLowerCase())
-                  );
-              }
-          }
-
-          // Strategy 3: Match individual name parts
-          if (!uplineUser) {
-              const nameParts = upline.includes(',')
-                  ? upline.split(',').map(part => part.trim())
-                  : upline.split(' ').map(part => part.trim());
-
-              uplineUser = searchResults.find(agent => {
-                  const agentLabel = agent.label.toLowerCase();
-                  return nameParts.every(part =>
-                      part.length > 1 && agentLabel.includes(part.toLowerCase())
-                  );
-              });
-          }
-
-          if(uplineUser && !formData.uplineAgentId) {
-              setFormData(prev => ({...prev, uplineAgentId: uplineUser.value}));
-          }
+        }
       }
+
+      // Strategy 3: Match individual name parts
+      if (!uplineUser) {
+        const nameParts = upline.includes(',')
+          ? upline.split(',').map(part => part.trim())
+          : upline.split(' ').map(part => part.trim());
+
+        uplineUser = searchResults.find(agent => {
+          const agentLabel = agent.label.toLowerCase();
+          return nameParts.every(part =>
+            part.length > 1 && agentLabel.includes(part.toLowerCase())
+          );
+        });
+      }
+
+      if (uplineUser && !formData.uplineAgentId) {
+        setFormData(prev => ({ ...prev, uplineAgentId: uplineUser.value }));
+        setSelectedUplineLabel(uplineUser.label);
+      }
+    }
   }, [upline, searchResults, formData.uplineAgentId]);
+
 
   const validateForm = () => {
     const newErrors: string[] = []
@@ -417,7 +506,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setErrors([])
       setErrorFields({})
       setSearchTerm("") // Reset search term
+      setSelectedUplineLabel("") // Reset selected upline label
       setSelectedPreInviteUserId(null)
+      setHasSetDefaultUpline(false) // Reset default upline flag
 
       // Optionally refresh the page to show new agent
       window.location.reload()
@@ -600,8 +691,11 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                         email: "",
                         phoneNumber: "",
                         permissionLevel: "",
-                        uplineAgentId: ""
+                        uplineAgentId: "",
+                        positionId: ""
                       })
+                      setSelectedUplineLabel("")
+                      setSearchTerm("")
                     }}
                     className="text-destructive hover:text-destructive/80 text-sm transition-colors"
                   >
@@ -740,8 +834,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               )}
             </div>
 
-            {/* Search results dropdown */}
-            {searchResults.length > 0 && (
+            {/* Search results dropdown - only show when not selected */}
+            {searchResults.length > 0 && !formData.uplineAgentId && (
               <div className="border border-border rounded-lg bg-card shadow-lg max-h-60 overflow-y-auto z-10">
                 {searchResults.map((option) => (
                   <button
@@ -750,7 +844,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                     className="w-full text-left px-4 py-3 hover:bg-accent/50 border-b border-border last:border-b-0 transition-colors"
                     onClick={() => {
                       handleUplineAgentChange(option.value)
-                      setSearchTerm(option.label) // Set the display text
+                      setSelectedUplineLabel(option.label) // Store the full label
+                      setSearchTerm("") // Clear search to hide results
                     }}
                   >
                     <div className="text-sm font-medium text-foreground">
@@ -766,13 +861,14 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               <div className="mt-2 p-2 bg-accent/30 rounded border border-border">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-foreground">
-                    Selected: {searchResults.find(r => r.value === formData.uplineAgentId)?.label || 'Agent selected'}
+                    Selected: {selectedUplineLabel || 'Agent selected'}
                   </span>
                   <button
                     type="button"
                     onClick={() => {
                       handleUplineAgentChange("")
                       setSearchTerm("")
+                      setSelectedUplineLabel("")
                     }}
                     className="text-destructive hover:text-destructive/80 text-sm transition-colors"
                   >

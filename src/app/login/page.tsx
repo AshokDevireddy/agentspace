@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 
@@ -14,6 +14,132 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [isProcessingInvite, setIsProcessingInvite] = useState(false)
+
+  // Handle invite tokens in URL hash
+  useEffect(() => {
+    const handleInviteToken = async () => {
+      // Check if we have invite tokens in the URL hash
+      const hash = window.location.hash.substring(1)
+      if (!hash) return
+
+      const params = new URLSearchParams(hash)
+      const error = params.get('error')
+      const errorDescription = params.get('error_description')
+      const type = params.get('type')
+      const accessToken = params.get('access_token')
+      const refreshToken = params.get('refresh_token')
+
+      // Handle errors from Supabase (expired links, etc.)
+      if (error) {
+        console.error('Auth error from URL:', error, errorDescription)
+
+        let errorMessage = 'An error occurred with your invite link.'
+
+        if (error === 'access_denied' && errorDescription?.includes('expired')) {
+          errorMessage = 'Your invite link has expired. Please contact your administrator to resend the invitation.'
+        } else if (error === 'access_denied' && errorDescription?.includes('invalid')) {
+          errorMessage = 'Your invite link is invalid. Please contact your administrator to resend the invitation.'
+        } else if (errorDescription) {
+          errorMessage = decodeURIComponent(errorDescription.replace(/\+/g, ' '))
+        }
+
+        setError(errorMessage)
+        // Clear the hash
+        window.history.replaceState(null, '', window.location.pathname)
+        return
+      }
+
+      // If this is an invite link
+      if (type === 'invite' && (accessToken || refreshToken)) {
+        setIsProcessingInvite(true)
+        console.log('Processing invite token from URL hash')
+
+        try {
+          // Manually set the session from the hash tokens
+          const { data: { session }, error: setSessionError } = await supabase.auth.setSession({
+            access_token: accessToken!,
+            refresh_token: refreshToken!
+          })
+
+          if (setSessionError || !session) {
+            console.error('Error setting session from invite tokens:', setSessionError)
+            setError('Failed to process invite. Please try clicking the link again.')
+            setIsProcessingInvite(false)
+            // Clear the hash
+            window.history.replaceState(null, '', window.location.pathname)
+            return
+          }
+
+          const user = session.user
+          console.log('Session established for user:', user.id)
+
+          // Get user profile to determine where to route them
+          const { data: userProfile, error: profileError } = await supabase
+            .from('users')
+            .select('id, role, status')
+            .eq('auth_user_id', user.id)
+            .maybeSingle()
+
+          if (profileError || !userProfile) {
+            console.error('User profile not found:', profileError)
+            setError('Account not found. Please contact support.')
+            setIsProcessingInvite(false)
+            window.history.replaceState(null, '', window.location.pathname)
+            return
+          }
+
+          // Handle user based on their status
+          if (userProfile.status === 'invited') {
+            // First time clicking invite link - transition to onboarding
+            console.log('Transitioning user from invited to onboarding')
+            const { error: updateError } = await supabase
+              .from('users')
+              .update({ status: 'onboarding', updated_at: new Date().toISOString() })
+              .eq('id', userProfile.id)
+
+            if (updateError) {
+              console.error('Error updating user status:', updateError)
+              // Continue anyway, they can still proceed to setup
+            }
+
+            window.location.href = '/setup-account'
+            return
+          }
+
+          if (userProfile.status === 'onboarding') {
+            // User clicked link again but hasn't finished onboarding
+            window.location.href = '/setup-account'
+            return
+          }
+
+          if (userProfile.status === 'active') {
+            // User already set up, route to appropriate dashboard
+            if (userProfile.role === 'client') {
+              window.location.href = '/client/dashboard'
+            } else {
+              window.location.href = '/'
+            }
+            return
+          }
+
+          // Handle inactive or other statuses
+          console.error('User has invalid status:', userProfile.status)
+          setError('Account is not accessible. Please contact support.')
+          setIsProcessingInvite(false)
+          window.history.replaceState(null, '', window.location.pathname)
+
+        } catch (err: any) {
+          console.error('Error processing invite:', err)
+          setError(err.message || 'Failed to process invite')
+          setIsProcessingInvite(false)
+          window.history.replaceState(null, '', window.location.pathname)
+        }
+      }
+    }
+
+    handleInviteToken()
+  }, [supabase, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -91,6 +217,18 @@ export default function LoginPage() {
     { value: 'admin', label: 'Admin' },
     { value: 'client', label: 'Client' },
   ]
+
+  // Show loading state while processing invite
+  if (isProcessingInvite) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-foreground mx-auto mb-4"></div>
+          <p className="text-lg text-foreground">Processing your invitation...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-background">

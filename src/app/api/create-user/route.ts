@@ -41,7 +41,7 @@ export async function POST(request: Request) {
         last_name: lastName,
         full_name: `${firstName} ${lastName}`
       },
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm`
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/login`
     })
 
     if (createUserError) {

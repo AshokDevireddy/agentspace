@@ -37,6 +37,7 @@ export default function SetupAccount() {
   const [errorFields, setErrorFields] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [agencyName, setAgencyName] = useState<string>("AgentSpace")
   const errorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -84,6 +85,18 @@ export default function SetupAccount() {
         password: "",
         confirmPassword: ""
       })
+
+      // Fetch agency data if user has an agency
+      if (data.agency_id) {
+        const { data: agencyData } = await supabase
+          .from('agencies')
+          .select('display_name, name')
+          .eq('id', data.agency_id)
+          .maybeSingle()
+        if (agencyData) {
+          setAgencyName(agencyData.display_name || agencyData.name || "AgentSpace")
+        }
+      }
     } catch (error) {
       console.error('Error:', error)
       setErrors(['Failed to load user data'])
@@ -96,8 +109,11 @@ export default function SetupAccount() {
     const newErrors: string[] = []
     const newErrorFields: Record<string, string> = {}
 
-    // Phone validation (10 digits) - optional
-    if (formData.phoneNumber && formData.phoneNumber.length !== 10) {
+    // Phone validation (10 digits) - required
+    if (!formData.phoneNumber || formData.phoneNumber.trim() === '') {
+      newErrors.push("Phone number is required")
+      newErrorFields.phoneNumber = "Required"
+    } else if (formData.phoneNumber.length !== 10) {
       newErrors.push("Phone number must be 10 digits")
       newErrorFields.phoneNumber = "Invalid phone format"
     }
@@ -156,15 +172,24 @@ export default function SetupAccount() {
         return
       }
 
-      // Update user profile with latest info (status remains 'onboarding')
+      // Update user profile with latest info
+      // For clients: set status to 'active' immediately after setup
+      // For admins/agents: status remains 'onboarding' for Phase 2 onboarding
+      const updateData: any = {
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        phone_number: formData.phoneNumber || null,
+        updated_at: new Date().toISOString(),
+      }
+
+      // Set status to 'active' for clients immediately after complete setup
+      if (userData?.role === 'client') {
+        updateData.status = 'active'
+      }
+
       const { error: updateError } = await supabase
         .from('users')
-        .update({
-          first_name: formData.firstName,
-          last_name: formData.lastName,
-          phone_number: formData.phoneNumber || null,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq('id', userData?.id)
 
       if (updateError) {
@@ -182,15 +207,14 @@ export default function SetupAccount() {
         confirmPassword: ""
       })
 
-      // Success! Redirect to dashboard (Phase 2 onboarding will show there)
-      alert('Password set successfully! Redirecting to complete your account setup...')
-
-      // Refresh router to ensure middleware runs with new auth state
-      router.refresh()
-
+      // Success! Redirect to dashboard
       if (userData?.role === 'client') {
+        alert('Password set successfully! Redirecting to your dashboard...')
+        router.refresh()
         router.push('/client/dashboard')
       } else {
+        alert('Password set successfully! Redirecting to complete your account setup...')
+        router.refresh()
         router.push('/')
       }
     } catch (error) {
@@ -222,8 +246,8 @@ export default function SetupAccount() {
       <div className="max-w-2xl mx-auto space-y-8">
         {/* Header */}
         <div>
-          <h1 className="text-4xl font-bold text-gradient mb-2">
-            Welcome to AgentSpace!
+          <h1 className="text-4xl font-bold mb-2" style={{ fontFamily: 'Times New Roman, serif', color: 'black' }}>
+            Welcome to {agencyName}
           </h1>
           <p className="text-muted-foreground">
             Set up your password to get started
@@ -293,7 +317,7 @@ export default function SetupAccount() {
 
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-foreground">
-                Phone number (Optional)
+                Phone number <span className="text-destructive">*</span>
               </label>
               <Input
                 type="tel"
@@ -301,6 +325,7 @@ export default function SetupAccount() {
                 onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
                 className={`h-12 ${errorFields.phoneNumber ? 'border-red-500' : ''}`}
                 placeholder="1234567890"
+                required
               />
               {errorFields.phoneNumber && (
                 <p className="text-red-500 text-sm">{errorFields.phoneNumber}</p>
@@ -351,7 +376,7 @@ export default function SetupAccount() {
             <div className="pt-6">
               <Button
                 type="submit"
-                className="w-full py-3 btn-gradient font-semibold text-lg disabled:opacity-60"
+                className="w-full py-3 bg-black hover:bg-black/90 text-white font-semibold text-lg disabled:opacity-60"
                 disabled={submitting}
               >
                 {submitting ? (

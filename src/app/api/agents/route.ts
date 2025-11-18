@@ -82,7 +82,7 @@ const buildTree = (rows: TreeRow[], rootId: string) => {
     const displayPosition = node.position_name || formatPosition(node.perm_level)
 
     return {
-      name: `${node.last_name}, ${node.first_name}`,
+      name: `${node.first_name} ${node.last_name}`,
       attributes: {
         position: displayPosition
       },
@@ -151,7 +151,7 @@ export async function GET(request: Request) {
       if (!hierarchyRows || hierarchyRows.length === 0) {
         return NextResponse.json({
           tree: {
-            name: `${currentUser.last_name}, ${currentUser.first_name}`,
+            name: `${currentUser.first_name} ${currentUser.last_name}`,
             attributes: { position: formatPosition(currentUser.perm_level) },
             children: []
           }
@@ -162,7 +162,7 @@ export async function GET(request: Request) {
 
       return NextResponse.json({
         tree: tree || {
-          name: `${currentUser.last_name}, ${currentUser.first_name}`,
+          name: `${currentUser.first_name} ${currentUser.last_name}`,
           attributes: { position: formatPosition(currentUser.perm_level) },
           children: []
         }
@@ -203,7 +203,7 @@ export async function GET(request: Request) {
 
       return {
         id: row.agent_id,
-        name: `${row.last_name}, ${row.first_name}`,
+        name: `${row.first_name} ${row.last_name}`,
         position,
         upline: row.upline_name || 'None',
         created: formatDateTime(row.created_at),

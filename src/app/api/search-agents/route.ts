@@ -18,8 +18,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const query = searchParams.get('q')
     const limitParam = searchParams.get('limit')
+    const searchType = searchParams.get('type') || 'downline' // 'downline' or 'pre-invite'
 
-    console.log('[SEARCH-AGENTS] Query:', query, 'Limit:', limitParam)
+    console.log('[SEARCH-AGENTS] Query:', query, 'Limit:', limitParam, 'Type:', searchType)
 
     // Validate query parameter
     if (!query || query.trim().length < 2) {
@@ -109,10 +110,10 @@ export async function GET(request: Request) {
 
     let allAgents: any[] = []
 
-    if (isAdmin) {
-      console.log('[SEARCH-AGENTS] Admin search - querying agency:', currentUser.agency_id)
-      // For admins: Query directly on agency_id (no .in() clause with large arrays)
-      // Only return pre-invite users for add user modal search
+    if (searchType === 'pre-invite') {
+      // Search for pre-invite users in the agency (for updating existing pre-invite users)
+      console.log('[SEARCH-AGENTS] Pre-invite search - querying agency:', currentUser.agency_id)
+
       const { data, error: searchError } = await supabase
         .from('users')
         .select(`
@@ -123,15 +124,14 @@ export async function GET(request: Request) {
           status
         `)
         .eq('agency_id', currentUser.agency_id)
-        .eq('status', 'pre-invite') // Only pre-invite users
-        .neq('role', 'client') // Exclude clients
+        .eq('status', 'pre-invite')
+        .neq('role', 'client')
         .or(orConditions.join(','))
         .order('last_name', { ascending: true })
-        .limit(50) // Get more results to filter client-side
+        .limit(50)
 
       if (searchError) {
-        console.error('[SEARCH-AGENTS] Admin search error:', searchError)
-        console.error('[SEARCH-AGENTS] Error details:', JSON.stringify(searchError, null, 2))
+        console.error('[SEARCH-AGENTS] Pre-invite search error:', searchError)
         return NextResponse.json({
           error: 'Search failed',
           detail: searchError.message || 'Database search encountered an error'
@@ -139,85 +139,96 @@ export async function GET(request: Request) {
       }
 
       allAgents = data || []
-      console.log('[SEARCH-AGENTS] Admin search returned', allAgents.length, 'results')
+      console.log('[SEARCH-AGENTS] Pre-invite search returned', allAgents.length, 'results')
     } else {
-      console.log('[SEARCH-AGENTS] Non-admin search - fetching downline for:', currentUser.id)
-      // For non-admins: Get downline first, then search within it
-      const { data: downline, error: downlineError } = await supabase.rpc('get_agent_downline', {
-        agent_id: currentUser.id
-      })
+      // Search for downline agents (current user + their downline) - for upline selection
+      console.log('[SEARCH-AGENTS] Downline search - fetching downline for:', currentUser.id)
+      console.log('[SEARCH-AGENTS] Auth user ID:', authUser.id)
+      console.log('[SEARCH-AGENTS] Current user agency_id:', currentUser.agency_id)
+      console.log('[SEARCH-AGENTS] Current user role:', currentUser.role)
+      console.log('[SEARCH-AGENTS] Current user perm_level:', currentUser.perm_level)
 
-      if (downlineError) {
-        console.error('[SEARCH-AGENTS] Downline fetch error:', downlineError)
+      // Test RPC call with detailed error logging
+      console.log('[SEARCH-AGENTS] Attempting RPC call to get_agent_downline...')
+
+      let downline: any[] = []
+
+      try {
+        const { data: downlineData, error: downlineError } = await userClient.rpc('get_agent_downline', {
+          agent_id: currentUser.id
+        })
+
+        console.log('[SEARCH-AGENTS] RPC call completed')
+        console.log('[SEARCH-AGENTS] RPC returned data:', downlineData ? `${downlineData.length} records` : 'null')
+        console.log('[SEARCH-AGENTS] RPC returned error:', downlineError)
+
+        if (downlineError) {
+          console.error('[SEARCH-AGENTS] ===== RPC ERROR DETAILS =====')
+          console.error('[SEARCH-AGENTS] Error code:', downlineError.code)
+          console.error('[SEARCH-AGENTS] Error message:', downlineError.message)
+          console.error('[SEARCH-AGENTS] Error details:', downlineError.details)
+          console.error('[SEARCH-AGENTS] Error hint:', downlineError.hint)
+          console.error('[SEARCH-AGENTS] Full error object:', JSON.stringify(downlineError, null, 2))
+          console.error('[SEARCH-AGENTS] ===========================')
+
+          return NextResponse.json({
+            error: 'Failed to fetch downline',
+            detail: downlineError.message,
+            code: downlineError.code,
+            hint: downlineError.hint,
+            debugInfo: {
+              userId: currentUser.id,
+              authUserId: authUser.id,
+              agencyId: currentUser.agency_id,
+              role: currentUser.role,
+              permLevel: currentUser.perm_level
+            }
+          }, { status: 500 })
+        }
+
+        downline = downlineData || []
+      } catch (rpcException) {
+        console.error('[SEARCH-AGENTS] ===== RPC EXCEPTION =====')
+        console.error('[SEARCH-AGENTS] Exception:', rpcException)
+        console.error('[SEARCH-AGENTS] Exception type:', typeof rpcException)
+        console.error('[SEARCH-AGENTS] Exception message:', rpcException instanceof Error ? rpcException.message : 'Unknown')
+        console.error('[SEARCH-AGENTS] Exception stack:', rpcException instanceof Error ? rpcException.stack : 'No stack')
+        console.error('[SEARCH-AGENTS] ========================')
+
+        throw rpcException
+      }
+
+      // Include current user + all their downline
+      const visibleAgentIds = [currentUser.id, ...((downline as any[])?.map((u: any) => u.id) || [])]
+      console.log('[SEARCH-AGENTS] Found', visibleAgentIds.length, 'visible agents (self + downline)')
+
+      // Query only these visible agents with active/invited status
+      const { data, error: searchError } = await supabase
+        .from('users')
+        .select(`
+          id,
+          first_name,
+          last_name,
+          email,
+          status
+        `)
+        .in('id', visibleAgentIds)
+        .in('status', ['active', 'invited'])
+        .neq('role', 'client')
+        .or(orConditions.join(','))
+        .order('last_name', { ascending: true })
+        .limit(50)
+
+      if (searchError) {
+        console.error('[SEARCH-AGENTS] Downline search error:', searchError)
         return NextResponse.json({
-          error: 'Failed to fetch downline',
-          detail: downlineError.message
+          error: 'Search failed',
+          detail: searchError.message || 'Database search encountered an error'
         }, { status: 500 })
       }
 
-      const visibleAgentIds = [currentUser.id, ...((downline as any[])?.map((u: any) => u.id) || [])]
-      console.log('[SEARCH-AGENTS] Found', visibleAgentIds.length, 'visible agents in downline')
-
-      // If downline is too large (>100), we should use a different approach
-      if (visibleAgentIds.length > 100) {
-        console.log('[SEARCH-AGENTS] Large downline detected, using optimized query')
-        // For large downlines, query all and filter client-side
-        const { data, error: searchError } = await supabase
-          .from('users')
-          .select(`
-            id,
-            first_name,
-            last_name,
-            email,
-            status
-          `)
-          .eq('agency_id', currentUser.agency_id)
-          .neq('role', 'client')
-          .eq('status', 'pre-invite') // Only pre-invite users
-          .or(orConditions.join(','))
-          .order('last_name', { ascending: true })
-          .limit(100)
-
-        if (searchError) {
-          console.error('[SEARCH-AGENTS] Large downline search error:', searchError)
-          return NextResponse.json({
-            error: 'Search failed',
-            detail: searchError.message || 'Database search encountered an error'
-          }, { status: 500 })
-        }
-
-        // Filter client-side to only visible agents
-        allAgents = (data || []).filter((agent: any) => visibleAgentIds.includes(agent.id))
-      } else {
-        // Small downline - use .in() filter
-        const { data, error: searchError } = await supabase
-          .from('users')
-          .select(`
-            id,
-            first_name,
-            last_name,
-            email,
-            status
-          `)
-          .in('id', visibleAgentIds)
-          .neq('role', 'client')
-          .eq('status', 'pre-invite') // Only pre-invite users
-          .or(orConditions.join(','))
-          .order('last_name', { ascending: true })
-          .limit(50)
-
-        if (searchError) {
-          console.error('[SEARCH-AGENTS] Small downline search error:', searchError)
-          return NextResponse.json({
-            error: 'Search failed',
-            detail: searchError.message || 'Database search encountered an error'
-          }, { status: 500 })
-        }
-
-        allAgents = data || []
-      }
-
-      console.log('[SEARCH-AGENTS] Non-admin search returned', allAgents.length, 'results')
+      allAgents = data || []
+      console.log('[SEARCH-AGENTS] Downline search returned', allAgents.length, 'results')
     }
 
     // Client-side filtering for multi-word searches to ensure all words match

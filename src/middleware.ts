@@ -30,7 +30,7 @@ export async function middleware(req: NextRequest) {
 
   // Public routes that don't require authentication
   const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/setup-account']
-  const isPublicRoute = publicRoutes.includes(req.nextUrl.pathname) || req.nextUrl.pathname.startsWith('/auth/confirm')
+  const isPublicRoute = publicRoutes.includes(req.nextUrl.pathname) || req.nextUrl.pathname.startsWith('/auth/confirm') || req.nextUrl.pathname.startsWith('/auth/callback')
 
   // Public API prefixes that should bypass auth (cron jobs, webhooks, registration, password reset, etc.)
   const publicApiPrefixes = ['/api/cron/', '/api/telnyx-webhook', '/api/register', '/api/reset-password']
@@ -106,7 +106,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // Admin-only routes
-  const adminRoutes = ['/configuration', '/api/create-user', '/api/setup-account', '/api/search-agent', '/api/carriers/agency']
+  const adminRoutes = ['/configuration', '/api/create-user', '/api/setup-account', '/api/carriers/agency']
   const isAdminRoute = adminRoutes.some(route => req.nextUrl.pathname.startsWith(route))
 
   if (isAdminRoute && user) {

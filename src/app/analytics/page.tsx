@@ -297,15 +297,115 @@ function numberWithCommas(n: number) {
 	return n.toLocaleString()
 }
 
+// Generate unique whole number scale values (no repeats, only whole numbers and 0)
+// Always starts at 0, ensures even spacing, and guarantees at least 5 lines
+function generateScaleValues(minValue: number, maxValue: number, numLines: number = 5): number[] {
+	// Always start at 0
+	const min = 0
+	
+	// Handle persistency (0-1 range) separately
+	const isPersistency = minValue >= 0 && maxValue <= 1 && maxValue - minValue <= 1
+	
+	let max: number
+	if (isPersistency) {
+		// For persistency, always go to 1.0
+		max = 1.0
+	} else {
+		// For other metrics, round up maxValue to a nice number
+		const actualMax = Math.max(0, Math.ceil(maxValue))
+		
+		// Find a nice rounded max value that's >= actualMax
+		// Try to find a nice step size first, then calculate max
+		const niceSteps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
+		
+		// Calculate what the step should be for numLines-1 intervals (since we start at 0)
+		const targetRange = actualMax
+		let step = 1
+		
+		// Find the smallest step that gives us at least numLines values
+		for (const niceStep of niceSteps) {
+			const numIntervals = Math.ceil(targetRange / niceStep)
+			if (numIntervals >= numLines - 1) {
+				step = niceStep
+				break
+			}
+		}
+		
+		// Calculate max as a multiple of step
+		max = Math.ceil(actualMax / step) * step
+		// Ensure max is at least actualMax
+		if (max < actualMax) {
+			max = Math.ceil(actualMax / step) * step + step
+		}
+	}
+	
+	// For persistency, use evenly spaced percentage steps
+	if (isPersistency) {
+		// Always use 0, 0.25, 0.5, 0.75, 1.0 for 5 lines
+		return [0, 0.25, 0.5, 0.75, 1.0]
+	}
+	
+	// Calculate step size for even spacing
+	// We want numLines values from 0 to max, so numLines-1 intervals
+	const step = max / (numLines - 1)
+	
+	// Generate evenly spaced values
+	const values: number[] = []
+	for (let i = 0; i < numLines; i++) {
+		const value = min + (step * i)
+		values.push(Math.round(value))
+	}
+	
+	// Ensure max is exactly included (might be off due to rounding)
+	if (values[values.length - 1] !== max) {
+		values[values.length - 1] = Math.round(max)
+	}
+	
+	// Remove duplicates and sort, ensure only whole numbers >= 0
+	const uniqueValues = Array.from(new Set(values))
+		.filter(v => v >= 0 && Number.isInteger(v))
+		.sort((a, b) => a - b)
+	
+	// If we have fewer than numLines, add more evenly spaced values
+	if (uniqueValues.length < numLines && max > 0) {
+		const finalStep = max / (numLines - 1)
+		const finalValues: number[] = []
+		for (let i = 0; i < numLines; i++) {
+			finalValues.push(Math.round(finalStep * i))
+		}
+		// Remove duplicates and ensure max is included
+		const finalUnique = Array.from(new Set(finalValues))
+			.filter(v => v >= 0 && Number.isInteger(v))
+			.sort((a, b) => a - b)
+		if (finalUnique[finalUnique.length - 1] < max) {
+			finalUnique.push(Math.round(max))
+		}
+		return finalUnique.sort((a, b) => a - b)
+	}
+	
+	return uniqueValues
+}
+
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
 	const rad = (angleDeg - 90) * (Math.PI / 180)
 	return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }
 }
 
 function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
+	// Handle full circle (360 degrees) as a special case
+	const angleDiff = endAngle - startAngle
+	if (Math.abs(angleDiff - 360) < 0.01) {
+		// Full circle - draw as a complete circle path
+		// For a full circle, we still need the center-to-edge lines for the pie slice shape,
+		// but we'll use the fill color for stroke to hide the center line
+		const start = polarToCartesian(cx, cy, r, startAngle)
+		// Use two 180-degree arcs to complete the circle smoothly
+		const midPoint = polarToCartesian(cx, cy, r, startAngle + 180)
+		return [`M ${cx} ${cy}`, `L ${start.x} ${start.y}`, `A ${r} ${r} 0 1 1 ${midPoint.x} ${midPoint.y}`, `A ${r} ${r} 0 1 1 ${start.x} ${start.y}`, "Z"].join(" ")
+	}
 	const start = polarToCartesian(cx, cy, r, endAngle)
 	const end = polarToCartesian(cx, cy, r, startAngle)
-	const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1
+	const largeArcFlag = angleDiff <= 180 ? 0 : 1
 	return [`M ${cx} ${cy}`, `L ${start.x} ${start.y}`, `A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`, "Z"].join(" ")
 }
 
@@ -356,7 +456,7 @@ type AnalyticsTestValue = typeof analytics_test_value
 export default function AnalyticsTestPage() {
 	const [groupBy, setGroupBy] = React.useState("carrier")
 	const [trendMetric, setTrendMetric] = React.useState("persistency")
-	const [timeWindow, setTimeWindow] = React.useState<"3" | "6" | "9" | "all">("3")
+	const [timeWindow, setTimeWindow] = React.useState<"3" | "6" | "9" | "all">("all")
 	const [carrierFilter, setCarrierFilter] = React.useState<string>("ALL")
 	const [selectedCarrier, setSelectedCarrier] = React.useState<string | null>(null)
 	const [hoverInfo, setHoverInfo] = React.useState<null | { x: number; y: number; label: string; submitted: number; sharePct: number; persistencyPct: number; active: number }>(null)
@@ -478,6 +578,16 @@ export default function AnalyticsTestPage() {
 
 const CUMULATIVE_COLOR = "#8b5cf6" // Purple for cumulative
 
+// Fixed age range colors - distinct and consistent
+const AGE_RANGE_COLORS: Record<string, string> = {
+	"18-30": "#2563eb",   // Blue
+	"31-40": "#16a34a",   // Green
+	"41-50": "#f59e0b",   // Amber/Orange
+	"51-60": "#ef4444",   // Red
+	"61-70": "#0891b2",   // Cyan
+	"71+": "#ec4899",     // Pink
+}
+
 // Fixed carrier colors - distinct and consistent
 const CARRIER_COLORS: Record<string, string> = {
     "Aetna": "#2563eb",           // Blue
@@ -526,8 +636,77 @@ function carrierColorForLabel(label: string, explicitIndex?: number): string {
     return colorForLabel(label, explicitIndex)
 }
 
+// Map old age bands to new standardized age ranges with proportional distribution
+function mapAgeBandToStandardRanges(oldAgeBand: string): Array<{ range: string; proportion: number }> {
+	const normalized = oldAgeBand.trim()
+	
+	// Direct mappings
+	if (normalized === "18-29" || normalized === "18-30") {
+		return [{ range: "18-30", proportion: 1.0 }]
+	}
+	
+	// 30-44: 30 -> 18-30 (1/15), 31-40 -> 31-40 (10/15), 41-44 -> 41-50 (4/15)
+	if (normalized === "30-44") {
+		return [
+			{ range: "18-30", proportion: 1 / 15 },
+			{ range: "31-40", proportion: 10 / 15 },
+			{ range: "41-50", proportion: 4 / 15 },
+		]
+	}
+	
+	// 45-64: 45-50 -> 41-50 (6/20), 51-60 -> 51-60 (10/20), 61-64 -> 61-70 (4/20)
+	if (normalized === "45-64") {
+		return [
+			{ range: "41-50", proportion: 6 / 20 },
+			{ range: "51-60", proportion: 10 / 20 },
+			{ range: "61-70", proportion: 4 / 20 },
+		]
+	}
+	
+	// 65+: Assuming 65-85 range, 65-70 -> 61-70 (6/21), 71-85 -> 71+ (15/21)
+	if (normalized === "65+" || normalized.startsWith("65")) {
+		return [
+			{ range: "61-70", proportion: 6 / 21 },
+			{ range: "71+", proportion: 15 / 21 },
+		]
+	}
+	
+	// For any other format, try to parse and map
+	// Handle ranges like "31-40", "41-50", etc. that might already be in the new format
+	const newRanges = ["18-30", "31-40", "41-50", "51-60", "61-70", "71+"]
+	for (const range of newRanges) {
+		if (normalized === range || normalized.includes(range)) {
+			return [{ range, proportion: 1.0 }]
+		}
+	}
+	
+	// Fallback: try to extract numbers and map
+	const numbers = normalized.match(/\d+/g)
+	if (numbers && numbers.length >= 1) {
+		const startAge = parseInt(numbers[0])
+		if (startAge >= 18 && startAge <= 30) return [{ range: "18-30", proportion: 1.0 }]
+		if (startAge >= 31 && startAge <= 40) return [{ range: "31-40", proportion: 1.0 }]
+		if (startAge >= 41 && startAge <= 50) return [{ range: "41-50", proportion: 1.0 }]
+		if (startAge >= 51 && startAge <= 60) return [{ range: "51-60", proportion: 1.0 }]
+		if (startAge >= 61 && startAge <= 70) return [{ range: "61-70", proportion: 1.0 }]
+		if (startAge >= 71) return [{ range: "71+", proportion: 1.0 }]
+	}
+	
+	// Unknown age band - return empty array
+	return []
+}
+
 function displayStateLabel(stateCode: string): string {
     return stateCode === "UNK" ? "Unknown" : stateCode
+}
+
+function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
+    switch (timeWindow) {
+        case "3": return "3 Months"
+        case "6": return "6 Months"
+        case "9": return "9 Months"
+        case "all": return "All Time"
+    }
 }
 
 	const wedges = React.useMemo(() => {
@@ -659,11 +838,11 @@ function displayStateLabel(stateCode: string): string {
 		} else {
 			// Single carrier
 			const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
-			if (!byCarrier || !(carrierFilter in byCarrier)) return null
+			if (!byCarrier || !(carrierFilter in byCarrier)) return { wedges: [], total: 0, isFullyUnknown: true }
 			const carrierData = byCarrier[carrierFilter as keyof typeof byCarrier]
-			if (!carrierData) return null
+			if (!carrierData) return { wedges: [], total: 0, isFullyUnknown: true }
 			const stateData = carrierData.state?.[windowKey]
-			if (!stateData) return null
+			if (!stateData) return { wedges: [], total: 0, isFullyUnknown: true }
 
             stateData.forEach((entry: { state: string; submitted: number }) => {
 				if (entry.submitted > 0) {
@@ -679,6 +858,13 @@ function displayStateLabel(stateCode: string): string {
 
 		const total = entries.reduce((sum, e) => sum + e.value, 0)
 
+		// Check if all entries are "Unknown" or if there's no valid data
+		const isFullyUnknown = entries.length === 0 || (entries.length > 0 && entries.every(e => e.label === "Unknown"))
+
+		if (isFullyUnknown) {
+			return { wedges: [], total, isFullyUnknown: true }
+		}
+
 		let cursor = 0
 		const wedges = entries.map((e) => {
 			const pct = total > 0 ? e.value / total : 0
@@ -693,26 +879,25 @@ function displayStateLabel(stateCode: string): string {
 			return piece
 		})
 
-		return { wedges, total }
+		return { wedges, total, isFullyUnknown: false }
 	}, [carrierFilter, windowKey, groupBy])
 
 	// Age breakdown for detail view (when groupBy === "age")
 	const ageBreakdown = React.useMemo(() => {
 		if (groupBy !== "age") return null
 
-        const ageColors: Record<string, string> = {
-            "18-29": colorForLabel("18-29"),
-            "30-44": colorForLabel("30-44"),
-            "45-64": colorForLabel("45-64"),
-            "65+": colorForLabel("65+"),
-        }
-
-		const entries: { label: string; value: number; color: string }[] = []
+		// Initialize standardized age ranges with 0 values
+		const standardizedRanges: Record<string, number> = {
+			"18-30": 0,
+			"31-40": 0,
+			"41-50": 0,
+			"51-60": 0,
+			"61-70": 0,
+			"71+": 0,
+		}
 
 		if (carrierFilter === "ALL") {
 			// Sum across all carriers
-			const ageTotals: Record<string, { submitted: number }> = {}
-
 			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
 				const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
 				if (!byCarrier || !(carrier in byCarrier)) continue
@@ -722,43 +907,55 @@ function displayStateLabel(stateCode: string): string {
 				if (!ageData) continue
 
 				for (const ageEntry of ageData) {
-					if (!ageTotals[ageEntry.age_band]) {
-						ageTotals[ageEntry.age_band] = { submitted: 0 }
+					// Map old age band to new standardized ranges
+					const mappings = mapAgeBandToStandardRanges(ageEntry.age_band)
+					for (const mapping of mappings) {
+						if (standardizedRanges[mapping.range] !== undefined) {
+							standardizedRanges[mapping.range] += ageEntry.submitted * mapping.proportion
+						}
 					}
-					ageTotals[ageEntry.age_band].submitted += ageEntry.submitted
 				}
 			}
-
-			Object.entries(ageTotals).forEach(([ageBand, data]) => {
-				if (data.submitted > 0) {
-					entries.push({
-						label: ageBand,
-						value: data.submitted,
-                        color: ageColors[ageBand] || colorForLabel(ageBand),
-					})
-				}
-			})
 		} else {
 			// Single carrier
 			const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
-			if (!byCarrier || !(carrierFilter in byCarrier)) return null
+			if (!byCarrier || !(carrierFilter in byCarrier)) return { wedges: [], total: 0, isFullyUnknown: true }
 			const carrierData = byCarrier[carrierFilter as keyof typeof byCarrier]
-			if (!carrierData) return null
+			if (!carrierData) return { wedges: [], total: 0, isFullyUnknown: true }
 			const ageData = carrierData.age_band?.[windowKey]
-			if (!ageData) return null
+			if (!ageData) return { wedges: [], total: 0, isFullyUnknown: true }
 
-			ageData.forEach((entry: { age_band: string; submitted: number }) => {
-				if (entry.submitted > 0) {
-					entries.push({
-						label: entry.age_band,
-						value: entry.submitted,
-                        color: ageColors[entry.age_band] || colorForLabel(entry.age_band),
-					})
+			for (const entry of ageData) {
+				// Map old age band to new standardized ranges
+				const mappings = mapAgeBandToStandardRanges(entry.age_band)
+				for (const mapping of mappings) {
+					if (standardizedRanges[mapping.range] !== undefined) {
+						standardizedRanges[mapping.range] += entry.submitted * mapping.proportion
+					}
 				}
-			})
+			}
+		}
+
+		// Create entries only for ranges with data > 0
+		const entries: { label: string; value: number; color: string }[] = []
+		for (const [range, value] of Object.entries(standardizedRanges)) {
+			if (value > 0) {
+				entries.push({
+					label: range,
+					value: Math.round(value * 100) / 100, // Round to 2 decimal places
+					color: AGE_RANGE_COLORS[range] || colorForLabel(range),
+				})
+			}
 		}
 
 		const total = entries.reduce((sum, e) => sum + e.value, 0)
+
+		// Check if all entries are "Unknown" or if there's no valid age data
+		const isFullyUnknown = entries.length === 0 || entries.every(e => e.label === "Unknown" || e.label === "UNK")
+
+		if (isFullyUnknown) {
+			return { wedges: [], total, isFullyUnknown: true }
+		}
 
 		let cursor = 0
 		const wedges = entries.map((e) => {
@@ -774,8 +971,8 @@ function displayStateLabel(stateCode: string): string {
 			return piece
 		})
 
-		return { wedges, total }
-	}, [carrierFilter, windowKey, groupBy])
+		return { wedges, total, isFullyUnknown: false }
+	}, [carrierFilter, windowKey, groupBy, _analyticsData])
 
 	// Persistency breakdown for detail view (when groupBy === "persistency")
 	const persistencyBreakdown = React.useMemo(() => {
@@ -816,10 +1013,11 @@ function displayStateLabel(stateCode: string): string {
 		const entries: { label: string; count: number; color: string }[] = [
 			{ label: "Active", count: active, color: persistencyColors["Active"] },
 			{ label: "Inactive", count: inactive, color: persistencyColors["Inactive"] },
-		].filter(e => e.count > 0)
+		]
 
 		const total = active + inactive
 
+		// Always include both entries, even if one has count 0, to ensure pie chart renders correctly
 		let cursor = 0
 		const wedges = entries.map((e) => {
 			const pct = total > 0 ? e.count / total : 0
@@ -832,7 +1030,7 @@ function displayStateLabel(stateCode: string): string {
 			}
 			cursor += ang
 			return piece
-		})
+		}).filter(e => e.count > 0) // Filter after calculating angles to ensure proper rendering
 
 		return { wedges, total, active, inactive }
 	}, [carrierFilter, windowKey, groupBy])
@@ -1086,9 +1284,13 @@ function displayStateLabel(stateCode: string): string {
 								</div>
 							</div>
 						</>
-					) : (detailCarrier || groupBy === "state" || groupBy === "age" || groupBy === "persistency") ? (
-					{(detailCarrier || groupBy === "state" || groupBy === "age" || groupBy === "persistency") ? (
-						// Breakdown View (Status, State, Age, or Persistency)
+					) : totalSubmitted === 0 && wedges.length === 0 ? (
+						<div className="flex flex-col items-center justify-center gap-4 py-12">
+							<div className="text-sm text-muted-foreground text-center">
+								No data is available for {carrierFilter === "ALL" ? "all carriers" : carrierFilter} over the {getTimeframeLabel(timeWindow)} timeframe.
+							</div>
+						</div>
+					) : (detailCarrier || groupBy === "state" || groupBy === "age" || groupBy === "persistency") ? (						// Breakdown View (Status, State, Age, or Persistency)
 						<>
 							<div className="mb-4 flex items-center gap-3">
 								<div className="text-xs font-medium tracking-wide text-muted-foreground">
@@ -1164,14 +1366,17 @@ function displayStateLabel(stateCode: string): string {
 													const center = polarToCartesian(160, 160, 125, mid)
 													const isHovered = hoverStatusInfo?.status === w.status
 													const isOtherHovered = hoverStatusInfo !== null && !isHovered
+													// Check if this is a full circle (360 degrees)
+													const isFullCircle = Math.abs((w.end - w.start) - 360) < 0.01
 
 													return (
 														<path
 															key={w.status}
 															d={path}
 															fill={w.color}
-															stroke="#fff"
+															stroke={isFullCircle ? w.color : "#fff"}
 															strokeWidth={2}
+															strokeLinejoin="round"
 															opacity={isOtherHovered ? 0.4 : 1}
 															filter={isHovered ? "url(#darken-status)" : undefined}
 															style={{
@@ -1226,156 +1431,182 @@ function displayStateLabel(stateCode: string): string {
 							{/* State Breakdown */}
 							{groupBy === "state" && stateBreakdown && (
 								<div className="flex flex-col items-center justify-center gap-6">
-									<div className="relative h-[320px] w-[320px]">
-										<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
-											<defs>
-												<filter id="shadow-breakdown" x="-20%" y="-20%" width="140%" height="140%">
-													<feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
-												</filter>
-												<filter id="darken-breakdown">
-													<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
-												</filter>
-											</defs>
-											<g filter="url(#shadow-breakdown)">
-												{stateBreakdown.wedges.map((w, idx) => {
-													const path = describeArc(160, 160, 150, w.start, w.end)
-													const mid = (w.start + w.end) / 2
-													const center = polarToCartesian(160, 160, 90, mid)
-													const isHovered = hoverBreakdownInfo?.label === w.label
-													const isOtherHovered = hoverBreakdownInfo !== null && !isHovered
-
-													return (
-														<path
-															key={w.label}
-															d={path}
-															fill={w.color}
-															stroke="#fff"
-															strokeWidth={2}
-															opacity={isOtherHovered ? 0.4 : 1}
-															filter={isHovered ? "url(#darken-breakdown)" : undefined}
-															style={{
-																transform: isHovered ? "scale(1.05)" : "scale(1)",
-																transformOrigin: "160px 160px",
-																transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-																animationDelay: `${idx * 0.1}s`,
-															}}
-															className="cursor-pointer pie-slice-animate"
-															onMouseEnter={() => setHoverBreakdownInfo({
-																x: center.x,
-																y: center.y,
-																label: w.label,
-																value: w.value,
-																pct: w.pct,
-															})}
-															onMouseLeave={() => setHoverBreakdownInfo(null)}
-														/>
-													)
-												})}
-											</g>
-										</svg>
-										{hoverBreakdownInfo && (
-											<div
-												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
-												style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
-											>
-												<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
-												<div className="text-white/90">
-													{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
-												</div>
+									{stateBreakdown.isFullyUnknown ? (
+										<div className="flex flex-col items-center justify-center gap-4 py-12">
+											<div className="text-sm text-muted-foreground text-center">
+												There is not enough data for this to create a breakdown based on state
 											</div>
-										)}
-									</div>
+										</div>
+									) : (
+										<>
+											<div className="relative h-[320px] w-[320px]">
+												<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
+													<defs>
+														<filter id="shadow-breakdown" x="-20%" y="-20%" width="140%" height="140%">
+															<feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
+														</filter>
+														<filter id="darken-breakdown">
+															<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
+														</filter>
+													</defs>
+													<g filter="url(#shadow-breakdown)">
+														{stateBreakdown.wedges.map((w, idx) => {
+															const path = describeArc(160, 160, 150, w.start, w.end)
+															const mid = (w.start + w.end) / 2
+															const center = polarToCartesian(160, 160, 90, mid)
+															const isHovered = hoverBreakdownInfo?.label === w.label
+															const isOtherHovered = hoverBreakdownInfo !== null && !isHovered
+															// Check if this is a full circle (360 degrees)
+															const isFullCircle = Math.abs((w.end - w.start) - 360) < 0.01
 
-									<div className="flex flex-wrap justify-center gap-4 mt-4">
-										{stateBreakdown.wedges.length === 0 ? (
-											<div className="text-sm text-muted-foreground">No data in range</div>
-										) : (
-											stateBreakdown.wedges.map((w) => (
-												<div key={w.label} className="flex items-center gap-2 text-sm">
-													<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: w.color }} />
-													<span>{w.label} ({w.pct}%)</span>
-												</div>
-											))
-										)}
-									</div>
+															return (
+																<path
+																	key={w.label}
+																	d={path}
+																	fill={w.color}
+																	stroke={isFullCircle ? w.color : "#fff"}
+																	strokeWidth={2}
+																	strokeLinejoin="round"
+																	opacity={isOtherHovered ? 0.4 : 1}
+																	filter={isHovered ? "url(#darken-breakdown)" : undefined}
+																	style={{
+																		transform: isHovered ? "scale(1.05)" : "scale(1)",
+																		transformOrigin: "160px 160px",
+																		transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+																		animationDelay: `${idx * 0.1}s`,
+																	}}
+																	className="cursor-pointer pie-slice-animate"
+																	onMouseEnter={() => setHoverBreakdownInfo({
+																		x: center.x,
+																		y: center.y,
+																		label: w.label,
+																		value: w.value,
+																		pct: w.pct,
+																	})}
+																	onMouseLeave={() => setHoverBreakdownInfo(null)}
+																/>
+															)
+														})}
+													</g>
+												</svg>
+												{hoverBreakdownInfo && (
+													<div
+														className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+														style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
+													>
+														<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
+														<div className="text-white/90">
+															{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
+														</div>
+													</div>
+												)}
+											</div>
+
+											<div className="flex flex-wrap justify-center gap-4 mt-4">
+												{stateBreakdown.wedges.length === 0 ? (
+													<div className="text-sm text-muted-foreground">No data in range</div>
+												) : (
+													stateBreakdown.wedges.map((w) => (
+														<div key={w.label} className="flex items-center gap-2 text-sm">
+															<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: w.color }} />
+															<span>{w.label} ({w.pct}%)</span>
+														</div>
+													))
+												)}
+											</div>
+										</>
+									)}
 								</div>
 							)}
 
 							{/* Age Breakdown */}
 							{groupBy === "age" && ageBreakdown && (
 								<div className="flex flex-col items-center justify-center gap-6">
-									<div className="relative h-[320px] w-[320px]">
-										<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
-											<defs>
-												<filter id="shadow-age" x="-20%" y="-20%" width="140%" height="140%">
-													<feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
-												</filter>
-												<filter id="darken-age">
-													<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
-												</filter>
-											</defs>
-											<g filter="url(#shadow-age)">
-												{ageBreakdown.wedges.map((w, idx) => {
-													const path = describeArc(160, 160, 150, w.start, w.end)
-													const mid = (w.start + w.end) / 2
-													const center = polarToCartesian(160, 160, 90, mid)
-													const isHovered = hoverBreakdownInfo?.label === w.label
-													const isOtherHovered = hoverBreakdownInfo !== null && !isHovered
-
-													return (
-														<path
-															key={w.label}
-															d={path}
-															fill={w.color}
-															stroke="#fff"
-															strokeWidth={2}
-															opacity={isOtherHovered ? 0.4 : 1}
-															filter={isHovered ? "url(#darken-age)" : undefined}
-															style={{
-																transform: isHovered ? "scale(1.05)" : "scale(1)",
-																transformOrigin: "160px 160px",
-																transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-																animationDelay: `${idx * 0.1}s`,
-															}}
-															className="cursor-pointer pie-slice-animate"
-															onMouseEnter={() => setHoverBreakdownInfo({
-																x: center.x,
-																y: center.y,
-																label: w.label,
-																value: w.value,
-																pct: w.pct,
-															})}
-															onMouseLeave={() => setHoverBreakdownInfo(null)}
-														/>
-													)
-												})}
-											</g>
-										</svg>
-										{hoverBreakdownInfo && (
-											<div
-												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
-												style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
-											>
-												<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
-												<div className="text-white/90">
-													{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
-												</div>
+									{ageBreakdown.isFullyUnknown ? (
+										<div className="flex flex-col items-center justify-center gap-4 py-12">
+											<div className="text-sm text-muted-foreground text-center">
+												There is not enough data for this to create a breakdown based on age
 											</div>
-										)}
-									</div>
+										</div>
+									) : (
+										<>
+											<div className="relative h-[320px] w-[320px]">
+												<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
+													<defs>
+														<filter id="shadow-age" x="-20%" y="-20%" width="140%" height="140%">
+															<feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
+														</filter>
+														<filter id="darken-age">
+															<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
+														</filter>
+													</defs>
+													<g filter="url(#shadow-age)">
+														{ageBreakdown.wedges.map((w, idx) => {
+															const path = describeArc(160, 160, 150, w.start, w.end)
+															const mid = (w.start + w.end) / 2
+															const center = polarToCartesian(160, 160, 90, mid)
+															const isHovered = hoverBreakdownInfo?.label === w.label
+															const isOtherHovered = hoverBreakdownInfo !== null && !isHovered
+															// Check if this is a full circle (360 degrees)
+															const isFullCircle = Math.abs((w.end - w.start) - 360) < 0.01
 
-									<div className="flex flex-wrap justify-center gap-4 mt-4">
-										{ageBreakdown.wedges.length === 0 ? (
-											<div className="text-sm text-muted-foreground">No data in range</div>
-										) : (
-											ageBreakdown.wedges.map((w) => (
-												<div key={w.label} className="flex items-center gap-2 text-sm">
-													<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: w.color }} />
-													<span>{w.label} ({w.pct}%)</span>
-												</div>
-											))
-										)}
-									</div>
+															return (
+																<path
+																	key={w.label}
+																	d={path}
+																	fill={w.color}
+																	stroke={isFullCircle ? w.color : "#fff"}
+																	strokeWidth={2}
+																	strokeLinejoin="round"
+																	opacity={isOtherHovered ? 0.4 : 1}
+																	filter={isHovered ? "url(#darken-age)" : undefined}
+																	style={{
+																		transform: isHovered ? "scale(1.05)" : "scale(1)",
+																		transformOrigin: "160px 160px",
+																		transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+																		animationDelay: `${idx * 0.1}s`,
+																	}}
+																	className="cursor-pointer pie-slice-animate"
+																	onMouseEnter={() => setHoverBreakdownInfo({
+																		x: center.x,
+																		y: center.y,
+																		label: w.label,
+																		value: w.value,
+																		pct: w.pct,
+																	})}
+																	onMouseLeave={() => setHoverBreakdownInfo(null)}
+																/>
+															)
+														})}
+													</g>
+												</svg>
+												{hoverBreakdownInfo && (
+													<div
+														className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+														style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
+													>
+														<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
+														<div className="text-white/90">
+															{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
+														</div>
+													</div>
+												)}
+											</div>
+
+											<div className="flex flex-wrap justify-center gap-4 mt-4">
+												{ageBreakdown.wedges.length === 0 ? (
+													<div className="text-sm text-muted-foreground">No data in range</div>
+												) : (
+													ageBreakdown.wedges.map((w) => (
+														<div key={w.label} className="flex items-center gap-2 text-sm">
+															<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: w.color }} />
+															<span>{w.label} ({w.pct}%)</span>
+														</div>
+													))
+												)}
+											</div>
+										</>
+									)}
 								</div>
 							)}
 
@@ -1399,14 +1630,17 @@ function displayStateLabel(stateCode: string): string {
 													const center = polarToCartesian(160, 160, 90, mid)
 													const isHovered = hoverPersistencyInfo?.label === w.label
 													const isOtherHovered = hoverPersistencyInfo !== null && !isHovered
+													// Check if this is a full circle (360 degrees)
+													const isFullCircle = Math.abs((w.end - w.start) - 360) < 0.01
 
 													return (
 														<path
 															key={w.label}
 															d={path}
 															fill={w.color}
-															stroke="#fff"
+															stroke={isFullCircle ? w.color : "#fff"}
 															strokeWidth={2}
+															strokeLinejoin="round"
 															opacity={isOtherHovered ? 0.4 : 1}
 															filter={isHovered ? "url(#darken-persistency)" : undefined}
 															style={{
@@ -1504,14 +1738,17 @@ function displayStateLabel(stateCode: string): string {
 										const persistencyPct = agg.active + agg.inactive > 0 ? (agg.active / (agg.active + agg.inactive)) * 100 : 0
 										const isHovered = hoverInfo?.label === w.label
 										const isOtherHovered = hoverInfo !== null && !isHovered
+										// Check if this is a full circle (360 degrees)
+										const isFullCircle = Math.abs((w.end - w.start) - 360) < 0.01
 
 										return (
 											<path
 												key={w.label}
 												d={path}
 												fill={w.color}
-												stroke="#fff"
+												stroke={isFullCircle ? w.color : "#fff"}
 												strokeWidth={2}
+												strokeLinejoin="round"
 												opacity={isOtherHovered ? 0.4 : 1}
 												filter={isHovered ? "url(#darken)" : undefined}
 												style={{
@@ -1589,7 +1826,15 @@ function displayStateLabel(stateCode: string): string {
 							{ key: "avgprem", label: "Avg Premium" },
 							{ key: "all", label: "Show All" },
 						].map((m) => (
-							<Button key={m.key} variant={trendMetric === m.key ? "blue" : "outline"} size="sm" onClick={() => setTrendMetric(m.key)} className="rounded-md">{m.label}</Button>
+							<Button 
+								key={m.key} 
+								variant={trendMetric === m.key ? "default" : "outline"} 
+								size="sm" 
+								onClick={() => setTrendMetric(m.key)} 
+								className={`rounded-md ${trendMetric === m.key ? 'bg-foreground hover:bg-foreground/90 text-background' : ''}`}
+							>
+								{m.label}
+							</Button>
 						))}
 					</div>
 					{trendData && trendData.length > 0 ? (
@@ -1653,17 +1898,18 @@ function displayStateLabel(stateCode: string): string {
 									maxValue = 100
 								}
 
-								const range = maxValue - minValue
-								const padding = range * 0.1 || Math.abs(maxValue) * 0.1 || 1
-								minValue = Math.max(0, minValue - padding)
+								// Always start at 0 for non-persistency metrics
+								minValue = 0
+								// Add small padding to max
+								const padding = maxValue * 0.1 || 1
 								maxValue = maxValue + padding
 
 								const chartHeight = 240
 								const chartBottom = 260
 
 								const valueToY = (value: number) => {
-									if (maxValue === minValue) return chartBottom
-									const normalized = (value - minValue) / (maxValue - minValue)
+									if (maxValue === 0) return chartBottom
+									const normalized = value / maxValue
 									return chartBottom - (normalized * chartHeight)
 								}
 
@@ -1684,37 +1930,48 @@ function displayStateLabel(stateCode: string): string {
 
 											<rect x="60" y="20" width="720" height="240" fill="transparent" />
 
-											{/* Grid lines */}
-											{Array.from({ length: 5 }).map((_, i) => {
-												const yPos = 20 + (240 / 4) * i
-												const value = maxValue - ((maxValue - minValue) / 4) * i
-												return (
-													<g key={i}>
-														<line
-															x1="60"
-															y1={yPos}
-															x2="780"
-															y2={yPos}
-															stroke="#e5e7eb"
-															strokeWidth="1"
-															strokeDasharray="4 4"
-														/>
-														<text
-															x="55"
-															y={yPos + 4}
-															textAnchor="end"
-															fill="#6b7280"
-															fontSize="11"
-															fontFamily="system-ui"
-														>
-															{formatYLabel(value)}
-														</text>
-													</g>
-												)
-											})}
+											{(() => {
+												// Generate scale values and use the max for consistent scaling
+												const scaleValues = generateScaleValues(minValue, maxValue, 5)
+												const scaleMax = scaleValues[scaleValues.length - 1]
+												const valueToYWithScale = (value: number) => {
+													if (scaleMax === 0) return chartBottom
+													const normalized = value / scaleMax
+													return chartBottom - (normalized * chartHeight)
+												}
 
-											{/* X-axis labels */}
-											{(trendData as any[]).map((data, idx) => {
+												return (
+													<>
+														{/* Grid lines */}
+														{scaleValues.map((value, i) => {
+															const yPos = valueToYWithScale(value)
+															return (
+																<g key={i}>
+																	<line
+																		x1="60"
+																		y1={yPos}
+																		x2="780"
+																		y2={yPos}
+																		stroke="#e5e7eb"
+																		strokeWidth="1"
+																		strokeDasharray="4 4"
+																	/>
+																	<text
+																		x="55"
+																		y={yPos + 4}
+																		textAnchor="end"
+																		fill="#6b7280"
+																		fontSize="11"
+																		fontFamily="system-ui"
+																	>
+																		{formatYLabel(value)}
+																	</text>
+																</g>
+															)
+														})}
+
+														{/* X-axis labels */}
+														{(trendData as any[]).map((data, idx) => {
 												const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
 												const monthLabel = data.period.split("-")[1]
 												const yearLabel = data.period.split("-")[0].slice(2)
@@ -1743,9 +2000,9 @@ function displayStateLabel(stateCode: string): string {
 														</text>
 													</g>
 												)
-											})}
+														})}
 
-											{/* Cumulative Submitted Volume line */}
+														{/* Cumulative Submitted Volume line */}
 											{(() => {
 												const submittedColor = "#16a34a" // Green for submitted
 												const submittedPoints = (trendData as any[])
@@ -1765,7 +2022,7 @@ function displayStateLabel(stateCode: string): string {
 														}
 
 														const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
-														const yPos = valueToY(cumulativeSubmitted)
+														const yPos = valueToYWithScale(cumulativeSubmitted)
 
 														// Get cumulative active, persistency, and avg premium
 									const periodSeries = (_analyticsData?.series ?? []).filter(r =>
@@ -1843,7 +2100,7 @@ function displayStateLabel(stateCode: string): string {
 														}
 
 														const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
-														const yPos = valueToY(cumulativeActive)
+														const yPos = valueToYWithScale(cumulativeActive)
 
 														// Get cumulative submitted, persistency, and avg premium
 									const periodSeries = (_analyticsData?.series ?? []).filter(r =>
@@ -1898,6 +2155,9 @@ function displayStateLabel(stateCode: string): string {
 															/>
 														))}
 													</g>
+												)
+											})()}
+													</>
 												)
 											})()}
 										</svg>
@@ -2025,16 +2285,16 @@ function displayStateLabel(stateCode: string): string {
 								maxValue = 100
 							}
 
-							// Add padding to the range (10% on each side)
-							const range = maxValue - minValue
-							const padding = range * 0.1 || Math.abs(maxValue) * 0.1 || 1
-							minValue = Math.max(0, minValue - padding)
-							maxValue = maxValue + padding
-
 							// For persistency, clamp to 0-1
 							if (trendMetric === "persistency") {
 								minValue = 0
 								maxValue = 1
+							} else {
+								// For other metrics, always start at 0
+								minValue = 0
+								// Add small padding to max
+								const padding = maxValue * 0.1 || 1
+								maxValue = maxValue + padding
 							}
 
 							// Format Y-axis label
@@ -2069,9 +2329,16 @@ function displayStateLabel(stateCode: string): string {
 
 							// Convert value to Y coordinate
 							const valueToY = (value: number) => {
-								if (maxValue === minValue) return chartBottom
-								const normalized = (value - minValue) / (maxValue - minValue)
-								return chartBottom - (normalized * chartHeight)
+								if (maxValue === 0) return chartBottom
+								if (trendMetric === "persistency") {
+									// For persistency, use minValue (which is 0) and maxValue (which is 1)
+									const normalized = (value - minValue) / (maxValue - minValue)
+									return chartBottom - (normalized * chartHeight)
+								} else {
+									// For other metrics, always start from 0
+									const normalized = value / maxValue
+									return chartBottom - (normalized * chartHeight)
+								}
 							}
 
 							return (
@@ -2088,43 +2355,61 @@ function displayStateLabel(stateCode: string): string {
 										{/* Chart area */}
 										<rect x="60" y="20" width="720" height="240" fill="transparent" />
 
-										{/* Grid lines */}
-										{Array.from({ length: 5 }).map((_, i) => {
-											const yPos = 20 + (240 / 4) * i
-											const value = maxValue - ((maxValue - minValue) / 4) * i
-											return (
-												<g key={i}>
-													<line
-														x1="60"
-														y1={yPos}
-														x2="780"
-														y2={yPos}
-														stroke="#e5e7eb"
-														strokeWidth="1"
-														strokeDasharray="4 4"
-													/>
-													{/* Y-axis labels */}
-													<text
-														x="55"
-														y={yPos + 4}
-														textAnchor="end"
-														fill="#6b7280"
-														fontSize="11"
-														fontFamily="system-ui"
-													>
-														{formatYLabel(value)}
-													</text>
-												</g>
-											)
-										})}
-
-										{/* X-axis labels and vertical grid lines */}
-										{trendData.map((data: any, idx: number) => {
-											const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
-											const monthLabel = data.period.split("-")[1]
-											const yearLabel = data.period.split("-")[0].slice(2)
+										{(() => {
+											// Generate scale values and use the max for consistent scaling
+											const scaleValues = generateScaleValues(minValue, maxValue, 5)
+											const scaleMax = scaleValues[scaleValues.length - 1]
+											const valueToYWithScale = (value: number) => {
+												if (scaleMax === 0) return chartBottom
+												if (trendMetric === "persistency") {
+													// For persistency, use 0-1 range
+													const normalized = value / scaleMax
+													return chartBottom - (normalized * chartHeight)
+												} else {
+													// For other metrics, always start from 0
+													const normalized = value / scaleMax
+													return chartBottom - (normalized * chartHeight)
+												}
+											}
 
 											return (
+												<>
+													{/* Grid lines */}
+													{scaleValues.map((value, i) => {
+														const yPos = valueToYWithScale(value)
+														return (
+															<g key={i}>
+																<line
+																	x1="60"
+																	y1={yPos}
+																	x2="780"
+																	y2={yPos}
+																	stroke="#e5e7eb"
+																	strokeWidth="1"
+																	strokeDasharray="4 4"
+																/>
+																{/* Y-axis labels */}
+																<text
+																	x="55"
+																	y={yPos + 4}
+																	textAnchor="end"
+																	fill="#6b7280"
+																	fontSize="11"
+																	fontFamily="system-ui"
+																>
+																	{formatYLabel(value)}
+																</text>
+															</g>
+														)
+													})}
+
+													{/* X-axis labels and vertical grid lines */}
+													{trendData.map((data: any, idx: number) => {
+														const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
+														const monthLabel = data.period.split("-")[1]
+														const yearLabel = data.period.split("-")[0].slice(2)
+
+														return (
 												<g key={data.period}>
 													<line
 														x1={xPos}
@@ -2150,45 +2435,45 @@ function displayStateLabel(stateCode: string): string {
 											)
 										})}
 
-										{/* Y-axis title */}
-										<text
-											x="15"
-											y="150"
-											textAnchor="middle"
-											fill="#6b7280"
-											fontSize="12"
-											fontFamily="system-ui"
-											fontWeight="500"
-											transform="rotate(-90 15 150)"
-										>
-											{getYAxisTitle()}
-										</text>
+													{/* Y-axis title */}
+													<text
+														x="15"
+														y="150"
+														textAnchor="middle"
+														fill="#6b7280"
+														fontSize="12"
+														fontFamily="system-ui"
+														fontWeight="500"
+														transform="rotate(-90 15 150)"
+													>
+														{getYAxisTitle()}
+													</text>
 
-										{/* X-axis title */}
-										<text
-											x="420"
-											y="290"
-											textAnchor="middle"
-											fill="#6b7280"
-											fontSize="12"
-											fontFamily="system-ui"
-											fontWeight="500"
-										>
-											Months
-										</text>
+													{/* X-axis title */}
+													<text
+														x="420"
+														y="290"
+														textAnchor="middle"
+														fill="#6b7280"
+														fontSize="12"
+														fontFamily="system-ui"
+														fontWeight="500"
+													>
+														Months
+													</text>
 
-										{/* Draw lines for each carrier */}
-										{carrierFilter === "ALL" ? (
-											<>
-												{/* Individual carrier lines */}
-								{(_analyticsData?.meta.carriers ?? []).filter(carrier => visibleCarriers.has(carrier)).map((carrier) => {
-									const color = carrierColorForLabel(String(carrier))
-													const points = trendData
-														.map((data: any, idx: number) => {
-															const value = data.carriers?.[carrier]
-															if (value === undefined || value === null) return null
-															const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
-															const yPos = valueToY(value)
+													{/* Draw lines for each carrier */}
+													{carrierFilter === "ALL" ? (
+														<>
+															{/* Individual carrier lines */}
+															{(_analyticsData?.meta.carriers ?? []).filter(carrier => visibleCarriers.has(carrier)).map((carrier) => {
+																const color = carrierColorForLabel(String(carrier))
+																const points = trendData
+																	.map((data: any, idx: number) => {
+																		const value = data.carriers?.[carrier]
+																		if (value === undefined || value === null) return null
+																		const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
+																		const yPos = valueToYWithScale(value)
 
 															// Get all values for this period and carrier
 									const periodRow = (_analyticsData?.series ?? []).find(r =>
@@ -2291,7 +2576,7 @@ function displayStateLabel(stateCode: string): string {
 															}
 
 															const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
-															const yPos = valueToY(cumulativeValue)
+															const yPos = valueToYWithScale(cumulativeValue)
 
 															// Get all cumulative values for this period
 									const periodSeries = (_analyticsData?.series ?? []).filter(row =>
@@ -2356,72 +2641,75 @@ function displayStateLabel(stateCode: string): string {
 															))}
 														</g>
 													)
-												})()}
-											</>
-										) : (
-											// Single line for selected carrier
-											(() => {
-									const color = carrierColorForLabel(String(carrierFilter))
-												const points = trendData
-													.map((data: any, idx: number) => {
-														const value = data.value
-														const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
-														const yPos = valueToY(value)
+															})()}
+														</>
+													) : (
+														// Single line for selected carrier
+														(() => {
+															const color = carrierColorForLabel(String(carrierFilter))
+															const points = trendData
+																.map((data: any, idx: number) => {
+																	const value = data.value
+																	const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
+																	const yPos = valueToYWithScale(value)
 
-														// Get all values for this period and carrier
-									const periodRow = (_analyticsData?.series ?? []).find(r =>
-															r.period === data.period && r.carrier === carrierFilter
-														)
-														const submitted = periodRow?.submitted || 0
-														const active = periodRow?.active || 0
-														const persistency = periodRow?.persistency || 0
+																	// Get all values for this period and carrier
+																	const periodRow = (_analyticsData?.series ?? []).find(r =>
+																		r.period === data.period && r.carrier === carrierFilter
+																	)
+																	const submitted = periodRow?.submitted || 0
+																	const active = periodRow?.active || 0
+																	const persistency = periodRow?.persistency || 0
 
-														return { x: xPos, y: yPos, value, period: data.period, submitted, active, persistency }
-													})
+																	return { x: xPos, y: yPos, value, period: data.period, submitted, active, persistency }
+																})
 
-												const pathData = createSmoothCurvePath(points)
+															const pathData = createSmoothCurvePath(points)
 
-												return (
-													<g>
-														<path
-															d={pathData}
-															fill="none"
-															stroke={color}
-															strokeWidth="2.5"
-															strokeLinecap="round"
-															strokeLinejoin="round"
-														/>
-														{points.map((p: any, i: number) => (
-															<circle
-																key={i}
-																cx={p.x}
-																cy={p.y}
-																r="4"
-																fill={color}
-																stroke="#fff"
-																strokeWidth="2"
-																className="cursor-pointer"
-																onMouseEnter={(e) => {
-																	const circle = e.currentTarget
-																	const container = circle.closest(".relative")
-																	if (container) {
-																		const circleRect = circle.getBoundingClientRect()
-																		const containerRect = container.getBoundingClientRect()
-																		// Calculate position relative to the container
-																		const x = circleRect.left + circleRect.width / 2 - containerRect.left
-																		// Position above the point (center of circle minus height to place tooltip above)
-																		const y = circleRect.top - containerRect.top - 10
-																		setHoverTrendInfo({ x, y, period: p.period, value: p.value, submitted: p.submitted, active: p.active, persistency: p.persistency })
-																	}
-																}}
-																onMouseLeave={() => setHoverTrendInfo(null)}
-															/>
-														))}
-													</g>
+															return (
+																<g>
+																	<path
+																		d={pathData}
+																		fill="none"
+																		stroke={color}
+																		strokeWidth="2.5"
+																		strokeLinecap="round"
+																		strokeLinejoin="round"
+																	/>
+																	{points.map((p: any, i: number) => (
+																		<circle
+																			key={i}
+																			cx={p.x}
+																			cy={p.y}
+																			r="4"
+																			fill={color}
+																			stroke="#fff"
+																			strokeWidth="2"
+																			className="cursor-pointer"
+																			onMouseEnter={(e) => {
+																				const circle = e.currentTarget
+																				const container = circle.closest(".relative")
+																				if (container) {
+																					const circleRect = circle.getBoundingClientRect()
+																					const containerRect = container.getBoundingClientRect()
+																					// Calculate position relative to the container
+																					const x = circleRect.left + circleRect.width / 2 - containerRect.left
+																					// Position above the point (center of circle minus height to place tooltip above)
+																					const y = circleRect.top - containerRect.top - 10
+																					setHoverTrendInfo({ x, y, period: p.period, value: p.value, submitted: p.submitted, active: p.active, persistency: p.persistency })
+																				}
+																			}}
+																			onMouseLeave={() => setHoverTrendInfo(null)}
+																		/>
+																	))}
+																</g>
+															)
+														})()
+													)}
+													</>
 												)
-											})()
-										)}
-									</svg>
+											})()}
+										</svg>
 
 									{/* Hover tooltip */}
 									{hoverTrendInfo && (

@@ -252,8 +252,8 @@ export default function Home() {
     if (!dashboardData?.carriers_active) return []
 
     const totalPolicies = dashboardData.carriers_active.reduce((sum: number, carrier: any) => sum + carrier.active_policies, 0)
-    const GROUP_THRESHOLD = 3 // Group slices below 3% into "Others"
-    const LABEL_THRESHOLD = 5 // Only show labels for slices above 5%
+    const GROUP_THRESHOLD = 4 // Group slices below 4% into "Others"
+    const LABEL_THRESHOLD = 5 // Threshold for label display (kept for reference, but all displayed slices show labels)
 
     // Separate large and small carriers
     const largeCarriers: any[] = []
@@ -266,7 +266,7 @@ export default function Home() {
         value: carrier.active_policies,
         percentage: percentage.toFixed(1),
         fill: COLORS[index % COLORS.length],
-        showLabel: percentage >= LABEL_THRESHOLD
+        showLabel: true // Always show labels for all carriers that are displayed separately
       }
 
       if (percentage >= GROUP_THRESHOLD) {
@@ -302,14 +302,26 @@ export default function Home() {
     return largeCarriers
   }
 
-  // Custom label renderer that wraps long names and conditionally shows labels
-  const renderCustomLabel = (entry: any) => {
-    const { name, percentage, fill, cx, cy, midAngle, innerRadius, outerRadius, x, y, showLabel } = entry
-
-    // Only show label if showLabel is true (for slices above threshold)
-    if (!showLabel) {
+  // Custom label renderer that wraps long names and shows all labels
+  const renderCustomLabel = (props: any) => {
+    // Recharts passes label props with cx, cy, midAngle, innerRadius, outerRadius, x, y
+    // The actual data is in the payload property
+    const { cx, cy, midAngle, innerRadius, outerRadius, x, y, payload } = props
+    
+    // Safety check - if coordinates are missing, don't render
+    if (x === undefined || y === undefined || !payload) {
       return null
     }
+
+    const { name, percentage, fill } = payload
+
+    // Safety check - if name or percentage is missing, don't render
+    if (!name || percentage === undefined) {
+      return null
+    }
+
+    // Show all labels for all displayed slices (all large carriers and "Others")
+    // All slices in getPieChartData() have showLabel: true, so we render them all
 
     // Helper function to split name at the middle if too long
     const splitName = (text: string) => {

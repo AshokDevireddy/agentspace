@@ -402,6 +402,7 @@ export default function AnalyticsTestPage() {
 
 				const { data: rpcData, error: rpcError } = await supabase
 					.rpc("get_analytics_from_deals_for_agent", { p_user_id: userRow.id })
+
 				if (rpcError || !rpcData) return
 
                 console.log("rpcData", rpcData)

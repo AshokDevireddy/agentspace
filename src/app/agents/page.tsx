@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import AddUserModal from "@/components/modals/add-user-modal"
-import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog } from "lucide-react"
+import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog, Mail } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 
@@ -269,6 +269,7 @@ export default function Agents() {
   const [filterPositions, setFilterPositions] = useState<Position[]>([]) // For filter dropdown (all agency positions)
   const [assigningAgentId, setAssigningAgentId] = useState<string | null>(null)
   const [selectedPositionId, setSelectedPositionId] = useState<string>("")
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
 
     const containerRef = useCallback((containerElem: HTMLDivElement | null) => {
         if (containerElem !== null) {
@@ -520,6 +521,33 @@ export default function Agents() {
       alert(err instanceof Error ? err.message : 'Failed to assign position')
     } finally {
       setAssigningAgentId(null)
+    }
+  }
+
+  // Handle resend invite
+  const handleResendInvite = async (agentId: string) => {
+    try {
+      setResendingInviteId(agentId)
+      const response = await fetch('/api/agents/resend-invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ agentId }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to resend invitation')
+      }
+
+      alert(data.message || 'Invitation resent successfully!')
+    } catch (err) {
+      console.error('Error resending invite:', err)
+      alert(err instanceof Error ? err.message : 'Failed to resend invitation')
+    } finally {
+      setResendingInviteId(null)
     }
   }
 
@@ -800,6 +828,21 @@ export default function Agents() {
                             >
                               {agent.badge}
                             </Badge>
+                            {(agent.status === 'invited' || agent.status === 'onboarding') && (
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleResendInvite(agent.id)
+                                }}
+                                disabled={resendingInviteId === agent.id}
+                                variant="ghost"
+                                size="sm"
+                                className="mt-2 h-7 px-2 text-xs gap-1"
+                              >
+                                <Mail className="h-3 w-3" />
+                                {resendingInviteId === agent.id ? 'Sending...' : 'Resend Invite'}
+                              </Button>
+                            )}
                           </div>
                         </div>
                       </td>

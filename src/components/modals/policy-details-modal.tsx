@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
-import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2 } from "lucide-react"
+import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2, Mail, Check, Circle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 
@@ -56,6 +56,33 @@ const getStatusColor = (status: string) => {
   return "bg-slate-500 text-white border-slate-600";
 }
 
+const getClientStatusSteps = (status: string | null | undefined) => {
+  const currentStatus = status || 'pre-invite'
+
+  const steps = [
+    { key: 'pre-invite', label: 'Not invited', completed: false },
+    { key: 'invited', label: 'Invite sent', completed: false },
+    { key: 'onboarding', label: 'Link clicked', completed: false },
+    { key: 'active', label: 'Logged in', completed: false }
+  ]
+
+  // Mark steps as completed based on current status
+  if (currentStatus === 'invited' || currentStatus === 'onboarding' || currentStatus === 'active') {
+    steps[0].completed = true // pre-invite completed
+    steps[1].completed = true // invited completed
+  }
+
+  if (currentStatus === 'onboarding' || currentStatus === 'active') {
+    steps[2].completed = true // onboarding completed
+  }
+
+  if (currentStatus === 'active') {
+    steps[3].completed = true // active completed
+  }
+
+  return steps
+}
+
 export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewMode = 'downlines' }: PolicyDetailsModalProps) {
   const [deal, setDeal] = useState<any>(null)
   const [loading, setLoading] = useState(false)
@@ -83,6 +110,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   const [conversationLoading, setConversationLoading] = useState(false)
   const [startConversationDialogOpen, setStartConversationDialogOpen] = useState(false)
   const [startingConversation, setStartingConversation] = useState(false)
+  const [sendingInvite, setSendingInvite] = useState(false)
 
   useEffect(() => {
     if (open && dealId) {
@@ -178,6 +206,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
     if (!deal) return
     setEditedData({
       client_name: deal.client_name,
+      client_email: deal.client_email,
       client_phone: deal.client_phone,
       policy_effective_date: deal.policy_effective_date,
       annual_premium: deal.annual_premium,
@@ -201,6 +230,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           client_name: editedData.client_name,
+          client_email: editedData.client_email,
           client_phone: editedData.client_phone,
           policy_effective_date: editedData.policy_effective_date,
           annual_premium: parseFloat(editedData.annual_premium),
@@ -281,6 +311,80 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
       month: 'long',
       day: 'numeric'
     });
+  }
+
+  const handleSendInvite = async () => {
+    if (!deal || !deal.client_email) {
+      alert('Client email is required to send an invitation')
+      return
+    }
+
+    setSendingInvite(true)
+    try {
+      // First check if client already has an invite or account
+      const checkResponse = await fetch(`/api/clients/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: deal.client_email,
+          firstName: deal.client_name?.split(' ')[0] || 'Client',
+          lastName: deal.client_name?.split(' ').slice(1).join(' ') || '',
+          phoneNumber: deal.client_phone || null
+        })
+      })
+
+      const data = await checkResponse.json()
+
+      if (checkResponse.ok) {
+        alert(data.message || 'Invitation sent successfully!')
+        await fetchDealDetails() // Refresh deal details
+      } else {
+        // If client exists but not invited, try resend endpoint
+        if (data.status) {
+          alert(`Client already has status: ${data.status}. ${data.error}`)
+        } else {
+          throw new Error(data.error || 'Failed to send invitation')
+        }
+      }
+    } catch (err) {
+      console.error('Error sending invite:', err)
+      alert(err instanceof Error ? err.message : 'Failed to send invitation')
+    } finally {
+      setSendingInvite(false)
+    }
+  }
+
+  const handleResendClientInvite = async () => {
+    if (!deal || !deal.client_email) {
+      alert('Client email is required to resend invitation')
+      return
+    }
+
+    setSendingInvite(true)
+    try {
+      const response = await fetch('/api/clients/resend-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: deal.client_email
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to resend invitation')
+      }
+
+      alert(data.message || 'Invitation resent successfully!')
+    } catch (err) {
+      console.error('Error resending invite:', err)
+      alert(err instanceof Error ? err.message : 'Failed to resend invitation')
+    } finally {
+      setSendingInvite(false)
+    }
   }
 
   if (!deal && loading) {
@@ -366,9 +470,52 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
               {/* Client Information */}
               <Card className="professional-card border-l-4 border-l-primary">
                 <CardContent className="p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <User className="h-5 w-5 text-primary" />
-                    <h3 className="text-xl font-bold text-foreground">Client Information</h3>
+                  <div className="space-y-4 mb-5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <User className="h-5 w-5 text-primary" />
+                        <h3 className="text-xl font-bold text-foreground">Client Information</h3>
+                      </div>
+                      {!isEditing && deal.client_email && deal.client_status !== 'active' && (
+                        <Button
+                          onClick={deal.client_status === 'invited' || deal.client_status === 'onboarding' ? handleResendClientInvite : handleSendInvite}
+                          disabled={sendingInvite}
+                          size="sm"
+                          variant={deal.client_status === 'invited' || deal.client_status === 'onboarding' ? 'outline' : 'default'}
+                          className={deal.client_status === 'invited' || deal.client_status === 'onboarding' ? 'gap-1.5' : 'gap-1.5 btn-gradient'}
+                        >
+                          <Mail className="h-3.5 w-3.5" />
+                          {sendingInvite ? 'Sending...' : (deal.client_status === 'invited' || deal.client_status === 'onboarding' ? 'Resend Invite' : 'Send Invite')}
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Client Status Timeline */}
+                    <div className="flex items-center gap-2 py-2 px-3 bg-muted/30 rounded-lg">
+                      {getClientStatusSteps(deal.client_status).map((step, index) => (
+                        <div key={step.key} className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
+                            {step.completed ? (
+                              <Check className="h-3.5 w-3.5 text-green-600" />
+                            ) : (
+                              <Circle className="h-3.5 w-3.5 text-gray-400" />
+                            )}
+                            <span className={cn(
+                              "text-xs font-medium",
+                              step.completed ? "text-green-600" : "text-muted-foreground"
+                            )}>
+                              {step.label}
+                            </span>
+                          </div>
+                          {index < getClientStatusSteps(deal.client_status).length - 1 && (
+                            <div className={cn(
+                              "h-px w-4",
+                              step.completed ? "bg-green-600" : "bg-gray-300"
+                            )} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-1">
@@ -382,6 +529,24 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         />
                       ) : (
                         <p className="text-lg font-semibold text-foreground">{deal.client_name}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <Mail className="h-3 w-3" />
+                        Client Email
+                      </label>
+                      {isEditing ? (
+                        <Input
+                          type="email"
+                          value={editedData?.client_email || ''}
+                          onChange={(e) => setEditedData({ ...editedData, client_email: e.target.value })}
+                          className="mt-1"
+                          placeholder="client@example.com"
+                        />
+                      ) : (
+                        <p className="text-lg font-semibold text-foreground">{deal.client_email || 'N/A'}</p>
                       )}
                     </div>
 

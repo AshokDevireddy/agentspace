@@ -40,14 +40,15 @@ export async function GET(
     const { searchParams } = new URL(req.url);
     const view = searchParams.get('view') || 'downlines';
 
-    // Fetch deal with related agent, carrier, and product information
+    // Fetch deal with related agent, carrier, product, and client information
     const { data: deal, error } = await admin
       .from("deals")
       .select(`
         *,
         agent:users!deals_agent_id_fkey(id, first_name, last_name, email),
         carrier:carriers(id, name),
-        product:products(id, name)
+        product:products(id, name),
+        client:users!deals_client_id_fkey(id, email, status)
       `)
       .eq("id", dealId)
       .single();
@@ -75,12 +76,14 @@ export async function GET(
     const isActiveOrPending = statusImpact === 'positive' || statusImpact === 'neutral';
     const shouldHidePhone = view === 'downlines' && !isAdmin && !isWritingAgent && isActiveOrPending;
 
-    // Mask phone if needed
+    // Mask phone if needed and add client email and status from client record
     const dealWithMaskedPhone = {
       ...deal,
       client_phone: shouldHidePhone ? 'HIDDEN' : deal.client_phone,
       phone_hidden: shouldHidePhone,
-      is_writing_agent: isWritingAgent
+      is_writing_agent: isWritingAgent,
+      client_email: deal.client?.email || null,
+      client_status: deal.client?.status || null
     };
 
     return NextResponse.json({ deal: dealWithMaskedPhone }, { status: 200 });
@@ -105,18 +108,35 @@ export async function PUT(
       return NextResponse.json({ error: "Deal ID is required" }, { status: 400 });
     }
 
-    // Add updated_at timestamp
-    data.updated_at = new Date().toISOString();
+    // Extract client_email if provided (it's not a deal field, it's a users field)
+    const { client_email, ...dealData } = data;
 
+    // Add updated_at timestamp
+    dealData.updated_at = new Date().toISOString();
+
+    // Update the deal
     const { data: deal, error } = await supabase
       .from("deals")
-      .update(data)
+      .update(dealData)
       .eq("id", dealId)
       .select()
       .single();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    // If client_email was provided and deal has a client_id, update the client's email
+    if (client_email !== undefined && deal.client_id) {
+      const { error: clientError } = await supabase
+        .from("users")
+        .update({ email: client_email })
+        .eq("id", deal.client_id);
+
+      if (clientError) {
+        console.error('Error updating client email:', clientError);
+        // Don't fail the whole request if client email update fails
+      }
     }
 
     return NextResponse.json({ deal, message: "Deal updated successfully" }, { status: 200 });

@@ -4,9 +4,9 @@ import { NextResponse } from 'next/server'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { email, firstName, lastName, phoneNumber, permissionLevel, uplineAgentId, preInviteUserId } = body
+    const { email, firstName, lastName, phoneNumber, permissionLevel, uplineAgentId, positionId, preInviteUserId } = body
 
-    console.log('Inviting agent with upline_id:', uplineAgentId, 'preInviteUserId:', preInviteUserId)
+    console.log('Inviting agent with upline_id:', uplineAgentId, 'position_id:', positionId, 'preInviteUserId:', preInviteUserId)
 
     // Get the authenticated user
     const supabase = await createServerClient()
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
       const { data: authData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
         email,
         {
-          redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/confirm`
+          redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login`
         }
       )
 
@@ -101,6 +101,7 @@ export async function POST(request: Request) {
           phone_number: phoneNumber || null,
           role: role,
           upline_id: uplineAgentId || null,
+          position_id: positionId || null,
           perm_level: permissionLevel,
           is_admin: isAdmin,
           status: 'invited',
@@ -145,7 +146,7 @@ export async function POST(request: Request) {
     const { data: authData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       email,
       {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/confirm`
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login`
       }
     )
 
@@ -166,6 +167,7 @@ export async function POST(request: Request) {
         phone_number: phoneNumber || null,
         role: role,
         upline_id: uplineAgentId || null,
+        position_id: positionId || null,
         annual_goal: 0,
         perm_level: permissionLevel,
         is_admin: isAdmin,

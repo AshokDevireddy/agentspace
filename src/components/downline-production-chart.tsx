@@ -20,9 +20,18 @@ interface BreadcrumbItem {
   agentName: string
 }
 
+export interface DownlineProductionChartHandle {
+  reset: () => void
+  getBreadcrumbInfo: () => { currentAgentName: string; breadcrumbs: BreadcrumbItem[]; isAtRoot: boolean }
+  navigateToBreadcrumb: (index: number) => void // -1 for root, 0+ for breadcrumb index
+}
+
 interface DownlineProductionChartProps {
   userId: string
   timeWindow: "3" | "6" | "9" | "all"
+  embedded?: boolean // If true, skip Card wrapper and title
+  onTitleChange?: (title: string) => void // Callback to get the current title when embedded
+  onBreadcrumbChange?: (info: { currentAgentName: string; breadcrumbs: BreadcrumbItem[]; isAtRoot: boolean }) => void // Callback for breadcrumb changes
 }
 
 // Color palette for pie slices
@@ -70,7 +79,8 @@ function formatCurrency(n: number) {
   }).format(n)
 }
 
-export default function DownlineProductionChart({ userId, timeWindow }: DownlineProductionChartProps) {
+const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, DownlineProductionChartProps>(
+  ({ userId, timeWindow, embedded = false, onTitleChange, onBreadcrumbChange }, ref) => {
   const [data, setData] = React.useState<DownlineProductionData[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -185,20 +195,36 @@ export default function DownlineProductionChart({ userId, timeWindow }: Downline
     setCurrentAgentName(agentName)
   }
 
+  // Reset function to expose to parent
+  const resetToRoot = React.useCallback(() => {
+    setCurrentAgentId(userId)
+    setCurrentAgentName("You")
+    setBreadcrumbs([])
+  }, [userId])
+
   // Handle breadcrumb navigation
-  const handleBreadcrumbClick = (index: number) => {
+  const handleBreadcrumbClick = React.useCallback((index: number) => {
     if (index === -1) {
       // Reset to root
-      setCurrentAgentId(userId)
-      setCurrentAgentName("You")
-      setBreadcrumbs([])
+      resetToRoot()
     } else {
       const targetBreadcrumb = breadcrumbs[index]
       setCurrentAgentId(targetBreadcrumb.agentId)
       setCurrentAgentName(targetBreadcrumb.agentName)
       setBreadcrumbs(breadcrumbs.slice(0, index))
     }
-  }
+  }, [breadcrumbs, resetToRoot])
+
+  // Expose reset function and breadcrumb info via ref
+  React.useImperativeHandle(ref, () => ({
+    reset: resetToRoot,
+    getBreadcrumbInfo: () => ({
+      currentAgentName,
+      breadcrumbs,
+      isAtRoot: currentAgentId === userId
+    }),
+    navigateToBreadcrumb: handleBreadcrumbClick
+  }), [resetToRoot, currentAgentName, breadcrumbs, currentAgentId, userId, handleBreadcrumbClick])
 
   // Calculate wedges for pie chart
   const wedges = React.useMemo(() => {
@@ -230,78 +256,83 @@ export default function DownlineProductionChart({ userId, timeWindow }: Downline
 
   // Display name for title
   const displayName = currentAgentId === userId ? "Your" : currentAgentName + "'s"
+  const titleText = `${displayName} Direct Downline Distribution`
 
-  return (
-    <Card className="rounded-md">
-      <CardContent className="p-4 sm:p-6">
-        <div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">
-          DOWNLINE PRODUCTION DISTRIBUTION
+  // Notify parent of title change when embedded
+  React.useEffect(() => {
+    if (embedded && onTitleChange && !isLoading) {
+      onTitleChange(titleText)
+    }
+  }, [embedded, onTitleChange, titleText, isLoading])
+
+  // Notify parent of breadcrumb change when embedded
+  React.useEffect(() => {
+    if (embedded && onBreadcrumbChange && !isLoading) {
+      onBreadcrumbChange({
+        currentAgentName,
+        breadcrumbs,
+        isAtRoot: currentAgentId === userId
+      })
+    }
+  }, [embedded, onBreadcrumbChange, currentAgentName, breadcrumbs, currentAgentId, userId, isLoading])
+
+  const content = (
+    <>
+      {/* Breadcrumb Navigation - only show Back button when not embedded, Reset button moved below */}
+      {!isLoading && breadcrumbs.length > 0 && !embedded && (
+        <div className="mb-4 flex items-center gap-2 text-sm">
+          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleBreadcrumbClick(breadcrumbs.length - 2)}
+            className="h-8 text-muted-foreground hover:text-foreground"
+          >
+            <span>Back</span>
+          </Button>
         </div>
+      )}
 
-        {/* Breadcrumb Navigation - always visible when not loading and has breadcrumbs */}
-        {!isLoading && breadcrumbs.length > 0 && (
-          <div className="mb-4 flex items-center gap-2 text-sm">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleBreadcrumbClick(-1)}
-              className="h-8 gap-1 text-muted-foreground hover:text-foreground"
-            >
-              <Home className="h-4 w-4" />
-              <span>Reset</span>
-            </Button>
-            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleBreadcrumbClick(breadcrumbs.length - 2)}
-              className="h-8 text-muted-foreground hover:text-foreground"
-            >
-              <span>Back</span>
-            </Button>
-          </div>
-        )}
+      {/* Breadcrumb trail - only visible when not embedded */}
+      {!isLoading && !embedded && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span
+            onClick={() => handleBreadcrumbClick(-1)}
+            className="cursor-pointer hover:text-foreground transition-colors"
+          >
+            You
+          </span>
+          {breadcrumbs.map((crumb, idx) => (
+            <React.Fragment key={crumb.agentId}>
+              <span>→</span>
+              <span
+                onClick={() => handleBreadcrumbClick(idx)}
+                className="cursor-pointer hover:text-foreground transition-colors"
+              >
+                {crumb.agentName}
+              </span>
+            </React.Fragment>
+          ))}
+          {currentAgentId !== userId && (
+            <>
+              <span>→</span>
+              <span className="font-medium text-foreground">
+                {currentAgentName}
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
-        {/* Breadcrumb trail - always visible when not loading */}
-        {!isLoading && (
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span
-              onClick={() => handleBreadcrumbClick(-1)}
-              className="cursor-pointer hover:text-foreground transition-colors"
-            >
-              You
-            </span>
-            {breadcrumbs.map((crumb, idx) => (
-              <React.Fragment key={crumb.agentId}>
-                <span>→</span>
-                <span
-                  onClick={() => handleBreadcrumbClick(idx)}
-                  className="cursor-pointer hover:text-foreground transition-colors"
-                >
-                  {crumb.agentName}
-                </span>
-              </React.Fragment>
-            ))}
-            {currentAgentId !== userId && (
-              <>
-                <span>→</span>
-                <span className="font-medium text-foreground">
-                  {currentAgentName}
-                </span>
-              </>
-            )}
-          </div>
-        )}
+      {/* Error Message */}
+      {error && (
+        <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
 
-        {/* Error Message */}
-        {error && (
-          <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-
-        {/* Chart Content - always has consistent structure */}
-        <div className="flex flex-col items-center justify-center gap-6">
+      {/* Chart Content - always has consistent structure */}
+      <div className="flex flex-col items-center justify-center gap-6">
           {isLoading ? (
             <>
               {/* Title skeleton */}
@@ -325,10 +356,12 @@ export default function DownlineProductionChart({ userId, timeWindow }: Downline
             </div>
           ) : (
             <>
-              {/* Title */}
-              <div className="text-center text-sm font-medium">
-                {displayName} Direct Downline Distribution
-              </div>
+              {/* Title - only show when not embedded */}
+              {!embedded && (
+                <div className="text-center text-sm font-medium">
+                  {displayName} Direct Downline Distribution
+                </div>
+              )}
 
               {/* Pie Chart */}
               <div className="relative h-[320px] w-[320px]">
@@ -426,7 +459,40 @@ export default function DownlineProductionChart({ userId, timeWindow }: Downline
             </>
           )}
         </div>
+
+      {/* Reset Button - shown below legend when embedded */}
+      {embedded && !isLoading && (breadcrumbs.length > 0 || currentAgentId !== userId) && (
+        <div className="mt-4 flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleBreadcrumbClick(-1)}
+            className="h-8 gap-1 text-muted-foreground hover:text-foreground"
+          >
+            <Home className="h-4 w-4" />
+            <span>Reset</span>
+          </Button>
+        </div>
+      )}
+    </>
+  )
+
+  if (embedded) {
+    return content
+  }
+
+  return (
+    <Card className="rounded-md">
+      <CardContent className="p-4 sm:p-6">
+        <div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">
+          DOWNLINE PRODUCTION DISTRIBUTION
+        </div>
+        {content}
       </CardContent>
     </Card>
   )
-}
+})
+
+DownlineProductionChart.displayName = "DownlineProductionChart"
+
+export default DownlineProductionChart

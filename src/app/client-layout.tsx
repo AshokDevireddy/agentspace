@@ -6,6 +6,7 @@ import Navigation from '@/components/navigation'
 import { Building2 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { useTheme } from 'next-themes'
 
 // Pages that should not show the navigation sidebar
 const AUTH_PAGES = [
@@ -27,10 +28,47 @@ export default function ClientLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const { setTheme } = useTheme()
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isClientPage = CLIENT_PAGES.some(page => pathname.startsWith(page))
   const [userRole, setUserRole] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // Force light theme on auth pages and restore agency theme on dashboard
+  useEffect(() => {
+    const handleTheme = async () => {
+      if (isAuthPage) {
+        // Always use light theme on auth pages
+        setTheme('light')
+      } else {
+        // On authenticated pages, load and apply agency theme
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+
+        if (user) {
+          const { data: userData } = await supabase
+            .from('users')
+            .select('agency_id')
+            .eq('auth_user_id', user.id)
+            .single()
+
+          if (userData?.agency_id) {
+            const { data: agencyInfo } = await supabase
+              .from('agencies')
+              .select('theme_mode')
+              .eq('id', userData.agency_id)
+              .single()
+
+            if (agencyInfo?.theme_mode) {
+              setTheme(agencyInfo.theme_mode)
+            }
+          }
+        }
+      }
+    }
+
+    handleTheme()
+  }, [isAuthPage, setTheme, pathname])
 
   useEffect(() => {
     const checkUserRole = async () => {

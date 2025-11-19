@@ -2,7 +2,7 @@
 
 import React from "react"
 import UploadPolicyReportsModal from "@/components/modals/upload-policy-reports-modal"
-import DownlineProductionChart from "@/components/downline-production-chart"
+import DownlineProductionChart, { DownlineProductionChartHandle } from "@/components/downline-production-chart"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -511,6 +511,9 @@ export default function AnalyticsTestPage() {
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
 	const [userId, setUserId] = React.useState<string | null>(null)
+	const [downlineTitle, setDownlineTitle] = React.useState<string | null>(null)
+	const [downlineBreadcrumbInfo, setDownlineBreadcrumbInfo] = React.useState<{ currentAgentName: string; breadcrumbs: Array<{ agentId: string; agentName: string }>; isAtRoot: boolean } | null>(null)
+	const downlineChartRef = React.useRef<DownlineProductionChartHandle>(null)
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
 	React.	useEffect(() => {
@@ -1303,6 +1306,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							<div className="mb-4 flex flex-wrap gap-2 justify-center">
 								{[
 									{ key: "carrier", label: "By Carrier" },
+									{ key: "downline", label: "By Downline" },
 									{ key: "state", label: "By State" },
 									{ key: "age", label: "By Age" },
 									{ key: "persistency", label: "By Persistency" },
@@ -1371,6 +1375,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							<div className="mb-4 flex flex-wrap gap-2 justify-center">
 								{[
 									{ key: "carrier", label: "By Carrier" },
+									{ key: "downline", label: "By Downline" },
 									{ key: "state", label: "By State" },
 									{ key: "age", label: "By Age" },
 									{ key: "persistency", label: "By Persistency" },
@@ -1381,8 +1386,11 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 										size="sm"
 										onClick={() => {
 											setGroupBy(g.key)
-											if (g.key !== "carrier") {
+											if (g.key !== "carrier" && g.key !== "downline") {
 												setSelectedCarrier(null)
+											}
+											if (g.key !== "downline") {
+												setDownlineTitle(null)
 											}
 										}}
 										className={`rounded-md ${groupBy === g.key ? 'bg-foreground hover:bg-foreground/90 text-background' : ''}`}
@@ -1740,14 +1748,78 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							)}
 						</>
 					) : (
-						// Carrier Pie Chart View
+						// Carrier Pie Chart View or Downline View
 						<>
-							<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">TOTAL SUBMITTED BUSINESS</div>
+							{groupBy === "downline" ? (
+								<div className="mb-4 flex items-center gap-3">
+									<div className="text-xs font-medium tracking-wide text-muted-foreground">
+										{carrierFilter === "ALL" ? "ALL CARRIERS" : carrierFilter.toUpperCase()} - {downlineTitle || "Your Direct Downline Distribution"}
+									</div>
+									{/* Breadcrumb trail - shown right before reset button */}
+									{downlineBreadcrumbInfo && !downlineBreadcrumbInfo.isAtRoot && (
+										<div className="flex items-center gap-1 text-xs text-muted-foreground">
+											<span 
+												onClick={() => downlineChartRef.current?.navigateToBreadcrumb(-1)}
+												className="opacity-70 cursor-pointer hover:opacity-100 hover:text-foreground transition-colors outline-none focus:outline-none"
+												tabIndex={0}
+												onKeyDown={(e) => {
+													if (e.key === 'Enter' || e.key === ' ') {
+														e.preventDefault()
+														downlineChartRef.current?.navigateToBreadcrumb(-1)
+													}
+												}}
+											>
+												You
+											</span>
+											{downlineBreadcrumbInfo.breadcrumbs.map((crumb, idx) => (
+												<React.Fragment key={crumb.agentId}>
+													<span className="opacity-50">→</span>
+													<span 
+														onClick={() => downlineChartRef.current?.navigateToBreadcrumb(idx)}
+														className="opacity-70 cursor-pointer hover:opacity-100 hover:text-foreground transition-colors outline-none focus:outline-none"
+														tabIndex={0}
+														onKeyDown={(e) => {
+															if (e.key === 'Enter' || e.key === ' ') {
+																e.preventDefault()
+																downlineChartRef.current?.navigateToBreadcrumb(idx)
+															}
+														}}
+													>
+														{crumb.agentName}
+													</span>
+												</React.Fragment>
+											))}
+											<span className="opacity-50">→</span>
+											<span className="opacity-90">
+												{downlineBreadcrumbInfo.currentAgentName}
+											</span>
+										</div>
+									)}
+									{(downlineTitle && downlineTitle !== "Your Direct Downline Distribution") && (
+										<Button
+											onClick={() => {
+												downlineChartRef.current?.reset()
+												setDownlineTitle("Your Direct Downline Distribution")
+											}}
+											variant="outline"
+											size="sm"
+											className="h-6 text-xs px-2"
+										>
+											Reset
+										</Button>
+									)}
+								</div>
+							) : (
+								<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">
+									TOTAL SUBMITTED BUSINESS
+								</div>
+							)}
 
 							{/* Tabs */}
 							<div className="mb-4 flex flex-wrap gap-2 justify-center">
 								{[
 									{ key: "carrier", label: "By Carrier" },
+									{ key: "downline", label: "By Downline" },
 									{ key: "state", label: "By State" },
 									{ key: "age", label: "By Age" },
 									{ key: "persistency", label: "By Persistency" },
@@ -1756,7 +1828,12 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 										key={g.key}
 										variant={groupBy === g.key ? "default" : "outline"}
 										size="sm"
-										onClick={() => setGroupBy(g.key)}
+										onClick={() => {
+											setGroupBy(g.key)
+											if (g.key !== "downline") {
+												setDownlineTitle(null)
+											}
+										}}
 										className={`rounded-md ${groupBy === g.key ? 'bg-foreground hover:bg-foreground/90 text-background' : ''}`}
 									>
 										{g.label}
@@ -1764,8 +1841,34 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 								))}
 							</div>
 
-					{/* WARNING: DO NOT CHANGE THE LEGEND POSITION - Legend MUST be below the pie chart, NOT next to it */}
-					<div className="flex flex-col items-center justify-center gap-6">
+							{/* Downline Production Distribution Tab */}
+							{groupBy === "downline" ? (
+								userId ? (
+									<DownlineProductionChart 
+										ref={downlineChartRef}
+										userId={userId} 
+										timeWindow={timeWindow} 
+										embedded={true}
+										onTitleChange={setDownlineTitle}
+										onBreadcrumbChange={setDownlineBreadcrumbInfo}
+									/>
+								) : (
+									<div className="flex flex-col items-center justify-center gap-6 py-8">
+										<div className="h-5 w-64 bg-muted animate-pulse rounded" />
+										<div className="relative h-[320px] w-[320px]">
+											<div className="h-full w-full rounded-full bg-muted animate-pulse" />
+										</div>
+										<div className="flex flex-wrap justify-center gap-4 mt-4">
+											<div className="h-4 w-48 bg-muted animate-pulse rounded" />
+											<div className="h-4 w-40 bg-muted animate-pulse rounded" />
+											<div className="h-4 w-44 bg-muted animate-pulse rounded" />
+										</div>
+									</div>
+								)
+							) : (
+								<>
+									{/* WARNING: DO NOT CHANGE THE LEGEND POSITION - Legend MUST be below the pie chart, NOT next to it */}
+									<div className="flex flex-col items-center justify-center gap-6">
 						{/* SVG pie with hover */}
 						<div className="relative h-[320px] w-[320px]">
 							<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
@@ -1857,34 +1960,12 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							)}
 						</div>
 					</div>
+								</>
+							)}
 						</>
 					)}
 				</CardContent>
 			</Card>
-
-			{/* Downline Production Distribution */}
-			{userId ? (
-				<DownlineProductionChart userId={userId} timeWindow={timeWindow} />
-			) : (
-				<Card className="rounded-md">
-					<CardContent className="p-4 sm:p-6">
-						<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">
-							DOWNLINE PRODUCTION DISTRIBUTION
-						</div>
-						<div className="flex flex-col items-center justify-center gap-6">
-							<div className="h-5 w-64 bg-muted animate-pulse rounded" />
-							<div className="relative h-[320px] w-[320px]">
-								<div className="h-full w-full rounded-full bg-muted animate-pulse" />
-							</div>
-							<div className="flex flex-wrap justify-center gap-4 mt-4">
-								<div className="h-4 w-48 bg-muted animate-pulse rounded" />
-								<div className="h-4 w-40 bg-muted animate-pulse rounded" />
-								<div className="h-4 w-44 bg-muted animate-pulse rounded" />
-							</div>
-						</div>
-					</CardContent>
-				</Card>
-			)}
 
 			{/* Performance Trends */}
 			<Card className="rounded-md">

@@ -473,17 +473,20 @@ export default function ConfigurationPage() {
 
       console.log('Upload successful:', uploadData)
 
-      // Get public URL
+      // Get public URL with cache-busting timestamp
       const { data: { publicUrl } } = supabase.storage
         .from('logos')
         .getPublicUrl(fileName)
 
-      console.log('Public URL generated:', publicUrl)
+      // Add timestamp query parameter to bust browser and CDN cache
+      const cacheBustedUrl = `${publicUrl}?t=${Date.now()}`
 
-      // Update agency with logo URL
+      console.log('Public URL generated:', cacheBustedUrl)
+
+      // Update agency with logo URL (including cache-busting parameter)
       const { error: updateError } = await supabase
         .from('agencies')
-        .update({ logo_url: publicUrl })
+        .update({ logo_url: cacheBustedUrl })
         .eq('id', agency.id)
 
       if (updateError) {
@@ -492,12 +495,12 @@ export default function ConfigurationPage() {
       }
 
       console.log('Logo URL saved to database successfully')
-      console.log('Public URL:', publicUrl)
+      console.log('Public URL:', cacheBustedUrl)
 
-      // Update local state with public URL
-      setAgency({ ...agency, logo_url: publicUrl })
+      // Update local state with cache-busted URL
+      setAgency({ ...agency, logo_url: cacheBustedUrl })
 
-      // Extract dominant color from the uploaded image
+      // Extract dominant color from the uploaded image (use original URL without cache param)
       await extractDominantColor(publicUrl)
 
       alert('Logo uploaded successfully! Please refresh the page to see it in the navigation.')

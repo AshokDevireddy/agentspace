@@ -491,19 +491,7 @@ export default function AnalyticsTestPage() {
 
 				const { data: rpcData, error: rpcError } = await supabase
 					.rpc("get_analytics_from_deals_for_agent", { p_user_id: userRow.id })
-				
-				// Log RPC response for debugging
-				console.log("🔍 get_analytics_from_deals_for_agent RPC Response:", {
-					p_user_id: userRow.id,
-					agency_id: userRow.agency_id,
-					rpcData: rpcData,
-					rpcError: rpcError,
-					rpcDataType: typeof rpcData,
-					rpcDataIsArray: Array.isArray(rpcData),
-					rpcDataKeys: rpcData ? Object.keys(rpcData) : null,
-					rpcDataStringified: rpcData ? JSON.stringify(rpcData, null, 2) : null
-				})
-				
+
 				if (rpcError || !rpcData) return
 
                 console.log("rpcData", rpcData)

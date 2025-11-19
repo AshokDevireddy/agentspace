@@ -2336,17 +2336,24 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 														let totalInactive = 0
 														let totalSubmitted = 0
 														let totalPremium = 0
+														let totalPlacement = 0
+														let placementCount = 0
 														for (const row of periodSeries) {
 															totalActive += row.active || 0
 															totalInactive += row.inactive || 0
 															const submitted = row.submitted || 0
 															totalSubmitted += submitted
 															totalPremium += (row.avg_premium_submitted || 0) * submitted
+															if ((row as any).placement !== undefined && (row as any).placement !== null) {
+																totalPlacement += (row as any).placement
+																placementCount++
+															}
 														}
 														const cumulativePersistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
+														const cumulativePlacement = placementCount > 0 ? totalPlacement / placementCount : 0
 														const avgPremium = totalSubmitted > 0 ? totalPremium / totalSubmitted : 0
 
-														return { x: xPos, y: yPos, value: cumulativeSubmitted, period: data.period, submitted: cumulativeSubmitted, active: totalActive, persistency: cumulativePersistency, avgPremium }
+														return { x: xPos, y: yPos, value: cumulativeSubmitted, period: data.period, submitted: cumulativeSubmitted, active: totalActive, persistency: cumulativePersistency, placement: cumulativePlacement, avgPremium }
 													})
 
 												const pathData = createSmoothCurvePath(submittedPoints)
@@ -2374,7 +2381,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																		const x = circleRect.left + circleRect.width / 2 - containerRect.left
 																		// Position above the point (center of circle minus height to place tooltip above)
 																		const y = circleRect.top - containerRect.top - 10
-																		setHoverTrendInfo({ x, y, period: p.period, value: p.submitted, carrier: "Cumulative Submitted", submitted: p.submitted, active: p.active, persistency: p.persistency, avgPremium: p.avgPremium })
+																		setHoverTrendInfo({ x, y, period: p.period, value: p.submitted, carrier: "Cumulative Submitted", submitted: p.submitted, active: p.active, persistency: p.persistency, placement: p.placement, avgPremium: p.avgPremium })
 																	}
 																}}
 																onMouseLeave={() => setHoverTrendInfo(null)}
@@ -2414,17 +2421,24 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 														let totalActive = 0
 														let totalInactive = 0
 														let totalPremium = 0
+														let totalPlacement = 0
+														let placementCount = 0
 														for (const row of periodSeries) {
 															const submitted = row.submitted || 0
 															totalSubmitted += submitted
 															totalActive += row.active || 0
 															totalInactive += row.inactive || 0
 															totalPremium += (row.avg_premium_submitted || 0) * submitted
+															if ((row as any).placement !== undefined && (row as any).placement !== null) {
+																totalPlacement += (row as any).placement
+																placementCount++
+															}
 														}
 														const cumulativePersistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
+														const cumulativePlacement = placementCount > 0 ? totalPlacement / placementCount : 0
 														const avgPremium = totalSubmitted > 0 ? totalPremium / totalSubmitted : 0
 
-														return { x: xPos, y: yPos, value: cumulativeActive, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency, avgPremium }
+														return { x: xPos, y: yPos, value: cumulativeActive, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency, placement: cumulativePlacement, avgPremium }
 													})
 
 												const pathData = createSmoothCurvePath(activePoints)
@@ -2452,7 +2466,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																		const x = circleRect.left + circleRect.width / 2 - containerRect.left
 																		// Position above the point (center of circle minus height to place tooltip above)
 																		const y = circleRect.top - containerRect.top - 10
-																		setHoverTrendInfo({ x, y, period: p.period, value: p.active, carrier: "Cumulative Active", submitted: p.submitted, active: p.active, persistency: p.persistency, avgPremium: p.avgPremium })
+																		setHoverTrendInfo({ x, y, period: p.period, value: p.active, carrier: "Cumulative Active", submitted: p.submitted, active: p.active, persistency: p.persistency, placement: p.placement, avgPremium: p.avgPremium })
 																	}
 																}}
 																onMouseLeave={() => setHoverTrendInfo(null)}

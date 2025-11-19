@@ -2,6 +2,7 @@
 
 import React from "react"
 import UploadPolicyReportsModal from "@/components/modals/upload-policy-reports-modal"
+import DownlineProductionChart, { DownlineProductionChartHandle } from "@/components/downline-production-chart"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -297,93 +298,135 @@ function numberWithCommas(n: number) {
 	return n.toLocaleString()
 }
 
-// Generate unique whole number scale values (no repeats, only whole numbers and 0)
-// Always starts at 0, ensures even spacing, and guarantees at least 5 lines
+// Generate evenly spaced scale values
+// Always starts at 0, ensures even spacing, and guarantees exactly 5 lines (0 + 4 more)
+// Each line must be a whole number, except when max value is very small (like 1)
 function generateScaleValues(minValue: number, maxValue: number, numLines: number = 5): number[] {
 	// Always start at 0
-	const min = 0
+	// We want exactly 5 lines: 0, line1, line2, line3, line4
+	// So we need 4 intervals between 0 and max
 	
 	// Handle persistency (0-1 range) separately
 	const isPersistency = minValue >= 0 && maxValue <= 1 && maxValue - minValue <= 1
 	
-	let max: number
 	if (isPersistency) {
-		// For persistency, always go to 1.0
-		max = 1.0
-	} else {
-		// For other metrics, round up maxValue to a nice number
-		const actualMax = Math.max(0, Math.ceil(maxValue))
-		
-		// Find a nice rounded max value that's >= actualMax
-		// Try to find a nice step size first, then calculate max
-		const niceSteps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
-		
-		// Calculate what the step should be for numLines-1 intervals (since we start at 0)
-		const targetRange = actualMax
-		let step = 1
-		
-		// Find the smallest step that gives us at least numLines values
-		for (const niceStep of niceSteps) {
-			const numIntervals = Math.ceil(targetRange / niceStep)
-			if (numIntervals >= numLines - 1) {
-				step = niceStep
-				break
-			}
-		}
-		
-		// Calculate max as a multiple of step
-		max = Math.ceil(actualMax / step) * step
-		// Ensure max is at least actualMax
-		if (max < actualMax) {
-			max = Math.ceil(actualMax / step) * step + step
-		}
-	}
-	
-	// For persistency, use evenly spaced percentage steps
-	if (isPersistency) {
-		// Always use 0, 0.25, 0.5, 0.75, 1.0 for 5 lines
+		// For persistency, always use 0, 0.25, 0.5, 0.75, 1.0 for 5 lines
 		return [0, 0.25, 0.5, 0.75, 1.0]
 	}
 	
-	// Calculate step size for even spacing
-	// We want numLines values from 0 to max, so numLines-1 intervals
-	const step = max / (numLines - 1)
+	// For other metrics, find the actual max value
+	const actualMax = Math.max(0, maxValue)
 	
-	// Generate evenly spaced values
+	// If max is 0 or very small (less than 1), use decimal spacing
+	if (actualMax < 1) {
+		// Use evenly spaced decimal values with 4 intervals
+		const scale = Math.max(actualMax, 0.25) // Ensure at least 0.25 for visibility
+		const step = scale / 4 // 4 intervals between 0 and scale
+		return [0, step, step * 2, step * 3, scale]
+	}
+	
+	// For values >= 1, we need whole numbers
+	// Round up actualMax to the next whole number
+	const ceilMax = Math.ceil(actualMax)
+	
+	// Custom rule 1: If max value is under 5, use 4, 3, 2, 1, 0 (step = 1, max = 4)
+	if (ceilMax < 5) {
+		return [0, 1, 2, 3, 4]
+	}
+	
+	// Custom rule 2: If max value tops at 9, go up to 20
+	if (ceilMax <= 9) {
+		return [0, 5, 10, 15, 20]
+	}
+	
+	// Custom rule 3: Check if within 30 of next nice round number (100, 200, 300, 1000, 2000, etc.)
+	// Generate list of nice round numbers to check (sorted ascending)
+	const niceRoundNumbers: number[] = []
+	for (let magnitude = 100; magnitude <= 1000000; magnitude *= 10) {
+		niceRoundNumbers.push(magnitude)
+		niceRoundNumbers.push(magnitude * 2)
+		niceRoundNumbers.push(magnitude * 3)
+		niceRoundNumbers.push(magnitude * 5)
+	}
+	niceRoundNumbers.sort((a, b) => a - b)
+	
+	// Find the next nice round number that's >= ceilMax
+	// Then check if ceilMax is within 30 of it
+	for (const niceNum of niceRoundNumbers) {
+		if (niceNum >= ceilMax) {
+			// Check if ceilMax is within 30 of this nice number
+			if (niceNum - ceilMax <= 30) {
+				// Use this nice round number as the max
+				// We need to find a step size that's a multiple of 5 and gives us this max
+				// max = 4 * step, so step = max / 4
+				// But step must be a multiple of 5, so max must be a multiple of 20
+				// If niceNum is not a multiple of 20, round it up to the next multiple of 20
+				const roundedMax = Math.ceil(niceNum / 20) * 20
+				const step = roundedMax / 4
+				
+				const values: number[] = []
+				for (let i = 0; i < numLines; i++) {
+					values.push(Math.round(i * step))
+				}
+				values[values.length - 1] = roundedMax
+				return values
+			} else {
+				// If we've passed the range, no need to check further
+				break
+			}
+		}
+	}
+	
+	// Default behavior: We want exactly 4 intervals, so we need to find a max that's divisible by 4
+	// The max should be a multiple of 4 for even spacing: max = 4 * step
+	// Additionally, we want all values to end in 0 or 5, so step must be a multiple of 5
+	// This means max will be a multiple of 20 (4 * 5 = 20)
+	
+	// Find the smallest multiple of 20 that's >= ceilMax (this is our baseline)
+	const baselineMax = Math.ceil(ceilMax / 20) * 20
+	
+	// Try to find a step size that's a multiple of 5
+	// This ensures all values (step, 2*step, 3*step, 4*step) end in 0 or 5
+	// Step sizes that are multiples of 5: 5, 10, 15, 20, 25, 50, 100, 200, 500, etc.
+	const niceSteps = [5, 10, 15, 20, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000]
+	
+	let roundedMax = baselineMax
+	
+	// Find the best step size that gives us a reasonable max
+	// Prefer smaller steps when possible, but use nice round numbers ending in 0 or 5
+	for (const step of niceSteps) {
+		// With 4 intervals, max would be 4 * step
+		const candidateMax = 4 * step
+		
+		// If this max is >= ceilMax and not too much larger than baseline, use it
+		if (candidateMax >= ceilMax && candidateMax <= baselineMax * 1.5) {
+			// Use the smallest candidate that meets our criteria
+			if (candidateMax < roundedMax) {
+				roundedMax = candidateMax
+			}
+			// If it's exactly baselineMax or smaller, that's perfect, we can stop
+			if (candidateMax <= baselineMax) {
+				break
+			}
+		}
+	}
+	
+	// Calculate the step size for 4 intervals
+	const step = roundedMax / 4
+	
+	// Generate exactly 5 evenly spaced values: 0, step, 2*step, 3*step, 4*step (which equals roundedMax)
+	// Since step is a multiple of 5, all values will end in 0 or 5
 	const values: number[] = []
 	for (let i = 0; i < numLines; i++) {
-		const value = min + (step * i)
+		const value = i * step
+		// Round to whole number (should already be whole, but just in case)
 		values.push(Math.round(value))
 	}
 	
-	// Ensure max is exactly included (might be off due to rounding)
-	if (values[values.length - 1] !== max) {
-		values[values.length - 1] = Math.round(max)
-	}
+	// Ensure the last value is exactly roundedMax
+	values[values.length - 1] = roundedMax
 	
-	// Remove duplicates and sort, ensure only whole numbers >= 0
-	const uniqueValues = Array.from(new Set(values))
-		.filter(v => v >= 0 && Number.isInteger(v))
-		.sort((a, b) => a - b)
-	
-	// If we have fewer than numLines, add more evenly spaced values
-	if (uniqueValues.length < numLines && max > 0) {
-		const finalStep = max / (numLines - 1)
-		const finalValues: number[] = []
-		for (let i = 0; i < numLines; i++) {
-			finalValues.push(Math.round(finalStep * i))
-		}
-		// Remove duplicates and ensure max is included
-		const finalUnique = Array.from(new Set(finalValues))
-			.filter(v => v >= 0 && Number.isInteger(v))
-			.sort((a, b) => a - b)
-		if (finalUnique[finalUnique.length - 1] < max) {
-			finalUnique.push(Math.round(max))
-		}
-		return finalUnique.sort((a, b) => a - b)
-	}
-	
-	return uniqueValues
+	return values
 }
 
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
@@ -467,6 +510,10 @@ export default function AnalyticsTestPage() {
 	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
+	const [userId, setUserId] = React.useState<string | null>(null)
+	const [downlineTitle, setDownlineTitle] = React.useState<string | null>(null)
+	const [downlineBreadcrumbInfo, setDownlineBreadcrumbInfo] = React.useState<{ currentAgentName: string; breadcrumbs: Array<{ agentId: string; agentName: string }>; isAtRoot: boolean } | null>(null)
+	const downlineChartRef = React.useRef<DownlineProductionChartHandle>(null)
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
 	React.	useEffect(() => {
@@ -499,7 +546,10 @@ export default function AnalyticsTestPage() {
                 console.log("userRow", userRow)
                 console.log("user_id", userRow.id)
 
-				if (isMounted) setAnalyticsData(rpcData as AnalyticsTestValue)
+				if (isMounted) {
+					setAnalyticsData(rpcData as AnalyticsTestValue)
+					setUserId(userRow.id)
+				}
 			} catch (_) {
 				// swallow for now; can add toast/logging later
 			}
@@ -512,12 +562,8 @@ export default function AnalyticsTestPage() {
 
 	const carriers = React.useMemo(() => ["ALL", ...(_analyticsData?.meta.carriers ?? [])], [_analyticsData])
 
-	// Initialize visible carriers when analytics data loads
-	React.useEffect(() => {
-		if (_analyticsData?.meta.carriers) {
-			setVisibleCarriers(new Set(_analyticsData.meta.carriers))
-		}
-	}, [_analyticsData])
+	// Don't initialize visible carriers - by default, only show cumulative (all carriers hidden)
+	// Users can click on carriers in the legend to show/hide them
 
 	const n: number | "all" = timeWindow === "all" ? "all" : Number(timeWindow)
 	const periods = React.useMemo(() => {
@@ -577,26 +623,31 @@ const AGE_RANGE_COLORS: Record<string, string> = {
 }
 
 // Fixed carrier colors - distinct and consistent
+// None of these colors should overlap with CUMULATIVE_COLOR (#8b5cf6 - purple)
+// Colors are chosen to be visually distinct from each other
 const CARRIER_COLORS: Record<string, string> = {
-    "Aetna": "#2563eb",           // Blue
-    "Aflac": "#16a34a",           // Green
+    "Aetna": "#ef4444",           // Red-500 (changed from blue to red)
+    "Aflac": "#60a5fa",           // Blue-400 (light blue-ish color)
     "American Amicable": "#f59e0b", // Amber/Orange
     "Occidental": "#f59e0b",       // Amber/Orange (same as American Amicable)
     "American Amicable / Occidental": "#f59e0b", // Amber/Orange
-    "American Home Life Insurance Company": "#ef4444", // Red
-    "Allstate": "#0891b2",        // Cyan
-    "Combined": "#14b8a6",        // Teal
-    "RNA": "#ec4899",             // Pink
-    "Acme Life": "#84cc16",       // Lime
-    "Corebridge": "#f97316",      // Orange
-    "Ethos": "#6366f1",           // Indigo
-    "FG Annuities": "#22c55e",    // Emerald
-    "Foresters": "#eab308",       // Yellow
-    "Legal General": "#06b6d4",   // Sky Blue
-    "Liberty Bankers": "#a855f7", // Purple (not cumulative purple)
-    "Mutual Omaha": "#f43f5e",    // Rose
-    "National Life": "#059669",   // Green-600
-    "SBLI": "#0ea5e9",            // Light Blue
+    "American Home Life Insurance Company": "#dc2626", // Red-600 (changed from red-500 since Aetna is now red-500)
+    "Allstate": "#0891b2",        // Cyan-600
+    "Combined": "#16a34a",        // Green-600 (nice shade of green for charts)
+    "RNA": "#ec4899",             // Pink-500
+    "Acme Life": "#84cc16",       // Lime-500
+    "Corebridge": "#f97316",      // Orange-500
+    "Ethos": "#6366f1",           // Indigo-500
+    "FG Annuities": "#22c55e",    // Emerald-500
+    "Foresters": "#eab308",       // Yellow-500
+    "Foresters Financial": "#eab308", // Yellow-500 (alias)
+    "Legal General": "#06b6d4",   // Sky Blue-500
+    "Liberty Bankers": "#92400e", // Brown-700 (changed to brown)
+    "Liberty Bankers Life (LBL)": "#92400e", // Brown-700 (alias)
+    "LBL": "#92400e",             // Brown-700 (alias)
+    "Mutual Omaha": "#f43f5e",    // Rose-500
+    "National Life": "#059669",   // Emerald-600
+    "SBLI": "#0ea5e9",            // Sky Blue-500
     "Transamerica": "#fb923c",    // Orange-400
     "United Home Life": "#34d399", // Emerald-400
 }
@@ -616,12 +667,24 @@ function colorForLabel(label: string, explicitIndex?: number): string {
 }
 
 function carrierColorForLabel(label: string, explicitIndex?: number): string {
-    // Check if we have a fixed color for this carrier
-    if (CARRIER_COLORS[label]) {
-        return CARRIER_COLORS[label]
+    // Normalize the label: trim whitespace and check for exact match first
+    const normalized = label.trim()
+    
+    // Check if we have a fixed color for this carrier (exact match)
+    if (CARRIER_COLORS[normalized]) {
+        return CARRIER_COLORS[normalized]
     }
+    
+    // Check case-insensitive match
+    const lowerLabel = normalized.toLowerCase()
+    for (const [key, value] of Object.entries(CARRIER_COLORS)) {
+        if (key.toLowerCase() === lowerLabel) {
+            return value
+        }
+    }
+    
     // Fallback to generated color
-    return colorForLabel(label, explicitIndex)
+    return colorForLabel(normalized, explicitIndex)
 }
 
 // Map old age bands to new standardized age ranges with proportional distribution
@@ -1243,6 +1306,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							<div className="mb-4 flex flex-wrap gap-2 justify-center">
 								{[
 									{ key: "carrier", label: "By Carrier" },
+									{ key: "downline", label: "By Downline" },
 									{ key: "state", label: "By State" },
 									{ key: "age", label: "By Age" },
 									{ key: "persistency", label: "By Persistency" },
@@ -1311,6 +1375,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							<div className="mb-4 flex flex-wrap gap-2 justify-center">
 								{[
 									{ key: "carrier", label: "By Carrier" },
+									{ key: "downline", label: "By Downline" },
 									{ key: "state", label: "By State" },
 									{ key: "age", label: "By Age" },
 									{ key: "persistency", label: "By Persistency" },
@@ -1321,8 +1386,11 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 										size="sm"
 										onClick={() => {
 											setGroupBy(g.key)
-											if (g.key !== "carrier") {
+											if (g.key !== "carrier" && g.key !== "downline") {
 												setSelectedCarrier(null)
+											}
+											if (g.key !== "downline") {
+												setDownlineTitle(null)
 											}
 										}}
 										className={`rounded-md ${groupBy === g.key ? 'bg-foreground hover:bg-foreground/90 text-background' : ''}`}
@@ -1680,14 +1748,78 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							)}
 						</>
 					) : (
-						// Carrier Pie Chart View
+						// Carrier Pie Chart View or Downline View
 						<>
-							<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">TOTAL SUBMITTED BUSINESS</div>
+							{groupBy === "downline" ? (
+								<div className="mb-4 flex items-center gap-3">
+									<div className="text-xs font-medium tracking-wide text-muted-foreground">
+										{carrierFilter === "ALL" ? "ALL CARRIERS" : carrierFilter.toUpperCase()} - {downlineTitle || "Your Direct Downline Distribution"}
+									</div>
+									{/* Breadcrumb trail - shown right before reset button */}
+									{downlineBreadcrumbInfo && !downlineBreadcrumbInfo.isAtRoot && (
+										<div className="flex items-center gap-1 text-xs text-muted-foreground">
+											<span 
+												onClick={() => downlineChartRef.current?.navigateToBreadcrumb(-1)}
+												className="opacity-70 cursor-pointer hover:opacity-100 hover:text-foreground transition-colors outline-none focus:outline-none"
+												tabIndex={0}
+												onKeyDown={(e) => {
+													if (e.key === 'Enter' || e.key === ' ') {
+														e.preventDefault()
+														downlineChartRef.current?.navigateToBreadcrumb(-1)
+													}
+												}}
+											>
+												You
+											</span>
+											{downlineBreadcrumbInfo.breadcrumbs.map((crumb, idx) => (
+												<React.Fragment key={crumb.agentId}>
+													<span className="opacity-50">→</span>
+													<span 
+														onClick={() => downlineChartRef.current?.navigateToBreadcrumb(idx)}
+														className="opacity-70 cursor-pointer hover:opacity-100 hover:text-foreground transition-colors outline-none focus:outline-none"
+														tabIndex={0}
+														onKeyDown={(e) => {
+															if (e.key === 'Enter' || e.key === ' ') {
+																e.preventDefault()
+																downlineChartRef.current?.navigateToBreadcrumb(idx)
+															}
+														}}
+													>
+														{crumb.agentName}
+													</span>
+												</React.Fragment>
+											))}
+											<span className="opacity-50">→</span>
+											<span className="opacity-90">
+												{downlineBreadcrumbInfo.currentAgentName}
+											</span>
+										</div>
+									)}
+									{(downlineTitle && downlineTitle !== "Your Direct Downline Distribution") && (
+										<Button
+											onClick={() => {
+												downlineChartRef.current?.reset()
+												setDownlineTitle("Your Direct Downline Distribution")
+											}}
+											variant="outline"
+											size="sm"
+											className="h-6 text-xs px-2"
+										>
+											Reset
+										</Button>
+									)}
+								</div>
+							) : (
+								<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">
+									TOTAL SUBMITTED BUSINESS
+								</div>
+							)}
 
 							{/* Tabs */}
 							<div className="mb-4 flex flex-wrap gap-2 justify-center">
 								{[
 									{ key: "carrier", label: "By Carrier" },
+									{ key: "downline", label: "By Downline" },
 									{ key: "state", label: "By State" },
 									{ key: "age", label: "By Age" },
 									{ key: "persistency", label: "By Persistency" },
@@ -1696,7 +1828,12 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 										key={g.key}
 										variant={groupBy === g.key ? "default" : "outline"}
 										size="sm"
-										onClick={() => setGroupBy(g.key)}
+										onClick={() => {
+											setGroupBy(g.key)
+											if (g.key !== "downline") {
+												setDownlineTitle(null)
+											}
+										}}
 										className={`rounded-md ${groupBy === g.key ? 'bg-foreground hover:bg-foreground/90 text-background' : ''}`}
 									>
 										{g.label}
@@ -1704,8 +1841,34 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 								))}
 							</div>
 
-					{/* WARNING: DO NOT CHANGE THE LEGEND POSITION - Legend MUST be below the pie chart, NOT next to it */}
-					<div className="flex flex-col items-center justify-center gap-6">
+							{/* Downline Production Distribution Tab */}
+							{groupBy === "downline" ? (
+								userId ? (
+									<DownlineProductionChart 
+										ref={downlineChartRef}
+										userId={userId} 
+										timeWindow={timeWindow} 
+										embedded={true}
+										onTitleChange={setDownlineTitle}
+										onBreadcrumbChange={setDownlineBreadcrumbInfo}
+									/>
+								) : (
+									<div className="flex flex-col items-center justify-center gap-6 py-8">
+										<div className="h-5 w-64 bg-muted animate-pulse rounded" />
+										<div className="relative h-[320px] w-[320px]">
+											<div className="h-full w-full rounded-full bg-muted animate-pulse" />
+										</div>
+										<div className="flex flex-wrap justify-center gap-4 mt-4">
+											<div className="h-4 w-48 bg-muted animate-pulse rounded" />
+											<div className="h-4 w-40 bg-muted animate-pulse rounded" />
+											<div className="h-4 w-44 bg-muted animate-pulse rounded" />
+										</div>
+									</div>
+								)
+							) : (
+								<>
+									{/* WARNING: DO NOT CHANGE THE LEGEND POSITION - Legend MUST be below the pie chart, NOT next to it */}
+									<div className="flex flex-col items-center justify-center gap-6">
 						{/* SVG pie with hover */}
 						<div className="relative h-[320px] w-[320px]">
 							<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
@@ -1797,6 +1960,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							)}
 						</div>
 					</div>
+								</>
+							)}
 						</>
 					)}
 				</CardContent>
@@ -2771,7 +2936,37 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 										<div className="flex flex-col gap-3 ml-6 min-w-[220px]">
 											{/* Carriers Section - Active and Hidden */}
 											<div className="flex flex-col gap-1.5">
-												<div className="text-xs font-semibold text-muted-foreground uppercase">Carriers</div>
+												<div className="flex items-center justify-between">
+													<div className="text-xs font-semibold text-muted-foreground uppercase">Carriers</div>
+													{(() => {
+														// Get all carriers that have data
+														const carriersWithData = (_analyticsData?.meta.carriers ?? []).filter(carrier => {
+															const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
+															return hasData
+														})
+														// Check if all carriers with data are visible
+														const allVisible = carriersWithData.length > 0 && carriersWithData.every(carrier => visibleCarriers.has(carrier))
+														
+														return (
+															<Button
+																variant="outline"
+																size="sm"
+																onClick={() => {
+																	if (allVisible) {
+																		// Hide all carriers
+																		setVisibleCarriers(new Set())
+																	} else {
+																		// Show all carriers
+																		setVisibleCarriers(new Set(carriersWithData))
+																	}
+																}}
+																className="h-7 text-xs px-2 rounded-md"
+															>
+																{allVisible ? "Hide All" : "Show All"}
+															</Button>
+														)
+													})()}
+												</div>
 												<div className="text-[10px] text-muted-foreground mb-1">Click to Show/Hide Carriers</div>
 												<div
 													className="flex flex-col gap-1.5 p-2.5 bg-muted/10 rounded-md border border-muted/50 max-h-[400px] overflow-y-auto"
@@ -2894,6 +3089,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		)
 	)
 }
+
 
 
 

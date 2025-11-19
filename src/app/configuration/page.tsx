@@ -4,13 +4,14 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image } from "lucide-react"
+import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 import { HexColorPicker } from 'react-colorful'
+import { useTheme } from "next-themes"
 
 // Types for carrier data
 interface Carrier {
@@ -43,6 +44,7 @@ interface Agency {
   display_name?: string
   logo_url?: string
   primary_color?: string
+  theme_mode?: 'light' | 'dark' | 'system'
 }
 
 // Types for position data
@@ -71,6 +73,7 @@ interface Commission {
 type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord"
 
 export default function ConfigurationPage() {
+  const { theme, setTheme } = useTheme()
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>("agency-profile")
@@ -86,6 +89,8 @@ export default function ConfigurationPage() {
   const [editingColor, setEditingColor] = useState(false)
   const [colorValue, setColorValue] = useState("")
   const [savingColor, setSavingColor] = useState(false)
+  const [agencyThemeMode, setAgencyThemeMode] = useState<'light' | 'dark' | 'system'>('system')
+  const [savingTheme, setSavingTheme] = useState(false)
   const [loadingAgencyProfile, setLoadingAgencyProfile] = useState(true)
 
   // Lead Sources state
@@ -250,7 +255,7 @@ export default function ConfigurationPage() {
         if (userData?.agency_id) {
           const { data: agencyInfo } = await supabase
             .from('agencies')
-            .select('id, name, display_name, logo_url, primary_color, lead_sources, phone_number, messaging_enabled, discord_webhook_url')
+            .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url')
             .eq('id', userData.agency_id)
             .single()
 
@@ -259,6 +264,9 @@ export default function ConfigurationPage() {
             setAgency(agencyInfo)
             setDisplayName(agencyInfo.display_name || agencyInfo.name)
             setPrimaryColor(agencyInfo.primary_color || "217 91% 60%")
+            const themeMode = (agencyInfo.theme_mode || 'system') as 'light' | 'dark' | 'system'
+            setAgencyThemeMode(themeMode)
+            setTheme(themeMode) // Apply the theme immediately
             setLeadSources(agencyInfo.lead_sources || [])
             setAgencyPhoneNumber(agencyInfo.phone_number || "")
             setMessagingEnabled(agencyInfo.messaging_enabled || false)
@@ -673,6 +681,32 @@ export default function ConfigurationPage() {
   const handleCancelColorEdit = () => {
     setEditingColor(false)
     setColorValue("")
+  }
+
+  // Theme Management Functions
+  const handleThemeChange = async (newTheme: 'light' | 'dark' | 'system') => {
+    if (!agency) return
+
+    try {
+      setSavingTheme(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ theme_mode: newTheme })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setAgencyThemeMode(newTheme)
+      setTheme(newTheme) // Apply the theme immediately
+      setAgency({ ...agency, theme_mode: newTheme })
+    } catch (error) {
+      console.error('Error updating theme:', error)
+      alert('Failed to update theme preference')
+    } finally {
+      setSavingTheme(false)
+    }
   }
 
   // Helper function to convert hex to HSL
@@ -1725,14 +1759,18 @@ export default function ConfigurationPage() {
                         </div>
                       ) : (
                         <div className="flex items-center gap-3">
-                          <div className="flex-1 bg-white rounded-lg border-2 border-gray-200 p-4">
-                            <p className="text-xl font-semibold text-foreground">
+                          <div className="flex-1 bg-card rounded-lg border-2 border-border p-4">
+                            <p className="text-xl font-semibold text-card-foreground">
                               {displayName || <span className="text-muted-foreground italic">Not set</span>}
                             </p>
                           </div>
                           <button
                             onClick={handleEditDisplayName}
-                            className="text-blue-600 hover:text-blue-800 p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                            className="p-3 rounded-lg transition-colors"
+                            style={{
+                              backgroundColor: `hsl(${primaryColor} / 0.1)`,
+                              color: `hsl(${primaryColor})`
+                            }}
                           >
                             <Edit className="h-6 w-6" />
                           </button>
@@ -1749,7 +1787,7 @@ export default function ConfigurationPage() {
 
                       <div className="flex flex-col md:flex-row gap-6">
                         {/* Logo Preview */}
-                        <div className="flex items-center justify-center w-full md:w-48 h-48 bg-white rounded-lg border-2 border-gray-200">
+                        <div className="flex items-center justify-center w-full md:w-48 h-48 bg-card rounded-lg border-2 border-border">
                           {agency?.logo_url ? (
                             <img
                               src={agency.logo_url}
@@ -1785,9 +1823,12 @@ export default function ConfigurationPage() {
                           <label
                             htmlFor="logo-upload"
                             className={cn(
-                              "cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors text-center font-medium",
+                              "cursor-pointer text-white px-6 py-3 rounded-lg transition-colors text-center font-medium",
                               uploadingLogo && "opacity-50 cursor-not-allowed"
                             )}
+                            style={{
+                              backgroundColor: `hsl(${primaryColor})`,
+                            }}
                           >
                             {uploadingLogo ? (
                               <>
@@ -1925,34 +1966,215 @@ export default function ConfigurationPage() {
                       </div>
                     </div>
 
-                    {/* Preview Section */}
-                    <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
-                      <h3 className="text-lg font-semibold text-blue-900 mb-3">Preview</h3>
-                      <p className="text-sm text-blue-800 mb-4">
-                        Your agency branding will appear in the navigation sidebar at the top:
+                    {/* Theme Preference */}
+                    <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                      <h3 className="text-xl font-semibold text-foreground mb-4">
+                        <Moon className="h-5 w-5 inline mr-2" />
+                        Theme Preference
+                      </h3>
+                      <p className="text-sm text-muted-foreground mb-6">
+                        Choose the theme mode for your agency. This will be applied automatically for all users in your agency.
                       </p>
-                      <div className="bg-white rounded-lg p-6 border-2 border-gray-200">
-                        <div className="flex items-center space-x-3">
-                          {agency?.logo_url ? (
-                            <img
-                              src={agency.logo_url}
-                              alt="Logo Preview"
-                              className="w-10 h-10 rounded-xl object-contain"
-                              crossOrigin="anonymous"
-                            />
-                          ) : (
-                            <div
-                              className="flex items-center justify-center w-10 h-10 rounded-xl text-white font-bold text-lg"
-                              style={{ backgroundColor: `hsl(${primaryColor})` }}
-                            >
-                              <Building2 className="h-6 w-6" />
-                            </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Light Theme Option */}
+                        <button
+                          onClick={() => handleThemeChange('light')}
+                          disabled={savingTheme}
+                          className={cn(
+                            "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
+                            agencyThemeMode === 'light'
+                              ? "border-blue-500 bg-blue-50 shadow-lg"
+                              : "border-border bg-card hover:border-blue-300"
                           )}
-                          <div className="flex flex-col">
-                            <span className="text-lg font-bold text-foreground">{displayName || 'Your Agency'}</span>
-                            <span className="text-xs text-muted-foreground" style={{ fontFamily: 'Times New Roman, serif' }}>
-                              Powered by AgentSpace
-                            </span>
+                        >
+                          <div className="flex flex-col items-center gap-3">
+                            <Sun className={cn(
+                              "h-10 w-10",
+                              agencyThemeMode === 'light' ? "text-blue-600" : "text-foreground"
+                            )} />
+                            <div className="text-center">
+                              <p className={cn(
+                                "font-semibold text-lg",
+                                agencyThemeMode === 'light' ? "text-blue-600" : "text-foreground"
+                              )}>
+                                Light
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Bright, clean interface
+                              </p>
+                            </div>
+                            {agencyThemeMode === 'light' && (
+                              <div className="absolute top-3 right-3">
+                                <Check className="h-5 w-5 text-blue-600" />
+                              </div>
+                            )}
+                          </div>
+                        </button>
+
+                        {/* Dark Theme Option */}
+                        <button
+                          onClick={() => handleThemeChange('dark')}
+                          disabled={savingTheme}
+                          className={cn(
+                            "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
+                            agencyThemeMode === 'dark'
+                              ? "border-blue-500 bg-blue-50 shadow-lg"
+                              : "border-border bg-card hover:border-blue-300"
+                          )}
+                        >
+                          <div className="flex flex-col items-center gap-3">
+                            <Moon className={cn(
+                              "h-10 w-10",
+                              agencyThemeMode === 'dark' ? "text-blue-600" : "text-foreground"
+                            )} />
+                            <div className="text-center">
+                              <p className={cn(
+                                "font-semibold text-lg",
+                                agencyThemeMode === 'dark' ? "text-blue-600" : "text-foreground"
+                              )}>
+                                Dark
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Easy on the eyes
+                              </p>
+                            </div>
+                            {agencyThemeMode === 'dark' && (
+                              <div className="absolute top-3 right-3">
+                                <Check className="h-5 w-5 text-blue-600" />
+                              </div>
+                            )}
+                          </div>
+                        </button>
+
+                        {/* System Theme Option */}
+                        <button
+                          onClick={() => handleThemeChange('system')}
+                          disabled={savingTheme}
+                          className={cn(
+                            "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
+                            agencyThemeMode === 'system'
+                              ? "border-blue-500 bg-blue-50 shadow-lg"
+                              : "border-border bg-card hover:border-blue-300"
+                          )}
+                        >
+                          <div className="flex flex-col items-center gap-3">
+                            <Monitor className={cn(
+                              "h-10 w-10",
+                              agencyThemeMode === 'system' ? "text-blue-600" : "text-foreground"
+                            )} />
+                            <div className="text-center">
+                              <p className={cn(
+                                "font-semibold text-lg",
+                                agencyThemeMode === 'system' ? "text-blue-600" : "text-foreground"
+                              )}>
+                                System
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Follow device settings
+                              </p>
+                            </div>
+                            {agencyThemeMode === 'system' && (
+                              <div className="absolute top-3 right-3">
+                                <Check className="h-5 w-5 text-blue-600" />
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      </div>
+
+                      {savingTheme && (
+                        <div className="mt-4 flex items-center justify-center text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Saving theme preference...
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Preview Section */}
+                    <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                      <h3 className="text-lg font-semibold text-foreground mb-3">
+                        <span className="inline-flex items-center gap-2">
+                          Preview
+                          <span className="text-xs font-normal text-muted-foreground">(Shows how your branding appears)</span>
+                        </span>
+                      </h3>
+
+                      <div className="space-y-6">
+                        {/* Sidebar Logo Preview */}
+                        <div>
+                          <p className="text-sm text-muted-foreground mb-3">
+                            Navigation Sidebar:
+                          </p>
+                          <div className="bg-sidebar-background rounded-lg p-6 border-2 border-sidebar-border">
+                            <div className="flex items-center space-x-3">
+                              {agency?.logo_url ? (
+                                <img
+                                  src={agency.logo_url}
+                                  alt="Logo Preview"
+                                  className="w-10 h-10 rounded-xl object-contain"
+                                  crossOrigin="anonymous"
+                                />
+                              ) : (
+                                <div
+                                  className="flex items-center justify-center w-10 h-10 rounded-xl text-white font-bold text-lg"
+                                  style={{ backgroundColor: `hsl(${primaryColor})` }}
+                                >
+                                  <Building2 className="h-6 w-6" />
+                                </div>
+                              )}
+                              <div className="flex flex-col">
+                                <span className="text-lg font-bold text-sidebar-foreground">{displayName || 'Your Agency'}</span>
+                                <span className="text-xs text-muted-foreground" style={{ fontFamily: 'Times New Roman, serif' }}>
+                                  Powered by AgentSpace
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Page Title and Buttons Preview */}
+                        <div>
+                          <p className="text-sm text-muted-foreground mb-3">
+                            Page Headers & Buttons:
+                          </p>
+                          <div className="bg-background rounded-lg p-6 border-2 border-border space-y-4">
+                            {/* Title Example */}
+                            <h1 className="text-3xl font-bold text-foreground">Agents</h1>
+
+                            {/* Button Examples */}
+                            <div className="flex flex-wrap gap-3">
+                              <button
+                                className="px-4 py-2 rounded-lg font-medium transition-colors"
+                                style={{
+                                  backgroundColor: `hsl(${primaryColor})`,
+                                  color: 'white'
+                                }}
+                              >
+                                Table
+                              </button>
+                              <button className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg font-medium hover:bg-secondary/80 transition-colors">
+                                Graph
+                              </button>
+                              <button className="px-4 py-2 bg-muted text-muted-foreground rounded-lg font-medium hover:bg-muted/80 transition-colors">
+                                Pending Positions
+                              </button>
+                              <button
+                                className="px-4 py-2 rounded-lg font-medium transition-colors"
+                                style={{
+                                  backgroundColor: `hsl(${primaryColor})`,
+                                  color: 'white'
+                                }}
+                              >
+                                + Add User
+                              </button>
+                            </div>
+
+                            {/* Preview Card */}
+                            <div className="mt-4 bg-card border border-border rounded-lg p-4">
+                              <h3 className="font-semibold text-card-foreground mb-2">Preview Card</h3>
+                              <p className="text-sm text-muted-foreground">This shows how content cards appear with your theme.</p>
+                            </div>
                           </div>
                         </div>
                       </div>

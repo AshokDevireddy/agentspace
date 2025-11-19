@@ -191,13 +191,6 @@ export default function Navigation() {
     return pathname === item.href || pathname.startsWith(item.href + '/')
   }
 
-  // Calculate lighter background color from agency primary color
-  const getLighterBackground = (hslColor: string) => {
-    const [h, s, l] = hslColor.split(' ').map(v => parseFloat(v.replace('%', '')))
-    // Use light version: increase lightness to 94% and reduce saturation to 50%
-    return `hsl(${h} ${s * 0.5}% 94%)`
-  }
-
   return (
     <aside
       className={cn(
@@ -206,9 +199,6 @@ export default function Navigation() {
         "-translate-x-full lg:translate-x-0", // Hidden on mobile, visible on desktop
         isSidebarCollapsed ? "w-16" : "w-64"
       )}
-      style={{
-        backgroundColor: getLighterBackground(agencyColor)
-      }}
     >
       {/* Logo Section */}
       <div className="flex items-center justify-between p-6 border-b border-sidebar-border">

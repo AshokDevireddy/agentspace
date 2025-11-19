@@ -105,7 +105,8 @@ function SMSMessagingPageContent() {
     {
       searchQuery: "",
       notificationFilter: 'all' as 'all' | 'lapse' | 'needs_info' | 'drafts',
-      viewMode: 'self' as 'downlines' | 'self'
+      viewMode: 'self' as 'downlines' | 'self',
+      selectedConversationId: null as string | null
     }
   )
 
@@ -113,6 +114,7 @@ function SMSMessagingPageContent() {
   const searchQuery = appliedFilters.searchQuery
   const notificationFilter = appliedFilters.notificationFilter
   const viewMode = appliedFilters.viewMode
+  const persistedConversationId = appliedFilters.selectedConversationId
 
   const setSearchQuery = (value: string) => {
     setAndApply({ searchQuery: value })
@@ -122,6 +124,9 @@ function SMSMessagingPageContent() {
   }
   const setViewMode = (value: 'downlines' | 'self') => {
     setAndApply({ viewMode: value })
+  }
+  const setPersistedConversationId = (value: string | null) => {
+    setAndApply({ selectedConversationId: value })
   }
 
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -158,6 +163,33 @@ function SMSMessagingPageContent() {
   useEffect(() => {
     setIsHydrated(true)
   }, [])
+
+  // Persist selected conversation ID using persisted filters
+  useEffect(() => {
+    if (selectedConversation?.id) {
+      setPersistedConversationId(selectedConversation.id)
+    }
+  }, [selectedConversation])
+
+  // Restore selected conversation when conversations are loaded
+  useEffect(() => {
+    if (conversations.length > 0 && !selectedConversation && isHydrated && persistedConversationId) {
+      const conversation = conversations.find(c => c.id === persistedConversationId)
+      if (conversation) {
+        // Directly set the conversation and fetch data
+        setSelectedConversation(conversation)
+        // Fetch messages and deal details will be triggered by another useEffect
+      }
+    }
+  }, [conversations, selectedConversation, isHydrated, persistedConversationId])
+
+  // Fetch messages and deal details when selectedConversation changes
+  useEffect(() => {
+    if (selectedConversation) {
+      fetchMessages(selectedConversation.id)
+      fetchDealDetails(selectedConversation.dealId)
+    }
+  }, [selectedConversation])
 
   const filteredConversations = conversations.filter(conv => {
     const matchesSearch = conv.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1078,7 +1110,7 @@ function SMSMessagingPageContent() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-gray-50">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-muted/30">
               {messagesLoading ? (
                 <div className="flex items-center justify-center h-full">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -1113,7 +1145,7 @@ function SMSMessagingPageContent() {
                               ? "bg-yellow-100 text-gray-900 border-2 border-yellow-400"
                               : isOutbound
                               ? "bg-blue-600 text-white"
-                              : "bg-white text-gray-900 border border-gray-200"
+                              : "bg-card text-card-foreground border border-border"
                           )}
                         >
                           {isDraft && (
@@ -1235,10 +1267,9 @@ function SMSMessagingPageContent() {
                   placeholder="Type a message..."
                   disabled={sending}
                   rows={1}
-                  className="flex-1 min-h-[40px] max-h-[150px] px-3 py-2 text-sm rounded-lg border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/20 bg-white transition-all resize-none overflow-y-auto focus:outline-none"
+                  className="flex-1 min-h-[40px] max-h-[150px] px-3 py-2 text-sm rounded-lg border border-border focus:border-primary focus:ring-2 focus:ring-primary/20 bg-input text-foreground transition-all resize-none overflow-y-auto focus:outline-none"
                   style={{
-                    scrollbarWidth: 'thin',
-                    scrollbarColor: '#cbd5e1 transparent'
+                    scrollbarWidth: 'thin'
                   }}
                 />
                 <Button
@@ -1257,7 +1288,7 @@ function SMSMessagingPageContent() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-gray-50">
+          <div className="flex-1 flex items-center justify-center bg-muted/30">
             <div className="text-center">
               <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4">
                 <MessageSquare className="h-8 w-8 text-primary" />

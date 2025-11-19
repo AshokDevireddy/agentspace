@@ -559,12 +559,8 @@ export default function AnalyticsTestPage() {
 
 	const carriers = React.useMemo(() => ["ALL", ...(_analyticsData?.meta.carriers ?? [])], [_analyticsData])
 
-	// Initialize visible carriers when analytics data loads
-	React.useEffect(() => {
-		if (_analyticsData?.meta.carriers) {
-			setVisibleCarriers(new Set(_analyticsData.meta.carriers))
-		}
-	}, [_analyticsData])
+	// Don't initialize visible carriers - by default, only show cumulative (all carriers hidden)
+	// Users can click on carriers in the legend to show/hide them
 
 	const n: number | "all" = timeWindow === "all" ? "all" : Number(timeWindow)
 	const periods = React.useMemo(() => {
@@ -624,26 +620,31 @@ const AGE_RANGE_COLORS: Record<string, string> = {
 }
 
 // Fixed carrier colors - distinct and consistent
+// None of these colors should overlap with CUMULATIVE_COLOR (#8b5cf6 - purple)
+// Colors are chosen to be visually distinct from each other
 const CARRIER_COLORS: Record<string, string> = {
-    "Aetna": "#2563eb",           // Blue
-    "Aflac": "#16a34a",           // Green
+    "Aetna": "#ef4444",           // Red-500 (changed from blue to red)
+    "Aflac": "#60a5fa",           // Blue-400 (light blue-ish color)
     "American Amicable": "#f59e0b", // Amber/Orange
     "Occidental": "#f59e0b",       // Amber/Orange (same as American Amicable)
     "American Amicable / Occidental": "#f59e0b", // Amber/Orange
-    "American Home Life Insurance Company": "#ef4444", // Red
-    "Allstate": "#0891b2",        // Cyan
-    "Combined": "#14b8a6",        // Teal
-    "RNA": "#ec4899",             // Pink
-    "Acme Life": "#84cc16",       // Lime
-    "Corebridge": "#f97316",      // Orange
-    "Ethos": "#6366f1",           // Indigo
-    "FG Annuities": "#22c55e",    // Emerald
-    "Foresters": "#eab308",       // Yellow
-    "Legal General": "#06b6d4",   // Sky Blue
-    "Liberty Bankers": "#a855f7", // Purple (not cumulative purple)
-    "Mutual Omaha": "#f43f5e",    // Rose
-    "National Life": "#059669",   // Green-600
-    "SBLI": "#0ea5e9",            // Light Blue
+    "American Home Life Insurance Company": "#dc2626", // Red-600 (changed from red-500 since Aetna is now red-500)
+    "Allstate": "#0891b2",        // Cyan-600
+    "Combined": "#16a34a",        // Green-600 (nice shade of green for charts)
+    "RNA": "#ec4899",             // Pink-500
+    "Acme Life": "#84cc16",       // Lime-500
+    "Corebridge": "#f97316",      // Orange-500
+    "Ethos": "#6366f1",           // Indigo-500
+    "FG Annuities": "#22c55e",    // Emerald-500
+    "Foresters": "#eab308",       // Yellow-500
+    "Foresters Financial": "#eab308", // Yellow-500 (alias)
+    "Legal General": "#06b6d4",   // Sky Blue-500
+    "Liberty Bankers": "#92400e", // Brown-700 (changed to brown)
+    "Liberty Bankers Life (LBL)": "#92400e", // Brown-700 (alias)
+    "LBL": "#92400e",             // Brown-700 (alias)
+    "Mutual Omaha": "#f43f5e",    // Rose-500
+    "National Life": "#059669",   // Emerald-600
+    "SBLI": "#0ea5e9",            // Sky Blue-500
     "Transamerica": "#fb923c",    // Orange-400
     "United Home Life": "#34d399", // Emerald-400
 }
@@ -663,12 +664,24 @@ function colorForLabel(label: string, explicitIndex?: number): string {
 }
 
 function carrierColorForLabel(label: string, explicitIndex?: number): string {
-    // Check if we have a fixed color for this carrier
-    if (CARRIER_COLORS[label]) {
-        return CARRIER_COLORS[label]
+    // Normalize the label: trim whitespace and check for exact match first
+    const normalized = label.trim()
+    
+    // Check if we have a fixed color for this carrier (exact match)
+    if (CARRIER_COLORS[normalized]) {
+        return CARRIER_COLORS[normalized]
     }
+    
+    // Check case-insensitive match
+    const lowerLabel = normalized.toLowerCase()
+    for (const [key, value] of Object.entries(CARRIER_COLORS)) {
+        if (key.toLowerCase() === lowerLabel) {
+            return value
+        }
+    }
+    
     // Fallback to generated color
-    return colorForLabel(label, explicitIndex)
+    return colorForLabel(normalized, explicitIndex)
 }
 
 // Map old age bands to new standardized age ranges with proportional distribution
@@ -2842,7 +2855,37 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 										<div className="flex flex-col gap-3 ml-6 min-w-[220px]">
 											{/* Carriers Section - Active and Hidden */}
 											<div className="flex flex-col gap-1.5">
-												<div className="text-xs font-semibold text-muted-foreground uppercase">Carriers</div>
+												<div className="flex items-center justify-between">
+													<div className="text-xs font-semibold text-muted-foreground uppercase">Carriers</div>
+													{(() => {
+														// Get all carriers that have data
+														const carriersWithData = (_analyticsData?.meta.carriers ?? []).filter(carrier => {
+															const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
+															return hasData
+														})
+														// Check if all carriers with data are visible
+														const allVisible = carriersWithData.length > 0 && carriersWithData.every(carrier => visibleCarriers.has(carrier))
+														
+														return (
+															<Button
+																variant="outline"
+																size="sm"
+																onClick={() => {
+																	if (allVisible) {
+																		// Hide all carriers
+																		setVisibleCarriers(new Set())
+																	} else {
+																		// Show all carriers
+																		setVisibleCarriers(new Set(carriersWithData))
+																	}
+																}}
+																className="h-7 text-xs px-2 rounded-md"
+															>
+																{allVisible ? "Hide All" : "Show All"}
+															</Button>
+														)
+													})()}
+												</div>
 												<div className="text-[10px] text-muted-foreground mb-1">Click to Show/Hide Carriers</div>
 												<div
 													className="flex flex-col gap-1.5 p-2.5 bg-muted/10 rounded-md border border-muted/50 max-h-[400px] overflow-y-auto"

@@ -240,20 +240,25 @@ export default function LoginPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      {/* Top left logo for white-label */}
-      {isWhiteLabel && (
-        <div className="absolute top-6 left-6">
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt={`${displayName} logo`}
-              className="h-12 object-contain"
-            />
-          ) : (
-            <span className="text-xl font-bold text-foreground">{displayName}</span>
-          )}
-        </div>
-      )}
+      {/* Top left logo/name - show agency branding for white-label, AgentSpace for default */}
+      <div className="absolute top-6 left-6 flex items-center gap-2">
+        {isWhiteLabel && logoUrl ? (
+          <img
+            src={logoUrl}
+            alt={`${displayName} logo`}
+            className="h-10 object-contain"
+          />
+        ) : (
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 bg-foreground rounded-lg flex items-center justify-center">
+              <span className="text-background font-bold text-lg">A</span>
+            </div>
+            <span className="text-xl font-bold text-foreground">
+              {isWhiteLabel ? displayName : 'AgentSpace'}
+            </span>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center justify-center flex-1">
         <div className="flex w-full max-w-3xl rounded-md shadow-lg overflow-hidden border border-border">

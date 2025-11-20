@@ -37,6 +37,22 @@ export async function POST(request: Request) {
     // Create Supabase admin client with service role key
     const supabaseAdmin = createAdminClient()
 
+    // Get agency info for white-label redirect URL
+    const { data: agencyData } = await supabaseAdmin
+      .from('agencies')
+      .select('whitelabel_domain')
+      .eq('id', currentUser.agency_id)
+      .single()
+
+    // Build redirect URL based on agency's white-label domain
+    const getRedirectUrl = () => {
+      if (agencyData?.whitelabel_domain) {
+        const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http'
+        return `${protocol}://${agencyData.whitelabel_domain}/login`
+      }
+      return `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login`
+    }
+
     // Determine role and admin status based on permission level
     const isAdmin = permissionLevel === 'admin'
     const role = permissionLevel === 'admin' ? 'admin' : 'agent'
@@ -83,7 +99,7 @@ export async function POST(request: Request) {
       const { data: authData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
         email,
         {
-          redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login`
+          redirectTo: getRedirectUrl()
         }
       )
 
@@ -146,7 +162,7 @@ export async function POST(request: Request) {
     const { data: authData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       email,
       {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login`
+        redirectTo: getRedirectUrl()
       }
     )
 

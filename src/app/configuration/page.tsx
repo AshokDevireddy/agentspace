@@ -45,6 +45,7 @@ interface Agency {
   logo_url?: string
   primary_color?: string
   theme_mode?: 'light' | 'dark' | 'system'
+  whitelabel_domain?: string
 }
 
 // Types for position data
@@ -92,6 +93,12 @@ export default function ConfigurationPage() {
   const [agencyThemeMode, setAgencyThemeMode] = useState<'light' | 'dark' | 'system'>('system')
   const [savingTheme, setSavingTheme] = useState(false)
   const [loadingAgencyProfile, setLoadingAgencyProfile] = useState(true)
+
+  // White-label Domain state
+  const [whitelabelDomain, setWhitelabelDomain] = useState("")
+  const [editingWhitelabelDomain, setEditingWhitelabelDomain] = useState(false)
+  const [whitelabelDomainValue, setWhitelabelDomainValue] = useState("")
+  const [savingWhitelabelDomain, setSavingWhitelabelDomain] = useState(false)
 
   // Lead Sources state
   const [leadSources, setLeadSources] = useState<string[]>([])
@@ -255,7 +262,7 @@ export default function ConfigurationPage() {
         if (userData?.agency_id) {
           const { data: agencyInfo } = await supabase
             .from('agencies')
-            .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url')
+            .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, whitelabel_domain')
             .eq('id', userData.agency_id)
             .single()
 
@@ -271,6 +278,7 @@ export default function ConfigurationPage() {
             setAgencyPhoneNumber(agencyInfo.phone_number || "")
             setMessagingEnabled(agencyInfo.messaging_enabled || false)
             setDiscordWebhookUrl(agencyInfo.discord_webhook_url || "")
+            setWhitelabelDomain(agencyInfo.whitelabel_domain || "")
             setLoadingAgencyProfile(false)
           }
         }
@@ -706,6 +714,42 @@ export default function ConfigurationPage() {
       alert('Failed to update theme preference')
     } finally {
       setSavingTheme(false)
+    }
+  }
+
+  // White-label Domain Management Functions
+  const handleEditWhitelabelDomain = () => {
+    setWhitelabelDomainValue(whitelabelDomain)
+    setEditingWhitelabelDomain(true)
+  }
+
+  const handleCancelWhitelabelDomainEdit = () => {
+    setEditingWhitelabelDomain(false)
+    setWhitelabelDomainValue("")
+  }
+
+  const handleSaveWhitelabelDomain = async () => {
+    if (!agency) return
+
+    try {
+      setSavingWhitelabelDomain(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ whitelabel_domain: whitelabelDomainValue.trim() || null })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setWhitelabelDomain(whitelabelDomainValue.trim())
+      setAgency({ ...agency, whitelabel_domain: whitelabelDomainValue.trim() || undefined })
+      setEditingWhitelabelDomain(false)
+    } catch (error) {
+      console.error('Error updating whitelabel domain:', error)
+      alert('Failed to update whitelabel domain')
+    } finally {
+      setSavingWhitelabelDomain(false)
     }
   }
 
@@ -2087,6 +2131,83 @@ export default function ConfigurationPage() {
                         <div className="mt-4 flex items-center justify-center text-sm text-muted-foreground">
                           <Loader2 className="h-4 w-4 animate-spin mr-2" />
                           Saving theme preference...
+                        </div>
+                      )}
+                    </div>
+
+                    {/* White-label Domain */}
+                    <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                      <h3 className="text-xl font-semibold text-foreground mb-4">White-label Domain</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Configure a custom domain for your agency to white-label the application. Users will see your branding when accessing the app from this domain.
+                      </p>
+
+                      {editingWhitelabelDomain ? (
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-2">
+                              Custom Domain (e.g., agents.youragency.com)
+                            </label>
+                            <Input
+                              type="text"
+                              value={whitelabelDomainValue}
+                              onChange={(e) => setWhitelabelDomainValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveWhitelabelDomain()
+                                if (e.key === 'Escape') handleCancelWhitelabelDomainEdit()
+                              }}
+                              placeholder="agents.youragency.com"
+                              className="h-12"
+                              disabled={savingWhitelabelDomain}
+                            />
+                            <p className="text-xs text-muted-foreground mt-2">
+                              After adding your domain, you'll need to configure a CNAME record with your DNS provider pointing to <code className="bg-muted px-1 py-0.5 rounded">cname.vercel-dns.com</code>
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={handleSaveWhitelabelDomain}
+                              disabled={savingWhitelabelDomain}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              {savingWhitelabelDomain ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  Saving...
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="h-4 w-4 mr-2" />
+                                  Save Domain
+                                </>
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={handleCancelWhitelabelDomainEdit}
+                              disabled={savingWhitelabelDomain}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 bg-card rounded-lg border-2 border-border p-4">
+                            <p className="text-lg font-mono text-card-foreground">
+                              {whitelabelDomain || <span className="text-muted-foreground italic">Not configured</span>}
+                            </p>
+                          </div>
+                          <button
+                            onClick={handleEditWhitelabelDomain}
+                            className="p-3 rounded-lg transition-colors"
+                            style={{
+                              backgroundColor: `hsl(${primaryColor} / 0.1)`,
+                              color: `hsl(${primaryColor})`
+                            }}
+                          >
+                            <Edit className="h-6 w-6" />
+                          </button>
                         </div>
                       )}
                     </div>

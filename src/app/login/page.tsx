@@ -3,12 +3,14 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 
 type UserRole = 'admin' | 'agent' | 'client'
 
 export default function LoginPage() {
   const router = useRouter()
   const supabase = createClient()
+  const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const [activeTab, setActiveTab] = useState<UserRole>('agent')
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -218,24 +220,46 @@ export default function LoginPage() {
     { value: 'client', label: 'Client' },
   ]
 
-  // Show loading state while processing invite
-  if (isProcessingInvite) {
+  // Show loading state while processing invite or loading branding
+  if (isProcessingInvite || brandingLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-foreground mx-auto mb-4"></div>
-          <p className="text-lg text-foreground">Processing your invitation...</p>
+          <p className="text-lg text-foreground">
+            {isProcessingInvite ? 'Processing your invitation...' : 'Loading...'}
+          </p>
         </div>
       </div>
     )
   }
 
+  // Determine display name and logo
+  const displayName = branding?.display_name || 'AgentSpace'
+  const logoUrl = branding?.logo_url
+
   return (
-    <div className="flex items-center justify-center min-h-screen bg-background">
-      <div className="flex w-full max-w-3xl rounded-md shadow-lg overflow-hidden border border-border">
-        {/* Left: Form */}
-        <div className="w-3/5 bg-card p-10 flex flex-col justify-center">
-          <h2 className="text-3xl font-bold mb-6 text-foreground">Log In</h2>
+    <div className="flex flex-col min-h-screen bg-background">
+      {/* Top left logo for white-label */}
+      {isWhiteLabel && (
+        <div className="absolute top-6 left-6">
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={`${displayName} logo`}
+              className="h-12 object-contain"
+            />
+          ) : (
+            <span className="text-xl font-bold text-foreground">{displayName}</span>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center justify-center flex-1">
+        <div className="flex w-full max-w-3xl rounded-md shadow-lg overflow-hidden border border-border">
+          {/* Left: Form */}
+          <div className="w-3/5 bg-card p-10 flex flex-col justify-center">
+            <h2 className="text-3xl font-bold mb-6 text-foreground">Log In</h2>
 
           {/* Tabs */}
           <div className="flex border-b border-border mb-6">
@@ -313,8 +337,28 @@ export default function LoginPage() {
           </form>
         </div>
         {/* Right: Logo/Brand */}
-        <div className="w-2/5 bg-foreground flex items-center justify-center">
-          <span className="text-5xl font-extrabold text-background select-none" style={{ fontFamily: 'Times New Roman, serif' }}>AgentSpace</span>
+        <div className="w-2/5 bg-foreground flex flex-col items-center justify-center p-6 relative">
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={`${displayName} logo`}
+              className="max-w-[200px] max-h-[200px] object-contain"
+            />
+          ) : (
+            <span className="text-5xl font-extrabold text-background select-none text-center" style={{ fontFamily: 'Times New Roman, serif' }}>
+              {displayName}
+            </span>
+          )}
+
+          {/* Powered by AgentSpace for white-label domains */}
+          {isWhiteLabel && (
+            <div className="absolute bottom-4 left-0 right-0 text-center">
+              <p className="text-xs text-background/60">
+                Powered by <span className="font-semibold">AgentSpace</span>
+              </p>
+            </div>
+          )}
+          </div>
         </div>
       </div>
     </div>

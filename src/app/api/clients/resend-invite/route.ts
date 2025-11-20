@@ -33,6 +33,22 @@ export async function POST(request: Request) {
     // Create Supabase admin client
     const supabaseAdmin = createAdminClient()
 
+    // Get agency info for white-label redirect URL
+    const { data: agencyData } = await supabaseAdmin
+      .from('agencies')
+      .select('whitelabel_domain')
+      .eq('id', currentUser.agency_id)
+      .single()
+
+    // Build redirect URL based on agency's white-label domain
+    const getRedirectUrl = () => {
+      if (agencyData?.whitelabel_domain) {
+        const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http'
+        return `${protocol}://${agencyData.whitelabel_domain}/login`
+      }
+      return `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login`
+    }
+
     // Get the client to resend invite to (by ID or email)
     let clientQuery = supabaseAdmin
       .from('users')
@@ -125,7 +141,7 @@ export async function POST(request: Request) {
     const { data: authData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       client.email,
       {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login`
+        redirectTo: getRedirectUrl()
       }
     )
 

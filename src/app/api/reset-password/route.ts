@@ -20,18 +20,34 @@ export async function POST(request: Request) {
     // Check if user exists (but don't reveal this information to prevent enumeration)
     const { data: existingUser } = await supabaseAdmin
       .from('users')
-      .select('id, status, auth_user_id')
+      .select('id, status, auth_user_id, agency_id')
       .eq('email', email)
       .maybeSingle()
 
     // Even if user doesn't exist, we'll return success to prevent email enumeration
     // But only send the email if the user actually exists
     if (existingUser && existingUser.auth_user_id) {
+      // Get agency info for white-label redirect URL
+      let redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/forgot-password`
+
+      if (existingUser.agency_id) {
+        const { data: agencyData } = await supabaseAdmin
+          .from('agencies')
+          .select('whitelabel_domain')
+          .eq('id', existingUser.agency_id)
+          .single()
+
+        if (agencyData?.whitelabel_domain) {
+          const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http'
+          redirectUrl = `${protocol}://${agencyData.whitelabel_domain}/forgot-password`
+        }
+      }
+
       // Use resetPasswordForEmail - this actually sends the email using Supabase's email service
       // We use the admin client but call the regular auth method which will use SMTP
       // This is similar to how inviteUserByEmail works for invitations
       const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/forgot-password`
+        redirectTo: redirectUrl
       })
 
       if (resetError) {

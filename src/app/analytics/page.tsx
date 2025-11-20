@@ -498,7 +498,7 @@ type AnalyticsTestValue = typeof analytics_test_value
 
 export default function AnalyticsTestPage() {
 	const [groupBy, setGroupBy] = React.useState("carrier")
-	const [trendMetric, setTrendMetric] = React.useState("persistency")
+	const [trendMetric, setTrendMetric] = React.useState<"persistency" | "placement" | "submitted" | "active" | "avgprem" | "all">("persistency")
 	const [timeWindow, setTimeWindow] = React.useState<"3" | "6" | "9" | "all">("all")
 	const [carrierFilter, setCarrierFilter] = React.useState<string>("ALL")
 	const [selectedCarrier, setSelectedCarrier] = React.useState<string | null>(null)
@@ -506,7 +506,8 @@ export default function AnalyticsTestPage() {
 	const [hoverStatusInfo, setHoverStatusInfo] = React.useState<null | { x: number; y: number; status: string; count: number; pct: number }>(null)
 	const [hoverBreakdownInfo, setHoverBreakdownInfo] = React.useState<null | { x: number; y: number; label: string; value: number; pct: number }>(null)
 	const [hoverPersistencyInfo, setHoverPersistencyInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
-	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; avgPremium?: number }>(null)
+	const [hoverPlacementInfo, setHoverPlacementInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
+	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; placement?: number; avgPremium?: number }>(null)
 	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
@@ -1086,6 +1087,67 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		return { wedges, total, active, inactive }
 	}, [carrierFilter, windowKey, groupBy])
 
+	// Placement breakdown for detail view (when groupBy === "placement")
+	const placementBreakdown = React.useMemo(() => {
+		if (groupBy !== "placement") return null
+
+		const placementColors: Record<string, string> = {
+			"Placed": "#10b981",  // Green
+			"Not Placed": "#ef4444", // Red
+		}
+
+		let placed = 0
+		let not_placed = 0
+
+		if (carrierFilter === "ALL") {
+			// Sum across all carriers
+			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
+				const windowsByCarrier = _analyticsData?.windows_by_carrier
+				if (!windowsByCarrier || !(carrier in windowsByCarrier)) continue
+				const carrierData = windowsByCarrier[carrier as keyof typeof windowsByCarrier]
+				if (!carrierData) continue
+				const windowData = carrierData[windowKey]
+				if (!windowData) continue
+				placed += (windowData as any).placed || 0
+				not_placed += (windowData as any).not_placed || 0
+			}
+		} else {
+			// Single carrier
+			const windowsByCarrier = _analyticsData?.windows_by_carrier
+			if (!windowsByCarrier || !(carrierFilter in windowsByCarrier)) return null
+			const carrierData = windowsByCarrier[carrierFilter as keyof typeof windowsByCarrier]
+			if (!carrierData) return null
+			const windowData = carrierData[windowKey]
+			if (!windowData) return null
+			placed = (windowData as any).placed || 0
+			not_placed = (windowData as any).not_placed || 0
+		}
+
+		const entries: { label: string; count: number; color: string }[] = [
+			{ label: "Placed", count: placed, color: placementColors["Placed"] },
+			{ label: "Not Placed", count: not_placed, color: placementColors["Not Placed"] },
+		]
+
+		const total = placed + not_placed
+
+		// Always include both entries, even if one has count 0, to ensure pie chart renders correctly
+		let cursor = 0
+		const wedges = entries.map((e) => {
+			const pct = total > 0 ? e.count / total : 0
+			const ang = pct * 360
+			const piece = {
+				...e,
+				start: cursor,
+				end: cursor + ang,
+				pct: Math.round(pct * 1000) / 10,
+			}
+			cursor += ang
+			return piece
+		}).filter(e => e.count > 0) // Filter after calculating angles to ensure proper rendering
+
+		return { wedges, total, placed, not_placed }
+	}, [carrierFilter, windowKey, groupBy, _analyticsData])
+
 	// Calculate trend data for line chart
 	const trendData = React.useMemo(() => {
 		if (trendMetric === "all") {
@@ -1149,10 +1211,12 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		})
 
 		// Determine which field to extract based on metric
-		const getValue = (row: { persistency: number; submitted: number; active: number; avg_premium_submitted: number }) => {
+		const getValue = (row: { persistency: number; placement?: number; submitted: number; active: number; avg_premium_submitted: number }) => {
 			switch (trendMetric) {
 				case "persistency":
 					return row.persistency
+				case "placement":
+					return row.placement ?? 0
 				case "submitted":
 					return row.submitted
 				case "active":
@@ -1310,6 +1374,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 									{ key: "state", label: "By State" },
 									{ key: "age", label: "By Age" },
 									{ key: "persistency", label: "By Persistency" },
+									{ key: "placement", label: "By Placement" },
 								].map((g) => (
 									<Button
 										key={g.key}
@@ -1342,7 +1407,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 								No data is available for {carrierFilter === "ALL" ? "all carriers" : carrierFilter} over the {getTimeframeLabel(timeWindow)} timeframe.
 							</div>
 						</div>
-					) : (detailCarrier || groupBy === "state" || groupBy === "age" || groupBy === "persistency") ? (						// Breakdown View (Status, State, Age, or Persistency)
+					) : (detailCarrier || groupBy === "state" || groupBy === "age" || groupBy === "persistency" || groupBy === "placement") ? (						// Breakdown View (Status, State, Age, Persistency, or Placement)
 						<>
 							<div className="mb-4 flex items-center gap-3">
 								<div className="text-xs font-medium tracking-wide text-muted-foreground">
@@ -1354,6 +1419,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 										? `${carrierFilter === "ALL" ? "ALL CARRIERS" : carrierFilter.toUpperCase()} - BY AGE`
 										: groupBy === "persistency"
 										? `${carrierFilter === "ALL" ? "ALL CARRIERS" : carrierFilter.toUpperCase()} - BY PERSISTENCY`
+										: groupBy === "placement"
+										? `${carrierFilter === "ALL" ? "ALL CARRIERS" : carrierFilter.toUpperCase()} - BY PLACEMENT`
 										: "BREAKDOWN"}
 								</div>
 								{(groupBy === "carrier" && detailCarrier) && (
@@ -1379,6 +1446,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 									{ key: "state", label: "By State" },
 									{ key: "age", label: "By Age" },
 									{ key: "persistency", label: "By Persistency" },
+									{ key: "placement", label: "By Placement" },
 								].map((g) => (
 									<Button
 										key={g.key}
@@ -1746,6 +1814,87 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 									</div>
 								</div>
 							)}
+
+							{/* Placement Breakdown */}
+							{groupBy === "placement" && placementBreakdown && (
+								<div className="flex flex-col items-center justify-center gap-6">
+									<div className="relative h-[320px] w-[320px]">
+										<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
+											<defs>
+												<filter id="shadow-placement" x="-20%" y="-20%" width="140%" height="140%">
+													<feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
+												</filter>
+												<filter id="darken-placement">
+													<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
+												</filter>
+											</defs>
+											<g filter="url(#shadow-placement)">
+												{placementBreakdown.wedges.map((w, idx) => {
+													const path = describeArc(160, 160, 150, w.start, w.end)
+													const mid = (w.start + w.end) / 2
+													const center = polarToCartesian(160, 160, 90, mid)
+													const isHovered = hoverPlacementInfo?.label === w.label
+													const isOtherHovered = hoverPlacementInfo !== null && !isHovered
+													// Check if this is a full circle (360 degrees)
+													const isFullCircle = Math.abs((w.end - w.start) - 360) < 0.01
+
+													return (
+														<path
+															key={w.label}
+															d={path}
+															fill={w.color}
+															stroke={isFullCircle ? w.color : "#fff"}
+															strokeWidth={2}
+															strokeLinejoin="round"
+															opacity={isOtherHovered ? 0.4 : 1}
+															filter={isHovered ? "url(#darken-placement)" : undefined}
+															style={{
+																transform: isHovered ? "scale(1.05)" : "scale(1)",
+																transformOrigin: "160px 160px",
+																transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+																animationDelay: `${idx * 0.1}s`,
+															}}
+															className="cursor-pointer pie-slice-animate"
+															onMouseEnter={() => setHoverPlacementInfo({
+																x: center.x,
+																y: center.y,
+																label: w.label,
+																count: w.count,
+																pct: w.pct,
+															})}
+															onMouseLeave={() => setHoverPlacementInfo(null)}
+														/>
+													)
+												})}
+											</g>
+										</svg>
+										{hoverPlacementInfo && (
+											<div
+												className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+												style={{ left: hoverPlacementInfo.x, top: hoverPlacementInfo.y }}
+											>
+												<div className="mb-1 text-sm font-semibold">{hoverPlacementInfo.label}</div>
+												<div className="text-white/90">
+													{numberWithCommas(hoverPlacementInfo.count)} ({hoverPlacementInfo.pct}%)
+												</div>
+											</div>
+										)}
+									</div>
+
+									<div className="flex flex-wrap justify-center gap-4 mt-4">
+										{placementBreakdown.wedges.length === 0 ? (
+											<div className="text-sm text-muted-foreground">No data in range</div>
+										) : (
+											placementBreakdown.wedges.map((w) => (
+												<div key={w.label} className="flex items-center gap-2 text-sm">
+													<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: w.color }} />
+													<span>{w.label} ({w.pct}%)</span>
+												</div>
+											))
+										)}
+									</div>
+								</div>
+							)}
 						</>
 					) : (
 						// Carrier Pie Chart View or Downline View
@@ -1823,6 +1972,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 									{ key: "state", label: "By State" },
 									{ key: "age", label: "By Age" },
 									{ key: "persistency", label: "By Persistency" },
+									{ key: "placement", label: "By Placement" },
 								].map((g) => (
 									<Button
 										key={g.key}
@@ -1974,6 +2124,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 					<div className="mb-4 flex flex-wrap gap-2 justify-center">
 						{[
 							{ key: "persistency", label: "Persistency Rate" },
+							{ key: "placement", label: "Placement Rate" },
 							{ key: "submitted", label: "Submitted Volume" },
 							{ key: "active", label: "Active Policies" },
 							{ key: "avgprem", label: "Avg Premium" },
@@ -1983,7 +2134,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 								key={m.key} 
 								variant={trendMetric === m.key ? "default" : "outline"} 
 								size="sm" 
-								onClick={() => setTrendMetric(m.key)} 
+								onClick={() => setTrendMetric(m.key as "persistency" | "placement" | "submitted" | "active" | "avgprem" | "all")} 
 								className={`rounded-md ${trendMetric === m.key ? 'bg-foreground hover:bg-foreground/90 text-background' : ''}`}
 							>
 								{m.label}
@@ -2185,17 +2336,24 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 														let totalInactive = 0
 														let totalSubmitted = 0
 														let totalPremium = 0
+														let totalPlacement = 0
+														let placementCount = 0
 														for (const row of periodSeries) {
 															totalActive += row.active || 0
 															totalInactive += row.inactive || 0
 															const submitted = row.submitted || 0
 															totalSubmitted += submitted
 															totalPremium += (row.avg_premium_submitted || 0) * submitted
+															if ((row as any).placement !== undefined && (row as any).placement !== null) {
+																totalPlacement += (row as any).placement
+																placementCount++
+															}
 														}
 														const cumulativePersistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
+														const cumulativePlacement = placementCount > 0 ? totalPlacement / placementCount : 0
 														const avgPremium = totalSubmitted > 0 ? totalPremium / totalSubmitted : 0
 
-														return { x: xPos, y: yPos, value: cumulativeSubmitted, period: data.period, submitted: cumulativeSubmitted, active: totalActive, persistency: cumulativePersistency, avgPremium }
+														return { x: xPos, y: yPos, value: cumulativeSubmitted, period: data.period, submitted: cumulativeSubmitted, active: totalActive, persistency: cumulativePersistency, placement: cumulativePlacement, avgPremium }
 													})
 
 												const pathData = createSmoothCurvePath(submittedPoints)
@@ -2223,7 +2381,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																		const x = circleRect.left + circleRect.width / 2 - containerRect.left
 																		// Position above the point (center of circle minus height to place tooltip above)
 																		const y = circleRect.top - containerRect.top - 10
-																		setHoverTrendInfo({ x, y, period: p.period, value: p.submitted, carrier: "Cumulative Submitted", submitted: p.submitted, active: p.active, persistency: p.persistency, avgPremium: p.avgPremium })
+																		setHoverTrendInfo({ x, y, period: p.period, value: p.submitted, carrier: "Cumulative Submitted", submitted: p.submitted, active: p.active, persistency: p.persistency, placement: p.placement, avgPremium: p.avgPremium })
 																	}
 																}}
 																onMouseLeave={() => setHoverTrendInfo(null)}
@@ -2263,17 +2421,24 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 														let totalActive = 0
 														let totalInactive = 0
 														let totalPremium = 0
+														let totalPlacement = 0
+														let placementCount = 0
 														for (const row of periodSeries) {
 															const submitted = row.submitted || 0
 															totalSubmitted += submitted
 															totalActive += row.active || 0
 															totalInactive += row.inactive || 0
 															totalPremium += (row.avg_premium_submitted || 0) * submitted
+															if ((row as any).placement !== undefined && (row as any).placement !== null) {
+																totalPlacement += (row as any).placement
+																placementCount++
+															}
 														}
 														const cumulativePersistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
+														const cumulativePlacement = placementCount > 0 ? totalPlacement / placementCount : 0
 														const avgPremium = totalSubmitted > 0 ? totalPremium / totalSubmitted : 0
 
-														return { x: xPos, y: yPos, value: cumulativeActive, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency, avgPremium }
+														return { x: xPos, y: yPos, value: cumulativeActive, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency, placement: cumulativePlacement, avgPremium }
 													})
 
 												const pathData = createSmoothCurvePath(activePoints)
@@ -2301,7 +2466,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																		const x = circleRect.left + circleRect.width / 2 - containerRect.left
 																		// Position above the point (center of circle minus height to place tooltip above)
 																		const y = circleRect.top - containerRect.top - 10
-																		setHoverTrendInfo({ x, y, period: p.period, value: p.active, carrier: "Cumulative Active", submitted: p.submitted, active: p.active, persistency: p.persistency, avgPremium: p.avgPremium })
+																		setHoverTrendInfo({ x, y, period: p.period, value: p.active, carrier: "Cumulative Active", submitted: p.submitted, active: p.active, persistency: p.persistency, placement: p.placement, avgPremium: p.avgPremium })
 																	}
 																}}
 																onMouseLeave={() => setHoverTrendInfo(null)}
@@ -2345,6 +2510,11 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 												{hoverTrendInfo.persistency !== undefined && (
 													<div className="mb-1 text-white/90 font-semibold">
 														Persistency: {((hoverTrendInfo.persistency || 0) * 100).toFixed(2)}%
+													</div>
+												)}
+												{hoverTrendInfo.placement !== undefined && (
+													<div className="mb-1 text-white/90 font-semibold">
+														Placement: {((hoverTrendInfo.placement || 0) * 100).toFixed(2)}%
 													</div>
 												)}
 												{hoverTrendInfo.avgPremium !== undefined && (
@@ -2416,7 +2586,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 												}
 											}
 										}
-										if (cumulativeValue > 0 || trendMetric === "persistency") {
+										if (cumulativeValue > 0 || trendMetric === "persistency" || trendMetric === "placement") {
 											minValue = Math.min(minValue, cumulativeValue)
 											maxValue = Math.max(maxValue, cumulativeValue)
 										}
@@ -2438,8 +2608,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 								maxValue = 100
 							}
 
-							// For persistency, clamp to 0-1
-							if (trendMetric === "persistency") {
+							// For persistency and placement, clamp to 0-1
+							if (trendMetric === "persistency" || trendMetric === "placement") {
 								minValue = 0
 								maxValue = 1
 							} else {
@@ -2452,7 +2622,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 
 							// Format Y-axis label
 							const formatYLabel = (value: number): string => {
-								if (trendMetric === "persistency") {
+								if (trendMetric === "persistency" || trendMetric === "placement") {
 									return `${Math.round(value * 100)}%`
 								} else if (trendMetric === "avgprem") {
 									return `$${Math.round(value)}`
@@ -2465,6 +2635,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							const getYAxisTitle = (): string => {
 								if (trendMetric === "persistency") {
 									return "Persistency (%)"
+								} else if (trendMetric === "placement") {
+									return "Placement (%)"
 								} else if (trendMetric === "avgprem") {
 									return "Avg Premium ($)"
 								} else if (trendMetric === "submitted") {
@@ -2483,8 +2655,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							// Convert value to Y coordinate
 							const valueToY = (value: number) => {
 								if (maxValue === 0) return chartBottom
-								if (trendMetric === "persistency") {
-									// For persistency, use minValue (which is 0) and maxValue (which is 1)
+								if (trendMetric === "persistency" || trendMetric === "placement") {
+									// For persistency and placement, use minValue (which is 0) and maxValue (which is 1)
 									const normalized = (value - minValue) / (maxValue - minValue)
 									return chartBottom - (normalized * chartHeight)
 								} else {
@@ -2514,8 +2686,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 											const scaleMax = scaleValues[scaleValues.length - 1]
 											const valueToYWithScale = (value: number) => {
 												if (scaleMax === 0) return chartBottom
-												if (trendMetric === "persistency") {
-													// For persistency, use 0-1 range
+												if (trendMetric === "persistency" || trendMetric === "placement") {
+													// For persistency and placement, use 0-1 range
 													const normalized = value / scaleMax
 													return chartBottom - (normalized * chartHeight)
 												} else {
@@ -2635,10 +2807,11 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 															const submitted = periodRow?.submitted || 0
 															const active = periodRow?.active || 0
 															const persistency = periodRow?.persistency || 0
+															const placement = (periodRow as any)?.placement || 0
 
-															return { x: xPos, y: yPos, value, period: data.period, carrier: carrier as any, submitted, active, persistency }
+															return { x: xPos, y: yPos, value, period: data.period, carrier: carrier as any, submitted, active, persistency, placement }
 														})
-														.filter((p: any): p is { x: number; y: number; value: number; period: string; carrier: any; submitted: number; active: number; persistency: number } => p !== null)
+																		.filter((p: any): p is { x: number; y: number; value: number; period: string; carrier: any; submitted: number; active: number; persistency: number; placement: number } => p !== null)
 
 													if (points.length === 0) return null
 
@@ -2676,7 +2849,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																			const x = circleRect.left + circleRect.width / 2 - containerRect.left
 																			// Position above the point (center of circle minus height to place tooltip above)
 																			const y = circleRect.top - containerRect.top - 10
-																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: p.carrier, submitted: p.submitted, active: p.active, persistency: p.persistency })
+																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: p.carrier, submitted: p.submitted, active: p.active, persistency: p.persistency, placement: p.placement })
 																		}
 																	}}
 																	onMouseLeave={() => setHoverTrendInfo(null)}
@@ -2719,7 +2892,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																// For other metrics, sum all carrier values for this period
                                                         if (data.carriers) {
                                                             const values = Object.values(data.carriers).filter(v => v !== undefined && v !== null) as number[]
-                                                            if (trendMetric === "avgprem") {
+                                                            if (trendMetric === "avgprem" || trendMetric === "placement") {
                                                                 const count = values.length
                                                                 cumulativeValue = count > 0 ? values.reduce((a, b) => a + b, 0) / count : 0
                                                             } else {
@@ -2738,16 +2911,23 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 															let totalSubmitted = 0
 															let totalActive = 0
 															let totalInactive = 0
+															let totalPlacement = 0
+															let placementCount = 0
 															for (const row of periodSeries) {
 																totalSubmitted += row.submitted || 0
 																totalActive += row.active || 0
 																totalInactive += row.inactive || 0
+																if ((row as any).placement !== undefined && (row as any).placement !== null) {
+																	totalPlacement += (row as any).placement
+																	placementCount++
+																}
 															}
 															const cumulativePersistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
+															const cumulativePlacement = placementCount > 0 ? totalPlacement / placementCount : 0
 
-															return { x: xPos, y: yPos, value: cumulativeValue, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency }
+															return { x: xPos, y: yPos, value: cumulativeValue, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency, placement: cumulativePlacement }
 														})
-														.filter((p: any) => p.value > 0 || trendMetric === "persistency")
+																		.filter((p: any) => p.value > 0 || trendMetric === "persistency" || trendMetric === "placement")
 
 													if (cumulativePoints.length === 0) return null
 
@@ -2786,7 +2966,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																			const x = circleRect.left + circleRect.width / 2 - containerRect.left
 																			// Position above the point (center of circle minus height to place tooltip above)
 																			const y = circleRect.top - containerRect.top - 10
-																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: "Cumulative", submitted: p.submitted, active: p.active, persistency: p.persistency })
+																			setHoverTrendInfo({ x, y, period: p.period, value: p.value, carrier: "Cumulative", submitted: p.submitted, active: p.active, persistency: p.persistency, placement: p.placement })
 																		}
 																	}}
 																	onMouseLeave={() => setHoverTrendInfo(null)}
@@ -2813,8 +2993,9 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																	const submitted = periodRow?.submitted || 0
 																	const active = periodRow?.active || 0
 																	const persistency = periodRow?.persistency || 0
+																	const placement = (periodRow as any)?.placement || 0
 
-																	return { x: xPos, y: yPos, value, period: data.period, submitted, active, persistency }
+																	return { x: xPos, y: yPos, value, period: data.period, submitted, active, persistency, placement }
 																})
 
 															const pathData = createSmoothCurvePath(points)
@@ -2849,7 +3030,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																					const x = circleRect.left + circleRect.width / 2 - containerRect.left
 																					// Position above the point (center of circle minus height to place tooltip above)
 																					const y = circleRect.top - containerRect.top - 10
-																					setHoverTrendInfo({ x, y, period: p.period, value: p.value, submitted: p.submitted, active: p.active, persistency: p.persistency })
+																					setHoverTrendInfo({ x, y, period: p.period, value: p.value, submitted: p.submitted, active: p.active, persistency: p.persistency, placement: p.placement })
 																				}
 																			}}
 																			onMouseLeave={() => setHoverTrendInfo(null)}
@@ -2881,12 +3062,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 												<div className="mb-1 text-xs text-white/80">{hoverTrendInfo.carrier}</div>
 											)}
 											<div className="space-y-1">
-												{trendMetric === "persistency" ? (
-													/* For persistency: only show persistency */
-													<div className="text-white/90 font-medium">
-														Persistency: {((hoverTrendInfo.value || 0) * 100).toFixed(2)}%
-													</div>
-												) : trendMetric === "all" ? (
+												{(trendMetric === "all" as any) ? (
 													/* For "Show All": show all values */
 													<>
 														{hoverTrendInfo.submitted !== undefined && (
@@ -2904,12 +3080,27 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																Persistency: {((hoverTrendInfo.persistency || 0) * 100).toFixed(2)}%
 															</div>
 														)}
+														{hoverTrendInfo.placement !== undefined && (
+															<div className="text-white/90 font-medium mb-1">
+																Placement: {((hoverTrendInfo.placement || 0) * 100).toFixed(2)}%
+															</div>
+														)}
 														{hoverTrendInfo.avgPremium !== undefined && (
 															<div className="text-white/90 font-medium">
 																Avg Premium: ${hoverTrendInfo.avgPremium.toFixed(2)}
 															</div>
 														)}
 													</>
+												) : trendMetric === "persistency" ? (
+													/* For persistency: only show persistency */
+													<div className="text-white/90 font-medium">
+														Persistency: {((hoverTrendInfo.value || 0) * 100).toFixed(2)}%
+													</div>
+												) : trendMetric === "placement" ? (
+													/* For placement: only show placement */
+													<div className="text-white/90 font-medium">
+														Placement: {((hoverTrendInfo.value || 0) * 100).toFixed(2)}%
+													</div>
 												) : (
 													/* For other metrics: show main metric value only */
 													<div className="text-white/90 font-medium">

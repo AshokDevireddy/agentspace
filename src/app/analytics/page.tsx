@@ -2169,17 +2169,17 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							</svg>
 							{hoverInfo && (
 								<div
-									className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
+									className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 min-w-[200px]"
 									style={{ left: hoverInfo.x, top: hoverInfo.y }}
 								>
-									<div className="mb-1 text-sm font-semibold">{hoverInfo.label}</div>
+									<div className="mb-1 text-sm font-semibold whitespace-nowrap">{hoverInfo.label}</div>
 									<div className="space-y-1">
-										<div className="flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-white/80" /><span>{numberWithCommas(hoverInfo.submitted)} Total Submitted</span></div>
-										<div className="text-white/90">{hoverInfo.sharePct}% of Total Business</div>
-										<div className="text-white/90">{hoverInfo.persistencyPct}% Persistency Rate</div>
-										<div className="text-white/90">{numberWithCommas(hoverInfo.active)} Active Policies</div>
+										<div className="flex items-center gap-2 whitespace-nowrap"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-white/80 flex-shrink-0" /><span>{numberWithCommas(hoverInfo.submitted)} Total Submitted</span></div>
+										<div className="text-white/90 whitespace-nowrap">{hoverInfo.sharePct}% of Total Business</div>
+										<div className="text-white/90 whitespace-nowrap">{hoverInfo.persistencyPct}% Persistency Rate</div>
+										<div className="text-white/90 whitespace-nowrap">{numberWithCommas(hoverInfo.active)} Active Policies</div>
 									</div>
-									<div className="mt-2 text-[10px] italic text-white/70">Click to see status breakdown</div>
+									<div className="mt-2 text-[10px] italic text-white/70 whitespace-nowrap">Click to see status breakdown</div>
 								</div>
 							)}
 						</div>

@@ -504,7 +504,7 @@ export default function AnalyticsTestPage() {
 	const [selectedCarrier, setSelectedCarrier] = React.useState<string | null>(null)
 	const [hoverInfo, setHoverInfo] = React.useState<null | { x: number; y: number; label: string; submitted: number; sharePct: number; persistencyPct: number; active: number }>(null)
 	const [hoverStatusInfo, setHoverStatusInfo] = React.useState<null | { x: number; y: number; status: string; count: number; pct: number }>(null)
-	const [hoverBreakdownInfo, setHoverBreakdownInfo] = React.useState<null | { x: number; y: number; label: string; value: number; pct: number }>(null)
+	const [hoverBreakdownInfo, setHoverBreakdownInfo] = React.useState<null | { x: number; y: number; label: string; value: number; pct: number; groupedStates?: { label: string; value: number; pct: number }[]; total?: number }>(null)
 	const [hoverPersistencyInfo, setHoverPersistencyInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
 	const [hoverPlacementInfo, setHoverPlacementInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
 	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; placement?: number; avgPremium?: number }>(null)
@@ -890,11 +890,11 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		} else {
 			// Single carrier
 			const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
-			if (!byCarrier || !(carrierFilter in byCarrier)) return { wedges: [], total: 0, isFullyUnknown: true }
+			if (!byCarrier || !(carrierFilter in byCarrier)) return { wedges: [], total: 0, isFullyUnknown: true, groupedStates: {} }
 			const carrierData = byCarrier[carrierFilter as keyof typeof byCarrier]
-			if (!carrierData) return { wedges: [], total: 0, isFullyUnknown: true }
+			if (!carrierData) return { wedges: [], total: 0, isFullyUnknown: true, groupedStates: {} }
 			const stateData = carrierData.state?.[windowKey]
-			if (!stateData) return { wedges: [], total: 0, isFullyUnknown: true }
+			if (!stateData) return { wedges: [], total: 0, isFullyUnknown: true, groupedStates: {} }
 
             stateData.forEach((entry: { state: string; submitted: number }) => {
 				if (entry.submitted > 0) {
@@ -914,11 +914,50 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		const isFullyUnknown = entries.length === 0 || (entries.length > 0 && entries.every(e => e.label === "Unknown"))
 
 		if (isFullyUnknown) {
-			return { wedges: [], total, isFullyUnknown: true }
+			return { wedges: [], total, isFullyUnknown: true, groupedStates: {} }
 		}
 
+		// Separate states with percentage < 1.5% into "Other" group
+		// Note: "Unknown" states are kept separate and not grouped into "Other"
+		const mainEntries: { label: string; value: number; color: string }[] = []
+		const otherEntries: { label: string; value: number; pct: number }[] = []
+
+		entries.forEach((e) => {
+			const pct = total > 0 ? (e.value / total) * 100 : 0
+			// Group states under 1.5% into "Other", but keep "Unknown" states separate
+			if (pct < 1.5 && e.label !== "Unknown") {
+				otherEntries.push({
+					label: e.label,
+					value: e.value,
+					pct: Math.round(pct * 1000) / 10,
+				})
+			} else {
+				mainEntries.push(e)
+			}
+		})
+
+		// Sort other entries by percentage (largest to smallest)
+		otherEntries.sort((a, b) => b.pct - a.pct)
+
+		// Create grouped states data for the Other slice
+		const groupedStates: Record<string, { label: string; value: number; pct: number }[]> = {}
+		
+		// Add Other entry if there are any states to group
+		if (otherEntries.length > 0) {
+			const otherTotal = otherEntries.reduce((sum, e) => sum + e.value, 0)
+			groupedStates["Other"] = otherEntries
+			mainEntries.push({
+				label: "Other",
+				value: otherTotal,
+				color: colorForLabel("Other"),
+			})
+		}
+
+		// Sort main entries by value (largest first) for better visualization
+		mainEntries.sort((a, b) => b.value - a.value)
+
 		let cursor = 0
-		const wedges = entries.map((e) => {
+		const wedges = mainEntries.map((e) => {
 			const pct = total > 0 ? e.value / total : 0
 			const ang = pct * 360
 			const piece = {
@@ -931,8 +970,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			return piece
 		})
 
-		return { wedges, total, isFullyUnknown: false }
-	}, [carrierFilter, windowKey, groupBy])
+		return { wedges, total, isFullyUnknown: false, groupedStates }
+	}, [carrierFilter, windowKey, groupBy, _analyticsData])
 
 	// Age breakdown for detail view (when groupBy === "age")
 	const ageBreakdown = React.useMemo(() => {
@@ -1606,8 +1645,17 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																		label: w.label,
 																		value: w.value,
 																		pct: w.pct,
+																		groupedStates: stateBreakdown.groupedStates?.[w.label],
+																		total: stateBreakdown.total,
 																	})}
-																	onMouseLeave={() => setHoverBreakdownInfo(null)}
+																	onMouseLeave={() => {
+																		// For "Other" slice with grouped states, don't hide immediately
+																		// Let the tooltip handle its own visibility
+																		const hasGroupedStates = stateBreakdown.groupedStates?.[w.label] && stateBreakdown.groupedStates[w.label].length > 0
+																		if (!hasGroupedStates) {
+																			setHoverBreakdownInfo(null)
+																		}
+																	}}
 																/>
 															)
 														})}
@@ -1615,13 +1663,53 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 												</svg>
 												{hoverBreakdownInfo && (
 													<div
-														className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10"
-														style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
+														className="absolute animate-in fade-in-0 zoom-in-95 duration-200 rounded-lg border border-white/10 bg-black/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm z-10 max-w-[280px]"
+														style={{ 
+															left: `${hoverBreakdownInfo.x}px`,
+															top: `${hoverBreakdownInfo.y}px`,
+															transform: 'translate(-50%, -50%)',
+															maxHeight: 'min(calc(100vh - 40px), 400px)',
+															maxWidth: 'min(280px, calc(100vw - 40px))',
+															overflow: 'hidden',
+															display: 'flex',
+															flexDirection: 'column',
+															pointerEvents: hoverBreakdownInfo.groupedStates && hoverBreakdownInfo.groupedStates.length > 0 ? 'auto' : 'none',
+														}}
+														onMouseEnter={(e) => {
+															if (hoverBreakdownInfo.groupedStates && hoverBreakdownInfo.groupedStates.length > 0) {
+																e.stopPropagation()
+															}
+														}}
+														onMouseLeave={() => {
+															if (hoverBreakdownInfo.groupedStates && hoverBreakdownInfo.groupedStates.length > 0) {
+																setHoverBreakdownInfo(null)
+															}
+														}}
 													>
-														<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
-														<div className="text-white/90">
+														<div className="mb-1 text-sm font-semibold flex-shrink-0 pointer-events-none">{hoverBreakdownInfo.label}</div>
+														<div className="text-white/90 flex-shrink-0 whitespace-nowrap pointer-events-none">
 															{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
 														</div>
+														{hoverBreakdownInfo.groupedStates && hoverBreakdownInfo.groupedStates.length > 0 && (
+															<div className="mt-2 pt-2 border-t border-white/20 flex-shrink-0">
+																<div className="text-[10px] text-white/70 mb-1 pointer-events-none">States included:</div>
+																<div 
+																	className="space-y-1 max-h-[80px] overflow-y-auto pr-2 custom-scrollbar flex-1 min-h-0 overscroll-contain pointer-events-auto" 
+																	style={{ WebkitOverflowScrolling: 'touch' }}
+																>
+																	{hoverBreakdownInfo.groupedStates.map((state) => {
+																		const statePct = hoverBreakdownInfo.total && hoverBreakdownInfo.total > 0 
+																			? Math.round((state.value / hoverBreakdownInfo.total) * 1000) / 10 
+																			: state.pct
+																		return (
+																			<div key={state.label} className="text-white/90 whitespace-nowrap pointer-events-none">
+																				{state.label}: {numberWithCommas(state.value)} ({statePct}%)
+																			</div>
+																		)
+																	})}
+																</div>
+															</div>
+														)}
 													</div>
 												)}
 											</div>
@@ -1710,7 +1798,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 														style={{ left: hoverBreakdownInfo.x, top: hoverBreakdownInfo.y }}
 													>
 														<div className="mb-1 text-sm font-semibold">{hoverBreakdownInfo.label}</div>
-														<div className="text-white/90">
+														<div className="text-white/90 whitespace-nowrap">
 															{numberWithCommas(hoverBreakdownInfo.value)} ({hoverBreakdownInfo.pct}%)
 														</div>
 													</div>
@@ -1793,7 +1881,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 												style={{ left: hoverPersistencyInfo.x, top: hoverPersistencyInfo.y }}
 											>
 												<div className="mb-1 text-sm font-semibold">{hoverPersistencyInfo.label}</div>
-												<div className="text-white/90">
+												<div className="text-white/90 whitespace-nowrap">
 													{numberWithCommas(hoverPersistencyInfo.count)} ({hoverPersistencyInfo.pct}%)
 												</div>
 											</div>
@@ -1874,7 +1962,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 												style={{ left: hoverPlacementInfo.x, top: hoverPlacementInfo.y }}
 											>
 												<div className="mb-1 text-sm font-semibold">{hoverPlacementInfo.label}</div>
-												<div className="text-white/90">
+												<div className="text-white/90 whitespace-nowrap">
 													{numberWithCommas(hoverPlacementInfo.count)} ({hoverPlacementInfo.pct}%)
 												</div>
 											</div>

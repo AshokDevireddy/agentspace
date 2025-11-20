@@ -157,14 +157,22 @@ export default function LoginPage() {
 
       if (signInError) throw signInError
 
-      // Get user profile to check role
+      // Get user profile to check role and agency
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('role, status')
+        .select('role, status, agency_id')
         .eq('auth_user_id', data.user.id)
         .single()
 
       if (userError) throw new Error('User profile not found')
+
+      // If this is a white-labeled domain, verify user belongs to this agency
+      if (isWhiteLabel && branding) {
+        if (userData.agency_id !== branding.id) {
+          await supabase.auth.signOut()
+          throw new Error('No account found with these credentials')
+        }
+      }
 
       // Handle different user statuses
       if (userData.status === 'invited') {
@@ -234,15 +242,15 @@ export default function LoginPage() {
     )
   }
 
-  // Determine display name and logo
-  const displayName = branding?.display_name || 'AgentSpace'
-  const logoUrl = branding?.logo_url
+  // Determine display name and logo based on white-label status
+  const displayName = isWhiteLabel && branding ? branding.display_name : 'AgentSpace'
+  const logoUrl = isWhiteLabel && branding ? branding.logo_url : null
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      {/* Top left logo/name - show agency branding for white-label, AgentSpace for default */}
+      {/* Top left logo/name - always show either agency or AgentSpace branding */}
       <div className="absolute top-6 left-6 flex items-center gap-2">
-        {isWhiteLabel && logoUrl ? (
+        {logoUrl ? (
           <img
             src={logoUrl}
             alt={`${displayName} logo`}
@@ -254,7 +262,7 @@ export default function LoginPage() {
               <span className="text-background font-bold text-lg">A</span>
             </div>
             <span className="text-xl font-bold text-foreground">
-              {isWhiteLabel ? displayName : 'AgentSpace'}
+              {displayName}
             </span>
           </div>
         )}

@@ -171,10 +171,10 @@ export default function ProfilePage() {
   return (
     <div className="flex flex-col items-center w-full min-h-screen bg-background py-8">
       {/* Profile Card */}
-      <div className="w-full max-w-3xl bg-gradient-to-br from-[#f5f6ff] to-[#f5f6ff] rounded-2xl shadow-md p-8 mb-8">
+      <div className="w-full max-w-3xl bg-card rounded-2xl shadow-md p-8 mb-8 border border-border">
         <div className="flex items-center">
           {/* Avatar */}
-          <div className="w-32 h-32 bg-gray-200 rounded-lg flex items-center justify-center mr-8 shadow">
+          <div className="w-32 h-32 bg-muted rounded-lg flex items-center justify-center mr-8 shadow">
             {/* Show avatar if available, else fallback */}
             {user_profile.avatarUrl ? (
               <img src={user_profile.avatarUrl} alt="Profile" className="w-full h-full object-cover rounded-lg" />

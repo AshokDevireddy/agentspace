@@ -166,12 +166,27 @@ export default function LoginPage() {
 
       if (userError) throw new Error('User profile not found')
 
+      // Get the user's agency info to check if they have a white-label domain
+      const { data: userAgency, error: agencyError } = await supabase
+        .from('agencies')
+        .select('whitelabel_domain')
+        .eq('id', userData.agency_id)
+        .single()
+
+      if (agencyError) throw new Error('Agency not found')
+
       // If this is a white-labeled domain, verify user belongs to this agency
       if (isWhiteLabel && branding) {
         if (userData.agency_id !== branding.id) {
           await supabase.auth.signOut()
           throw new Error('No account found with these credentials')
         }
+      }
+
+      // If this is the default domain (not white-labeled), block users from white-labeled agencies
+      if (!isWhiteLabel && userAgency.whitelabel_domain) {
+        await supabase.auth.signOut()
+        throw new Error('No account found with these credentials')
       }
 
       // Handle different user statuses

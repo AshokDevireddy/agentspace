@@ -175,18 +175,27 @@ export default function LoginPage() {
 
       if (agencyError) throw new Error('Agency not found')
 
-      // If this is a white-labeled domain, verify user belongs to this agency
-      if (isWhiteLabel && branding) {
-        if (userData.agency_id !== branding.id) {
+      // Check if we're on localhost (for testing purposes)
+      const isLocalhost = typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' ||
+         window.location.hostname === '127.0.0.1' ||
+         window.location.hostname.includes('localhost'))
+
+      // Skip domain restrictions on localhost for testing
+      if (!isLocalhost) {
+        // If this is a white-labeled domain, verify user belongs to this agency
+        if (isWhiteLabel && branding) {
+          if (userData.agency_id !== branding.id) {
+            await supabase.auth.signOut()
+            throw new Error('No account found with these credentials')
+          }
+        }
+
+        // If this is the default domain (not white-labeled), block users from white-labeled agencies
+        if (!isWhiteLabel && userAgency.whitelabel_domain) {
           await supabase.auth.signOut()
           throw new Error('No account found with these credentials')
         }
-      }
-
-      // If this is the default domain (not white-labeled), block users from white-labeled agencies
-      if (!isWhiteLabel && userAgency.whitelabel_domain) {
-        await supabase.auth.signOut()
-        throw new Error('No account found with these credentials')
       }
 
       // Handle different user statuses

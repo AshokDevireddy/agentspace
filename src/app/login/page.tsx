@@ -246,6 +246,12 @@ export default function LoginPage() {
   const displayName = isWhiteLabel && branding ? branding.display_name : 'AgentSpace'
   const logoUrl = isWhiteLabel && branding ? branding.logo_url : null
 
+  // Debug logging for top-left display
+  console.log('[Login] isWhiteLabel:', isWhiteLabel)
+  console.log('[Login] branding:', branding)
+  console.log('[Login] displayName:', displayName)
+  console.log('[Login] logoUrl:', logoUrl)
+
   return (
     <div className="flex flex-col min-h-screen bg-background">
       {/* Top left logo/name - always show either agency or AgentSpace branding */}

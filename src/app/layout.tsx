@@ -25,7 +25,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const isWhiteLabel = isWhiteLabelDomain(hostname);
 
   // Default metadata for AgentSpace
-  let title = "AgentSpace - Insurance Commission Management";
+  let title = "AgentSpace - Insurance Agency Management";
   let description = "Manage your insurance agency commissions and payouts";
 
   // If white-label, try to fetch agency branding
@@ -39,8 +39,8 @@ export async function generateMetadata(): Promise<Metadata> {
         .single();
 
       if (agency?.display_name) {
-        title = `${agency.display_name} - Insurance Commission Management`;
-        description = `Manage your ${agency.display_name} insurance agency commissions and payouts`;
+        title = `${agency.display_name} - Insurance Agency Management`;
+        description = `Manage your ${agency.display_name} insurance agency policies and agents`;
       }
     } catch (error) {
       console.error("Error fetching agency branding for metadata:", error);

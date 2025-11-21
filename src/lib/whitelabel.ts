@@ -46,6 +46,7 @@ export function isWhiteLabelDomain(hostname: string): boolean {
  */
 export async function getAgencyBrandingByDomain(domain: string): Promise<AgencyBranding | null> {
   try {
+    console.log('[getAgencyBrandingByDomain] Querying for domain:', domain)
     const supabase = createClient()
 
     const { data, error } = await supabase
@@ -64,13 +65,15 @@ export async function getAgencyBrandingByDomain(domain: string): Promise<AgencyB
       .maybeSingle()
 
     if (error) {
-      console.error('Error fetching agency branding:', error)
+      console.error('[getAgencyBrandingByDomain] Error fetching agency branding:', error)
+      console.error('[getAgencyBrandingByDomain] Error details:', JSON.stringify(error, null, 2))
       return null
     }
 
+    console.log('[getAgencyBrandingByDomain] Query successful, data:', data)
     return data as AgencyBranding | null
   } catch (error) {
-    console.error('Unexpected error fetching agency branding:', error)
+    console.error('[getAgencyBrandingByDomain] Unexpected error:', error)
     return null
   }
 }

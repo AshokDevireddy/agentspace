@@ -28,19 +28,25 @@ export function AgencyBrandingProvider({ children }: { children: React.ReactNode
     async function loadBranding() {
       try {
         const hostname = window.location.hostname
+        console.log('[AgencyBranding] Current hostname:', hostname)
+
         const isWL = isWhiteLabelDomain(hostname)
+        console.log('[AgencyBranding] Is white-label domain:', isWL)
         setIsWhiteLabel(isWL)
 
         if (isWL) {
           // Fetch agency branding for white-labeled domain
+          console.log('[AgencyBranding] Fetching branding for domain:', hostname)
           const agencyBranding = await getAgencyBrandingByDomain(hostname)
+          console.log('[AgencyBranding] Branding data received:', agencyBranding)
           setBranding(agencyBranding)
         } else {
           // Use default AgentSpace branding
+          console.log('[AgencyBranding] Using default AgentSpace branding')
           setBranding(null)
         }
       } catch (error) {
-        console.error('Error loading agency branding:', error)
+        console.error('[AgencyBranding] Error loading agency branding:', error)
         setBranding(null)
       } finally {
         setLoading(false)

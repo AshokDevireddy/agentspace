@@ -8,7 +8,7 @@ import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Pa
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
-import { cn } from "@/lib/utils"
+import { cn, getContrastTextColor } from "@/lib/utils"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 import { HexColorPicker } from 'react-colorful'
 import { useTheme } from "next-themes"
@@ -593,6 +593,10 @@ export default function ConfigurationPage() {
             setPrimaryColor(suggestedColor)
             setColorValue(suggestedColor)
             document.documentElement.style.setProperty('--primary', suggestedColor)
+
+            // Set the foreground color based on the primary color's luminance
+            const textColor = getContrastTextColor(suggestedColor)
+            document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
           }
         }
       }
@@ -682,6 +686,10 @@ export default function ConfigurationPage() {
 
       // Update CSS variable
       document.documentElement.style.setProperty('--primary', colorValue.trim())
+
+      // Set the foreground color based on the primary color's luminance
+      const textColor = getContrastTextColor(colorValue.trim())
+      document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
     } catch (error) {
       console.error('Error updating color:', error)
       alert('Failed to update color')
@@ -1701,7 +1709,7 @@ export default function ConfigurationPage() {
                       className={cn(
                         "flex items-center gap-2 px-6 py-4 text-sm font-medium transition-all whitespace-nowrap border-b-2",
                         activeTab === tab.id
-                          ? "border-blue-600 text-blue-700 bg-blue-50/50"
+                          ? "border-black text-black bg-black/5 dark:border-white dark:text-white dark:bg-white/10"
                           : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent"
                       )}
                     >
@@ -1871,11 +1879,12 @@ export default function ConfigurationPage() {
                           <label
                             htmlFor="logo-upload"
                             className={cn(
-                              "cursor-pointer text-white px-6 py-3 rounded-lg transition-colors text-center font-medium",
+                              "cursor-pointer px-6 py-3 rounded-lg transition-colors text-center font-medium",
                               uploadingLogo && "opacity-50 cursor-not-allowed"
                             )}
                             style={{
                               backgroundColor: `hsl(${primaryColor})`,
+                              color: getContrastTextColor(primaryColor) === 'white' ? '#ffffff' : '#000000'
                             }}
                           >
                             {uploadingLogo ? (
@@ -2032,19 +2041,19 @@ export default function ConfigurationPage() {
                           className={cn(
                             "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
                             agencyThemeMode === 'light'
-                              ? "border-blue-500 bg-blue-50 shadow-lg"
-                              : "border-border bg-card hover:border-blue-300"
+                              ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
+                              : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
                           )}
                         >
                           <div className="flex flex-col items-center gap-3">
                             <Sun className={cn(
                               "h-10 w-10",
-                              agencyThemeMode === 'light' ? "text-blue-600" : "text-foreground"
+                              agencyThemeMode === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                             )} />
                             <div className="text-center">
                               <p className={cn(
                                 "font-semibold text-lg",
-                                agencyThemeMode === 'light' ? "text-blue-600" : "text-foreground"
+                                agencyThemeMode === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                               )}>
                                 Light
                               </p>
@@ -2054,7 +2063,7 @@ export default function ConfigurationPage() {
                             </div>
                             {agencyThemeMode === 'light' && (
                               <div className="absolute top-3 right-3">
-                                <Check className="h-5 w-5 text-blue-600" />
+                                <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                               </div>
                             )}
                           </div>
@@ -2067,19 +2076,19 @@ export default function ConfigurationPage() {
                           className={cn(
                             "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
                             agencyThemeMode === 'dark'
-                              ? "border-blue-500 bg-blue-50 shadow-lg"
-                              : "border-border bg-card hover:border-blue-300"
+                              ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
+                              : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
                           )}
                         >
                           <div className="flex flex-col items-center gap-3">
                             <Moon className={cn(
                               "h-10 w-10",
-                              agencyThemeMode === 'dark' ? "text-blue-600" : "text-foreground"
+                              agencyThemeMode === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                             )} />
                             <div className="text-center">
                               <p className={cn(
                                 "font-semibold text-lg",
-                                agencyThemeMode === 'dark' ? "text-blue-600" : "text-foreground"
+                                agencyThemeMode === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                               )}>
                                 Dark
                               </p>
@@ -2089,7 +2098,7 @@ export default function ConfigurationPage() {
                             </div>
                             {agencyThemeMode === 'dark' && (
                               <div className="absolute top-3 right-3">
-                                <Check className="h-5 w-5 text-blue-600" />
+                                <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                               </div>
                             )}
                           </div>
@@ -2102,19 +2111,19 @@ export default function ConfigurationPage() {
                           className={cn(
                             "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
                             agencyThemeMode === 'system'
-                              ? "border-blue-500 bg-blue-50 shadow-lg"
-                              : "border-border bg-card hover:border-blue-300"
+                              ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
+                              : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
                           )}
                         >
                           <div className="flex flex-col items-center gap-3">
                             <Monitor className={cn(
                               "h-10 w-10",
-                              agencyThemeMode === 'system' ? "text-blue-600" : "text-foreground"
+                              agencyThemeMode === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                             )} />
                             <div className="text-center">
                               <p className={cn(
                                 "font-semibold text-lg",
-                                agencyThemeMode === 'system' ? "text-blue-600" : "text-foreground"
+                                agencyThemeMode === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                               )}>
                                 System
                               </p>
@@ -2124,7 +2133,7 @@ export default function ConfigurationPage() {
                             </div>
                             {agencyThemeMode === 'system' && (
                               <div className="absolute top-3 right-3">
-                                <Check className="h-5 w-5 text-blue-600" />
+                                <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                               </div>
                             )}
                           </div>
@@ -2265,7 +2274,12 @@ export default function ConfigurationPage() {
                           </p>
                           <div className="bg-background rounded-lg p-6 border-2 border-border space-y-4">
                             {/* Title Example */}
-                            <h1 className="text-3xl font-bold text-foreground">Agents</h1>
+                            <h1
+                              className="text-3xl font-bold"
+                              style={{ color: `hsl(${primaryColor})` }}
+                            >
+                              Agents
+                            </h1>
 
                             {/* Button Examples */}
                             <div className="flex flex-wrap gap-3">
@@ -2273,7 +2287,7 @@ export default function ConfigurationPage() {
                                 className="px-4 py-2 rounded-lg font-medium transition-colors"
                                 style={{
                                   backgroundColor: `hsl(${primaryColor})`,
-                                  color: 'white'
+                                  color: getContrastTextColor(primaryColor) === 'white' ? '#ffffff' : '#000000'
                                 }}
                               >
                                 Table
@@ -2288,7 +2302,7 @@ export default function ConfigurationPage() {
                                 className="px-4 py-2 rounded-lg font-medium transition-colors"
                                 style={{
                                   backgroundColor: `hsl(${primaryColor})`,
-                                  color: 'white'
+                                  color: getContrastTextColor(primaryColor) === 'white' ? '#ffffff' : '#000000'
                                 }}
                               >
                                 + Add User
@@ -2542,7 +2556,7 @@ export default function ConfigurationPage() {
                             fetchCommissions(e.target.value || undefined)
                             setCommissionEdits({})
                           }}
-                          className="w-full md:w-96 h-12 px-4 rounded-lg border border-border bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full md:w-96 h-12 px-4 rounded-lg border border-border bg-white dark:bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                         >
                           <option value="">-- Select a carrier --</option>
                           {carriers.map((carrier) => (

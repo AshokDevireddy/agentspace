@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { cn } from "@/lib/utils"
+import { cn, getContrastTextColor } from "@/lib/utils"
 import {
   User,
   BarChart3,
@@ -90,6 +90,10 @@ export default function Navigation() {
               // Apply agency color to CSS variable
               if (agencyData.primary_color) {
                 document.documentElement.style.setProperty('--primary', agencyData.primary_color)
+
+                // Set the foreground color based on the primary color's luminance
+                const textColor = getContrastTextColor(agencyData.primary_color)
+                document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
               }
             }
           }

@@ -960,7 +960,7 @@ function SMSMessagingPageContent() {
                 className={cn(
                   "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
                   isHydrated && viewMode === 'self'
-                    ? 'text-white'
+                    ? 'text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 )}
               >
@@ -971,7 +971,7 @@ function SMSMessagingPageContent() {
                 className={cn(
                   "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300",
                   isHydrated && viewMode === 'downlines'
-                    ? 'text-white'
+                    ? 'text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 )}
               >

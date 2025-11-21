@@ -228,15 +228,13 @@ export default function LoginPage() {
     { value: 'client', label: 'Client' },
   ]
 
-  // Show loading state while processing invite or loading branding
-  if (isProcessingInvite || brandingLoading) {
+  // Show loading state while processing invite
+  if (isProcessingInvite) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-foreground mx-auto mb-4"></div>
-          <p className="text-lg text-foreground">
-            {isProcessingInvite ? 'Processing your invitation...' : 'Loading...'}
-          </p>
+          <p className="text-lg text-foreground">Processing your invitation...</p>
         </div>
       </div>
     )
@@ -357,25 +355,34 @@ export default function LoginPage() {
         </div>
         {/* Right: Logo/Brand */}
         <div className="w-2/5 bg-foreground flex flex-col items-center justify-center p-6 relative">
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt={`${displayName} logo`}
-              className="max-w-[200px] max-h-[200px] object-contain"
-            />
-          ) : (
-            <span className="text-5xl font-extrabold text-background select-none text-center" style={{ fontFamily: 'Times New Roman, serif' }}>
-              {displayName}
-            </span>
-          )}
-
-          {/* Powered by AgentSpace for white-label domains */}
-          {isWhiteLabel && (
-            <div className="absolute bottom-4 left-0 right-0 text-center">
-              <p className="text-xs text-background/60">
-                Powered by <span className="font-semibold">AgentSpace</span>
-              </p>
+          {brandingLoading ? (
+            // Loading skeleton for right panel
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <div className="w-48 h-48 bg-background/10 rounded-lg animate-pulse" />
             </div>
+          ) : (
+            <>
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt={`${displayName} logo`}
+                  className="max-w-[200px] max-h-[200px] object-contain"
+                />
+              ) : (
+                <span className="text-5xl font-extrabold text-background select-none text-center" style={{ fontFamily: 'Times New Roman, serif' }}>
+                  {displayName}
+                </span>
+              )}
+
+              {/* Powered by AgentSpace for white-label domains */}
+              {isWhiteLabel && (
+                <div className="absolute bottom-4 left-0 right-0 text-center">
+                  <p className="text-xs text-background/60">
+                    Powered by <span className="font-semibold">AgentSpace</span>
+                  </p>
+                </div>
+              )}
+            </>
           )}
           </div>
         </div>

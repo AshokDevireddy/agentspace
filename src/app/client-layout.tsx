@@ -7,6 +7,7 @@ import { Building2 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme } from 'next-themes'
+import { useAgencyBranding } from '@/contexts/AgencyBrandingContext'
 
 // Pages that should not show the navigation sidebar
 const AUTH_PAGES = [
@@ -29,6 +30,7 @@ export default function ClientLayout({
 }) {
   const pathname = usePathname()
   const { setTheme } = useTheme()
+  const { branding, isWhiteLabel } = useAgencyBranding()
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isClientPage = CLIENT_PAGES.some(page => pathname.startsWith(page))
   const [userRole, setUserRole] = useState<string | null>(null)
@@ -96,16 +98,30 @@ export default function ClientLayout({
 
   // On auth pages, show a simple layout with just the logo
   if (isAuthPage) {
+    // Determine display based on white-label status
+    const displayName = isWhiteLabel && branding ? branding.display_name : 'AgentSpace'
+    const logoUrl = isWhiteLabel && branding ? branding.logo_url : null
+
     return (
       <div className="min-h-screen bg-background">
         {/* Simple header with logo for auth pages */}
         <div className="fixed top-0 left-0 right-0 z-50 bg-background border-b border-border">
           <div className="container mx-auto px-4 py-4">
             <Link href="/" className="flex items-center space-x-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-foreground text-background font-bold text-lg">
-                <Building2 className="h-6 w-6" />
-              </div>
-              <span className="text-lg font-bold text-foreground" style={{ fontFamily: 'Times New Roman, serif' }}>AgentSpace</span>
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt={`${displayName} logo`}
+                  className="h-10 object-contain"
+                />
+              ) : (
+                <>
+                  <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-foreground text-background font-bold text-lg">
+                    <Building2 className="h-6 w-6" />
+                  </div>
+                  <span className="text-lg font-bold text-foreground" style={{ fontFamily: 'Times New Roman, serif' }}>{displayName}</span>
+                </>
+              )}
             </Link>
           </div>
         </div>

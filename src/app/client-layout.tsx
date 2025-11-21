@@ -109,11 +109,14 @@ export default function ClientLayout({
           <div className="container mx-auto px-4 py-4">
             <Link href="/" className="flex items-center space-x-3">
               {logoUrl ? (
-                <img
-                  src={logoUrl}
-                  alt={`${displayName} logo`}
-                  className="h-10 object-contain"
-                />
+                <>
+                  <img
+                    src={logoUrl}
+                    alt={`${displayName} logo`}
+                    className="h-10 object-contain"
+                  />
+                  <span className="text-lg font-bold text-foreground" style={{ fontFamily: 'Times New Roman, serif' }}>{displayName}</span>
+                </>
               ) : (
                 <>
                   <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-foreground text-background font-bold text-lg">

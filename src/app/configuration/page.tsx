@@ -410,9 +410,13 @@ export default function ConfigurationPage() {
       setSavingDisplayName(true)
       const supabase = createClient()
 
+      // Update both name and display_name to keep them in sync
       const { error } = await supabase
         .from('agencies')
-        .update({ display_name: displayNameValue.trim() })
+        .update({
+          name: displayNameValue.trim(),
+          display_name: displayNameValue.trim()
+        })
         .eq('id', agency.id)
 
       if (error) throw error

@@ -2275,8 +2275,8 @@ export default function ConfigurationPage() {
                           <div className="bg-background rounded-lg p-6 border-2 border-border space-y-4">
                             {/* Title Example */}
                             <h1
-                              className="text-3xl font-bold"
-                              style={{ color: `hsl(${primaryColor})` }}
+                              className="text-3xl font-bold dark:text-white"
+                              style={theme === 'dark' ? {} : { color: `hsl(${primaryColor})` }}
                             >
                               Agents
                             </h1>
@@ -2408,13 +2408,13 @@ export default function ConfigurationPage() {
                   {/* Positions List */}
                   <div className="overflow-x-auto rounded-lg border border-border">
                     <table className="w-full">
-                      <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                      <thead className="bg-accent/50">
                         <tr className="border-b-2 border-border">
-                          <th className="text-left py-4 px-6 font-bold text-gray-800">Position Name</th>
-                          <th className="text-left py-4 px-6 font-bold text-gray-800">Level</th>
-                          <th className="text-left py-4 px-6 font-bold text-gray-800">Description</th>
-                          <th className="text-left py-4 px-6 font-bold text-gray-800">Status</th>
-                          <th className="text-right py-4 px-6 font-bold text-gray-800">Actions</th>
+                          <th className="text-left py-4 px-6 font-bold text-muted-foreground">Position Name</th>
+                          <th className="text-left py-4 px-6 font-bold text-muted-foreground">Level</th>
+                          <th className="text-left py-4 px-6 font-bold text-muted-foreground">Description</th>
+                          <th className="text-left py-4 px-6 font-bold text-muted-foreground">Status</th>
+                          <th className="text-right py-4 px-6 font-bold text-muted-foreground">Actions</th>
                         </tr>
                       </thead>
                       <tbody>

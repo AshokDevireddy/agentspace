@@ -583,7 +583,7 @@ export default function PostDeal() {
     <div className="space-y-8 max-w-5xl mx-auto">
       {/* Header */}
       <div>
-        <h1 className="text-4xl font-bold text-primary mb-2">Post a Deal</h1>
+        <h1 className="text-4xl font-bold text-foreground mb-2">Post a Deal</h1>
         <p className="text-muted-foreground">Submit a new policy in {STEPS.length} easy steps</p>
       </div>
 

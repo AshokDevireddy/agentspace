@@ -387,8 +387,8 @@ export default function Home() {
         </div>
       ) : (
         <div>
-          <h1 className="text-4xl font-bold mb-2">
-            <span className="text-primary">Welcome, {firstName || 'User'}.</span>
+          <h1 className="text-4xl font-bold mb-2 text-foreground">
+            <span>Welcome, {firstName || 'User'}.</span>
           </h1>
           <div className="flex items-center space-x-2 text-sm text-muted-foreground">
             <span>This Week</span>

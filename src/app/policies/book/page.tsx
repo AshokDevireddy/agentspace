@@ -36,6 +36,7 @@ interface Deal {
   leadSource: string
   billingCycle: string
   status: string
+  statusStandardized: string
 }
 
 interface EditableDeal extends Deal {
@@ -367,7 +368,7 @@ export default function BookOfBusiness() {
     <div className="space-y-6 max-w-full overflow-hidden">
       {/* Header with Status Slider and View Mode Slider */}
       <div className="flex items-center justify-between">
-        <h1 className="text-4xl font-bold text-primary">Book of Business</h1>
+        <h1 className="text-4xl font-bold text-foreground">Book of Business</h1>
 
         <div className="flex items-center gap-4">
           {/* View Mode Slider */}
@@ -385,7 +386,7 @@ export default function BookOfBusiness() {
                 onClick={() => setViewMode('self')}
                 disabled={loading}
                 className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px]",
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center",
                   viewMode === 'self'
                     ? 'text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground',
@@ -398,7 +399,7 @@ export default function BookOfBusiness() {
                 onClick={() => setViewMode('downlines')}
                 disabled={loading}
                 className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px]",
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center",
                   viewMode === 'downlines'
                     ? 'text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground',
@@ -425,7 +426,7 @@ export default function BookOfBusiness() {
                 onClick={() => setStatusMode('all')}
                 disabled={loading}
                 className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[80px]",
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 flex-1 text-center flex items-center justify-center",
                   statusMode === 'all'
                     ? 'text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground',
@@ -438,7 +439,7 @@ export default function BookOfBusiness() {
                 onClick={() => setStatusMode('active')}
                 disabled={loading}
                 className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[80px]",
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 flex-1 text-center flex items-center justify-center",
                   statusMode === 'active'
                     ? 'text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground',
@@ -451,20 +452,20 @@ export default function BookOfBusiness() {
                 onClick={() => setStatusMode('pending')}
                 disabled={loading}
                 className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[80px]",
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 flex-1 text-center flex items-center justify-center",
                   statusMode === 'pending'
                     ? 'text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground',
                   loading && 'opacity-50 cursor-not-allowed'
                 )}
               >
-                Pending
+                Not Placed
               </button>
               <button
                 onClick={() => setStatusMode('inactive')}
                 disabled={loading}
                 className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[80px]",
+                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 flex-1 text-center flex items-center justify-center",
                   statusMode === 'inactive'
                     ? 'text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground',
@@ -881,10 +882,10 @@ export default function BookOfBusiness() {
                         </td>
                         <td className="text-center">
                           <Badge
-                            className={`${getStatusColor(deal.status)} border capitalize`}
+                            className={`${getStatusColor(deal.statusStandardized)} border capitalize`}
                             variant="outline"
                           >
-                            {deal.status}
+                            {deal.statusStandardized}
                           </Badge>
                         </td>
                       </tr>

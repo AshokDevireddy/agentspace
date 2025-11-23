@@ -580,7 +580,7 @@ export default function Agents() {
       {/* Header */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-4xl font-bold text-primary">Agents</h1>
+          <h1 className="text-4xl font-bold text-foreground">Agents</h1>
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
               <Button

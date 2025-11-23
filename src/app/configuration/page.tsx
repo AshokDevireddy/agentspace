@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
 import { cn, getContrastTextColor } from "@/lib/utils"
@@ -2344,10 +2344,10 @@ export default function ConfigurationPage() {
                         <button
                           key={carrier.id}
                           onClick={() => handleCarrierClick(carrier.id)}
-                          className="group relative bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-500 rounded-lg p-6 transition-all duration-200 hover:shadow-md hover:scale-[1.02] active:scale-100"
+                          className="group relative bg-white dark:bg-black/30 hover:bg-blue-50 dark:hover:bg-card/80 border border-border dark:border-gray-500 hover:border-primary dark:hover:border-primary/70 rounded-lg p-6 transition-all duration-200 hover:shadow-lg dark:hover:shadow-primary/20 hover:scale-[1.02] active:scale-100"
                         >
                           <div className="flex items-center justify-center h-24">
-                            <span className="text-lg font-semibold text-gray-800 group-hover:text-blue-700 text-center">
+                            <span className="text-lg font-semibold text-foreground dark:text-gray-200 group-hover:text-primary dark:group-hover:text-gray-200 text-center">
                               {carrier.display_name}
                             </span>
                           </div>
@@ -3336,6 +3336,9 @@ export default function ConfigurationPage() {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Delete Product</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete the product "{productToDelete?.name}"? This action cannot be undone.
+              </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <p className="text-muted-foreground">
@@ -3366,6 +3369,9 @@ export default function ConfigurationPage() {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Delete Position</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete the position "{positionToDelete?.name}"? This action cannot be undone. You cannot delete a position that is currently assigned to agents.
+              </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <p className="text-muted-foreground">

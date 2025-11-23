@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Upload, FileText, X, TrendingUp } from "lucide-react"
 import {requestSignedUrl, putToSignedUrlSmart, putToSignedUrl} from '@/lib/upload-policy-reports/client'
@@ -310,9 +310,9 @@ const handleAnalyze = async () => {
           <DialogTitle className="text-center text-2xl font-bold text-gray-900">
             Upload Policy Reports
           </DialogTitle>
-          <p className="text-center text-gray-600 mt-2">
+          <DialogDescription className="text-center">
             Upload CSV or Excel files for each carrier to analyze persistency rates
-          </p>
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-3 gap-6 mt-8">

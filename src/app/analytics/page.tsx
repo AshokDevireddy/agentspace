@@ -1316,7 +1316,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			<div className="flex w-full flex-col gap-6 p-6">
 			{/* Header */}
 			<div className="flex items-center justify-between">
-				<h1 className="text-xl font-semibold text-primary">Agency Analytics</h1>
+				<h1 className="text-xl font-semibold text-foreground">Agency Analytics</h1>
 
 				<div className="flex items-center gap-2">
 					{/* Time window: 3,6,9,All Time */}

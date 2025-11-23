@@ -171,8 +171,8 @@ export default function ClientDashboard() {
               </div>
             )}
             <div>
-              <h1 className="text-2xl font-bold text-black">{agencyName}</h1>
-              <p className="text-sm text-gray-600" style={{ fontFamily: 'Times New Roman, serif' }}>
+              <h1 className="text-2xl font-bold text-foreground">{agencyName}</h1>
+              <p className="text-sm text-muted-foreground" style={{ fontFamily: 'Times New Roman, serif' }}>
                 Powered by AgentSpace
               </p>
             </div>

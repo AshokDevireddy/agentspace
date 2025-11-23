@@ -346,7 +346,7 @@ export default function Scoreboard() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-4xl font-bold text-primary mb-2">Scoreboard</h1>
+        <h1 className="text-4xl font-bold text-foreground mb-2">Scoreboard</h1>
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center space-x-2 text-sm text-muted-foreground">
             <span>{getTimeframeLabel()}</span>

@@ -391,6 +391,10 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
+          <VisuallyHidden>
+            <DialogTitle>Loading Policy Details</DialogTitle>
+            <DialogDescription>Please wait while policy information is loaded</DialogDescription>
+          </VisuallyHidden>
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
@@ -407,6 +411,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
         <DialogContent className="max-w-7xl max-h-[95vh] overflow-y-auto custom-scrollbar">
           <VisuallyHidden>
             <DialogTitle>Policy Details</DialogTitle>
+            <DialogDescription>View and edit policy information</DialogDescription>
           </VisuallyHidden>
           {/* Hero Header */}
           <div className="bg-gradient-to-br from-primary/10 via-primary/5 to-background -mx-6 -mt-6 px-8 py-6 border-b">

@@ -187,6 +187,7 @@ export default function ConfigurationPage() {
   const [selectedCommissionCarrier, setSelectedCommissionCarrier] = useState<string>("")
   const [commissionEdits, setCommissionEdits] = useState<Record<string, number>>({})
   const [savingCommissions, setSavingCommissions] = useState(false)
+  const [focusedInputKey, setFocusedInputKey] = useState<string | null>(null)
   const [syncingMissingCommissions, setSyncingMissingCommissions] = useState(false)
 
   // Load data on mount
@@ -969,16 +970,39 @@ export default function ConfigurationPage() {
   }
 
   // Commission management functions
-  const handleCommissionChange = (positionId: string, productId: string, value: string) => {
+  const handleCommissionChange = (positionId: string, productId: string, value: string, originalValue?: number) => {
     const key = `${positionId}-${productId}`
-    const numValue = parseFloat(value)
+    
+    // Allow empty string while typing
+    if (value === '') {
+      setCommissionEdits(prev => {
+        const newEdits = { ...prev }
+        delete newEdits[key]
+        return newEdits
+      })
+      return
+    }
 
+    // Remove leading zeros (e.g., "032" -> "32", but keep "0.5" as is)
+    let cleanedValue = value
+    if (cleanedValue.length > 1 && cleanedValue[0] === '0' && cleanedValue[1] !== '.' && cleanedValue[1] !== ',') {
+      cleanedValue = cleanedValue.replace(/^0+/, '') || '0'
+    }
+
+    const numValue = parseFloat(cleanedValue)
     if (!isNaN(numValue) && numValue >= 0 && numValue <= 999.99) {
-      setCommissionEdits(prev => ({ ...prev, [key]: numValue }))
-    } else if (value === '') {
-      const newEdits = { ...commissionEdits }
-      delete newEdits[key]
-      setCommissionEdits(newEdits)
+      // Only track as edit if it's different from original value
+      const original = originalValue ?? 0
+      if (numValue !== original) {
+        setCommissionEdits(prev => ({ ...prev, [key]: numValue }))
+      } else {
+        // Value matches original, remove from edits
+        setCommissionEdits(prev => {
+          const newEdits = { ...prev }
+          delete newEdits[key]
+          return newEdits
+        })
+      }
     }
   }
 
@@ -2570,16 +2594,18 @@ export default function ConfigurationPage() {
                         <Button
                           onClick={handleSyncMissingCommissions}
                           disabled={syncingMissingCommissions}
-                          className="bg-gray-900 hover:bg-gray-800 text-white h-12"
+                          className="h-12 bg-slate-700 hover:bg-slate-800 text-white font-semibold shadow-sm hover:shadow-md transition-all whitespace-nowrap text-sm sm:text-base"
                         >
                           {syncingMissingCommissions ? (
                             <>
                               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Syncing...
+                              <span className="hidden sm:inline">Syncing...</span>
+                              <span className="sm:hidden">Syncing...</span>
                             </>
                           ) : (
                             <>
-                              Not seeing all products? Click to sync
+                              <span className="hidden sm:inline">Sync Products/Positions</span>
+                              <span className="sm:hidden">Sync</span>
                             </>
                           )}
                         </Button>
@@ -2604,58 +2630,91 @@ export default function ConfigurationPage() {
                     </div>
                   ) : (
                     <>
-                      <div className="overflow-auto rounded-lg border border-border mb-4 max-h-[600px]">
-                        <table className="w-full">
-                          <thead className="bg-gradient-to-r from-gray-50 to-gray-100 sticky top-0 z-20">
-                            <tr className="border-b-2 border-border">
-                              <th className="text-left py-4 px-6 font-bold text-gray-800 sticky left-0 bg-gray-50 z-30">Position</th>
-                              {gridData.products.map((product) => (
-                                <th key={product.id} className="text-center py-4 px-4 font-bold text-gray-800 min-w-[150px]">
-                                  {product.name}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {gridData.positions.map((position) => (
-                              <tr key={position.id} className="border-b border-border hover:bg-blue-50 transition-colors">
-                                <td className="py-4 px-6 font-semibold text-foreground sticky left-0 bg-white hover:bg-blue-50 z-10">
-                                  {position.name}
-                                  <span className="ml-2 text-xs text-muted-foreground">(Level {position.level})</span>
-                                </td>
-                                {gridData.products.map((product) => {
-                                  const commission = gridData.commissions.find(
-                                    c => c.position_id === position.id && c.product_id === product.id
-                                  )
-                                  const key = `${position.id}-${product.id}`
-                                  const editedValue = commissionEdits[key]
-                                  const currentValue = editedValue !== undefined ? editedValue : commission?.commission_percentage
-
-                                  return (
-                                    <td key={product.id} className="py-4 px-4 text-center">
-                                      <div className="relative inline-block">
-                                        <Input
-                                          type="number"
-                                          value={currentValue !== undefined ? currentValue : ''}
-                                          onChange={(e) => handleCommissionChange(position.id, product.id, e.target.value)}
-                                          placeholder="0.00"
-                                          step="0.01"
-                                          min="0"
-                                          max="999.99"
-                                          className={cn(
-                                            "h-10 w-28 text-center",
-                                            editedValue !== undefined && "border-blue-500 bg-blue-50"
-                                          )}
-                                        />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">%</span>
-                                      </div>
-                                    </td>
-                                  )
-                                })}
+                      <div className="table-container mb-4">
+                        <div className="table-wrapper custom-scrollbar max-h-[600px] overflow-y-auto">
+                          <table className="jira-table min-w-full">
+                            <thead className="sticky top-0 z-20">
+                              <tr>
+                                <th className="sticky left-[-1px] z-[200]" style={{ isolation: 'isolate' }}>Position</th>
+                                {gridData.products.map((product) => (
+                                  <th key={product.id} className="text-center min-w-[150px]" style={{ zIndex: 1 }}>
+                                    {product.name}
+                                  </th>
+                                ))}
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {gridData.positions.map((position) => (
+                                <tr key={position.id}>
+                                  <td className="sticky left-0 z-50 font-semibold" style={{ isolation: 'isolate' }}>
+                                    {position.name}
+                                    <span className="ml-2 text-xs text-muted-foreground">(Level {position.level})</span>
+                                  </td>
+                                  {gridData.products.map((product) => {
+                                    const commission = gridData.commissions.find(
+                                      c => c.position_id === position.id && c.product_id === product.id
+                                    )
+                                    const key = `${position.id}-${product.id}`
+                                    const editedValue = commissionEdits[key]
+                                    const originalValue = commission?.commission_percentage
+                                    const currentValue = editedValue !== undefined ? editedValue : originalValue
+                                    const isFocused = focusedInputKey === key
+                                    const isZero = currentValue === 0 || currentValue === undefined || currentValue === null
+                                    
+                                    // If focused and value is 0, show empty; otherwise show the value
+                                    // Convert to string for display, handling the zero case
+                                    let displayValue: string | number = ''
+                                    if (isFocused && isZero) {
+                                      displayValue = ''
+                                    } else if (currentValue !== undefined) {
+                                      displayValue = currentValue
+                                    }
+
+                                    return (
+                                      <td key={product.id} className="text-center">
+                                        <div className="relative inline-flex items-center justify-center">
+                                          <Input
+                                            type="number"
+                                            value={displayValue}
+                                            onChange={(e) => {
+                                              const val = e.target.value
+                                              // Normalize leading zeros (e.g., "032" -> "32", but keep "0.5")
+                                              // This is handled in handleCommissionChange
+                                              handleCommissionChange(position.id, product.id, val, originalValue)
+                                            }}
+                                            onFocus={(e) => {
+                                              setFocusedInputKey(key)
+                                              // If value is 0 or empty, clear it to allow starting from scratch
+                                              if (isZero) {
+                                                // Value will be cleared via displayValue logic
+                                                // Don't select, just let user type
+                                              } else {
+                                                // Otherwise, select all text to allow easy overwrite
+                                                e.target.select()
+                                              }
+                                            }}
+                                            onBlur={() => {
+                                              setFocusedInputKey(null)
+                                            }}
+                                            placeholder="0.00"
+                                            step="0.01"
+                                            min="0"
+                                            max="999.99"
+                                            className={cn(
+                                              "h-10 w-28 text-center pr-6 no-spinner",
+                                              editedValue !== undefined && "border-blue-500 bg-blue-50"
+                                            )}
+                                          />
+                                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">%</span>
+                                        </div>
+                                      </td>
+                                    )
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
 
                       {Object.keys(commissionEdits).length > 0 && (

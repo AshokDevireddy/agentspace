@@ -86,10 +86,175 @@ export default function ConfigurationPage() {
   const [displayNameValue, setDisplayNameValue] = useState("")
   const [savingDisplayName, setSavingDisplayName] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
   const [primaryColor, setPrimaryColor] = useState("217 91% 60%") // Default blue
-  const [editingColor, setEditingColor] = useState(false)
-  const [colorValue, setColorValue] = useState("")
   const [savingColor, setSavingColor] = useState(false)
+  const [savingAllChanges, setSavingAllChanges] = useState(false)
+  const [pendingColor, setPendingColor] = useState<string | null>(null)
+  const [pendingLogo, setPendingLogo] = useState<string | null>(null)
+  
+  // Parse HSL string into components
+  const parseHSL = (hslString: string) => {
+    const match = hslString.match(/(\d+)\s+(\d+)%\s+(\d+)%/)
+    if (!match) return { h: 217, s: 91, l: 60 }
+    return {
+      h: parseInt(match[1]),
+      s: parseInt(match[2]),
+      l: parseInt(match[3])
+    }
+  }
+  
+  // Get current HSL components
+  const currentHSL = parseHSL(primaryColor)
+  const [hue, setHue] = useState(currentHSL.h)
+  const [saturation, setSaturation] = useState(currentHSL.s)
+  const [lightness, setLightness] = useState(currentHSL.l)
+  
+  // Update HSL components when primaryColor changes
+  useEffect(() => {
+    const hsl = parseHSL(primaryColor)
+    setHue(hsl.h)
+    setSaturation(hsl.s)
+    setLightness(hsl.l)
+    setPendingColor(null) // Clear pending when primaryColor is updated from server
+  }, [primaryColor])
+  
+  // Track color changes (don't auto-save)
+  const updateColorFromHSL = (h: number, s: number, l: number) => {
+    const hslString = `${h} ${s}% ${l}%`
+    if (hslString === primaryColor) {
+      setPendingColor(null)
+      return
+    }
+    setPendingColor(hslString)
+    
+    // Update local state for preview
+    setHue(h)
+    setSaturation(s)
+    setLightness(l)
+    
+    // Update CSS variable for preview (temporary)
+    document.documentElement.style.setProperty('--primary', hslString)
+    const textColor = getContrastTextColor(hslString)
+    document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
+  }
+  
+  // Save all agency profile changes
+  const handleSaveAllChanges = async () => {
+    if (!agency) return
+    
+    try {
+      setSavingAllChanges(true)
+      const supabase = createClient()
+      
+      const updates: any = {}
+      
+      // Save color if changed
+      if (pendingColor) {
+        updates.primary_color = pendingColor
+      }
+      
+      // Save display name if changed
+      if (displayName !== (agency.display_name || agency.name)) {
+        updates.display_name = displayName
+      }
+      
+      // Save theme if changed
+      if (agencyThemeMode !== agency.theme_mode) {
+        updates.theme_mode = agencyThemeMode
+      }
+      
+      // Save whitelabel domain if changed
+      if (whitelabelDomain !== (agency.whitelabel_domain || '')) {
+        updates.whitelabel_domain = whitelabelDomain || null
+      }
+      
+      // Save logo if changed
+      if (pendingLogo !== null) {
+        updates.logo_url = pendingLogo || null
+      }
+      
+      if (Object.keys(updates).length === 0) {
+        alert('No changes to save')
+        return
+      }
+      
+      const { error } = await supabase
+        .from('agencies')
+        .update(updates)
+        .eq('id', agency.id)
+      
+      if (error) throw error
+      
+      // Update local state
+      if (pendingColor) {
+        setPrimaryColor(pendingColor)
+        setPendingColor(null)
+      }
+      
+      if (pendingLogo !== null) {
+        setPendingLogo(null)
+      }
+      
+      setAgency({ ...agency, ...updates })
+      
+      // Update theme if changed
+      if (updates.theme_mode) {
+        setTheme(agencyThemeMode)
+      }
+      
+      // Refresh the page to apply all changes
+      window.location.reload()
+    } catch (error) {
+      console.error('Error saving changes:', error)
+      alert('Failed to save changes')
+    } finally {
+      setSavingAllChanges(false)
+    }
+  }
+  
+  // Check if there are unsaved changes
+  const hasUnsavedChanges = () => {
+    if (!agency) return false
+    const currentLogo = agency.logo_url || null
+    // Logo is changed if pendingLogo is not null and different from current
+    // Empty string means removal, so it's a change if current logo exists
+    const logoChanged = pendingLogo !== null && (
+      pendingLogo === '' ? currentLogo !== null : pendingLogo !== currentLogo
+    )
+    return (
+      pendingColor !== null ||
+      displayName !== (agency.display_name || agency.name) ||
+      agencyThemeMode !== agency.theme_mode ||
+      whitelabelDomain !== (agency.whitelabel_domain || '') ||
+      logoChanged
+    )
+  }
+
+  // Undo all pending changes
+  const handleUndoChanges = () => {
+    if (!agency) return
+    
+    // Reset color
+    setPendingColor(null)
+    setHue(parseHSL(primaryColor).h)
+    setSaturation(parseHSL(primaryColor).s)
+    setLightness(parseHSL(primaryColor).l)
+    
+    // Reset display name
+    setDisplayName(agency.display_name || agency.name)
+    setDisplayNameValue(agency.display_name || agency.name)
+    
+    // Reset theme
+    setAgencyThemeMode(agency.theme_mode || 'system')
+    
+    // Reset whitelabel domain
+    setWhitelabelDomain(agency.whitelabel_domain || '')
+    setWhitelabelDomainValue(agency.whitelabel_domain || '')
+    
+    // Reset logo
+    setPendingLogo(null)
+  }
   const [agencyThemeMode, setAgencyThemeMode] = useState<'light' | 'dark' | 'system'>('system')
   const [savingTheme, setSavingTheme] = useState(false)
   const [loadingAgencyProfile, setLoadingAgencyProfile] = useState(true)
@@ -185,7 +350,7 @@ export default function ConfigurationPage() {
   const [commissions, setCommissions] = useState<Commission[]>([])
   const [commissionsLoading, setCommissionsLoading] = useState(false)
   const [selectedCommissionCarrier, setSelectedCommissionCarrier] = useState<string>("")
-  const [commissionEdits, setCommissionEdits] = useState<Record<string, number>>({})
+  const [commissionEdits, setCommissionEdits] = useState<Record<string, number | null>>({})
   const [savingCommissions, setSavingCommissions] = useState(false)
   const [syncingMissingCommissions, setSyncingMissingCommissions] = useState(false)
 
@@ -503,27 +668,11 @@ export default function ConfigurationPage() {
 
       console.log('Public URL generated:', cacheBustedUrl)
 
-      // Update agency with logo URL (including cache-busting parameter)
-      const { error: updateError } = await supabase
-        .from('agencies')
-        .update({ logo_url: cacheBustedUrl })
-        .eq('id', agency.id)
-
-      if (updateError) {
-        console.error('Database update error:', updateError)
-        throw new Error(`Failed to update database: ${updateError.message}`)
-      }
-
-      console.log('Logo URL saved to database successfully')
-      console.log('Public URL:', cacheBustedUrl)
-
-      // Update local state with cache-busted URL
-      setAgency({ ...agency, logo_url: cacheBustedUrl })
+      // Set pending logo instead of saving to database immediately
+      setPendingLogo(cacheBustedUrl)
 
       // Extract dominant color from the uploaded image (use original URL without cache param)
       await extractDominantColor(publicUrl)
-
-      alert('Logo uploaded successfully! Please refresh the page to see it in the navigation.')
     } catch (error) {
       console.error('Error uploading logo:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
@@ -591,7 +740,6 @@ export default function ConfigurationPage() {
 
           if (!error) {
             setPrimaryColor(suggestedColor)
-            setColorValue(suggestedColor)
             document.documentElement.style.setProperty('--primary', suggestedColor)
 
             // Set the foreground color based on the primary color's luminance
@@ -634,74 +782,13 @@ export default function ConfigurationPage() {
     }
   }
 
-  const handleRemoveLogo = async () => {
-    if (!agency || !agency.logo_url) return
-
-    const confirmed = window.confirm('Are you sure you want to remove the agency logo?')
-    if (!confirmed) return
-
-    try {
-      setUploadingLogo(true)
-      const supabase = createClient()
-
-      // Update agency to remove logo URL
-      const { error } = await supabase
-        .from('agencies')
-        .update({ logo_url: null })
-        .eq('id', agency.id)
-
-      if (error) throw error
-
-      setAgency({ ...agency, logo_url: undefined })
-    } catch (error) {
-      console.error('Error removing logo:', error)
-      alert('Failed to remove logo')
-    } finally {
-      setUploadingLogo(false)
-    }
+  const handleRemoveLogo = () => {
+    // Set pending logo to empty string to indicate removal
+    // If there's an existing logo, we want to remove it
+    // If there's a pending upload, we want to cancel it
+    setPendingLogo('')
   }
 
-  const handleEditColor = () => {
-    setEditingColor(true)
-    setColorValue(primaryColor)
-  }
-
-  const handleSaveColor = async () => {
-    if (!agency) return
-
-    try {
-      setSavingColor(true)
-      const supabase = createClient()
-
-      const { error } = await supabase
-        .from('agencies')
-        .update({ primary_color: colorValue.trim() })
-        .eq('id', agency.id)
-
-      if (error) throw error
-
-      setPrimaryColor(colorValue.trim())
-      setEditingColor(false)
-      setColorValue("")
-
-      // Update CSS variable
-      document.documentElement.style.setProperty('--primary', colorValue.trim())
-
-      // Set the foreground color based on the primary color's luminance
-      const textColor = getContrastTextColor(colorValue.trim())
-      document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
-    } catch (error) {
-      console.error('Error updating color:', error)
-      alert('Failed to update color')
-    } finally {
-      setSavingColor(false)
-    }
-  }
-
-  const handleCancelColorEdit = () => {
-    setEditingColor(false)
-    setColorValue("")
-  }
 
   // Theme Management Functions
   const handleThemeChange = async (newTheme: 'light' | 'dark' | 'system') => {
@@ -870,7 +957,11 @@ export default function ConfigurationPage() {
       }
 
       setNewPosition({ name: "", level: 0, description: "" })
-      fetchPositions()
+      await fetchPositions()
+      
+      // Auto-sync commissions for all carriers when a new position is added
+      console.log('New position added, auto-syncing commissions for all carriers...')
+      await syncCommissionsForAllCarriers()
     } catch (error) {
       console.error('Error creating position:', error)
       alert(error instanceof Error ? error.message : 'Failed to create position')
@@ -879,14 +970,23 @@ export default function ConfigurationPage() {
     }
   }
 
+  const [originalPositionData, setOriginalPositionData] = useState<{
+    name: string
+    level: number
+    description: string
+    is_active: boolean
+  } | null>(null)
+
   const handleEditPosition = (position: Position) => {
     setEditingPositionId(position.position_id)
-    setEditPositionFormData({
+    const formData = {
       name: position.name,
       level: position.level,
       description: position.description || "",
       is_active: position.is_active
-    })
+    }
+    setEditPositionFormData(formData)
+    setOriginalPositionData(formData)
   }
 
   const handleSavePositionEdit = async () => {
@@ -919,8 +1019,15 @@ export default function ConfigurationPage() {
         throw new Error(data.error || 'Failed to update position')
       }
 
+      // Auto-sync commissions for all carriers if position was activated/deactivated
+      if (originalPositionData && editPositionFormData.is_active !== originalPositionData.is_active) {
+        console.log('Position activation changed, auto-syncing commissions for all carriers...')
+        await syncCommissionsForAllCarriers()
+      }
+
       setEditingPositionId(null)
-      fetchPositions()
+      setOriginalPositionData(null)
+      await fetchPositions()
     } catch (error) {
       console.error('Error updating position:', error)
       alert(error instanceof Error ? error.message : 'Failed to update position')
@@ -971,14 +1078,18 @@ export default function ConfigurationPage() {
   // Commission management functions
   const handleCommissionChange = (positionId: string, productId: string, value: string) => {
     const key = `${positionId}-${productId}`
+    
+    // Allow empty string for user to type from scratch
+    if (value === '') {
+      // Store as null to indicate "empty/not set" - will be saved as 0 or can be left empty
+      setCommissionEdits(prev => ({ ...prev, [key]: null }))
+      return
+    }
+    
     const numValue = parseFloat(value)
 
     if (!isNaN(numValue) && numValue >= 0 && numValue <= 999.99) {
       setCommissionEdits(prev => ({ ...prev, [key]: numValue }))
-    } else if (value === '') {
-      const newEdits = { ...commissionEdits }
-      delete newEdits[key]
-      setCommissionEdits(newEdits)
     }
   }
 
@@ -996,10 +1107,13 @@ export default function ConfigurationPage() {
 
       if (!accessToken) return
 
-      const commissionsToSave = Object.entries(commissionEdits).map(([key, percentage]) => {
-        const [position_id, product_id] = key.split('-')
-        return { position_id, product_id, commission_percentage: percentage }
-      })
+      const commissionsToSave = Object.entries(commissionEdits)
+        .filter(([_, percentage]) => percentage !== null) // Filter out null values (empty cells)
+        .map(([key, percentage]) => {
+          const [position_id, product_id] = key.split('-')
+          // If percentage is null or undefined, default to 0
+          return { position_id, product_id, commission_percentage: percentage ?? 0 }
+        })
 
       const response = await fetch('/api/positions/product-commissions', {
         method: 'POST',
@@ -1026,9 +1140,74 @@ export default function ConfigurationPage() {
     }
   }
 
-  const handleSyncMissingCommissions = async () => {
+  // Helper function to sync commissions for a specific carrier (silently)
+  const syncCommissionsForCarrier = async (carrierId: string, forceRefresh: boolean = false): Promise<void> => {
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        console.warn(`No access token available for syncing carrier ${carrierId}`)
+        return
+      }
+
+      const response = await fetch(`/api/positions/product-commissions/sync?carrier_id=${carrierId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log(`Auto-synced commissions for carrier ${carrierId}: created ${data.created || 0} entries`)
+        
+        // Refresh commissions if this carrier is currently selected or if forced
+        if (forceRefresh || selectedCommissionCarrier === carrierId) {
+          await fetchCommissions(carrierId)
+        }
+      } else {
+        const errorData = await response.json()
+        console.error(`Failed to sync commissions for carrier ${carrierId}:`, errorData)
+      }
+    } catch (error) {
+      // Log error but don't interrupt user workflow
+      console.error(`Error auto-syncing commissions for carrier ${carrierId}:`, error)
+    }
+  }
+
+  // Helper function to sync commissions for all carriers (silently)
+  const syncCommissionsForAllCarriers = async (): Promise<void> => {
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        console.warn('No access token available for syncing all carriers')
+        return
+      }
+
+      console.log('Auto-syncing commissions for all active carriers...')
+      
+      // Sync for all active carriers
+      const activeCarriers = carriers.filter(c => c.is_active)
+      for (const carrier of activeCarriers) {
+        await syncCommissionsForCarrier(carrier.id, false)
+      }
+      
+      console.log(`Completed auto-sync for ${activeCarriers.length} carriers`)
+    } catch (error) {
+      console.error('Error auto-syncing commissions for all carriers:', error)
+    }
+  }
+
+  const handleSyncMissingCommissions = async (silent: boolean = false) => {
     if (!selectedCommissionCarrier) {
-      alert('Please select a carrier first')
+      if (!silent) {
+        alert('Please select a carrier first')
+      }
       return
     }
 
@@ -1055,16 +1234,21 @@ export default function ConfigurationPage() {
         throw new Error(data.error || 'Failed to sync commissions')
       }
 
-      if (data.created === 0) {
-        alert('All products for this carrier already have commission entries!')
-      } else {
-        alert(`Successfully created ${data.created} missing commission entries for this carrier!`)
-        // Refresh the commissions view
-        fetchCommissions(selectedCommissionCarrier)
+      if (!silent) {
+        if (data.created === 0) {
+          alert('All products for this carrier already have commission entries!')
+        } else {
+          alert(`Successfully created ${data.created} missing commission entries for this carrier!`)
+        }
       }
+      
+      // Refresh the commissions view
+      await fetchCommissions(selectedCommissionCarrier)
     } catch (error) {
       console.error('Error syncing commissions:', error)
-      alert(error instanceof Error ? error.message : 'Failed to sync commissions')
+      if (!silent) {
+        alert(error instanceof Error ? error.message : 'Failed to sync commissions')
+      }
     } finally {
       setSyncingMissingCommissions(false)
     }
@@ -1104,6 +1288,10 @@ export default function ConfigurationPage() {
         console.error('Error refreshing carriers:', error)
       }
     }
+
+    // Auto-sync commissions for this product's carrier (always sync, even if inactive)
+    console.log(`Product created/updated for carrier ${newProduct.carrier_id}, auto-syncing commissions...`)
+    await syncCommissionsForCarrier(newProduct.carrier_id, false)
   }
 
   const handleEditProduct = (product: Product) => {
@@ -1195,6 +1383,16 @@ export default function ConfigurationPage() {
       setEditingProductId(null)
       setEditProductFormData({ name: "", product_code: "", is_active: true })
       setOriginalProductData(null)
+
+      // Auto-sync commissions if product was activated/deactivated or any change
+      const product = allProducts.find(p => p.id === editingProductId)
+      if (product) {
+        const wasActivationChange = editProductFormData.is_active !== originalProductData.is_active
+        if (wasActivationChange) {
+          console.log(`Product activation changed for carrier ${product.carrier_id}, auto-syncing commissions...`)
+          await syncCommissionsForCarrier(product.carrier_id, false)
+        }
+      }
     } catch (error) {
       console.error('Error updating product:', error)
     } finally {
@@ -1824,8 +2022,8 @@ export default function ConfigurationPage() {
                             onClick={handleEditDisplayName}
                             className="p-3 rounded-lg transition-colors"
                             style={{
-                              backgroundColor: `hsl(${primaryColor} / 0.1)`,
-                              color: `hsl(${primaryColor})`
+                              backgroundColor: `hsl(${pendingColor || primaryColor} / 0.1)`,
+                              color: `hsl(${pendingColor || primaryColor})`
                             }}
                           >
                             <Edit className="h-6 w-6" />
@@ -1834,37 +2032,17 @@ export default function ConfigurationPage() {
                       )}
                     </div>
 
-                    {/* Agency Logo */}
-                    <div className="bg-accent/30 rounded-lg p-6 border border-border">
-                      <h3 className="text-xl font-semibold text-foreground mb-4">Agency Logo</h3>
-                      <p className="text-sm text-muted-foreground mb-4">
-                        Upload your agency logo. This will replace the default icon in the navigation sidebar. Recommended size: 200x200px or larger, square format.
-                      </p>
+                    {/* Agency Logo and Primary Color Scheme - Side by Side */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Agency Logo */}
+                      <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                        <h3 className="text-xl font-semibold text-foreground mb-4">Agency Logo</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          Upload your agency logo. This will replace the default icon in the navigation sidebar. Recommended size: 200x200px or larger, square format.
+                        </p>
 
-                      <div className="flex flex-col md:flex-row gap-6">
-                        {/* Logo Preview */}
-                        <div className="flex items-center justify-center w-full md:w-48 h-48 bg-card rounded-lg border-2 border-border">
-                          {agency?.logo_url ? (
-                            <img
-                              src={agency.logo_url}
-                              alt="Agency Logo"
-                              className="max-w-full max-h-full object-contain p-2"
-                              crossOrigin="anonymous"
-                              onError={(e) => {
-                                console.error('Error loading logo:', agency.logo_url)
-                                e.currentTarget.style.display = 'none'
-                              }}
-                            />
-                          ) : (
-                            <div className="text-center text-muted-foreground">
-                              <Image className="h-16 w-16 mx-auto mb-2 opacity-50" />
-                              <p className="text-sm">No logo uploaded</p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Upload Controls */}
-                        <div className="flex-1 flex flex-col justify-center gap-3">
+                        <div className="flex flex-col gap-4">
+                          {/* Drag and Drop Upload Area */}
                           <input
                             type="file"
                             accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
@@ -1876,49 +2054,102 @@ export default function ConfigurationPage() {
                             id="logo-upload"
                             disabled={uploadingLogo}
                           />
-                          <label
-                            htmlFor="logo-upload"
+                          <div
+                            onDragOver={(e) => {
+                              e.preventDefault()
+                              setIsDragging(true)
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault()
+                              setIsDragging(false)
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault()
+                              setIsDragging(false)
+                              const file = e.dataTransfer.files?.[0]
+                              if (file && file.type.startsWith('image/')) {
+                                handleLogoUpload(file)
+                              }
+                            }}
+                            onClick={() => document.getElementById('logo-upload')?.click()}
                             className={cn(
-                              "cursor-pointer px-6 py-3 rounded-lg transition-colors text-center font-medium",
+                              "flex flex-col items-center justify-center w-full h-48 bg-card rounded-lg border-2 border-dashed transition-colors cursor-pointer",
+                              isDragging ? "border-primary bg-primary/10" : "border-border hover:border-primary/50 hover:bg-accent/30",
                               uploadingLogo && "opacity-50 cursor-not-allowed"
                             )}
-                            style={{
-                              backgroundColor: `hsl(${primaryColor})`,
-                              color: getContrastTextColor(primaryColor) === 'white' ? '#ffffff' : '#000000'
-                            }}
                           >
-                            {uploadingLogo ? (
-                              <>
-                                <Loader2 className="h-5 w-5 animate-spin inline mr-2" />
-                                Uploading...
-                              </>
+                            {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) ? (
+                              <div className="relative w-full h-full flex items-center justify-center">
+                                <img
+                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url}
+                                  alt="Agency Logo"
+                                  className="max-w-full max-h-full object-contain p-2"
+                                  crossOrigin="anonymous"
+                                  onError={(e) => {
+                                    console.error('Error loading logo:', pendingLogo || agency?.logo_url)
+                                    e.currentTarget.style.display = 'none'
+                                  }}
+                                />
+                                <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center">
+                                  <div className="opacity-0 hover:opacity-100 transition-opacity bg-black/70 text-white px-4 py-2 rounded-lg text-sm">
+                                    Click to replace
+                                  </div>
+                                </div>
+                              </div>
                             ) : (
-                              <>
-                                <Upload className="h-5 w-5 inline mr-2" />
-                                {agency?.logo_url ? 'Replace Logo' : 'Upload Logo'}
-                              </>
+                              <div className="text-center text-muted-foreground">
+                                <Upload className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                                <p className="text-sm font-medium mb-1">Drag and drop your logo here</p>
+                                <p className="text-xs">or click to browse</p>
+                              </div>
                             )}
-                          </label>
-                          {agency?.logo_url && (
-                            <Button
-                              onClick={handleRemoveLogo}
-                              disabled={uploadingLogo}
-                              variant="outline"
-                              className="border-red-300 text-red-600 hover:bg-red-50"
+                          </div>
+
+                          {/* Upload Button */}
+                          <div className="flex flex-col gap-3">
+                            <label
+                              htmlFor="logo-upload"
+                              className={cn(
+                                "cursor-pointer inline-flex items-center justify-center px-6 py-2.5 rounded-lg transition-colors font-medium w-auto",
+                                uploadingLogo && "opacity-50 cursor-not-allowed"
+                              )}
+                              style={{
+                                backgroundColor: `hsl(${pendingColor || primaryColor})`,
+                                color: getContrastTextColor(pendingColor || primaryColor) === 'white' ? '#ffffff' : '#000000'
+                              }}
                             >
-                              <Trash2 className="h-5 w-5 mr-2" />
-                              Remove Logo
-                            </Button>
-                          )}
-                          <p className="text-xs text-muted-foreground">
-                            Supported formats: PNG, JPG, SVG, WebP
-                          </p>
+                              {uploadingLogo ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                  Uploading...
+                                </>
+                              ) : (
+                                <>
+                                  <Upload className="h-4 w-4 mr-2" />
+                                  {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) ? 'Replace Logo' : 'Upload Logo'}
+                                </>
+                              )}
+                            </label>
+                            {pendingLogo !== null && (
+                              <Button
+                                onClick={handleRemoveLogo}
+                                disabled={uploadingLogo}
+                                variant="outline"
+                                className="border-red-300 text-red-600 hover:bg-red-50 w-auto"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                {pendingLogo === '' ? 'Undo Remove' : 'Remove Logo'}
+                              </Button>
+                            )}
+                            <p className="text-xs text-muted-foreground">
+                              Supported formats: PNG, JPG, SVG, WebP
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Primary Color Scheme */}
-                    <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                      {/* Primary Color Scheme */}
+                      <div className="bg-accent/30 rounded-lg p-6 border border-border">
                       <h3 className="text-xl font-semibold text-foreground mb-4">
                         <Palette className="h-5 w-5 inline mr-2" />
                         Primary Color Scheme
@@ -1928,99 +2159,111 @@ export default function ConfigurationPage() {
                       </p>
 
                       <div className="space-y-6">
-                        {/* Color Picker */}
-                        <div className="flex flex-col md:flex-row gap-6">
-                          {/* Visual Color Picker */}
-                          <div className="flex-shrink-0">
-                            <HexColorPicker
-                              color={hslToHex(editingColor ? colorValue : primaryColor)}
-                              onChange={(hex) => {
-                                const hsl = hexToHSL(hex)
-                                if (editingColor) {
-                                  setColorValue(hsl)
-                                } else {
-                                  setColorValue(hsl)
-                                  setEditingColor(true)
-                                }
-                              }}
-                              style={{ width: '220px', height: '220px' }}
-                            />
-                          </div>
+                        {/* Color Picker - At Top */}
+                        <div className="flex justify-center">
+                          <HexColorPicker
+                            color={hslToHex(primaryColor)}
+                            onChange={(hex) => {
+                              const hsl = hexToHSL(hex)
+                              const parsed = parseHSL(hsl)
+                              setHue(parsed.h)
+                              setSaturation(parsed.s)
+                              setLightness(parsed.l)
+                              updateColorFromHSL(parsed.h, parsed.s, parsed.l)
+                            }}
+                            style={{ width: '220px', height: '220px' }}
+                          />
+                        </div>
 
-                          {/* Color Info and Controls */}
-                          <div className="flex-1 space-y-4">
-                            {/* Current/Selected Color Display */}
-                            <div className="flex items-center gap-4">
-                              <div
-                                className="w-20 h-20 rounded-lg border-2 border-gray-200 shadow-sm"
-                                style={{ backgroundColor: `hsl(${editingColor ? colorValue : primaryColor})` }}
-                              />
-                              <div className="flex-1">
-                                <p className="text-sm text-muted-foreground mb-1">
-                                  {editingColor ? 'Selected Color' : 'Current Color'}
-                                </p>
-                                <p className="text-lg font-mono text-foreground">
-                                  {editingColor ? colorValue : primaryColor}
-                                </p>
-                                <p className="text-sm font-mono text-muted-foreground">
-                                  {hslToHex(editingColor ? colorValue : primaryColor)}
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Manual Input */}
-                            <div>
-                              <label className="block text-sm font-medium text-foreground mb-2">
-                                Or enter manually (HSL format):
-                              </label>
-                              <Input
-                                type="text"
-                                value={editingColor ? colorValue : primaryColor}
-                                onChange={(e) => {
-                                  setColorValue(e.target.value)
-                                  setEditingColor(true)
-                                }}
-                                placeholder="e.g., 217 91% 60%"
-                                className="h-10 font-mono"
-                                disabled={savingColor}
-                              />
-                            </div>
-
-                            {/* Action Buttons */}
-                            {editingColor && (
-                              <div className="flex gap-2">
-                                <Button
-                                  onClick={handleSaveColor}
-                                  disabled={savingColor || !colorValue.trim()}
-                                  className="bg-green-600 hover:bg-green-700"
-                                >
-                                  {savingColor ? (
-                                    <>
-                                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                      Saving...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Check className="h-4 w-4 mr-2" />
-                                      Save Color
-                                    </>
-                                  )}
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  onClick={handleCancelColorEdit}
-                                  disabled={savingColor}
-                                >
-                                  Cancel
-                                </Button>
-                              </div>
+                        {/* Current Color Display - Below Picker */}
+                        <div className="flex items-center justify-center gap-4">
+                          <div
+                            className="w-20 h-20 rounded-lg border-2 border-gray-200 shadow-sm"
+                            style={{ backgroundColor: `hsl(${hue} ${saturation}% ${lightness}%)` }}
+                          />
+                          <div>
+                            <p className="text-sm text-muted-foreground mb-1">
+                              {pendingColor ? 'Preview Color' : 'Current Color'}
+                            </p>
+                            <p className="text-lg font-mono text-foreground">
+                              {pendingColor || primaryColor}
+                            </p>
+                            <p className="text-sm font-mono text-muted-foreground">
+                              {hslToHex(pendingColor || primaryColor)}
+                            </p>
+                            {pendingColor && (
+                              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                Unsaved changes
+                              </p>
                             )}
                           </div>
                         </div>
 
-                        {/* Info about color extraction */}
-
+                        {/* HSL Inputs - Three separate inputs */}
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-2">
+                              Hue
+                            </label>
+                            <Input
+                              type="number"
+                              min="0"
+                              max="360"
+                              value={hue}
+                              onChange={(e) => {
+                                const h = parseInt(e.target.value) || 0
+                                const clampedH = Math.max(0, Math.min(360, h))
+                                setHue(clampedH)
+                                updateColorFromHSL(clampedH, saturation, lightness)
+                              }}
+                              className="h-10 font-mono"
+                              disabled={savingColor}
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">0-360</p>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-2">
+                              Saturation
+                            </label>
+                            <Input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={saturation}
+                              onChange={(e) => {
+                                const s = parseInt(e.target.value) || 0
+                                const clampedS = Math.max(0, Math.min(100, s))
+                                setSaturation(clampedS)
+                                updateColorFromHSL(hue, clampedS, lightness)
+                              }}
+                              className="h-10 font-mono"
+                              disabled={savingColor}
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">0-100%</p>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-2">
+                              Lightness
+                            </label>
+                            <Input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={lightness}
+                              onChange={(e) => {
+                                const l = parseInt(e.target.value) || 0
+                                const clampedL = Math.max(0, Math.min(100, l))
+                                setLightness(clampedL)
+                                updateColorFromHSL(hue, saturation, clampedL)
+                              }}
+                              className="h-10 font-mono"
+                              disabled={savingColor}
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">0-100%</p>
+                          </div>
+                        </div>
                       </div>
+                    </div>
                     </div>
 
                     {/* Theme Preference */}
@@ -2215,8 +2458,8 @@ export default function ConfigurationPage() {
                             onClick={handleEditWhitelabelDomain}
                             className="p-3 rounded-lg transition-colors"
                             style={{
-                              backgroundColor: `hsl(${primaryColor} / 0.1)`,
-                              color: `hsl(${primaryColor})`
+                              backgroundColor: `hsl(${pendingColor || primaryColor} / 0.1)`,
+                              color: `hsl(${pendingColor || primaryColor})`
                             }}
                           >
                             <Edit className="h-6 w-6" />
@@ -2242,9 +2485,9 @@ export default function ConfigurationPage() {
                           </p>
                           <div className="bg-sidebar-background rounded-lg p-6 border-2 border-sidebar-border">
                             <div className="flex items-center space-x-3">
-                              {agency?.logo_url ? (
+                              {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) ? (
                                 <img
-                                  src={agency.logo_url}
+                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url}
                                   alt="Logo Preview"
                                   className="w-10 h-10 rounded-xl object-contain"
                                   crossOrigin="anonymous"
@@ -2252,7 +2495,7 @@ export default function ConfigurationPage() {
                               ) : (
                                 <div
                                   className="flex items-center justify-center w-10 h-10 rounded-xl text-white font-bold text-lg"
-                                  style={{ backgroundColor: `hsl(${primaryColor})` }}
+                                  style={{ backgroundColor: `hsl(${pendingColor || primaryColor})` }}
                                 >
                                   <Building2 className="h-6 w-6" />
                                 </div>
@@ -2276,7 +2519,7 @@ export default function ConfigurationPage() {
                             {/* Title Example */}
                             <h1
                               className="text-3xl font-bold dark:text-white"
-                              style={theme === 'dark' ? {} : { color: `hsl(${primaryColor})` }}
+                              style={theme === 'dark' ? {} : { color: `hsl(${pendingColor || primaryColor})` }}
                             >
                               Agents
                             </h1>
@@ -2286,8 +2529,8 @@ export default function ConfigurationPage() {
                               <button
                                 className="px-4 py-2 rounded-lg font-medium transition-colors"
                                 style={{
-                                  backgroundColor: `hsl(${primaryColor})`,
-                                  color: getContrastTextColor(primaryColor) === 'white' ? '#ffffff' : '#000000'
+                                  backgroundColor: `hsl(${pendingColor || primaryColor})`,
+                                  color: getContrastTextColor(pendingColor || primaryColor) === 'white' ? '#ffffff' : '#000000'
                                 }}
                               >
                                 Table
@@ -2301,8 +2544,8 @@ export default function ConfigurationPage() {
                               <button
                                 className="px-4 py-2 rounded-lg font-medium transition-colors"
                                 style={{
-                                  backgroundColor: `hsl(${primaryColor})`,
-                                  color: getContrastTextColor(primaryColor) === 'white' ? '#ffffff' : '#000000'
+                                  backgroundColor: `hsl(${pendingColor || primaryColor})`,
+                                  color: getContrastTextColor(pendingColor || primaryColor) === 'white' ? '#ffffff' : '#000000'
                                 }}
                               >
                                 + Add User
@@ -2319,6 +2562,46 @@ export default function ConfigurationPage() {
                       </div>
                     </div>
                   </div>
+                  )}
+                  
+                  {/* Save All Changes and Undo Changes Buttons */}
+                  {hasUnsavedChanges() && (
+                    <div className="mt-8 pt-6 border-t border-border">
+                      <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                        <div className="text-blue-800 dark:text-blue-200">
+                          <p className="font-semibold">You have unsaved changes</p>
+                          <p className="text-sm">Save your changes to update the website appearance</p>
+                        </div>
+                        <div className="flex gap-3">
+                          <Button
+                            onClick={handleUndoChanges}
+                            disabled={savingAllChanges}
+                            variant="outline"
+                            className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30 font-semibold px-6 py-2"
+                          >
+                            <X className="h-4 w-4 mr-2" />
+                            Undo Changes
+                          </Button>
+                          <Button
+                            onClick={handleSaveAllChanges}
+                            disabled={savingAllChanges}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-2"
+                          >
+                            {savingAllChanges ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              <>
+                                <Check className="h-4 w-4 mr-2" />
+                                Save All Changes
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
@@ -2551,10 +2834,22 @@ export default function ConfigurationPage() {
                         <label className="block text-sm font-medium text-foreground mb-2">Select Carrier</label>
                         <select
                           value={selectedCommissionCarrier}
-                          onChange={(e) => {
-                            setSelectedCommissionCarrier(e.target.value)
-                            fetchCommissions(e.target.value || undefined)
+                          onChange={async (e) => {
+                            const carrierId = e.target.value
+                            setSelectedCommissionCarrier(carrierId)
                             setCommissionEdits({})
+                            
+                            // Fetch commissions for the selected carrier
+                            await fetchCommissions(carrierId || undefined)
+                            
+                            // If a carrier is selected, automatically sync missing commissions (silently)
+                            if (carrierId) {
+                              // Always sync when a carrier is selected to ensure all products/positions are covered
+                              setTimeout(async () => {
+                                console.log(`Carrier ${carrierId} selected, auto-syncing commissions...`)
+                                await syncCommissionsForCarrier(carrierId, true)
+                              }, 200)
+                            }
                           }}
                           className="w-full md:w-96 h-12 px-4 rounded-lg border border-border bg-white dark:bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                         >
@@ -2568,7 +2863,7 @@ export default function ConfigurationPage() {
                       </div>
                       {selectedCommissionCarrier && (
                         <Button
-                          onClick={handleSyncMissingCommissions}
+                          onClick={() => handleSyncMissingCommissions(false)}
                           disabled={syncingMissingCommissions}
                           className="bg-gray-900 hover:bg-gray-800 text-white h-12"
                         >
@@ -2604,65 +2899,78 @@ export default function ConfigurationPage() {
                     </div>
                   ) : (
                     <>
-                      <div className="overflow-auto rounded-lg border border-border mb-4 max-h-[600px]">
-                        <table className="w-full">
-                          <thead className="bg-gradient-to-r from-gray-50 to-gray-100 sticky top-0 z-20">
-                            <tr className="border-b-2 border-border">
-                              <th className="text-left py-4 px-6 font-bold text-gray-800 sticky left-0 bg-gray-50 z-30">Position</th>
-                              {gridData.products.map((product) => (
-                                <th key={product.id} className="text-center py-4 px-4 font-bold text-gray-800 min-w-[150px]">
-                                  {product.name}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {gridData.positions.map((position) => (
-                              <tr key={position.id} className="border-b border-border hover:bg-blue-50 transition-colors">
-                                <td className="py-4 px-6 font-semibold text-foreground sticky left-0 bg-white hover:bg-blue-50 z-10">
-                                  {position.name}
-                                  <span className="ml-2 text-xs text-muted-foreground">(Level {position.level})</span>
-                                </td>
-                                {gridData.products.map((product) => {
-                                  const commission = gridData.commissions.find(
-                                    c => c.position_id === position.id && c.product_id === product.id
-                                  )
-                                  const key = `${position.id}-${product.id}`
-                                  const editedValue = commissionEdits[key]
-                                  const currentValue = editedValue !== undefined ? editedValue : commission?.commission_percentage
-
-                                  return (
-                                    <td key={product.id} className="py-4 px-4 text-center">
-                                      <div className="relative inline-block">
-                                        <Input
-                                          type="number"
-                                          value={currentValue !== undefined ? currentValue : ''}
-                                          onChange={(e) => handleCommissionChange(position.id, product.id, e.target.value)}
-                                          placeholder="0.00"
-                                          step="0.01"
-                                          min="0"
-                                          max="999.99"
-                                          className={cn(
-                                            "h-10 w-28 text-center",
-                                            editedValue !== undefined && "border-blue-500 bg-blue-50"
-                                          )}
-                                        />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">%</span>
-                                      </div>
-                                    </td>
-                                  )
-                                })}
+                      <div className="table-container">
+                        <div className="table-wrapper custom-scrollbar">
+                          <table className="jira-table min-w-full">
+                            <thead>
+                              <tr>
+                                <th className="sticky left-0 z-30 bg-accent/50">Position</th>
+                                {gridData.products.map((product) => (
+                                  <th key={product.id} className="text-center min-w-[150px]">
+                                    {product.name}
+                                  </th>
+                                ))}
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {gridData.positions.map((position) => (
+                                <tr key={position.id} className="hover:bg-accent/50 transition-colors group">
+                                  <td className="font-semibold text-foreground sticky left-0 z-10 bg-card group-hover:bg-accent/50 transition-colors">
+                                    {position.name}
+                                    <span className="ml-2 text-xs text-muted-foreground">(Level {position.level})</span>
+                                  </td>
+                                  {gridData.products.map((product) => {
+                                    const commission = gridData.commissions.find(
+                                      c => c.position_id === position.id && c.product_id === product.id
+                                    )
+                                    const key = `${position.id}-${product.id}`
+                                    const editedValue = commissionEdits[key]
+                                    
+                                    // If there's an edited value (including null for empty), use it
+                                    // Otherwise use the commission value, but show empty if it's 0
+                                    let displayValue: string | number = ''
+                                    if (editedValue !== undefined) {
+                                      // If editedValue is null, it means user cleared it - show empty
+                                      displayValue = editedValue === null ? '' : editedValue
+                                    } else {
+                                      // No edit, use commission value, but show empty if 0
+                                      const rawValue = commission?.commission_percentage
+                                      displayValue = (rawValue === 0 || rawValue === undefined || rawValue === null) ? '' : rawValue
+                                    }
+
+                                    return (
+                                      <td key={product.id} className="text-center">
+                                        <div className="relative inline-block">
+                                          <Input
+                                            type="number"
+                                            value={displayValue}
+                                            onChange={(e) => handleCommissionChange(position.id, product.id, e.target.value)}
+                                            placeholder=""
+                                            step="0.01"
+                                            min="0"
+                                            max="999.99"
+                                            className={cn(
+                                              "h-10 w-28 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                              editedValue !== undefined && "border-primary bg-primary/10"
+                                            )}
+                                          />
+                                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">%</span>
+                                        </div>
+                                      </td>
+                                    )
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
 
                       {Object.keys(commissionEdits).length > 0 && (
-                        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-4">
-                          <div className="text-blue-800">
+                        <div className="flex items-center justify-between bg-primary/10 border border-primary/30 rounded-lg p-4 mt-4">
+                          <div className="text-foreground">
                             <p className="font-semibold">{Object.keys(commissionEdits).length} unsaved changes</p>
-                            <p className="text-sm">Click Save to apply your commission changes</p>
+                            <p className="text-sm text-muted-foreground">Click Save to apply your commission changes</p>
                           </div>
                           <div className="flex gap-3">
                             <Button
@@ -2675,7 +2983,7 @@ export default function ConfigurationPage() {
                             <Button
                               onClick={handleSaveCommissions}
                               disabled={savingCommissions}
-                              className="bg-blue-600 hover:bg-blue-700"
+                              className="bg-primary hover:bg-primary/90"
                             >
                               {savingCommissions ? (
                                 <>

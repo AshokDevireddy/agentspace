@@ -3192,7 +3192,7 @@ export default function ConfigurationPage() {
                               if (e.key === 'Escape') handleCancelPhoneNumberEdit()
                             }}
                             placeholder="+12345678900"
-                            className="flex-1 h-12 text-lg font-mono"
+                            className="flex-1 h-12 text-lg font-mono bg-accent/40"
                             disabled={savingPhoneNumber}
                           />
                           <button
@@ -3212,7 +3212,7 @@ export default function ConfigurationPage() {
                         </div>
                       ) : (
                         <div className="flex items-center gap-3">
-                          <div className="flex-1 bg-white rounded-lg border-2 border-gray-200 p-4">
+                          <div className="flex-1 rounded-lg border border-border bg-accent/40 p-4">
                             <p className="text-xl font-mono text-foreground">
                               {agencyPhoneNumber || <span className="text-muted-foreground italic">Not configured</span>}
                             </p>
@@ -3347,22 +3347,22 @@ export default function ConfigurationPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                     {uploads.map((upload, index) => (
                       <div key={upload.carrier} className="space-y-2">
-                        <h3 className="text-sm font-medium text-gray-700 text-center">
+                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-100 text-center">
                           {upload.carrier}
                         </h3>
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 min-h-[200px] flex flex-col items-center justify-center hover:border-gray-400 transition-colors">
+                        <div className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-6 min-h-[200px] flex flex-col items-center justify-center hover:border-gray-400 dark:hover:border-slate-500 transition-colors bg-transparent dark:bg-slate-900/40">
                           {upload.file ? (
                             <div className="text-center">
-                              <FileText className="h-12 w-12 text-gray-600 mx-auto mb-3" />
-                              <p className="text-sm font-medium text-gray-900 mb-1">
+                              <FileText className="h-12 w-12 text-gray-600 dark:text-gray-300 mx-auto mb-3" />
+                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
                                 {upload.file.name}
                               </p>
-                              <p className="text-xs text-gray-500 mb-4">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
                                 {(upload.file.size / 1024).toFixed(2)} KB
                               </p>
                               <Button
                                 onClick={() => handleFileRemove(index)}
-                                className="bg-black text-white hover:bg-gray-800 px-4 py-2 text-sm"
+                                className="bg-black text-white hover:bg-gray-800 dark:bg-white/10 dark:hover:bg-white/20 px-4 py-2 text-sm"
                               >
                                 <X className="h-4 w-4 mr-1" />
                                 Remove
@@ -3370,11 +3370,11 @@ export default function ConfigurationPage() {
                             </div>
                           ) : (
                             <div className="text-center">
-                              <Upload className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                              <p className="text-sm font-medium text-gray-700 mb-1">
+                              <Upload className="h-12 w-12 text-gray-400 dark:text-gray-300 mx-auto mb-3" />
+                              <p className="text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">
                                 Click to upload
                               </p>
-                              <p className="text-xs text-gray-500 mb-4">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
                                 CSV or Excel file
                               </p>
                               <input
@@ -3389,7 +3389,7 @@ export default function ConfigurationPage() {
                               />
                               <label
                                 htmlFor={`upload-config-${index}`}
-                                className="cursor-pointer bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded text-sm text-gray-700 inline-block transition-colors"
+                                className="cursor-pointer bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 rounded text-sm text-gray-700 dark:text-gray-100 border border-border inline-block transition-colors"
                               >
                                 Choose File
                               </label>
@@ -3459,7 +3459,7 @@ export default function ConfigurationPage() {
                               if (e.key === 'Escape') handleCancelDiscordWebhookEdit()
                             }}
                             placeholder="https://discord.com/api/webhooks/..."
-                            className="flex-1 h-12 text-sm font-mono"
+                            className="flex-1 h-12 text-sm font-mono dark:bg-accent/40"
                             disabled={savingDiscordWebhook}
                           />
                           <button
@@ -3479,7 +3479,7 @@ export default function ConfigurationPage() {
                         </div>
                       ) : (
                         <div className="flex items-center gap-3">
-                          <div className="flex-1 bg-white rounded-lg border-2 border-gray-200 p-4">
+                          <div className="flex-1 rounded-lg border-2 border-gray-200 dark:border-border bg-white dark:bg-accent/40 p-4">
                             <p className="text-sm font-mono text-foreground break-all">
                               {discordWebhookUrl || <span className="text-muted-foreground italic">Not configured</span>}
                             </p>

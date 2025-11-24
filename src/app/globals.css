@@ -193,12 +193,17 @@
 /* Table Styles */
 .table-container {
   @apply bg-card border border-border rounded-lg shadow-sm overflow-hidden;
+  padding-left: 0 !important;
+  margin-left: 0 !important;
 }
 
 .table-wrapper {
   @apply overflow-x-auto;
   max-width: 100%;
   -webkit-overflow-scrolling: touch;
+  /* Ensure no left padding/margin */
+  padding-left: 0;
+  margin-left: 0;
 }
 
 .professional-table {
@@ -231,46 +236,50 @@
   /* Allow the table to grow beyond the container width so the wrapper can scroll */
   width: max-content;
   min-width: 100%;
+  /* Ensure no left margin or padding */
+  margin-left: 0;
+  padding-left: 0;
 }
 
 .jira-table thead {
   @apply bg-accent/50;
 }
 
-/* Ensure thead stays sticky when scrolling vertically */
-.jira-table thead.sticky {
+/* All header cells stick to the top when scrolling vertically */
+.jira-table thead th {
   position: sticky;
   top: 0;
-  z-index: 20;
-  background-color: hsl(var(--accent) / 0.5);
-}
-
-.jira-table th {
+  background-color: hsl(var(--accent));
+  z-index: 2; /* Above normal cells */
   @apply py-3 px-4 font-semibold text-sm text-muted-foreground text-left border border-border;
   white-space: nowrap;
-  position: relative;
-  z-index: 1;
 }
 
-.jira-table th.sticky {
+/* First column body cells stick to the left when scrolling horizontally */
+.jira-table td.pos-col {
   position: sticky;
-  left: -1px;
-  z-index: 200;
-  isolation: isolate;
+  left: 0;
+  background-color: hsl(var(--card));
+  z-index: 1; /* Above normal cells, but below header row */
+  box-shadow: 8px 0 12px -4px rgba(0, 0, 0, 0.2), 4px 0 4px -2px rgba(0, 0, 0, 0.1);
 }
 
-/* Ensure sticky header has solid background to cover scrolled content - match other headers */
-.jira-table thead th.sticky {
-  /* Use fully opaque card background to completely cover scrolled headers */
-  background-color: hsl(var(--card)) !important;
-  /* Add a subtle shadow to create separation */
-  box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1);
-  /* Ensure it's on top of everything */
-  isolation: isolate;
-  /* Force a new stacking context */
-  transform: translateZ(0);
-  /* Much higher z-index to stay above scrolled headers */
-  z-index: 200 !important;
+/* Top-left corner cell: both top and left sticky, highest z-index */
+.jira-table thead th.pos-col-header {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 3; /* Above everything else */
+  background-color: hsl(var(--accent));
+  box-shadow: 8px 0 12px -4px rgba(0, 0, 0, 0.2), 4px 0 4px -2px rgba(0, 0, 0, 0.1);
+}
+
+/* Regular header cells (not first column) */
+.jira-table thead th.header-cell {
+  position: sticky;
+  top: 0;
+  z-index: 2; /* Above normal cells and first column body cells */
+  background-color: hsl(var(--accent));
 }
 
 /* Add hover background color as a separate layer behind the content for position header */
@@ -315,69 +324,33 @@
   @apply py-3 px-4 text-sm text-foreground border border-border;
   white-space: nowrap;
   position: relative;
-  z-index: 1;
+  z-index: 0; /* Normal cells have lowest z-index */
+  overflow: visible;
 }
 
-/* Ensure non-sticky cells in hovered rows stay below sticky column */
-.jira-table tbody tr:hover td:not(.sticky) {
-  z-index: 0;
+/* Wrap interactive content so we can control stacking without affecting the td */
+.jira-table td:not(.pos-col) .cell-wrapper {
   position: relative;
+  z-index: 0;
+  background-color: inherit;
 }
 
-.jira-table td.sticky {
+/* Hover/focus should not change stacking so sticky column remains above */
+.jira-table td:not(.pos-col) .cell-wrapper:hover,
+.jira-table td:not(.pos-col) .cell-wrapper:focus-within {
+  z-index: 0;
+}
+
+/* First column body cells - sticky left only */
+.jira-table td.pos-col {
   position: sticky;
-  left: -1px;
-  z-index: 50;
-  /* Use solid background to completely cover scrolled content - match table container */
-  background-color: hsl(var(--card)) !important;
-  /* Add a subtle shadow to create separation */
-  box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1);
-  /* Create isolation to ensure proper stacking */
-  isolation: isolate;
-  /* Force a new stacking context */
-  transform: translateZ(0);
-}
-
-/* Ensure sticky cells cover hovered row content when scrolling horizontally */
-.jira-table tbody tr:hover td.sticky {
-  /* Use fully opaque card background to completely cover hovered row content */
-  background-color: hsl(var(--card)) !important;
-  /* Much higher z-index to ensure it covers the hovered row's scrolled content */
-  z-index: 100 !important;
-  /* Maintain shadow on hover */
-  box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1);
-  /* Ensure isolation on hover */
-  isolation: isolate;
-  /* Force a new stacking context on hover */
-  transform: translateZ(0);
-}
-
-/* Add hover background color as a separate layer behind the content */
-.jira-table tbody tr:hover td.sticky::before {
-  content: '';
-  position: absolute;
-  top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
-  /* Use the hover background color */
-  background-color: hsl(var(--accent) / 0.5);
-  z-index: -1;
-  pointer-events: none;
+  z-index: 200; /* Keep above hovered cells */
+  background-color: hsl(var(--card));
+  box-shadow: 8px 0 12px -4px rgba(0, 0, 0, 0.2), 4px 0 4px -2px rgba(0, 0, 0, 0.1);
 }
 
-/* Ensure all hovered row content stays below sticky position column */
-.jira-table tbody tr:hover td:not(.sticky) {
-  position: relative;
-  z-index: 0;
-  /* Lower isolation to stay below sticky */
-  isolation: auto;
-}
-
-/* Ensure regular cells have lower stacking */
-.jira-table tbody td:not(.sticky) {
-  z-index: 0;
-}
+/* Remove legacy sticky rules (handled via .pos-col + wrapper) */
 
 /* Add shadow to sticky columns to create visual separation when scrolling */
 .table-wrapper table thead th.sticky.left-0::after {

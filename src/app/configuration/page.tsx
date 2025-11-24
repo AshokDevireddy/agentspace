@@ -2921,14 +2921,31 @@ export default function ConfigurationPage() {
                     </div>
                   ) : (
                     <>
-                      <div className="table-container mb-4">
-                        <div className="table-wrapper custom-scrollbar max-h-[600px] overflow-y-auto">
-                          <table className="jira-table min-w-full">
-                            <thead className="sticky top-0 z-20">
+                       <div className="table-container mb-4" style={{ paddingLeft: 0, overflow: 'hidden' }}>
+                         <div className="table-wrapper custom-scrollbar max-h-[600px] overflow-y-auto overflow-x-auto" style={{ paddingLeft: 0, marginLeft: 0 }}>
+                          <table className="jira-table min-w-full" style={{ marginLeft: 0, borderSpacing: 0, borderCollapse: 'collapse' }}>
+                            <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
                               <tr>
-                                <th className="sticky left-[-1px] z-[200]" style={{ isolation: 'isolate' }}>Position</th>
+                                <th 
+                                  className="border-r border-border border-b border-border pos-col-header" 
+                                  style={{ 
+                                    position: 'sticky',
+                                    left: 0,
+                                    top: 0,
+                                    zIndex: 300,
+                                    backgroundColor: 'hsl(var(--accent))',
+                                    paddingLeft: '1rem',
+                                    paddingRight: '1rem',
+                                    marginLeft: 0,
+                                    marginRight: 0,
+                                    minWidth: '150px',
+                                    boxShadow: '8px 0 12px -4px rgba(0, 0, 0, 0.2), 4px 0 4px -2px rgba(0, 0, 0, 0.1)'
+                                  }}
+                                >
+                                  Position
+                                </th>
                                 {gridData.products.map((product) => (
-                                  <th key={product.id} className="text-center min-w-[150px]" style={{ zIndex: 1 }}>
+                                  <th key={product.id} className="text-center min-w-[150px] bg-accent border-b border-border header-cell" style={{ backgroundColor: 'hsl(var(--accent))' }}>
                                     {product.name}
                                   </th>
                                 ))}
@@ -2936,8 +2953,8 @@ export default function ConfigurationPage() {
                             </thead>
                             <tbody>
                               {gridData.positions.map((position) => (
-                                <tr key={position.id}>
-                                  <td className="sticky left-0 z-50 font-semibold" style={{ isolation: 'isolate' }}>
+                                <tr key={position.id} className="hover:bg-accent/50 transition-colors group">
+                                  <td className="font-semibold bg-card transition-colors border-r border-border pos-col" style={{ position: 'sticky', left: 0, zIndex: 1, paddingLeft: '1rem', paddingRight: '1rem', marginLeft: 0, marginRight: 0, boxShadow: '8px 0 12px -4px rgba(0, 0, 0, 0.2), 4px 0 4px -2px rgba(0, 0, 0, 0.1)', minWidth: '150px' }}>
                                     {position.name}
                                     <span className="ml-2 text-xs text-muted-foreground">(Level {position.level})</span>
                                   </td>
@@ -2957,13 +2974,13 @@ export default function ConfigurationPage() {
                                     let displayValue: string | number = ''
                                     if (isFocused && isZero) {
                                       displayValue = ''
-                                    } else if (currentValue !== undefined) {
+                                    } else if (currentValue !== undefined && currentValue !== null) {
                                       displayValue = currentValue
                                     }
 
                                     return (
                                       <td key={product.id} className="text-center">
-                                        <div className="relative inline-flex items-center justify-center">
+                                        <div className="cell-wrapper relative inline-flex items-center justify-center">
                                           <Input
                                             type="number"
                                             value={displayValue}

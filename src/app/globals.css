@@ -261,8 +261,8 @@
 
 /* Ensure sticky header has solid background to cover scrolled content - match other headers */
 .jira-table thead th.sticky {
-  /* Use fully opaque background matching thead */
-  background-color: hsl(var(--accent) / 0.5) !important;
+  /* Use fully opaque card background to completely cover scrolled headers */
+  background-color: hsl(var(--card)) !important;
   /* Add a subtle shadow to create separation */
   box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1);
   /* Ensure it's on top of everything */
@@ -271,6 +271,20 @@
   transform: translateZ(0);
   /* Much higher z-index to stay above scrolled headers */
   z-index: 200 !important;
+}
+
+/* Add hover background color as a separate layer behind the content for position header */
+.jira-table thead th.sticky::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Use the header background color */
+  background-color: hsl(var(--accent) / 0.5);
+  z-index: -1;
+  pointer-events: none;
 }
 
 /* Ensure sticky header stays on top even when scrolling */
@@ -284,7 +298,6 @@
 /* Ensure regular headers stay below sticky position header */
 .jira-table thead th:not(.sticky) {
   position: relative;
-  z-index: 1;
   /* Lower z-index to stay below sticky position header */
   z-index: 0;
 }

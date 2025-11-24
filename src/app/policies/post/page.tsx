@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
-import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck } from "lucide-react"
+import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // Options are loaded dynamically from Supabase based on the user's agency
@@ -24,10 +25,15 @@ const initialFormData = {
   clientEmail: "",
   clientPhone: "",
   clientDateOfBirth: "",
-  clientSsnLast4: "",
   clientAddress: "",
   policyNumber: "",
   applicationNumber: "",
+};
+
+type Beneficiary = {
+  id: string;
+  name: string;
+  relationship: string;
 };
 
 type FormField = keyof typeof initialFormData;
@@ -36,7 +42,7 @@ const requiredFields: FormField[] = [
   "carrierId", "productId", "policyEffectiveDate", "monthlyPremium",
   "billingCycle", "leadSource",
   "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
-  "clientSsnLast4", "clientAddress", "policyNumber"
+  "clientAddress", "policyNumber"
 ];
 
 const STEPS = [
@@ -62,11 +68,13 @@ export default function PostDeal() {
   const [carriersOptions, setCarriersOptions] = useState<{ value: string, label: string }[]>([])
   const [productsOptions, setProductsOptions] = useState<{ value: string, label: string }[]>([])
   const [leadSourceOptions, setLeadSourceOptions] = useState<{ value: string, label: string }[]>([])
+  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([])
 
   // Position check states
   const [positionCheckLoading, setPositionCheckLoading] = useState(true)
   const [hasAllPositions, setHasAllPositions] = useState(false)
   const [missingPositions, setMissingPositions] = useState<any[]>([])
+  const [isAdminUser, setIsAdminUser] = useState(false)
 
   // Billing cycle options (fixed enum)
   const billingCycleOptions = [
@@ -133,7 +141,7 @@ export default function PostDeal() {
       // Fetch the current user's agency_id
       const { data: currentUser, error: currentUserError } = await supabase
         .from('users')
-        .select('id, agency_id')
+        .select('id, agency_id, is_admin, role')
         .eq('auth_user_id', user.id)
         .single()
 
@@ -143,6 +151,7 @@ export default function PostDeal() {
 
       const agencyIdVal = currentUser.agency_id as string
       setAgencyId(agencyIdVal)
+      setIsAdminUser(Boolean(currentUser.is_admin || currentUser.role === 'admin'))
 
       // Load agency's lead sources
       const { data: agencyData } = await supabase
@@ -362,6 +371,19 @@ export default function PostDeal() {
         invitationMessage = 'No client email provided - client will not receive portal access.'
       }
 
+      const normalizedBeneficiaries = beneficiaries
+        .filter(b =>
+      b.name.trim() ||
+          b.relationship.trim()
+        )
+        .map(b => {
+          return {
+            name: b.name.trim(),
+            relationship: b.relationship.trim() || null,
+            allocation_percentage: null,
+          }
+        })
+
       // SECTION 4: Construct payload and submit to API
       const monthlyPremium = parseFloat(formData.monthlyPremium)
       const payload = {
@@ -374,7 +396,7 @@ export default function PostDeal() {
         client_email: formData.clientEmail || null,
         client_phone: formData.clientPhone || null,
         date_of_birth: formData.clientDateOfBirth || null,
-        ssn_last_4: formData.clientSsnLast4 || null,
+        ssn_last_4: null,
         client_address: formData.clientAddress || null,
         policy_number: formData.policyNumber,
         application_number: formData.applicationNumber || null,
@@ -383,6 +405,7 @@ export default function PostDeal() {
         policy_effective_date: formData.policyEffectiveDate,
         billing_cycle: formData.billingCycle || null,
         lead_source: formData.leadSource || null,
+        beneficiaries: normalizedBeneficiaries,
       }
 
       console.log('[PostDeal] Submitting payload to /api/deals', payload)
@@ -424,6 +447,7 @@ export default function PostDeal() {
       })
 
       alert(successMessage)
+      setBeneficiaries([])
 
       router.push("/policies/book")
 
@@ -450,15 +474,33 @@ export default function PostDeal() {
       setFormData({ ...formData, [field]: value })
       return
     }
-    // For SSN last 4, only allow 4 digits
-    if (field === "clientSsnLast4") {
-      const cleaned = value.replace(/\D/g, "")
-      if (cleaned.length <= 4) {
-        setFormData({ ...formData, [field]: cleaned })
-      }
-      return
-    }
     setFormData({ ...formData, [field]: value })
+  }
+
+  const generateBeneficiaryId = () => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID()
+    }
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  }
+
+  const addBeneficiary = () => {
+    setBeneficiaries(prev => [
+      ...prev,
+      {
+        id: generateBeneficiaryId(),
+        name: "",
+        relationship: "",
+      },
+    ])
+  }
+
+  const handleBeneficiaryChange = (id: string, field: keyof Omit<Beneficiary, "id">, value: string) => {
+    setBeneficiaries(prev => prev.map(b => (b.id === id ? { ...b, [field]: value } : b)))
+  }
+
+  const removeBeneficiary = (id: string) => {
+    setBeneficiaries(prev => prev.filter(b => b.id !== id))
   }
 
   const validateForm = () => {
@@ -542,14 +584,6 @@ export default function PostDeal() {
         setError("Please enter the client's date of birth.")
         return false
       }
-      if (!formData.clientSsnLast4) {
-        setError("Please enter the last 4 digits of the client's SSN.")
-        return false
-      }
-      if (formData.clientSsnLast4.length !== 4) {
-        setError("SSN last 4 digits must be exactly 4 digits.")
-        return false
-      }
       if (!formData.clientAddress) {
         setError("Please enter the client's address.")
         return false
@@ -578,6 +612,10 @@ export default function PostDeal() {
   const getProductName = (id: string) => {
     return productsOptions.find(p => p.value === id)?.label || id
   }
+
+  const activeBeneficiaries = beneficiaries.filter(b =>
+    b.name.trim() || b.relationship.trim()
+  )
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
@@ -612,7 +650,9 @@ export default function PostDeal() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-foreground">
-              You or your uplines don't have positions set. Position assignments are required before you can post deals. Please contact your upline to fix this.
+              {isAdminUser
+                ? "Please assign your position to yourself on the profile page."
+                : "You or your uplines don't have positions set. Position assignments are required before you can post deals. Please contact your upline or agency owner to have your position assigned."}
             </p>
             {missingPositions.length > 0 && (
               <div className="space-y-2">
@@ -628,14 +668,16 @@ export default function PostDeal() {
                 </ul>
               </div>
             )}
-            <div className="pt-2">
-              <Button
-                variant="outline"
-                onClick={() => router.push('/agents')}
-              >
-                Go to Agents Page
-              </Button>
-            </div>
+            {isAdminUser && (
+              <div className="pt-2">
+                <Button
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                  onClick={() => router.push('/user/profile')}
+                >
+                  Go to Profile
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -914,21 +956,7 @@ export default function PostDeal() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-foreground">
-                      Last 4 Digits of SSN <span className="text-destructive">*</span>
-                    </label>
-                    <Input
-                      type="text"
-                      value={formData.clientSsnLast4}
-                      onChange={(e) => handleInputChange("clientSsnLast4", e.target.value)}
-                      className="h-12"
-                      placeholder="1234"
-                      maxLength={4}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
+                  <div className="space-y-2 md:col-span-2">
                     <label className="block text-sm font-semibold text-foreground">
                       Address <span className="text-destructive">*</span>
                     </label>
@@ -939,6 +967,76 @@ export default function PostDeal() {
                       className="h-12"
                       placeholder="Enter address"
                     />
+                  </div>
+                </div>
+
+                <div className="space-y-4 border border-dashed border-border rounded-lg p-4">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold text-foreground">Beneficiaries (Optional)</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Add one or more beneficiaries for this policy. Leave blank if not applicable.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={addBeneficiary}
+                      className="inline-flex items-center gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add Beneficiary
+                    </Button>
+                  </div>
+
+                  {beneficiaries.length === 0 && (
+                    <div className="text-sm text-muted-foreground border border-border rounded-lg p-4 bg-card/40">
+                      No beneficiaries added yet.
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    {beneficiaries.map((beneficiary, index) => (
+                      <div key={beneficiary.id} className="border border-border rounded-lg p-4 bg-card/50 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-foreground">
+                            Beneficiary {index + 1}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeBeneficiary(beneficiary.id)}
+                            className="text-destructive hover:text-destructive/80"
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            Remove
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-sm text-foreground font-medium">Full Name</label>
+                            <Input
+                              type="text"
+                              value={beneficiary.name}
+                              onChange={(e) => handleBeneficiaryChange(beneficiary.id, "name", e.target.value)}
+                              placeholder="Jane Doe"
+                              className="h-10"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm text-foreground font-medium">Relationship</label>
+                            <Input
+                              type="text"
+                              value={beneficiary.relationship}
+                              onChange={(e) => handleBeneficiaryChange(beneficiary.id, "relationship", e.target.value)}
+                              placeholder="Spouse, Child, etc."
+                              className="h-10"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -1022,12 +1120,32 @@ export default function PostDeal() {
                       <p className="font-medium text-foreground mt-1">{formData.clientDateOfBirth || 'N/A'}</p>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">SSN (Last 4):</span>
-                      <p className="font-medium text-foreground mt-1">{formData.clientSsnLast4 || 'N/A'}</p>
-                    </div>
-                    <div>
                       <span className="text-muted-foreground">Address:</span>
                       <p className="font-medium text-foreground mt-1">{formData.clientAddress || 'N/A'}</p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <span className="text-muted-foreground">Beneficiaries:</span>
+                      {activeBeneficiaries.length === 0 ? (
+                        <p className="font-medium text-foreground mt-1">None listed</p>
+                      ) : (
+                        <div className="mt-2 space-y-2">
+                          {activeBeneficiaries.map((beneficiary, index) => (
+                            <div
+                              key={beneficiary.id}
+                              className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 rounded-md border border-border bg-card/40 p-3"
+                            >
+                              <div>
+                                <p className="font-medium text-foreground">
+                                  {beneficiary.name || `Beneficiary ${index + 1}`}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {beneficiary.relationship || 'Relationship not set'}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -271,6 +271,12 @@ export default function Agents() {
   const [selectedPositionId, setSelectedPositionId] = useState<string>("")
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
 
+  const formatUplineLabel = (upline?: string | null) => {
+    if (!upline) return 'None'
+    const normalized = upline.replace(/[\s,]/g, '')
+    return normalized ? upline : 'None'
+  }
+
     const containerRef = useCallback((containerElem: HTMLDivElement | null) => {
         if (containerElem !== null) {
             const { width, height } = containerElem.getBoundingClientRect();
@@ -494,14 +500,23 @@ export default function Agents() {
 
     try {
       setAssigningAgentId(agentId)
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        throw new Error('Unable to assign position without a valid session. Please log in again.')
+      }
+
       const response = await fetch('/api/agents/assign-position', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          agentId,
-          positionId,
+          agent_id: agentId,
+          position_id: positionId,
         }),
       })
 
@@ -858,7 +873,7 @@ export default function Agents() {
                           <span className="text-muted-foreground text-sm">Not Set</span>
                         )}
                       </td>
-                      <td>{agent.upline}</td>
+                      <td>{formatUplineLabel(agent.upline)}</td>
                       <td>
                         <Badge
                           className={`border ${statusColors[agent.status] || 'bg-muted text-muted-foreground border-border'}`}
@@ -1074,11 +1089,9 @@ export default function Agents() {
                       <div className="text-sm text-muted-foreground mt-1">
                         {agent.email} {agent.phone_number && `• ${agent.phone_number}`}
                       </div>
-                      {agent.upline_name && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          Upline: {agent.upline_name}
-                        </div>
-                      )}
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Upline: {formatUplineLabel(agent.upline_name)}
+                      </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         Created: {new Date(agent.created_at).toLocaleDateString()}
                       </div>

@@ -37,7 +37,7 @@ const allPermissionLevels = [
 ]
 
 // Custom hook for debounced agent search
-function useAgentSearch() {
+function useAgentSearch(pauseSearch = false) {
   const [searchTerm, setSearchTerm] = useState("")
   const [searchResults, setSearchResults] = useState<SearchOption[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -45,6 +45,11 @@ function useAgentSearch() {
 
   // Debounce search functionality
   useEffect(() => {
+    if (pauseSearch) {
+      setIsSearching(false)
+      return
+    }
+
     // Don't search if term is too short
     if (searchTerm.length < 2) {
       setSearchResults([])
@@ -103,7 +108,7 @@ function useAgentSearch() {
 
     // Cleanup timer on searchTerm change
     return () => clearTimeout(debounceTimer)
-  }, [searchTerm])
+  }, [searchTerm, pauseSearch])
 
   return {
     searchTerm,
@@ -139,15 +144,18 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const [selectedUplineLabel, setSelectedUplineLabel] = useState<string>("")
   const [hasSetDefaultUpline, setHasSetDefaultUpline] = useState(false)
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState<boolean>(false)
+  const [pauseNameSearch, setPauseNameSearch] = useState(false)
+  const [pauseUplineSearch, setPauseUplineSearch] = useState(false)
+  const [uplineInputValue, setUplineInputValue] = useState("")
 
   // Use the custom agent search hook for upline selection
   const {
-    searchTerm,
-    setSearchTerm,
-    searchResults,
-    isSearching,
-    searchError
-  } = useAgentSearch()
+    searchTerm: uplineSearchTerm,
+    setSearchTerm: setUplineSearchTerm,
+    searchResults: uplineSearchResults,
+    isSearching: isUplineSearching,
+    searchError: uplineSearchError
+  } = useAgentSearch(pauseUplineSearch)
 
   // Filter permission levels based on current user's admin status
   // Admins can add both agents and admins, but agents can only add agents
@@ -157,6 +165,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
   // Name search for pre-invite users
   useEffect(() => {
+    if (pauseNameSearch) {
+      return
+    }
+
     if (nameSearchTerm.length < 2) {
       setNameSearchResults([])
       return
@@ -214,7 +226,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     }, 400)
 
     return () => clearTimeout(debounceTimer)
-  }, [nameSearchTerm])
+  }, [nameSearchTerm, pauseNameSearch])
 
   // Fetch positions when modal opens
   useEffect(() => {
@@ -333,8 +345,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             if (userData) {
               // Set current user as default upline
               const userLabel = `${userData.first_name} ${userData.last_name} - ${userData.email}`
-              setFormData(prev => ({ ...prev, uplineAgentId: userData.id }))
-              setSelectedUplineLabel(userLabel)
+              applyUplineSelection({ value: userData.id, label: userLabel })
               setHasSetDefaultUpline(true)
 
               // Check if current user is admin
@@ -365,7 +376,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         }
 
         // Auto-populate search term with converted name to trigger search
-        setSearchTerm(searchQuery);
+        setPauseUplineSearch(false)
+        setUplineInputValue(searchQuery);
+        setUplineSearchTerm(searchQuery);
       }, 100); // Small delay to prevent race conditions
 
       return () => clearTimeout(timer);
@@ -374,12 +387,12 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
   // Auto-select upline agent when search results include the upline
   useEffect(() => {
-    if (upline && searchResults.length > 0) {
+    if (upline && uplineSearchResults.length > 0) {
       // Try to find the upline user using multiple matching strategies
       let uplineUser = null;
 
       // Strategy 1: Direct match with original format (case insensitive)
-      uplineUser = searchResults.find(agent =>
+      uplineUser = uplineSearchResults.find(agent =>
         agent.label.toLowerCase().includes(upline.toLowerCase())
       );
 
@@ -388,7 +401,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         const parts = upline.split(',').map(part => part.trim());
         if (parts.length === 2) {
           const convertedName = `${parts[1]} ${parts[0]}`;
-          uplineUser = searchResults.find(agent =>
+          uplineUser = uplineSearchResults.find(agent =>
             agent.label.toLowerCase().includes(convertedName.toLowerCase())
           );
         }
@@ -400,7 +413,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           ? upline.split(',').map(part => part.trim())
           : upline.split(' ').map(part => part.trim());
 
-        uplineUser = searchResults.find(agent => {
+        uplineUser = uplineSearchResults.find(agent => {
           const agentLabel = agent.label.toLowerCase();
           return nameParts.every(part =>
             part.length > 1 && agentLabel.includes(part.toLowerCase())
@@ -409,11 +422,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       }
 
       if (uplineUser && !formData.uplineAgentId) {
-        setFormData(prev => ({ ...prev, uplineAgentId: uplineUser.value }));
-        setSelectedUplineLabel(uplineUser.label);
+        applyUplineSelection(uplineUser)
       }
     }
-  }, [upline, searchResults, formData.uplineAgentId]);
+  }, [upline, uplineSearchResults, formData.uplineAgentId]);
 
 
   const validateForm = () => {
@@ -443,6 +455,13 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     if (!formData.positionId) {
       newErrors.push("Position is required")
       newErrorFields.positionId = "Required"
+    }
+
+    // Upline validation - ensure user selects from dropdown if they typed a value
+    if (uplineInputValue.trim().length > 0 && !formData.uplineAgentId) {
+      const message = "Please select a valid upline from the dropdown"
+      newErrors.push(message)
+      newErrorFields.uplineAgentId = message
     }
 
     setErrors(newErrors)
@@ -505,7 +524,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       })
       setErrors([])
       setErrorFields({})
-      setSearchTerm("") // Reset search term
+      setPauseNameSearch(false)
+      setPauseUplineSearch(false)
+      setUplineSearchTerm("") // Reset upline search term
+      setUplineInputValue("")
       setSelectedUplineLabel("") // Reset selected upline label
       setSelectedPreInviteUserId(null)
       setHasSetDefaultUpline(false) // Reset default upline flag
@@ -529,10 +551,35 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     setFormData({ ...formData, uplineAgentId: agentId })
   }
 
+  const applyUplineSelection = (option: SearchOption) => {
+    handleUplineAgentChange(option.value)
+    setSelectedUplineLabel(option.label)
+    setUplineInputValue(option.label)
+    setUplineSearchTerm(option.label)
+    setPauseUplineSearch(true)
+    setErrorFields(prev => {
+      const { uplineAgentId, ...rest } = prev
+      return rest
+    })
+  }
+
+  const clearUplineSelection = () => {
+    handleUplineAgentChange("")
+    setSelectedUplineLabel("")
+    setUplineInputValue("")
+    setPauseUplineSearch(false)
+    setUplineSearchTerm("")
+    setErrorFields(prev => {
+      const { uplineAgentId, ...rest } = prev
+      return rest
+    })
+  }
+
   // Handle pre-invite user selection
   const handlePreInviteUserSelect = async (userId: string, selectedOption: SearchOption) => {
     try {
       setLoading(true)
+      setPauseNameSearch(true)
 
       // Fetch full user details
       const { createClient } = await import('@/lib/supabase/client')
@@ -567,9 +614,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
       // If there's an upline, set the search term for upline field
       if (user.upline_id) {
-        const uplineOption = searchResults.find(r => r.value === user.upline_id)
+        const uplineOption = uplineSearchResults.find(r => r.value === user.upline_id)
         if (uplineOption) {
-          setSearchTerm(uplineOption.label)
+          applyUplineSelection(uplineOption)
         }
       }
     } catch (error) {
@@ -602,9 +649,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         )}
 
         {/* Show search error if any */}
-        {searchError && (
+        {uplineSearchError && (
           <Alert variant="destructive" className="mb-4">
-            <AlertDescription>{searchError}</AlertDescription>
+            <AlertDescription>{uplineSearchError}</AlertDescription>
           </Alert>
         )}
 
@@ -622,6 +669,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                 type="text"
                 value={nameSearchTerm}
                 onChange={(e) => {
+                  setPauseNameSearch(false)
                   setNameSearchTerm(e.target.value)
                   // Clear selection if user changes search
                   if (selectedPreInviteUserId) {
@@ -665,12 +713,22 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               </div>
             )}
 
-            {/* No results message */}
+            {/* No results or success message */}
             {nameSearchTerm.length >= 2 && !isNameSearching && nameSearchResults.length === 0 && (
-              <div className="border border-border rounded-lg bg-card shadow-lg p-4 z-10">
-                <p className="text-sm text-muted-foreground text-center">
-                  No agents found matching "{nameSearchTerm}"
-                </p>
+              <div
+                className={`border rounded-lg shadow-lg p-4 z-10 text-center ${
+                  selectedPreInviteUserId ? "border-emerald-500/40 bg-emerald-500/10" : "border-border bg-card"
+                }`}
+              >
+                {selectedPreInviteUserId ? (
+                  <p className="text-sm text-emerald-400">
+                    Found existing agent: {formData.firstName} {formData.lastName}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No agents found matching "{nameSearchTerm}"
+                  </p>
+                )}
               </div>
             )}
 
@@ -686,6 +744,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                     onClick={() => {
                       setSelectedPreInviteUserId(null)
                       setNameSearchTerm("")
+                      setPauseNameSearch(false)
                       setFormData({
                         firstName: "",
                         lastName: "",
@@ -695,8 +754,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                         uplineAgentId: "",
                         positionId: ""
                       })
-                      setSelectedUplineLabel("")
-                      setSearchTerm("")
+                      clearUplineSelection()
                     }}
                     className="text-destructive hover:text-destructive/80 text-sm transition-colors"
                   >
@@ -716,10 +774,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               type="text"
               value={formData.firstName}
               onChange={(e) => handleInputChange("firstName", e.target.value)}
-              className={`h-12 ${errorFields.firstName ? 'border-red-500' : ''} ${selectedPreInviteUserId ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+              className={`h-12 ${errorFields.firstName ? 'border-red-500' : ''} ${selectedPreInviteUserId ? 'bg-muted text-foreground/80 cursor-not-allowed' : ''}`}
               required
               readOnly={!!selectedPreInviteUserId}
-              disabled={!!selectedPreInviteUserId}
+              aria-readonly={selectedPreInviteUserId ? true : undefined}
             />
             {errorFields.firstName && (
               <p className="text-red-500 text-sm">{errorFields.firstName}</p>
@@ -738,10 +796,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               type="text"
               value={formData.lastName}
               onChange={(e) => handleInputChange("lastName", e.target.value)}
-              className={`h-12 ${selectedPreInviteUserId ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+              className={`h-12 ${selectedPreInviteUserId ? 'bg-muted text-foreground/80 cursor-not-allowed' : ''}`}
               required
               readOnly={!!selectedPreInviteUserId}
-              disabled={!!selectedPreInviteUserId}
+              aria-readonly={selectedPreInviteUserId ? true : undefined}
             />
             {selectedPreInviteUserId && (
               <p className="text-xs text-muted-foreground">Name cannot be changed for existing users</p>
@@ -822,32 +880,37 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             <div className="relative">
               <Input
                 type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="h-12"
+                value={uplineInputValue}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setUplineInputValue(value)
+                  setUplineSearchTerm(value)
+                  setPauseUplineSearch(false)
+                  if (formData.uplineAgentId) {
+                    handleUplineAgentChange("")
+                    setSelectedUplineLabel("")
+                  }
+                }}
+                className={`h-12 ${errorFields.uplineAgentId ? 'border-red-500' : ''}`}
                 placeholder="Type to search for upline agent..."
               />
               {/* Loading indicator */}
-              {isSearching && (
+              {isUplineSearching && (
                 <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                 </div>
               )}
             </div>
 
-            {/* Search results dropdown - only show when not selected */}
-            {searchResults.length > 0 && !formData.uplineAgentId && (
+            {/* Search results dropdown */}
+            {uplineSearchResults.length > 0 && !pauseUplineSearch && (
               <div className="border border-border rounded-lg bg-card shadow-lg max-h-60 overflow-y-auto z-10">
-                {searchResults.map((option) => (
+                {uplineSearchResults.map((option) => (
                   <button
                     key={option.value}
                     type="button"
                     className="w-full text-left px-4 py-3 hover:bg-accent/50 border-b border-border last:border-b-0 transition-colors"
-                    onClick={() => {
-                      handleUplineAgentChange(option.value)
-                      setSelectedUplineLabel(option.label) // Store the full label
-                      setSearchTerm("") // Clear search to hide results
-                    }}
+                    onClick={() => applyUplineSelection(option)}
                   >
                     <div className="text-sm font-medium text-foreground">
                       {option.label}
@@ -866,11 +929,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                   </span>
                   <button
                     type="button"
-                    onClick={() => {
-                      handleUplineAgentChange("")
-                      setSearchTerm("")
-                      setSelectedUplineLabel("")
-                    }}
+                    onClick={clearUplineSelection}
                     className="text-destructive hover:text-destructive/80 text-sm transition-colors"
                   >
                     Clear
@@ -882,6 +941,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             <p className="text-sm text-muted-foreground">
               Start typing to search by name or email. Minimum 2 characters required.
             </p>
+            {errorFields.uplineAgentId && (
+              <p className="text-sm text-red-500">{errorFields.uplineAgentId}</p>
+            )}
           </div>
 
           {/* Submit Button */}

@@ -66,7 +66,10 @@ export function SimpleSearchableSelect({
         variant="outline"
         role="combobox"
         aria-expanded={open}
-        className={cn("w-full justify-between h-8 text-xs")}
+        className={cn(
+          "w-full justify-between h-10 text-sm border-border bg-card text-foreground hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-0",
+          open && "ring-2 ring-primary/60"
+        )}
         onClick={() => setOpen(!open)}
       >
         <span className="truncate flex-1 text-left">
@@ -83,7 +86,7 @@ export function SimpleSearchableSelect({
               placeholder={searchPlaceholder}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-7 text-xs bg-background text-foreground border-border"
+              className="h-8 text-sm bg-background text-foreground border-border"
               autoFocus
             />
           </div>
@@ -98,8 +101,8 @@ export function SimpleSearchableSelect({
                   type="button"
                   key={option.value}
                   className={cn(
-                    "w-full flex items-center px-2.5 py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors text-left",
-                    value === option.value && "bg-primary/20 text-primary"
+                    "w-full flex items-center px-3 py-2 text-sm text-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors text-left",
+                    value === option.value && "bg-primary text-primary-foreground hover:bg-primary/90"
                   )}
                   onClick={() => {
                     onValueChange?.(option.value === value ? "" : option.value)
@@ -109,8 +112,8 @@ export function SimpleSearchableSelect({
                 >
                   <Check
                     className={cn(
-                      "mr-2 h-4 w-4 shrink-0",
-                      value === option.value ? "opacity-100 text-primary" : "opacity-0"
+                      "mr-2 h-4 w-4 shrink-0 transition-opacity",
+                      value === option.value ? "opacity-100 text-primary-foreground" : "opacity-0"
                     )}
                   />
                   <span className="text-left flex-1">{option.label}</span>

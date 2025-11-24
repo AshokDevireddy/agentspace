@@ -237,13 +237,74 @@
   @apply bg-accent/50;
 }
 
+/* Ensure thead stays sticky when scrolling vertically */
+.jira-table thead.sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background-color: hsl(var(--accent) / 0.5);
+}
+
 .jira-table th {
   @apply py-3 px-4 font-semibold text-sm text-muted-foreground text-left border border-border;
   white-space: nowrap;
+  position: relative;
+  z-index: 1;
+}
+
+.jira-table th.sticky {
+  position: sticky;
+  left: -1px;
+  z-index: 200;
+  isolation: isolate;
+}
+
+/* Ensure sticky header has solid background to cover scrolled content - match other headers */
+.jira-table thead th.sticky {
+  /* Use fully opaque card background to completely cover scrolled headers */
+  background-color: hsl(var(--card)) !important;
+  /* Add a subtle shadow to create separation */
+  box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1);
+  /* Ensure it's on top of everything */
+  isolation: isolate;
+  /* Force a new stacking context */
+  transform: translateZ(0);
+  /* Much higher z-index to stay above scrolled headers */
+  z-index: 200 !important;
+}
+
+/* Add hover background color as a separate layer behind the content for position header */
+.jira-table thead th.sticky::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Use the header background color */
+  background-color: hsl(var(--accent) / 0.5);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Ensure sticky header stays on top even when scrolling */
+.jira-table thead.sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background-color: hsl(var(--accent) / 0.5);
+}
+
+/* Ensure regular headers stay below sticky position header */
+.jira-table thead th:not(.sticky) {
+  position: relative;
+  /* Lower z-index to stay below sticky position header */
+  z-index: 0;
 }
 
 .jira-table tbody tr {
   @apply transition-colors;
+  position: relative;
 }
 
 .jira-table tbody tr:hover {
@@ -253,6 +314,105 @@
 .jira-table td {
   @apply py-3 px-4 text-sm text-foreground border border-border;
   white-space: nowrap;
+  position: relative;
+  z-index: 1;
+}
+
+/* Ensure non-sticky cells in hovered rows stay below sticky column */
+.jira-table tbody tr:hover td:not(.sticky) {
+  z-index: 0;
+  position: relative;
+}
+
+.jira-table td.sticky {
+  position: sticky;
+  left: -1px;
+  z-index: 50;
+  /* Use solid background to completely cover scrolled content - match table container */
+  background-color: hsl(var(--card)) !important;
+  /* Add a subtle shadow to create separation */
+  box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1);
+  /* Create isolation to ensure proper stacking */
+  isolation: isolate;
+  /* Force a new stacking context */
+  transform: translateZ(0);
+}
+
+/* Ensure sticky cells cover hovered row content when scrolling horizontally */
+.jira-table tbody tr:hover td.sticky {
+  /* Use fully opaque card background to completely cover hovered row content */
+  background-color: hsl(var(--card)) !important;
+  /* Much higher z-index to ensure it covers the hovered row's scrolled content */
+  z-index: 100 !important;
+  /* Maintain shadow on hover */
+  box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.1);
+  /* Ensure isolation on hover */
+  isolation: isolate;
+  /* Force a new stacking context on hover */
+  transform: translateZ(0);
+}
+
+/* Add hover background color as a separate layer behind the content */
+.jira-table tbody tr:hover td.sticky::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Use the hover background color */
+  background-color: hsl(var(--accent) / 0.5);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Ensure all hovered row content stays below sticky position column */
+.jira-table tbody tr:hover td:not(.sticky) {
+  position: relative;
+  z-index: 0;
+  /* Lower isolation to stay below sticky */
+  isolation: auto;
+}
+
+/* Ensure regular cells have lower stacking */
+.jira-table tbody td:not(.sticky) {
+  z-index: 0;
+}
+
+/* Add shadow to sticky columns to create visual separation when scrolling */
+.table-wrapper table thead th.sticky.left-0::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  width: 1px;
+  background: hsl(var(--border));
+  pointer-events: none;
+  z-index: 31;
+}
+
+.table-wrapper table tbody td.sticky.left-0::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  width: 1px;
+  background: hsl(var(--border));
+  pointer-events: none;
+  z-index: 11;
+}
+
+/* Hide number input spinners */
+.no-spinner::-webkit-inner-spin-button,
+.no-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.no-spinner {
+  -moz-appearance: textfield;
 }
 
 /* Sidebar Navigation Styles */

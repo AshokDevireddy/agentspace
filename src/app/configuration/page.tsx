@@ -352,6 +352,7 @@ export default function ConfigurationPage() {
   const [selectedCommissionCarrier, setSelectedCommissionCarrier] = useState<string>("")
   const [commissionEdits, setCommissionEdits] = useState<Record<string, number | null>>({})
   const [savingCommissions, setSavingCommissions] = useState(false)
+  const [focusedInputKey, setFocusedInputKey] = useState<string | null>(null)
   const [syncingMissingCommissions, setSyncingMissingCommissions] = useState(false)
 
   // Load data on mount
@@ -1076,20 +1077,39 @@ export default function ConfigurationPage() {
   }
 
   // Commission management functions
-  const handleCommissionChange = (positionId: string, productId: string, value: string) => {
+  const handleCommissionChange = (positionId: string, productId: string, value: string, originalValue?: number) => {
     const key = `${positionId}-${productId}`
     
-    // Allow empty string for user to type from scratch
+    // Allow empty string while typing
     if (value === '') {
-      // Store as null to indicate "empty/not set" - will be saved as 0 or can be left empty
-      setCommissionEdits(prev => ({ ...prev, [key]: null }))
+      setCommissionEdits(prev => {
+        const newEdits = { ...prev }
+        delete newEdits[key]
+        return newEdits
+      })
       return
     }
-    
-    const numValue = parseFloat(value)
 
+    // Remove leading zeros (e.g., "032" -> "32", but keep "0.5" as is)
+    let cleanedValue = value
+    if (cleanedValue.length > 1 && cleanedValue[0] === '0' && cleanedValue[1] !== '.' && cleanedValue[1] !== ',') {
+      cleanedValue = cleanedValue.replace(/^0+/, '') || '0'
+    }
+
+    const numValue = parseFloat(cleanedValue)
     if (!isNaN(numValue) && numValue >= 0 && numValue <= 999.99) {
-      setCommissionEdits(prev => ({ ...prev, [key]: numValue }))
+      // Only track as edit if it's different from original value
+      const original = originalValue ?? 0
+      if (numValue !== original) {
+        setCommissionEdits(prev => ({ ...prev, [key]: numValue }))
+      } else {
+        // Value matches original, remove from edits
+        setCommissionEdits(prev => {
+          const newEdits = { ...prev }
+          delete newEdits[key]
+          return newEdits
+        })
+      }
     }
   }
 
@@ -2865,16 +2885,18 @@ export default function ConfigurationPage() {
                         <Button
                           onClick={() => handleSyncMissingCommissions(false)}
                           disabled={syncingMissingCommissions}
-                          className="bg-gray-900 hover:bg-gray-800 text-white h-12"
+                          className="h-12 bg-slate-700 hover:bg-slate-800 text-white font-semibold shadow-sm hover:shadow-md transition-all whitespace-nowrap text-sm sm:text-base"
                         >
                           {syncingMissingCommissions ? (
                             <>
                               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Syncing...
+                              <span className="hidden sm:inline">Syncing...</span>
+                              <span className="sm:hidden">Syncing...</span>
                             </>
                           ) : (
                             <>
-                              Not seeing all products? Click to sync
+                              <span className="hidden sm:inline">Sync Products/Positions</span>
+                              <span className="sm:hidden">Sync</span>
                             </>
                           )}
                         </Button>
@@ -2899,14 +2921,14 @@ export default function ConfigurationPage() {
                     </div>
                   ) : (
                     <>
-                      <div className="table-container">
-                        <div className="table-wrapper custom-scrollbar">
+                      <div className="table-container mb-4">
+                        <div className="table-wrapper custom-scrollbar max-h-[600px] overflow-y-auto">
                           <table className="jira-table min-w-full">
-                            <thead>
+                            <thead className="sticky top-0 z-20">
                               <tr>
-                                <th className="sticky left-0 z-30 bg-accent/50">Position</th>
+                                <th className="sticky left-[-1px] z-[200]" style={{ isolation: 'isolate' }}>Position</th>
                                 {gridData.products.map((product) => (
-                                  <th key={product.id} className="text-center min-w-[150px]">
+                                  <th key={product.id} className="text-center min-w-[150px]" style={{ zIndex: 1 }}>
                                     {product.name}
                                   </th>
                                 ))}
@@ -2914,8 +2936,8 @@ export default function ConfigurationPage() {
                             </thead>
                             <tbody>
                               {gridData.positions.map((position) => (
-                                <tr key={position.id} className="hover:bg-accent/50 transition-colors group">
-                                  <td className="font-semibold text-foreground sticky left-0 z-10 bg-card group-hover:bg-accent/50 transition-colors">
+                                <tr key={position.id}>
+                                  <td className="sticky left-0 z-50 font-semibold" style={{ isolation: 'isolate' }}>
                                     {position.name}
                                     <span className="ml-2 text-xs text-muted-foreground">(Level {position.level})</span>
                                   </td>
@@ -2925,36 +2947,56 @@ export default function ConfigurationPage() {
                                     )
                                     const key = `${position.id}-${product.id}`
                                     const editedValue = commissionEdits[key]
+                                    const originalValue = commission?.commission_percentage
+                                    const currentValue = editedValue !== undefined ? editedValue : originalValue
+                                    const isFocused = focusedInputKey === key
+                                    const isZero = currentValue === 0 || currentValue === undefined || currentValue === null
                                     
-                                    // If there's an edited value (including null for empty), use it
-                                    // Otherwise use the commission value, but show empty if it's 0
+                                    // If focused and value is 0, show empty; otherwise show the value
+                                    // Convert to string for display, handling the zero case
                                     let displayValue: string | number = ''
-                                    if (editedValue !== undefined) {
-                                      // If editedValue is null, it means user cleared it - show empty
-                                      displayValue = editedValue === null ? '' : editedValue
-                                    } else {
-                                      // No edit, use commission value, but show empty if 0
-                                      const rawValue = commission?.commission_percentage
-                                      displayValue = (rawValue === 0 || rawValue === undefined || rawValue === null) ? '' : rawValue
+                                    if (isFocused && isZero) {
+                                      displayValue = ''
+                                    } else if (currentValue !== undefined) {
+                                      displayValue = currentValue
                                     }
 
                                     return (
                                       <td key={product.id} className="text-center">
-                                        <div className="relative inline-block">
+                                        <div className="relative inline-flex items-center justify-center">
                                           <Input
                                             type="number"
                                             value={displayValue}
-                                            onChange={(e) => handleCommissionChange(position.id, product.id, e.target.value)}
-                                            placeholder=""
+                                            onChange={(e) => {
+                                              const val = e.target.value
+                                              // Normalize leading zeros (e.g., "032" -> "32", but keep "0.5")
+                                              // This is handled in handleCommissionChange
+                                              handleCommissionChange(position.id, product.id, val, originalValue)
+                                            }}
+                                            onFocus={(e) => {
+                                              setFocusedInputKey(key)
+                                              // If value is 0 or empty, clear it to allow starting from scratch
+                                              if (isZero) {
+                                                // Value will be cleared via displayValue logic
+                                                // Don't select, just let user type
+                                              } else {
+                                                // Otherwise, select all text to allow easy overwrite
+                                                e.target.select()
+                                              }
+                                            }}
+                                            onBlur={() => {
+                                              setFocusedInputKey(null)
+                                            }}
+                                            placeholder="0.00"
                                             step="0.01"
                                             min="0"
                                             max="999.99"
                                             className={cn(
-                                              "h-10 w-28 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
-                                              editedValue !== undefined && "border-primary bg-primary/10"
+                                              "h-10 w-28 text-center pr-6 no-spinner",
+                                              editedValue !== undefined && "border-blue-500 bg-blue-50"
                                             )}
                                           />
-                                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">%</span>
+                                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">%</span>
                                         </div>
                                       </td>
                                     )

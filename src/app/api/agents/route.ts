@@ -205,6 +205,22 @@ export async function GET(request: Request) {
       }
     }
 
+    // Handle position_id filter:
+    // - null (not in URL, frontend defaulted to "all") → "all" (default to "all")
+    // - "all" → "all" (pass "all" string to RPC - no filter applied)
+    // - "not_set" → null (pass null to RPC - filter for null position_id)
+    // - position_id → pass the position_id (filter by that position)
+    let positionIdFilter: string | null = "all"; // Default to "all" when not specified (matches frontend default)
+    if (positionId) {
+      if (positionId === "all") {
+        positionIdFilter = "all"; // Pass "all" string to RPC
+      } else if (positionId === "not_set") {
+        positionIdFilter = null; // Pass null for "not_set" - RPC should filter for null position_id
+      } else {
+        positionIdFilter = positionId; // Pass position_id
+      }
+    }
+
     const filters = {
       in_upline: inUpline && inUpline !== "all" ? inUpline : null,
       direct_upline: directUplineFilter,
@@ -212,7 +228,7 @@ export async function GET(request: Request) {
       direct_downline: directDownlineFilter,
       agent_name: agentName && agentName !== "all" ? agentName : null,
       status: status && status !== "all" ? status : null,
-      position_id: positionId && positionId !== "all" ? positionId : null,
+      position_id: positionIdFilter,
     };
 
     // Log what we're sending to RPC for debugging

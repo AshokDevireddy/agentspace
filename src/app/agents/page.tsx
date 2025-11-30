@@ -377,7 +377,7 @@ export default function Agents() {
           params.append('status', appliedFilters.status)
         }
         if (appliedFilters.position && appliedFilters.position !== 'all') {
-          params.append('positionId', appliedFilters.position)
+          params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
         }
 
         const url = `/api/agents?${params.toString()}`
@@ -733,6 +733,13 @@ export default function Agents() {
     ...allAgents.map(agent => ({ value: agent.name, label: agent.name }))
   ]
 
+  // Generate position options with "Not Set" option
+  const positionOptions = [
+    { value: "all", label: "All Positions" },
+    { value: "not_set", label: "Not Set" },
+    ...filterPositions.map(p => ({ value: p.position_id, label: p.name }))
+  ]
+
   // Generate status options
   const statusOptions = [
     { value: "all", label: "All Statuses" },
@@ -1038,7 +1045,7 @@ export default function Agents() {
                         Position
                       </label>
                       <SimpleSearchableSelect
-                        options={[{ value: "all", label: "All Positions" }, ...filterPositions.map(p => ({ value: p.position_id, label: p.name }))]}
+                        options={positionOptions}
                         value={localFilters.position}
                         onValueChange={(value) => setLocalFilters({ position: value })}
                         placeholder="All Positions"

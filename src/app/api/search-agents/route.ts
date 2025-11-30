@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const query = searchParams.get("q");
     const limitParam = searchParams.get("limit");
     const searchType = searchParams.get("type") || "downline"; // 'downline' or 'pre-invite'
-    const format = searchParams.get("format");
+    const newFormat = searchParams.get("format");
 
     console.log(
       "[SEARCH-AGENTS] Query:",
@@ -29,11 +29,11 @@ export async function GET(request: Request) {
       "Type:",
       searchType,
       "Format:",
-      format,
+      newFormat,
     );
 
     // Validate query parameter (allow empty for format=options to show all agents)
-    const allowEmptyQuery = format === "options";
+    const allowEmptyQuery = newFormat === "options";
     const trimmedQuery = query ? query.trim() : "";
 
     if (!trimmedQuery || trimmedQuery.length < 2) {
@@ -96,14 +96,16 @@ export async function GET(request: Request) {
     console.log("[SEARCH-AGENTS] Is admin:", isAdmin);
 
     // Sanitize search query for SQL injection protection
-    const finalSanitizedQuery = sanitizedQuery
-      ? sanitizedQuery.replace(/[%_]/g, "\\$&")
+    const finalSanitizedQuery = trimmedQuery
+      ? trimmedQuery.replace(/[%_]/g, "\\$&")
       : "";
     console.log("[SEARCH-AGENTS] Sanitized query:", finalSanitizedQuery);
 
     // Split the search query into individual words for better matching
-    const searchWords = finalSanitizedQuery
-      ? finalSanitizedQuery.split(/\s+/).filter((word) => word.length > 0)
+    const searchWords: string[] = finalSanitizedQuery
+      ? finalSanitizedQuery.split(/\s+/).filter((word: string) =>
+        word.length > 0
+      )
       : [];
     console.log("[SEARCH-AGENTS] Search words:", searchWords);
 
@@ -339,7 +341,7 @@ export async function GET(request: Request) {
         }
 
         // Check if all individual words appear in the full name or email
-        return searchWords.every((word) => {
+        return searchWords.every((word: string) => {
           const wordLower = word.toLowerCase();
           return fullName.includes(wordLower) || email.includes(wordLower);
         });
@@ -356,9 +358,7 @@ export async function GET(request: Request) {
     console.log("[SEARCH-AGENTS] Returning", agents.length, "agents");
 
     // Check if format parameter is set to 'options' for select components
-    const format = searchParams.get("format");
-
-    if (format === "options") {
+    if (newFormat === "options") {
       // Transform to {value, label} format for select components
       const options = agents.map((agent) => ({
         value: agent.id,

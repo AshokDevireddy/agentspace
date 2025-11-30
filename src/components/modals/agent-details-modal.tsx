@@ -236,8 +236,8 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
           await fetchAgentDetails()
           setIsEditing(false)
           setEditedData(null)
-          onUpdate?.()
           alert('Invitation sent successfully!')
+          onOpenChange(false)
           return
         } catch (err) {
           console.error('Error sending invite:', err)
@@ -265,7 +265,7 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
       await fetchAgentDetails()
       setIsEditing(false)
       setEditedData(null)
-      onUpdate?.()
+      onOpenChange(false)
     } catch (err) {
       console.error('Error updating agent:', err)
       alert(err instanceof Error ? err.message : 'Failed to update agent')

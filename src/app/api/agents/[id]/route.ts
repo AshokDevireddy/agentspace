@@ -1,7 +1,7 @@
 // API ROUTE: /api/agents/[id]
-// This endpoint fetches agent information by ID
+// This endpoint fetches and updates agent information by ID
 
-import { createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, createServerClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -139,6 +139,86 @@ export async function GET(
     return NextResponse.json({
       error: "Internal Server Error",
       detail: "An unexpected error occurred while fetching agent",
+    }, { status: 500 });
+  }
+}
+
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id: agentId } = await params;
+
+    if (!agentId) {
+      return NextResponse.json({
+        error: "Missing agent ID",
+        detail: "Agent ID is required",
+      }, { status: 400 });
+    }
+
+    const supabaseAdmin = createAdminClient();
+    const supabaseUser = await createServerClient();
+
+    // Check if user is authenticated
+    const { data: { user } } = await supabaseUser.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Check if user is admin
+    const { data: currentUser } = await supabaseAdmin
+      .from("users")
+      .select("role")
+      .eq("auth_user_id", user.id)
+      .single();
+
+    if (!currentUser || currentUser.role !== "admin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { email, phone_number, role, status } = body;
+
+    // Build update object with only provided fields
+    const updateData: any = {};
+    if (email !== undefined) updateData.email = email;
+    if (phone_number !== undefined) updateData.phone_number = phone_number;
+    if (role !== undefined) updateData.role = role;
+    if (status !== undefined) updateData.status = status;
+
+    // Update agent
+    const { data: updatedAgent, error: updateError } = await supabaseAdmin
+      .from("users")
+      .update(updateData)
+      .eq("id", agentId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error("Agent update error:", updateError);
+      return NextResponse.json({
+        error: "Failed to update agent",
+        detail: updateError.message,
+      }, { status: 500 });
+    }
+
+    if (!updatedAgent) {
+      return NextResponse.json({
+        error: "Agent not found",
+        detail: "No agent found with the provided ID",
+      }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Agent updated successfully",
+    });
+  } catch (error) {
+    console.error("API Error in agent update:", error);
+    return NextResponse.json({
+      error: "Internal Server Error",
+      detail: "An unexpected error occurred while updating agent",
     }, { status: 500 });
   }
 }

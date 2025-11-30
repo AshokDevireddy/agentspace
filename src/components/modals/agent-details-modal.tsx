@@ -5,8 +5,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Vi
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
-import { Loader2, User, Calendar, DollarSign, Users, Building2, Mail, Phone, CheckCircle2, UserCog, TrendingUp, Circle, X } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
+import { Loader2, User, Calendar, DollarSign, Users, Building2, Mail, Phone, CheckCircle2, UserCog, TrendingUp, Circle, X, Edit, Save } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { createClient } from "@/lib/supabase/client"
 
 interface AgentDetailsModalProps {
   open: boolean
@@ -68,13 +71,38 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
   const [loading, setLoading] = useState(false)
   const [downlines, setDownlines] = useState<any[]>([])
   const [loadingDownlines, setLoadingDownlines] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedData, setEditedData] = useState<any>(null)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (open && agentId) {
       fetchAgentDetails()
       fetchDownlines()
+      checkAdminStatus()
     }
   }, [open, agentId])
+
+  const checkAdminStatus = async () => {
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (user) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('role')
+          .eq('auth_user_id', user.id)
+          .single()
+        
+        setIsAdmin(userData?.role === 'admin')
+      }
+    } catch (err) {
+      console.error('Error checking admin status:', err)
+      setIsAdmin(false)
+    }
+  }
 
   const fetchAgentDetails = async () => {
     setLoading(true)
@@ -137,6 +165,50 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
       })
     } catch {
       return 'N/A'
+    }
+  }
+
+  const handleEdit = () => {
+    if (!agent) return
+    setEditedData({
+      email: agent.email || '',
+      phone_number: agent.phone_number || '',
+      role: agent.role || '',
+      status: agent.status || 'pre-invite'
+    })
+    setIsEditing(true)
+  }
+
+  const handleCancelEdit = () => {
+    setIsEditing(false)
+    setEditedData(null)
+  }
+
+  const handleSave = async () => {
+    if (!agent || !editedData) return
+
+    setSaving(true)
+    try {
+      const response = await fetch(`/api/agents/${agent.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editedData)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to update agent')
+      }
+
+      await fetchAgentDetails()
+      setIsEditing(false)
+      setEditedData(null)
+      onUpdate?.()
+    } catch (err) {
+      console.error('Error updating agent:', err)
+      alert(err instanceof Error ? err.message : 'Failed to update agent')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -203,6 +275,34 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
                 )}
               </div>
             </div>
+
+            {isAdmin && (
+              isEditing ? (
+                <div className="flex items-center gap-2 mr-8">
+                  <Button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {saving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                  <Button
+                    onClick={handleCancelEdit}
+                    disabled={saving}
+                    variant="outline"
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button onClick={handleEdit} className="btn-gradient mr-8">
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit Agent
+                </Button>
+              )
+            )}
           </div>
         </div>
 
@@ -265,18 +365,52 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
                     <Mail className="h-3 w-3" />
                     Email
                   </label>
-                  <p className="text-lg font-semibold text-foreground">{agent.email || 'N/A'}</p>
+                  {isEditing ? (
+                    <Input
+                      type="email"
+                      value={editedData?.email || ''}
+                      onChange={(e) => setEditedData({ ...editedData, email: e.target.value })}
+                      className="mt-1"
+                      placeholder="agent@example.com"
+                    />
+                  ) : (
+                    <p className="text-lg font-semibold text-foreground">{agent.email || 'N/A'}</p>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
                     <Phone className="h-3 w-3" />
                     Phone Number
                   </label>
-                  <p className="text-lg font-semibold text-foreground">{agent.phone_number || 'N/A'}</p>
+                  {isEditing ? (
+                    <Input
+                      type="text"
+                      value={editedData?.phone_number || ''}
+                      onChange={(e) => setEditedData({ ...editedData, phone_number: e.target.value })}
+                      className="mt-1"
+                      placeholder="(555) 123-4567"
+                    />
+                  ) : (
+                    <p className="text-lg font-semibold text-foreground">{agent.phone_number || 'N/A'}</p>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Role</label>
-                  <p className="text-lg font-semibold text-foreground">{agent.role ? agent.role.charAt(0).toUpperCase() + agent.role.slice(1) : 'N/A'}</p>
+                  {isEditing ? (
+                    <SimpleSearchableSelect
+                      options={[
+                        { value: 'agent', label: 'Agent' },
+                        { value: 'admin', label: 'Admin' },
+                        { value: 'client', label: 'Client' }
+                      ]}
+                      value={editedData?.role || ''}
+                      onValueChange={(value) => setEditedData({ ...editedData, role: value })}
+                      placeholder="Select role..."
+                      searchPlaceholder="Search roles..."
+                    />
+                  ) : (
+                    <p className="text-lg font-semibold text-foreground">{agent.role ? agent.role.charAt(0).toUpperCase() + agent.role.slice(1) : 'N/A'}</p>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Position</label>
@@ -307,6 +441,27 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
                   </label>
                   <p className="text-lg font-semibold text-foreground">{agent.downlines || 0}</p>
                 </div>
+                {isEditing && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" />
+                      Status
+                    </label>
+                    <SimpleSearchableSelect
+                      options={[
+                        { value: 'pre-invite', label: 'Pre-Invite' },
+                        { value: 'invited', label: 'Invited' },
+                        { value: 'onboarding', label: 'Onboarding' },
+                        { value: 'active', label: 'Active' },
+                        { value: 'inactive', label: 'Inactive' }
+                      ]}
+                      value={editedData?.status || ''}
+                      onValueChange={(value) => setEditedData({ ...editedData, status: value })}
+                      placeholder="Select status..."
+                      searchPlaceholder="Search status..."
+                    />
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

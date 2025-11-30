@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { Input } from "@/components/ui/input"
 import AddUserModal from "@/components/modals/add-user-modal"
+import { AgentDetailsModal } from "@/components/modals/agent-details-modal"
 import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog, Mail } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
@@ -282,6 +283,8 @@ export default function Agents() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null) // Track which agent we're working on
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
   const [pendingSearchTerm, setPendingSearchTerm] = useState("")
+  const [selectedAgentIdForModal, setSelectedAgentIdForModal] = useState<string | null>(null)
+  const [agentModalOpen, setAgentModalOpen] = useState(false)
 
   // Track which filters are visible (showing input fields) - load from localStorage
   const [visibleFilters, setVisibleFilters] = useState<Set<string>>(() => {
@@ -715,6 +718,21 @@ export default function Agents() {
     }
   }
 
+  // Handle row click to open modal
+  const handleRowClick = (agent: Agent) => {
+    // Console.log the full agent object
+    console.log('Agent object:', agent)
+    
+    // Open modal with agent details
+    setSelectedAgentIdForModal(agent.id)
+    setAgentModalOpen(true)
+  }
+
+  const handleAgentModalClose = () => {
+    setAgentModalOpen(false)
+    setSelectedAgentIdForModal(null)
+  }
+
   // Show error state (but still show the UI structure)
   if (error) {
     // Error will be shown in the content area, not blocking the whole page
@@ -1111,7 +1129,11 @@ export default function Agents() {
                   </tr>
                 ) : (
                   agentsData.map((agent: Agent) => (
-                    <tr key={agent.id} className="cursor-pointer hover:bg-accent/50 transition-colors">
+                    <tr 
+                      key={agent.id} 
+                      className="cursor-pointer hover:bg-accent/50 transition-colors"
+                      onClick={() => handleRowClick(agent)}
+                    >
                       <td>
                         <div className="flex items-center space-x-3">
                           <div className="flex-shrink-0">
@@ -1172,7 +1194,11 @@ export default function Agents() {
                         <div className="flex items-center space-x-2">
                           <span className="font-medium">{agent.downlines}</span>
                           {agent.downlines > 0 && (
-                            <Button variant="ghost" size="sm">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <Users className="h-4 w-4" />
                             </Button>
                           )}
@@ -1502,6 +1528,76 @@ export default function Agents() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Agent Details Modal */}
+      {selectedAgentIdForModal && (
+        <AgentDetailsModal
+          open={agentModalOpen}
+          onOpenChange={handleAgentModalClose}
+          agentId={selectedAgentIdForModal}
+          onUpdate={() => {
+            // Refresh agents data if needed
+            const fetchAgents = async () => {
+              try {
+                setLoading(true)
+                const params = new URLSearchParams()
+                if (view === 'table') {
+                  params.append('page', currentPage.toString())
+                  params.append('limit', '20')
+                } else {
+                  params.append('view', 'tree')
+                }
+
+                if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
+                  params.append('inUpline', appliedFilters.inUpline)
+                }
+                if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
+                  params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
+                }
+                if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
+                  params.append('inDownline', appliedFilters.inDownline)
+                }
+                if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
+                  params.append('directDownline', appliedFilters.directDownline)
+                }
+                if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
+                  params.append('agentName', appliedFilters.agentName)
+                }
+                if (appliedFilters.status && appliedFilters.status !== 'all') {
+                  params.append('status', appliedFilters.status)
+                }
+                if (appliedFilters.position && appliedFilters.position !== 'all') {
+                  params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
+                }
+
+                const url = `/api/agents?${params.toString()}`
+                const response = await fetch(url)
+                if (!response.ok) {
+                  throw new Error('Failed to fetch agents')
+                }
+                const data = await response.json()
+
+                if(view === 'table') {
+                    setAgentsData(data.agents)
+                    setTotalPages(data.pagination.totalPages)
+                    setTotalCount(data.pagination.totalCount)
+                    if (data.allAgents) {
+                      setAllAgents(data.allAgents)
+                    }
+                } else {
+                    setTreeData(data.tree)
+                }
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'An error occurred')
+                console.error('Error fetching agents:', err)
+              } finally {
+                setLoading(false)
+              }
+            }
+            fetchAgents()
+          }}
+        />
       )}
     </div>
   )

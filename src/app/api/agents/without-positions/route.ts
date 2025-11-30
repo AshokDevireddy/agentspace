@@ -61,12 +61,6 @@ export async function GET(request: Request) {
         .rpc("get_agents_without_positions", { p_user_id: userId });
 
       if (allAgentsError) {
-        console.error("Agents fetch error:", {
-          message: allAgentsError.message,
-          details: allAgentsError.details,
-          hint: allAgentsError.hint,
-          code: allAgentsError.code,
-        });
         return NextResponse.json({
           error: "Failed to fetch agents",
           detail:
@@ -110,7 +104,7 @@ export async function GET(request: Request) {
           upline_id,
           upline:users!upline_id(first_name, last_name)
         `)
-        .eq("role", "agent")
+        .in("role", ["agent", "admin"]) // Include both agents and admins
         .order("created_at", { ascending: false });
 
       // Apply visibility rules: admins see all in agency, agents see their downlines
@@ -120,13 +114,14 @@ export async function GET(request: Request) {
           .rpc("get_agent_downline", { p_agent_id: userId });
 
         if (downlineError) {
-          console.error("Error fetching downline:", downlineError);
           // Fallback to only themselves if downline fetch fails
           agentsWithPositionsQuery = agentsWithPositionsQuery.eq("id", userId);
         } else if (downlineData && downlineData.length > 0) {
           const downlineIds = downlineData.map((d: any) => d.agent_id);
-          // Include the user themselves in the list
-          downlineIds.push(userId);
+          // Always include the user themselves in the list (even if they're in downline)
+          if (!downlineIds.includes(userId)) {
+            downlineIds.push(userId);
+          }
           agentsWithPositionsQuery = agentsWithPositionsQuery.in(
             "id",
             downlineIds,
@@ -135,7 +130,7 @@ export async function GET(request: Request) {
           agentsWithPositionsQuery = agentsWithPositionsQuery.eq("id", userId); // Only themselves
         }
       } else {
-        // Admins see all agents in their agency
+        // Admins see all agents in their agency (including themselves)
         agentsWithPositionsQuery = agentsWithPositionsQuery.eq(
           "agency_id",
           userDataFull.agency_id,
@@ -146,35 +141,44 @@ export async function GET(request: Request) {
         await agentsWithPositionsQuery;
 
       if (withPositionsError) {
-        console.error(
-          "Error fetching agents with positions:",
-          withPositionsError,
-        );
         // Continue with just agents without positions if this fails
       }
+
+      // Always fetch the current user separately to ensure they're included if they have a position
+      // This handles cases where the user might not be in the main query results (e.g., role mismatch)
+      const { data: currentUserData } = await supabase
+        .from("users")
+        .select(`
+          id,
+          first_name,
+          last_name,
+          email,
+          phone_number,
+          role,
+          position_id,
+          created_at,
+          position:positions(name),
+          upline_id,
+          upline:users!upline_id(first_name, last_name)
+        `)
+        .eq("id", userId)
+        .single();
+
+      // Check if current user is already in the agentsWithPositions list
+      const currentUserInResults = agentsWithPositions?.some((a: any) =>
+        a.id === userId
+      );
+      const currentUserWithPosition =
+        currentUserData && currentUserData.position_id && !currentUserInResults
+          ? currentUserData
+          : null;
 
       // Combine both lists and filter by search query
       const allAgentsList = [
         ...(allAgents || []).map((a: any) => {
-          console.log(
-            "[API] Agent without position - created_at:",
-            a.created_at,
-            "Type:",
-            typeof a.created_at,
-          );
           return { ...a, has_position: false };
         }),
         ...(agentsWithPositions || []).map((a: any) => {
-          console.log(
-            "[API] Agent with position - id:",
-            a.id,
-            "created_at:",
-            a.created_at,
-            "Type:",
-            typeof a.created_at,
-            "Full object:",
-            JSON.stringify(a, null, 2),
-          );
           return {
             agent_id: a.id,
             first_name: a.first_name,
@@ -191,6 +195,26 @@ export async function GET(request: Request) {
             has_position: !!a.position_id,
           };
         }),
+        // Explicitly add current user if they have a position and weren't in the results
+        ...(currentUserWithPosition
+          ? [{
+            agent_id: currentUserWithPosition.id,
+            first_name: currentUserWithPosition.first_name,
+            last_name: currentUserWithPosition.last_name,
+            email: currentUserWithPosition.email,
+            phone_number: currentUserWithPosition.phone_number,
+            role: currentUserWithPosition.role,
+            upline_name: currentUserWithPosition.upline &&
+                currentUserWithPosition.upline.first_name &&
+                currentUserWithPosition.upline.last_name
+              ? `${currentUserWithPosition.upline.first_name} ${currentUserWithPosition.upline.last_name}`
+              : null,
+            created_at: currentUserWithPosition.created_at,
+            position_id: currentUserWithPosition.position_id,
+            position_name: currentUserWithPosition.position?.name || null,
+            has_position: !!currentUserWithPosition.position_id,
+          }]
+          : []),
       ];
 
       // Remove duplicates (agents might appear in both lists)
@@ -224,12 +248,6 @@ export async function GET(request: Request) {
       .rpc("get_agents_without_positions", { p_user_id: userId });
 
     if (fetchError) {
-      console.error("Agents without positions fetch error:", {
-        message: fetchError.message,
-        details: fetchError.details,
-        hint: fetchError.hint,
-        code: fetchError.code,
-      });
       return NextResponse.json({
         error: "Failed to fetch agents",
         detail: `Database query encountered an error: ${fetchError.message}`,
@@ -249,7 +267,6 @@ export async function GET(request: Request) {
       count: agentList.length,
     });
   } catch (error) {
-    console.error("API Error in agents without positions:", error);
     return NextResponse.json({
       error: "Internal Server Error",
       detail: "An unexpected error occurred while fetching agents",

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
+import { Input } from "@/components/ui/input"
 import AddUserModal from "@/components/modals/add-user-modal"
 import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog, Mail } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
@@ -46,6 +47,9 @@ interface PendingAgent {
   role: string
   upline_name: string | null
   created_at: string
+  position_id?: string | null
+  position_name?: string | null
+  has_position?: boolean
 }
 
 interface Position {
@@ -269,12 +273,35 @@ export default function Agents() {
   const [filterPositions, setFilterPositions] = useState<Position[]>([]) // For filter dropdown (all agency positions)
   const [assigningAgentId, setAssigningAgentId] = useState<string | null>(null)
   const [selectedPositionId, setSelectedPositionId] = useState<string>("")
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null) // Track which agent we're working on
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
+  const [pendingSearchTerm, setPendingSearchTerm] = useState("")
 
   const formatUplineLabel = (upline?: string | null) => {
     if (!upline) return 'None'
+    // Check if upline contains "undefined" (case-insensitive)
+    if (upline.toLowerCase().includes('undefined')) {
+      return 'None'
+    }
     const normalized = upline.replace(/[\s,]/g, '')
     return normalized ? upline : 'None'
+  }
+
+  const formatDate = (dateString?: string | null) => {
+    console.log('[formatDate] Input:', dateString, 'Type:', typeof dateString)
+    if (!dateString) {
+      console.log('[formatDate] No dateString, returning N/A')
+      return 'N/A'
+    }
+    const date = new Date(dateString)
+    console.log('[formatDate] Parsed date:', date, 'Is valid:', !isNaN(date.getTime()))
+    if (isNaN(date.getTime())) {
+      console.log('[formatDate] Invalid date, returning N/A')
+      return 'N/A'
+    }
+    const formatted = date.toLocaleDateString()
+    console.log('[formatDate] Formatted:', formatted)
+    return formatted
   }
 
     const containerRef = useCallback((containerElem: HTMLDivElement | null) => {
@@ -350,9 +377,12 @@ export default function Agents() {
     fetchAgents()
   }, [currentPage, view, appliedFilters])
 
-  // Fetch pending agents count for badge (runs on mount and when view changes)
+  // Fetch all agents for pending positions view (with and without positions)
+  // This loads all data upfront so we can filter client-side without API calls
   useEffect(() => {
-    const fetchPendingCount = async () => {
+    const fetchAllAgents = async () => {
+      if (view !== 'pending-positions') return
+
       try {
         const supabase = createClient()
         const { data: { session } } = await supabase.auth.getSession()
@@ -363,7 +393,12 @@ export default function Agents() {
           return
         }
 
-        const response = await fetch('/api/agents/without-positions', {
+        // Fetch ALL agents (with and without positions) by using special 'all' parameter
+        // This triggers the API's search path which returns all agents (with and without positions)
+        const url = new URL('/api/agents/without-positions', window.location.origin)
+        url.searchParams.set('all', 'true') // Special parameter to fetch all agents
+
+        const response = await fetch(url.toString(), {
           headers: {
             'Authorization': `Bearer ${accessToken}`
           }
@@ -371,20 +406,27 @@ export default function Agents() {
 
         if (response.ok) {
           const data = await response.json()
-          setPendingCount(data.count || 0)
-          // If we're on pending positions view, also set the full list
-          if (view === 'pending-positions') {
-            setPendingAgents(data.agents || [])
-          }
+          console.log('[Frontend] Received agents data:', data.agents?.length || 0, 'agents')
+          console.log('[Frontend] Sample agent created_at values:', data.agents?.slice(0, 3).map((a: PendingAgent) => ({
+            id: a.agent_id,
+            name: `${a.first_name} ${a.last_name}`,
+            created_at: a.created_at,
+            type: typeof a.created_at,
+            has_position: a.has_position
+          })))
+          setPendingAgents(data.agents || [])
+          // Count only those without positions for the badge
+          const withoutPositionsCount = (data.agents || []).filter((a: PendingAgent) => !a.has_position).length
+          setPendingCount(withoutPositionsCount)
         } else {
-          console.error('Failed to fetch pending agents:', response.status, await response.text())
+          console.error('Failed to fetch agents:', response.status, await response.text())
         }
       } catch (err) {
-        console.error('Error fetching pending agents count:', err)
+        console.error('Error fetching agents:', err)
       }
     }
 
-    fetchPendingCount()
+    fetchAllAgents()
   }, [view])
 
   // Fetch positions for assignment dropdown (filtered by user's level)
@@ -525,10 +567,27 @@ export default function Agents() {
         throw new Error(error.error || 'Failed to assign position')
       }
 
-      // Remove the agent from pending list
-      setPendingAgents(prev => prev.filter(a => a.agent_id !== agentId))
-      setPendingCount(prev => Math.max(0, prev - 1))
+      // Refresh the agents list to get updated position information
+      // Fetch all agents again (with and without positions)
+      const refreshUrl = new URL('/api/agents/without-positions', window.location.origin)
+      refreshUrl.searchParams.set('all', 'true') // Special parameter to fetch all agents
+
+      const refreshResponse = await fetch(refreshUrl.toString(), {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json()
+        setPendingAgents(refreshData.agents || [])
+        setPendingCount(refreshData.count || 0)
+      }
+
+      // Clear selection state after successful assignment
       setSelectedPositionId("")
+      setSelectedAgentId(null)
+      setAssigningAgentId(null)
 
       alert('Position assigned successfully!')
     } catch (err) {
@@ -586,6 +645,16 @@ export default function Agents() {
     { value: "active", label: "Active" },
     { value: "inactive", label: "Inactive" },
   ]
+
+  // Filter agents client-side based on search term (all data is already loaded)
+  const normalizedPendingSearch = pendingSearchTerm.trim().toLowerCase()
+  const visiblePendingAgents = normalizedPendingSearch
+    ? pendingAgents.filter((agent) => {
+        const fullName = `${agent.first_name} ${agent.last_name}`.toLowerCase()
+        const email = (agent.email || "").toLowerCase()
+        return fullName.includes(normalizedPendingSearch) || email.includes(normalizedPendingSearch)
+      })
+    : pendingAgents
 
   const nodeSize = { x: 220, y: 200 };
   const foreignObjectProps = { width: nodeSize.x, height: nodeSize.y, x: -110, y: 10 };
@@ -1062,29 +1131,77 @@ export default function Agents() {
                   </div>
                 ))}
               </div>
-            ) : pendingAgents.length === 0 ? (
-              <div className="py-12 text-center">
-                <UserCog className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-lg font-medium text-foreground mb-2">
-                  All agents have positions assigned!
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  There are no agents waiting for position assignment.
-                </p>
-              </div>
             ) : (
               <div className="space-y-4">
-                <p className="text-sm text-muted-foreground mb-4">
-                  The following agents need position assignments. Select a position for each agent and click Assign.
-                </p>
-                {pendingAgents.map((agent) => (
+                <div className="space-y-4 mb-6">
+                  <p className="text-sm text-muted-foreground">
+                    {visiblePendingAgents.length === 0 && pendingSearchTerm
+                      ? "No agents match your search."
+                      : pendingSearchTerm
+                      ? "Search results: You can assign or update positions for any agent shown below."
+                      : "The following agents need position assignments. Select a position for each agent and click Assign. Use the search bar to find and modify positions for agents who already have positions."}
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Search Agents
+                    </label>
+                    <Input
+                      type="text"
+                      value={pendingSearchTerm}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        setPendingSearchTerm(value)
+                        // Reset selection state when search is cleared
+                        if (!value) {
+                          setSelectedAgentId(null)
+                          setSelectedPositionId("")
+                          setAssigningAgentId(null)
+                        }
+                      }}
+                      placeholder="Search by name or email to find and modify agent positions..."
+                      className="h-11 text-sm"
+                    />
+                  </div>
+                </div>
+                {visiblePendingAgents.length === 0 && !pendingSearchTerm ? (
+                  <div className="py-12 text-center">
+                    <UserCog className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-lg font-medium text-foreground mb-2">
+                      All agents have positions assigned!
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      There are no agents waiting for position assignment.
+                    </p>
+                  </div>
+                ) : visiblePendingAgents.length === 0 && pendingSearchTerm ? (
+                  <div className="py-12 text-center">
+                    <UserCog className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-lg font-medium text-foreground mb-2">
+                      No agents match your search.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {visiblePendingAgents.map((agent) => (
                   <div
                     key={agent.agent_id}
                     className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
                   >
                     <div className="flex-1">
-                      <div className="font-medium text-foreground">
-                        {agent.first_name} {agent.last_name}
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium text-foreground">
+                          {agent.first_name} {agent.last_name}
+                        </div>
+                        {agent.has_position && agent.position_name && (
+                          <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs">
+                            Current: {agent.position_name}
+                          </Badge>
+                        )}
+                        {!agent.has_position && (
+                          <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+                            No Position
+                          </Badge>
+                        )}
                       </div>
                       <div className="text-sm text-muted-foreground mt-1">
                         {agent.email} {agent.phone_number && `• ${agent.phone_number}`}
@@ -1093,7 +1210,10 @@ export default function Agents() {
                         Upline: {formatUplineLabel(agent.upline_name)}
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
-                        Created: {new Date(agent.created_at).toLocaleDateString()}
+                        Created: {(() => {
+                          console.log('[Agent Display] Agent:', agent.agent_id, 'created_at:', agent.created_at, 'Type:', typeof agent.created_at)
+                          return formatDate(agent.created_at)
+                        })()}
                       </div>
                     </div>
                     <div className="flex items-center gap-3 ml-4">
@@ -1105,25 +1225,64 @@ export default function Agents() {
                             value: p.position_id,
                             label: `${p.name} (Level ${p.level})`
                           }))}
-                        value={assigningAgentId === agent.agent_id ? selectedPositionId : ""}
+                        value={selectedAgentId === agent.agent_id ? (selectedPositionId || agent.position_id || "") : (agent.position_id || "")}
                         onValueChange={(value) => {
-                          setAssigningAgentId(agent.agent_id)
+                          setSelectedAgentId(agent.agent_id)
                           setSelectedPositionId(value)
                         }}
-                        placeholder="Select position..."
+                        placeholder={agent.position_name ? `Current: ${agent.position_name}` : "Select position..."}
                         searchPlaceholder="Search positions..."
                       />
                       <Button
-                        onClick={() => handleAssignPosition(agent.agent_id, selectedPositionId)}
-                        disabled={assigningAgentId !== agent.agent_id || !selectedPositionId}
-                        className="bg-foreground hover:bg-foreground/90 text-background"
+                        onClick={() => {
+                          // Prevent clicks if currently assigning
+                          if (assigningAgentId === agent.agent_id) {
+                            return
+                          }
+                          
+                          // Must be working on this agent and have a selected position
+                          if (selectedAgentId !== agent.agent_id || !selectedPositionId) {
+                            return
+                          }
+                          
+                          // If agent has position, only allow if the selected position is different
+                          if (agent.has_position && selectedPositionId === agent.position_id) {
+                            return
+                          }
+                          
+                          handleAssignPosition(agent.agent_id, selectedPositionId)
+                        }}
+                        disabled={
+                          // Disable if currently assigning this agent
+                          assigningAgentId === agent.agent_id ||
+                          // For agents with position: enable only if working on this agent AND selected a DIFFERENT position
+                          (agent.has_position && (
+                            selectedAgentId !== agent.agent_id || 
+                            !selectedPositionId || 
+                            selectedPositionId === agent.position_id
+                          )) ||
+                          // For agents without position: enable only if working on this agent AND selected a position
+                          (!agent.has_position && (
+                            selectedAgentId !== agent.agent_id || 
+                            !selectedPositionId
+                          ))
+                        }
+                        className="bg-foreground hover:bg-foreground/90 text-background disabled:opacity-50 disabled:cursor-not-allowed"
                         size="sm"
                       >
-                        {assigningAgentId === agent.agent_id && selectedPositionId ? 'Assign' : 'Select Position'}
+                        {assigningAgentId === agent.agent_id
+                          ? 'Assigning...'
+                          : agent.has_position && selectedAgentId === agent.agent_id && selectedPositionId && selectedPositionId !== agent.position_id
+                          ? 'Update Position'
+                          : !agent.has_position && selectedAgentId === agent.agent_id && selectedPositionId
+                          ? 'Assign Position'
+                          : 'Select Position'}
                       </Button>
                     </div>
                   </div>
                 ))}
+                  </>
+                )}
               </div>
             )}
           </CardContent>

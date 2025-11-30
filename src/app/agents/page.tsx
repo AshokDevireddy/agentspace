@@ -12,6 +12,12 @@ import AddUserModal from "@/components/modals/add-user-modal"
 import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog, Mail } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
 
 // Agent data type
 interface Agent {
@@ -277,6 +283,31 @@ export default function Agents() {
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
   const [pendingSearchTerm, setPendingSearchTerm] = useState("")
 
+  // Track which filters are visible (showing input fields) - load from localStorage
+  const [visibleFilters, setVisibleFilters] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('agents-visible-filters')
+      if (stored) {
+        try {
+          return new Set(JSON.parse(stored))
+        } catch {
+          return new Set()
+        }
+      }
+    }
+    return new Set()
+  })
+
+  // Track if the add filter menu is open
+  const [addFilterMenuOpen, setAddFilterMenuOpen] = useState(false)
+
+  // Persist visible filters to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('agents-visible-filters', JSON.stringify(Array.from(visibleFilters)))
+    }
+  }, [visibleFilters])
+
   const formatUplineLabel = (upline?: string | null) => {
     if (!upline) return 'None'
     // Check if upline contains "undefined" (case-insensitive)
@@ -331,7 +362,7 @@ export default function Agents() {
           params.append('inUpline', appliedFilters.inUpline)
         }
         if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
-          params.append('directUpline', appliedFilters.directUpline)
+          params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
         }
         if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
           params.append('inDownline', appliedFilters.inDownline)
@@ -531,7 +562,66 @@ export default function Agents() {
   const handleClearFilters = () => {
     clearFilters()
     setCurrentPage(1)
+    // Also hide all filter input fields
+    setVisibleFilters(new Set())
   }
+
+  const addFilter = (filterName: string) => {
+    const newVisibleFilters = new Set(visibleFilters)
+    newVisibleFilters.add(filterName)
+    setVisibleFilters(newVisibleFilters)
+    setAddFilterMenuOpen(false)
+  }
+
+  const removeFilter = (filterName: string) => {
+    const newVisibleFilters = new Set(visibleFilters)
+    newVisibleFilters.delete(filterName)
+    setVisibleFilters(newVisibleFilters)
+
+    // Reset the filter value when removing
+    switch(filterName) {
+      case 'inUpline':
+        setLocalFilters({ inUpline: 'all' })
+        break
+      case 'directUpline':
+        setLocalFilters({ directUpline: 'all' })
+        break
+      case 'inDownline':
+        setLocalFilters({ inDownline: 'all' })
+        break
+      case 'directDownline':
+        setLocalFilters({ directDownline: 'all' })
+        break
+      case 'agentName':
+        setLocalFilters({ agentName: 'all' })
+        break
+      case 'status':
+        setLocalFilters({ status: 'all' })
+        break
+      case 'position':
+        setLocalFilters({ position: 'all' })
+        break
+    }
+  }
+
+  const availableFilters = [
+    { id: 'inUpline', label: 'In Upline' },
+    { id: 'directUpline', label: 'Direct Upline' },
+    { id: 'inDownline', label: 'In Downline' },
+    { id: 'directDownline', label: 'Direct Downline' },
+    { id: 'agentName', label: 'Agent Name' },
+    { id: 'status', label: 'Status' },
+    { id: 'position', label: 'Position' },
+  ]
+
+  const hasActiveFilters =
+    appliedFilters.inUpline !== 'all' ||
+    appliedFilters.directUpline !== 'all' ||
+    appliedFilters.inDownline !== 'all' ||
+    appliedFilters.directDownline !== 'all' ||
+    appliedFilters.agentName !== 'all' ||
+    appliedFilters.status !== 'all' ||
+    appliedFilters.position !== 'all'
 
   // Handle position assignment
   const handleAssignPosition = async (agentId: string, positionId: string) => {
@@ -636,6 +726,13 @@ export default function Agents() {
     ...allAgents.map(agent => ({ value: agent.name, label: agent.name }))
   ]
 
+  // Generate direct upline options with "Not Set" option
+  const directUplineOptions = [
+    { value: "all", label: "All Agents" },
+    { value: "not_set", label: "Not Set" },
+    ...allAgents.map(agent => ({ value: agent.name, label: agent.name }))
+  ]
+
   // Generate status options
   const statusOptions = [
     { value: "all", label: "All Statuses" },
@@ -717,129 +814,240 @@ export default function Agents() {
 
       {/* Filters - Only show in table view */}
       {view === 'table' && (
-        <Card className="professional-card filter-container !rounded-md">
-          <CardContent className="p-2">
-            <div className="flex items-end gap-2 flex-wrap">
-              {/* In Upline */}
-              <div className="flex-1 min-w-[120px]">
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
-                  In Upline
-                </label>
-                <SimpleSearchableSelect
-                  options={agentOptions}
-                  value={localFilters.inUpline}
-                  onValueChange={(value) => setLocalFilters({ inUpline: value })}
-                  placeholder="All Agents"
-                  searchPlaceholder="Search..."
-                />
-              </div>
+        <Card className="professional-card !rounded-md overflow-visible">
+          <CardContent className="p-4 overflow-visible">
+            <div className="space-y-4">
+              {/* Add Filter Button and Active Filters */}
+              <div className="flex items-center gap-2 flex-wrap overflow-visible">
+                <Popover open={addFilterMenuOpen} onOpenChange={setAddFilterMenuOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1.5" />
+                      Add Filter
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-2" align="start">
+                    <div className="space-y-1">
+                      {availableFilters.map((filter) => (
+                        <button
+                          key={filter.id}
+                          onClick={() => addFilter(filter.id)}
+                          disabled={visibleFilters.has(filter.id)}
+                          className={cn(
+                            "w-full text-left px-3 py-2 text-sm rounded-md transition-colors",
+                            visibleFilters.has(filter.id)
+                              ? "opacity-50 cursor-not-allowed"
+                              : "hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                          )}
+                        >
+                          {filter.label}
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
 
-              {/* Direct Upline */}
-              <div className="flex-1 min-w-[120px]">
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
-                  Direct Upline
-                </label>
-                <SimpleSearchableSelect
-                  options={agentOptions}
-                  value={localFilters.directUpline}
-                  onValueChange={(value) => setLocalFilters({ directUpline: value })}
-                  placeholder="All Agents"
-                  searchPlaceholder="Search..."
-                />
-              </div>
+                {/* Filter chips for visible filters */}
+                {visibleFilters.has('inUpline') && (
+                  <Badge variant="outline" className="h-8 px-3">
+                    In Upline
+                    <X
+                      className="h-3 w-3 ml-2 cursor-pointer"
+                      onClick={() => removeFilter('inUpline')}
+                    />
+                  </Badge>
+                )}
+                {visibleFilters.has('directUpline') && (
+                  <Badge variant="outline" className="h-8 px-3">
+                    Direct Upline
+                    <X
+                      className="h-3 w-3 ml-2 cursor-pointer"
+                      onClick={() => removeFilter('directUpline')}
+                    />
+                  </Badge>
+                )}
+                {visibleFilters.has('inDownline') && (
+                  <Badge variant="outline" className="h-8 px-3">
+                    In Downline
+                    <X
+                      className="h-3 w-3 ml-2 cursor-pointer"
+                      onClick={() => removeFilter('inDownline')}
+                    />
+                  </Badge>
+                )}
+                {visibleFilters.has('directDownline') && (
+                  <Badge variant="outline" className="h-8 px-3">
+                    Direct Downline
+                    <X
+                      className="h-3 w-3 ml-2 cursor-pointer"
+                      onClick={() => removeFilter('directDownline')}
+                    />
+                  </Badge>
+                )}
+                {visibleFilters.has('agentName') && (
+                  <Badge variant="outline" className="h-8 px-3">
+                    Agent Name
+                    <X
+                      className="h-3 w-3 ml-2 cursor-pointer"
+                      onClick={() => removeFilter('agentName')}
+                    />
+                  </Badge>
+                )}
+                {visibleFilters.has('status') && (
+                  <Badge variant="outline" className="h-8 px-3">
+                    Status
+                    <X
+                      className="h-3 w-3 ml-2 cursor-pointer"
+                      onClick={() => removeFilter('status')}
+                    />
+                  </Badge>
+                )}
+                {visibleFilters.has('position') && (
+                  <Badge variant="outline" className="h-8 px-3">
+                    Position
+                    <X
+                      className="h-3 w-3 ml-2 cursor-pointer"
+                      onClick={() => removeFilter('position')}
+                    />
+                  </Badge>
+                )}
 
-              {/* In Downline */}
-              <div className="flex-1 min-w-[120px]">
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
-                  In Downline
-                </label>
-                <SimpleSearchableSelect
-                  options={agentOptions}
-                  value={localFilters.inDownline}
-                  onValueChange={(value) => setLocalFilters({ inDownline: value })}
-                  placeholder="All Agents"
-                  searchPlaceholder="Search..."
-                />
-              </div>
-
-              {/* Direct Downline */}
-              <div className="flex-1 min-w-[120px]">
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
-                  Direct Downline
-                </label>
-                <SimpleSearchableSelect
-                  options={agentOptions}
-                  value={localFilters.directDownline}
-                  onValueChange={(value) => setLocalFilters({ directDownline: value })}
-                  placeholder="All Agents"
-                  searchPlaceholder="Search..."
-                />
-              </div>
-
-              {/* Agent Name */}
-              <div className="flex-1 min-w-[120px]">
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
-                  Agent Name
-                </label>
-                <SimpleSearchableSelect
-                  options={agentOptions}
-                  value={localFilters.agentName}
-                  onValueChange={(value) => setLocalFilters({ agentName: value })}
-                  placeholder="All Agents"
-                  searchPlaceholder="Search..."
-                />
-              </div>
-
-              {/* Status */}
-              <div className="flex-1 min-w-[120px]">
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
-                  Status
-                </label>
-                <SimpleSearchableSelect
-                  options={statusOptions}
-                  value={localFilters.status}
-                  onValueChange={(value) => setLocalFilters({ status: value })}
-                  placeholder="All Statuses"
-                  searchPlaceholder="Search..."
-                />
-              </div>
-
-              {/* Position */}
-              <div className="flex-1 min-w-[120px]">
-                <label className="block text-[10px] font-medium text-muted-foreground mb-0.5">
-                  Position
-                </label>
-                <SimpleSearchableSelect
-                  options={[{ value: "all", label: "All Positions" }, ...filterPositions.map(p => ({ value: p.position_id, label: p.name }))]}
-                  value={localFilters.position}
-                  onValueChange={(value) => setLocalFilters({ position: value })}
-                  placeholder="All Positions"
-                  searchPlaceholder="Search..."
-                />
-              </div>
-
-              {/* Filter Buttons */}
-              <div className="flex gap-2 items-end">
-                <Button
-                  onClick={handleApplyFilters}
-                  size="sm"
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 px-4"
-                  disabled={loading}
-                >
-                  <Filter className="h-3.5 w-3.5 mr-1.5" />
-                  Filter
-                </Button>
-                {(appliedFilters.inUpline !== 'all' || appliedFilters.directUpline !== 'all' || appliedFilters.inDownline !== 'all' || appliedFilters.directDownline !== 'all' || appliedFilters.agentName !== 'all' || appliedFilters.status !== 'all' || appliedFilters.position !== 'all') && (
+                {hasActiveFilters && (
                   <Button
                     onClick={handleClearFilters}
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="h-8 px-3"
+                    className="h-8"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    Clear All
                   </Button>
                 )}
+
+                <div className="ml-auto">
+                  <Button
+                    onClick={handleApplyFilters}
+                    size="sm"
+                    className="bg-foreground hover:bg-foreground/90 text-background h-8 px-4"
+                    disabled={loading}
+                  >
+                    Apply Filters
+                  </Button>
+                </div>
               </div>
+
+              {/* Collapsible Filter Fields */}
+              {visibleFilters.size > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {visibleFilters.has('inUpline') && (
+                    <div className="relative overflow-visible">
+                      <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                        In Upline
+                      </label>
+                      <SimpleSearchableSelect
+                        options={agentOptions}
+                        value={localFilters.inUpline}
+                        onValueChange={(value) => setLocalFilters({ inUpline: value })}
+                        placeholder="All Agents"
+                        searchPlaceholder="Search..."
+                      />
+                    </div>
+                  )}
+
+                  {visibleFilters.has('directUpline') && (
+                    <div className="relative overflow-visible">
+                      <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                        Direct Upline
+                      </label>
+                      <SimpleSearchableSelect
+                        options={directUplineOptions}
+                        value={localFilters.directUpline}
+                        onValueChange={(value) => setLocalFilters({ directUpline: value })}
+                        placeholder="All Agents"
+                        searchPlaceholder="Search..."
+                      />
+                    </div>
+                  )}
+
+                  {visibleFilters.has('inDownline') && (
+                    <div className="relative overflow-visible">
+                      <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                        In Downline
+                      </label>
+                      <SimpleSearchableSelect
+                        options={agentOptions}
+                        value={localFilters.inDownline}
+                        onValueChange={(value) => setLocalFilters({ inDownline: value })}
+                        placeholder="All Agents"
+                        searchPlaceholder="Search..."
+                      />
+                    </div>
+                  )}
+
+                  {visibleFilters.has('directDownline') && (
+                    <div className="relative overflow-visible">
+                      <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                        Direct Downline
+                      </label>
+                      <SimpleSearchableSelect
+                        options={agentOptions}
+                        value={localFilters.directDownline}
+                        onValueChange={(value) => setLocalFilters({ directDownline: value })}
+                        placeholder="All Agents"
+                        searchPlaceholder="Search..."
+                      />
+                    </div>
+                  )}
+
+                  {visibleFilters.has('agentName') && (
+                    <div className="relative overflow-visible">
+                      <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                        Agent Name
+                      </label>
+                      <SimpleSearchableSelect
+                        options={agentOptions}
+                        value={localFilters.agentName}
+                        onValueChange={(value) => setLocalFilters({ agentName: value })}
+                        placeholder="All Agents"
+                        searchPlaceholder="Search..."
+                      />
+                    </div>
+                  )}
+
+                  {visibleFilters.has('status') && (
+                    <div className="relative overflow-visible">
+                      <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                        Status
+                      </label>
+                      <SimpleSearchableSelect
+                        options={statusOptions}
+                        value={localFilters.status}
+                        onValueChange={(value) => setLocalFilters({ status: value })}
+                        placeholder="All Statuses"
+                        searchPlaceholder="Search..."
+                      />
+                    </div>
+                  )}
+
+                  {visibleFilters.has('position') && (
+                    <div className="relative overflow-visible">
+                      <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                        Position
+                      </label>
+                      <SimpleSearchableSelect
+                        options={[{ value: "all", label: "All Positions" }, ...filterPositions.map(p => ({ value: p.position_id, label: p.name }))]}
+                        value={localFilters.position}
+                        onValueChange={(value) => setLocalFilters({ position: value })}
+                        placeholder="All Positions"
+                        searchPlaceholder="Search..."
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

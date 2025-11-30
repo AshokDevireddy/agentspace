@@ -117,7 +117,9 @@ export async function GET(
       phone_number: agent.phone_number || null,
       role: agent.role || null,
       position: positionName,
+      position_id: agent.position_id || null,
       upline: uplineName,
+      upline_id: agent.upline_id || null,
       created: new Date(agent.created_at || "").toLocaleString("en-US", {
         year: "numeric",
         month: "short",
@@ -178,7 +180,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { email, phone_number, role, status } = body;
+    const { email, phone_number, role, status, upline_id } = body;
 
     // Build update object with only provided fields
     const updateData: any = {};
@@ -186,6 +188,11 @@ export async function PUT(
     if (phone_number !== undefined) updateData.phone_number = phone_number;
     if (role !== undefined) updateData.role = role;
     if (status !== undefined) updateData.status = status;
+    if (upline_id !== undefined) {
+      updateData.upline_id = upline_id === "all" || upline_id === ""
+        ? null
+        : upline_id;
+    }
 
     // Update agent
     const { data: updatedAgent, error: updateError } = await supabaseAdmin

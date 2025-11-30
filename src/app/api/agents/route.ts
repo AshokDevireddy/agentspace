@@ -277,6 +277,9 @@ export async function GET(request: Request) {
         position_id: row.position_id || null,
         position_name: row.position_name || null,
         position_level: row.position_level || null,
+        email: row.email || null,
+        first_name: row.first_name || null,
+        last_name: row.last_name || null,
         children: [],
       };
     });

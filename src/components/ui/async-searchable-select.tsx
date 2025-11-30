@@ -50,9 +50,12 @@ export function AsyncSearchableSelect({
 
     try {
       setLoading(true)
-      const url = `${searchEndpoint}?q=${encodeURIComponent(search)}&limit=20`
+      // Check if searchEndpoint already has query params
+      const separator = searchEndpoint.includes('?') ? '&' : '?'
+      const url = `${searchEndpoint}${separator}q=${encodeURIComponent(search)}&limit=20`
       const response = await fetch(url, {
-        signal: abortControllerRef.current.signal
+        signal: abortControllerRef.current.signal,
+        credentials: 'include'
       })
 
       if (!response.ok) {

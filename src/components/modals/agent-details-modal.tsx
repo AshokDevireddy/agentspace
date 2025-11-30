@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
+import { AsyncSearchableSelect } from "@/components/ui/async-searchable-select"
 import { Loader2, User, Calendar, DollarSign, Users, Building2, Mail, Phone, CheckCircle2, UserCog, TrendingUp, Circle, X, Edit, Save } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -174,7 +175,8 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
       email: agent.email || '',
       phone_number: agent.phone_number || '',
       role: agent.role || '',
-      status: agent.status || 'pre-invite'
+      status: agent.status || 'pre-invite',
+      upline_id: agent.upline_id || ''
     })
     setIsEditing(true)
   }
@@ -187,6 +189,66 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
   const handleSave = async () => {
     if (!agent || !editedData) return
 
+    // Check if we should prompt for invite
+    const wasPreInvite = agent.status?.toLowerCase() === 'pre-invite'
+    const hasEmail = editedData.email && editedData.email.trim() !== ''
+    const emailChanged = editedData.email !== agent.email
+    const shouldPromptInvite = wasPreInvite && hasEmail && emailChanged
+
+    if (shouldPromptInvite) {
+      const sendInvite = confirm('Would you like to send an invitation email to this user? Click OK to send invite, or Cancel to save without sending.')
+      
+      if (sendInvite) {
+        // Send invite using the invite API
+        setSaving(true)
+        try {
+          // First, get the agent's name parts
+          const nameParts = agent.name.split(' ')
+          const firstName = nameParts[0] || ''
+          const lastName = nameParts.slice(1).join(' ') || ''
+
+          // Determine permission level from role
+          const permissionLevel = editedData.role === 'admin' ? 'admin' : 'agent'
+
+          const inviteResponse = await fetch('/api/agents/invite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              email: editedData.email,
+              firstName: firstName,
+              lastName: lastName,
+              phoneNumber: editedData.phone_number || null,
+              permissionLevel: permissionLevel,
+              uplineAgentId: editedData.upline_id && editedData.upline_id !== 'all' ? editedData.upline_id : null,
+              positionId: agent.position_id || null,
+              preInviteUserId: agent.id
+            })
+          })
+
+          if (!inviteResponse.ok) {
+            const errorData = await inviteResponse.json()
+            throw new Error(errorData.error || 'Failed to send invitation')
+          }
+
+          // After successful invite, the user status will be updated to 'invited'
+          // Refresh the agent details
+          await fetchAgentDetails()
+          setIsEditing(false)
+          setEditedData(null)
+          onUpdate?.()
+          alert('Invitation sent successfully!')
+          return
+        } catch (err) {
+          console.error('Error sending invite:', err)
+          alert(err instanceof Error ? err.message : 'Failed to send invitation')
+          setSaving(false)
+          return
+        }
+      }
+    }
+
+    // Regular save (without invite)
     setSaving(true)
     try {
       const response = await fetch(`/api/agents/${agent.id}`, {
@@ -432,7 +494,18 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Upline</label>
-                  <p className="text-lg font-semibold text-foreground">{agent.upline || 'None'}</p>
+                  {isEditing ? (
+                    <AsyncSearchableSelect
+                      value={editedData?.upline_id || 'all'}
+                      onValueChange={(value) => setEditedData({ ...editedData, upline_id: value })}
+                      placeholder="Select upline..."
+                      searchPlaceholder="Type to search agents..."
+                      searchEndpoint="/api/search-agents?format=options&type=downline"
+                      defaultLabel={agent.upline || 'None'}
+                    />
+                  ) : (
+                    <p className="text-lg font-semibold text-foreground">{agent.upline || 'None'}</p>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">

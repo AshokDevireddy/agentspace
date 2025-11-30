@@ -10,7 +10,7 @@ import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select
 import { Input } from "@/components/ui/input"
 import AddUserModal from "@/components/modals/add-user-modal"
 import { AgentDetailsModal } from "@/components/modals/agent-details-modal"
-import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog, Mail } from "lucide-react"
+import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog, Mail, Send } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import {
@@ -35,6 +35,9 @@ interface Agent {
   position_id?: string | null
   position_name?: string | null
   position_level?: number | null
+  email?: string | null
+  first_name?: string
+  last_name?: string
 }
 
 interface TreeNode {
@@ -282,6 +285,8 @@ export default function Agents() {
   const [selectedPositionId, setSelectedPositionId] = useState<string>("")
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null) // Track which agent we're working on
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
+  const [agentToInvite, setAgentToInvite] = useState<Agent | null>(null)
+  const [sendingInvite, setSendingInvite] = useState(false)
   const [pendingSearchTerm, setPendingSearchTerm] = useState("")
   const [selectedAgentIdForModal, setSelectedAgentIdForModal] = useState<string | null>(null)
   const [agentModalOpen, setAgentModalOpen] = useState(false)
@@ -391,7 +396,26 @@ export default function Agents() {
         const data = await response.json()
 
         if(view === 'table') {
-            setAgentsData(data.agents)
+            // For pre-invite agents without email, fetch email from agent details
+            const agentsWithEmail = await Promise.all(
+              data.agents.map(async (agent: Agent) => {
+                if (agent.status?.toLowerCase() === 'pre-invite' && !agent.email) {
+                  try {
+                    const response = await fetch(`/api/agents/${agent.id}`, {
+                      credentials: 'include'
+                    })
+                    if (response.ok) {
+                      const agentData = await response.json()
+                      return { ...agent, email: agentData.email || null }
+                    }
+                  } catch (err) {
+                    console.error('Error fetching agent email:', err)
+                  }
+                }
+                return agent
+              })
+            )
+            setAgentsData(agentsWithEmail)
             setTotalPages(data.pagination.totalPages)
             setTotalCount(data.pagination.totalCount)
             if (data.allAgents) {
@@ -715,6 +739,101 @@ export default function Agents() {
       alert(err instanceof Error ? err.message : 'Failed to resend invitation')
     } finally {
       setResendingInviteId(null)
+    }
+  }
+
+  // Handle send invite for pre-invite users
+  const handleSendInvite = async (agent: Agent) => {
+    if (!agent.email) {
+      alert('Agent email is required to send invitation')
+      return
+    }
+
+    setAgentToInvite(agent)
+    setSendingInvite(true)
+    
+    try {
+      // Get the agent's name parts
+      const firstName = agent.first_name || agent.name.split(' ')[0] || ''
+      const lastName = agent.last_name || agent.name.split(' ').slice(1).join(' ') || ''
+
+      // Determine permission level from role (default to agent)
+      const permissionLevel = 'agent'
+
+      const response = await fetch('/api/agents/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: agent.email,
+          firstName: firstName,
+          lastName: lastName,
+          phoneNumber: null,
+          permissionLevel: permissionLevel,
+          uplineAgentId: null,
+          positionId: agent.position_id || null,
+          preInviteUserId: agent.id
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to send invitation')
+      }
+
+      // Refresh the agents list
+      const params = new URLSearchParams()
+      if (view === 'table') {
+        params.append('page', currentPage.toString())
+        params.append('limit', '20')
+      } else {
+        params.append('view', 'tree')
+      }
+
+      // Add active filter parameters
+      if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
+        params.append('inUpline', appliedFilters.inUpline)
+      }
+      if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
+        params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
+      }
+      if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
+        params.append('inDownline', appliedFilters.inDownline)
+      }
+      if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
+        params.append('directDownline', appliedFilters.directDownline)
+      }
+      if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
+        params.append('agentName', appliedFilters.agentName)
+      }
+      if (appliedFilters.status && appliedFilters.status !== 'all') {
+        params.append('status', appliedFilters.status)
+      }
+      if (appliedFilters.position && appliedFilters.position !== 'all') {
+        params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
+      }
+
+      const url = `/api/agents?${params.toString()}`
+      const refreshResponse = await fetch(url)
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json()
+        if (view === 'table') {
+          setAgentsData(refreshData.agents)
+          setTotalPages(refreshData.pagination.totalPages)
+          setTotalCount(refreshData.pagination.totalCount)
+          if (refreshData.allAgents) {
+            setAllAgents(refreshData.allAgents)
+          }
+        }
+      }
+      
+      alert('Invitation sent successfully!')
+    } catch (err) {
+      console.error('Error sending invite:', err)
+      alert(err instanceof Error ? err.message : 'Failed to send invitation')
+    } finally {
+      setSendingInvite(false)
+      setAgentToInvite(null)
     }
   }
 
@@ -1149,21 +1268,59 @@ export default function Agents() {
                             >
                               {agent.badge}
                             </Badge>
-                            {(agent.status === 'invited' || agent.status === 'onboarding') && (
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleResendInvite(agent.id)
-                                }}
-                                disabled={resendingInviteId === agent.id}
-                                variant="ghost"
-                                size="sm"
-                                className="mt-2 h-7 px-2 text-xs gap-1"
-                              >
-                                <Mail className="h-3 w-3" />
-                                {resendingInviteId === agent.id ? 'Sending...' : 'Resend Invite'}
-                              </Button>
-                            )}
+                            <div className="mt-2">
+                              {agent.status?.toLowerCase() === 'pre-invite' && agent.email && (
+                                <Button
+                                  onClick={async (e) => {
+                                    e.stopPropagation()
+                                    // Fetch full agent details if needed
+                                    let agentWithEmail = agent
+                                    if (!agent.first_name || !agent.last_name) {
+                                      try {
+                                        const response = await fetch(`/api/agents/${agent.id}`, {
+                                          credentials: 'include'
+                                        })
+                                        if (response.ok) {
+                                          const agentData = await response.json()
+                                          const nameParts = agentData.name.split(' ')
+                                          agentWithEmail = { 
+                                            ...agent, 
+                                            email: agentData.email || agent.email,
+                                            first_name: agentData.name.split(',')[1]?.trim() || nameParts[0] || '',
+                                            last_name: agentData.name.split(',')[0]?.trim() || nameParts.slice(1).join(' ') || ''
+                                          }
+                                        }
+                                      } catch (err) {
+                                        console.error('Error fetching agent details:', err)
+                                      }
+                                    }
+                                    await handleSendInvite(agentWithEmail)
+                                  }}
+                                  disabled={sendingInvite && agentToInvite?.id === agent.id}
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-3 text-xs gap-1.5 bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30 hover:border-blue-500/40"
+                                >
+                                  <Send className="h-3 w-3" />
+                                  {sendingInvite && agentToInvite?.id === agent.id ? 'Sending...' : 'Send Invitation'}
+                                </Button>
+                              )}
+                              {(agent.status?.toLowerCase() === 'invited' || agent.status?.toLowerCase() === 'onboarding') && (
+                                <Button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleResendInvite(agent.id)
+                                  }}
+                                  disabled={resendingInviteId === agent.id}
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-3 text-xs gap-1.5 bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30 hover:border-blue-500/40"
+                                >
+                                  <Mail className="h-3 w-3" />
+                                  {resendingInviteId === agent.id ? 'Sending...' : 'Resend Invite'}
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -1185,7 +1342,10 @@ export default function Agents() {
                           className={`border ${statusColors[agent.status] || 'bg-muted text-muted-foreground border-border'}`}
                           variant="outline"
                         >
-                          {agent.status.charAt(0).toUpperCase() + agent.status.slice(1).replace('-', ' ')}
+                          {agent.status
+                            .split('-')
+                            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                            .join('-')}
                         </Badge>
                       </td>
                       <td className="text-muted-foreground">{agent.created}</td>
@@ -1599,6 +1759,8 @@ export default function Agents() {
           }}
         />
       )}
+
     </div>
   )
 }
+

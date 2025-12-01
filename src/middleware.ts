@@ -33,7 +33,7 @@ export async function middleware(req: NextRequest) {
   const isPublicRoute = publicRoutes.includes(req.nextUrl.pathname) || req.nextUrl.pathname.startsWith('/auth/confirm') || req.nextUrl.pathname.startsWith('/auth/callback')
 
   // Public API prefixes that should bypass auth (cron jobs, webhooks, registration, password reset, favicon, etc.)
-  const publicApiPrefixes = ['/api/cron/', '/api/telnyx-webhook', '/api/register', '/api/reset-password', '/api/favicon']
+  const publicApiPrefixes = ['/api/cron/', '/api/telnyx-webhook', '/api/webhooks/stripe', '/api/register', '/api/reset-password', '/api/favicon']
   const isPublicApi = publicApiPrefixes.some(prefix => req.nextUrl.pathname.startsWith(prefix))
 
   // If no user and trying to access protected route

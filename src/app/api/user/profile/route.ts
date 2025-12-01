@@ -172,6 +172,18 @@ export async function GET(request: Request) {
       // Include position information
       position_id: userData.position_id || null,
       position: userData.position || null,
+      // Include subscription information
+      subscription_status: userData.subscription_status || 'free',
+      subscription_tier: userData.subscription_tier || 'free',
+      deals_created_count: userData.deals_created_count || 0,
+      ai_requests_count: userData.ai_requests_count || 0,
+      messages_sent_count: userData.messages_sent_count || 0,
+      // Include billing cycle information
+      billing_cycle_start: userData.billing_cycle_start || null,
+      billing_cycle_end: userData.billing_cycle_end || null,
+      // Include scheduled tier change information
+      scheduled_tier_change: userData.scheduled_tier_change || null,
+      scheduled_tier_change_date: userData.scheduled_tier_change_date || null,
     }
 
     return NextResponse.json({

@@ -75,11 +75,19 @@ export async function GET(request: NextRequest) {
       try {
         console.log(`\n📬 Processing: ${deal.client_name} (${deal.client_phone})`);
         console.log(`  Agent: ${deal.agent_first_name} ${deal.agent_last_name} (ID: ${deal.agent_id})`);
+        console.log(`  Agent Tier: ${deal.agent_subscription_tier}`);
         console.log(`  Agency: ${deal.agency_name} (Phone: ${deal.agency_phone})`);
 
         // Check if messaging is enabled (already filtered by RPC, but double-check)
         if (!deal.messaging_enabled) {
           console.log(`  ⚠️  SKIPPED: Messaging is disabled for agency ${deal.agency_name}`);
+          skippedCount++;
+          continue;
+        }
+
+        // Check agent subscription tier - only Pro and Expert get automated messages
+        if (deal.agent_subscription_tier === 'free' || deal.agent_subscription_tier === 'basic') {
+          console.log(`  ⏭️  SKIPPED: Agent is on ${deal.agent_subscription_tier} tier (automated messaging restricted to Pro/Expert only)`);
           skippedCount++;
           continue;
         }

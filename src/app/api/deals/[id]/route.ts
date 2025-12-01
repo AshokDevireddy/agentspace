@@ -111,6 +111,52 @@ export async function PUT(
     // Extract client_email if provided (it's not a deal field, it's a users field)
     const { client_email, ...dealData } = data;
 
+    // If client_phone is being updated, check if it already exists for another deal in the same agency
+    if (dealData.client_phone !== undefined) {
+      // First get the current deal to access agency_id
+      const { data: currentDeal, error: fetchError } = await supabase
+        .from("deals")
+        .select("agency_id")
+        .eq("id", dealId)
+        .single();
+
+      if (fetchError) {
+        return NextResponse.json({ error: fetchError.message }, { status: 400 });
+      }
+
+      if (currentDeal?.agency_id && dealData.client_phone) {
+        const { normalizePhoneForStorage } = await import('@/lib/telnyx');
+        const normalizedPhone = normalizePhoneForStorage(dealData.client_phone);
+
+        // Check if another deal in the same agency already has this phone number
+        const { data: existingDeal, error: phoneCheckError } = await supabase
+          .from('deals')
+          .select('id, client_name, policy_number')
+          .eq('client_phone', normalizedPhone)
+          .eq('agency_id', currentDeal.agency_id)
+          .neq('id', dealId) // Exclude the current deal
+          .maybeSingle();
+
+        if (phoneCheckError && phoneCheckError.code !== 'PGRST116') {
+          console.error('[Deal Update] Error checking phone uniqueness:', phoneCheckError);
+          return NextResponse.json(
+            { error: `Failed to validate phone number: ${phoneCheckError.message}` },
+            { status: 400 }
+          );
+        }
+
+        if (existingDeal) {
+          return NextResponse.json(
+            {
+              error: `Phone number ${dealData.client_phone} already exists for another deal in your agency (${existingDeal.client_name}, Policy: ${existingDeal.policy_number || 'N/A'}). Each deal must have a unique phone number within the agency.`,
+              existing_deal_id: existingDeal.id,
+            },
+            { status: 409 } // 409 Conflict
+          );
+        }
+      }
+    }
+
     // Add updated_at timestamp
     dealData.updated_at = new Date().toISOString();
 
@@ -136,6 +182,27 @@ export async function PUT(
       if (clientError) {
         console.error('Error updating client email:', clientError);
         // Don't fail the whole request if client email update fails
+      }
+    }
+
+    // If client_phone was updated, also update the conversation's client_phone field
+    // This ensures the conversation stays associated with the deal even when phone changes
+    if (dealData.client_phone !== undefined && deal.id) {
+      // Import normalizePhoneForStorage at the top if needed
+      const { normalizePhoneForStorage } = await import('@/lib/telnyx');
+      const normalizedPhone = dealData.client_phone ? normalizePhoneForStorage(dealData.client_phone) : null;
+
+      const { error: convError } = await supabase
+        .from("conversations")
+        .update({ client_phone: normalizedPhone })
+        .eq("deal_id", deal.id)
+        .eq("is_active", true);
+
+      if (convError) {
+        console.error('Error updating conversation phone number:', convError);
+        // Don't fail the whole request if conversation update fails
+      } else {
+        console.log(`📞 Updated conversation phone number for deal ${deal.id} to ${normalizedPhone}`);
       }
     }
 

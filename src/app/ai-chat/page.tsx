@@ -319,7 +319,9 @@ export default function AIChat() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to get response');
+        // Try to parse error response
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.message || 'Failed to get response');
       }
 
       const reader = response.body?.getReader();
@@ -561,9 +563,9 @@ export default function AIChat() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50/50 overflow-hidden">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50/50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900/50 overflow-hidden">
       {/* Header - Fixed at top */}
-      <div className="fixed top-0 left-0 right-0 z-10 backdrop-blur-xl bg-white/80 shadow-sm lg:left-64">
+      <div className="fixed top-0 left-0 right-0 z-10 backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 shadow-sm lg:left-64">
         <div className="max-w-4xl mx-auto px-4 py-3">
           <div className="flex items-center justify-center">
             <div className="flex items-center gap-3">
@@ -599,45 +601,45 @@ export default function AIChat() {
               <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-3">
                 Welcome to AI Mode
               </h2>
-              <p className="text-slate-600 text-lg mb-12 max-w-2xl mx-auto">
+              <p className="text-slate-600 dark:text-gray-400 text-lg mb-12 max-w-2xl mx-auto">
                 Create custom visualizations and interactive graphs from your data.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
                 <button
                   onClick={() => setInput('Create a bar graph for the policies sold for each carrier in the last 9 months')}
-                  className="group p-5 text-left bg-white/80 backdrop-blur-sm border border-slate-200 rounded-2xl hover:bg-white hover:shadow-lg hover:shadow-purple-100 hover:border-purple-300 transition-all duration-200"
+                  className="group p-5 text-left bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-slate-200 dark:border-gray-700 rounded-2xl hover:bg-white dark:hover:bg-gray-700 hover:shadow-lg hover:shadow-purple-100 dark:hover:shadow-purple-900/30 hover:border-purple-300 dark:hover:border-purple-600 transition-all duration-200"
                 >
-                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-purple-600 transition-colors">Carrier Performance</div>
-                  <div className="text-sm text-slate-500">Policies by carrier over time</div>
+                  <div className="font-semibold mb-1 text-slate-800 dark:text-gray-200 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">Carrier Performance</div>
+                  <div className="text-sm text-slate-500 dark:text-gray-400">Policies by carrier over time</div>
                 </button>
                 <button
                   onClick={() => setInput('Show me a line chart of monthly revenue trends')}
-                  className="group p-5 text-left bg-white/80 backdrop-blur-sm border border-slate-200 rounded-2xl hover:bg-white hover:shadow-lg hover:shadow-blue-100 hover:border-blue-300 transition-all duration-200"
+                  className="group p-5 text-left bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-slate-200 dark:border-gray-700 rounded-2xl hover:bg-white dark:hover:bg-gray-700 hover:shadow-lg hover:shadow-blue-100 dark:hover:shadow-blue-900/30 hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200"
                 >
-                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-blue-600 transition-colors">Revenue Trends</div>
-                  <div className="text-sm text-slate-500 flex items-center gap-1">
+                  <div className="font-semibold mb-1 text-slate-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">Revenue Trends</div>
+                  <div className="text-sm text-slate-500 dark:text-gray-400 flex items-center gap-1">
                     Visualize growth patterns
-                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Coming Soon</span>
+                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 font-medium">Coming Soon</span>
                   </div>
                 </button>
                 <button
                   onClick={() => setInput('Create a pie chart showing distribution by product type')}
-                  className="group p-5 text-left bg-white/80 backdrop-blur-sm border border-slate-200 rounded-2xl hover:bg-white hover:shadow-lg hover:shadow-purple-100 hover:border-purple-300 transition-all duration-200"
+                  className="group p-5 text-left bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-slate-200 dark:border-gray-700 rounded-2xl hover:bg-white dark:hover:bg-gray-700 hover:shadow-lg hover:shadow-purple-100 dark:hover:shadow-purple-900/30 hover:border-purple-300 dark:hover:border-purple-600 transition-all duration-200"
                 >
-                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-purple-600 transition-colors">Product Distribution</div>
-                  <div className="text-sm text-slate-500 flex items-center gap-1">
+                  <div className="font-semibold mb-1 text-slate-800 dark:text-gray-200 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">Product Distribution</div>
+                  <div className="text-sm text-slate-500 dark:text-gray-400 flex items-center gap-1">
                     Compare product mix
-                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Coming Soon</span>
+                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 font-medium">Coming Soon</span>
                   </div>
                 </button>
                 <button
                   onClick={() => setInput('Show me a heat map of activity by day and hour')}
-                  className="group p-5 text-left bg-white/80 backdrop-blur-sm border border-slate-200 rounded-2xl hover:bg-white hover:shadow-lg hover:shadow-blue-100 hover:border-blue-300 transition-all duration-200"
+                  className="group p-5 text-left bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-slate-200 dark:border-gray-700 rounded-2xl hover:bg-white dark:hover:bg-gray-700 hover:shadow-lg hover:shadow-blue-100 dark:hover:shadow-blue-900/30 hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200"
                 >
-                  <div className="font-semibold mb-1 text-slate-800 group-hover:text-blue-600 transition-colors">Activity Patterns</div>
-                  <div className="text-sm text-slate-500 flex items-center gap-1">
+                  <div className="font-semibold mb-1 text-slate-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">Activity Patterns</div>
+                  <div className="text-sm text-slate-500 dark:text-gray-400 flex items-center gap-1">
                     Peak engagement times
-                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Coming Soon</span>
+                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 font-medium">Coming Soon</span>
                   </div>
                 </button>
               </div>
@@ -648,8 +650,8 @@ export default function AIChat() {
             <div key={index} className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
               <div className={`max-w-[85%] ${
                 message.role === 'user'
-                  ? 'bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-200'
-                  : 'bg-white/90 backdrop-blur-sm border border-slate-200 shadow-lg shadow-slate-100'
+                  ? 'bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-200 dark:shadow-purple-900/30'
+                  : 'bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border border-slate-200 dark:border-gray-700 shadow-lg shadow-slate-100 dark:shadow-gray-900/30'
               } rounded-3xl px-6 py-4`}>
                 {message.role === 'user' ? (
                   <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>
@@ -658,26 +660,26 @@ export default function AIChat() {
                     {message.toolCalls && message.toolCalls.length > 0 && (
                       <div className="mb-4 space-y-2">
                         {message.toolCalls.map((toolCall) => (
-                          <div key={toolCall.id} className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50">
+                          <div key={toolCall.id} className="border border-slate-200 dark:border-gray-700 rounded-xl overflow-hidden bg-slate-50/50 dark:bg-gray-900/50">
                             <button
                               onClick={() => toggleToolExpanded(toolCall.id)}
-                              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-100/70 transition-colors text-left"
+                              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-100/70 dark:hover:bg-gray-800/70 transition-colors text-left"
                             >
                               {toolCall.status === 'completed' ? (
-                                <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                                <CheckCircle2 className="h-4 w-4 text-green-500 dark:text-green-400 flex-shrink-0" />
                               ) : (
-                                <Loader2 className="h-4 w-4 animate-spin text-purple-600 flex-shrink-0" />
+                                <Loader2 className="h-4 w-4 animate-spin text-purple-600 dark:text-purple-400 flex-shrink-0" />
                               )}
-                              <span className="text-sm font-medium flex-1 text-slate-700">{getToolDisplayName(toolCall.name)}</span>
+                              <span className="text-sm font-medium flex-1 text-slate-700 dark:text-gray-300">{getToolDisplayName(toolCall.name)}</span>
                               {expandedTools.has(toolCall.id) ? (
-                                <ChevronUp className="h-4 w-4 text-slate-400" />
+                                <ChevronUp className="h-4 w-4 text-slate-400 dark:text-gray-500" />
                               ) : (
-                                <ChevronDown className="h-4 w-4 text-slate-400" />
+                                <ChevronDown className="h-4 w-4 text-slate-400 dark:text-gray-500" />
                               )}
                             </button>
                             {expandedTools.has(toolCall.id) && toolCall.result && (
-                              <div className="px-4 py-3 bg-slate-100/50 border-t border-slate-200">
-                                <pre className="text-xs overflow-auto max-h-64 text-slate-600">
+                              <div className="px-4 py-3 bg-slate-100/50 dark:bg-gray-900/70 border-t border-slate-200 dark:border-gray-700">
+                                <pre className="text-xs overflow-auto max-h-64 text-slate-600 dark:text-gray-400">
                                   {JSON.stringify(toolCall.result, null, 2)}
                                 </pre>
                               </div>
@@ -687,21 +689,21 @@ export default function AIChat() {
                       </div>
                     )}
                     {message.content && (
-                      <div className="prose prose-slate prose-sm max-w-none text-slate-800 leading-relaxed
-                        prose-headings:font-bold prose-headings:text-slate-900 prose-headings:mb-3 prose-headings:mt-6 first:prose-headings:mt-0
+                      <div className="prose prose-slate dark:prose-invert prose-sm max-w-none text-slate-800 dark:text-gray-200 leading-relaxed
+                        prose-headings:font-bold prose-headings:text-slate-900 dark:prose-headings:text-gray-100 prose-headings:mb-3 prose-headings:mt-6 first:prose-headings:mt-0
                         prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg
-                        prose-p:text-slate-700 prose-p:leading-7 prose-p:mb-4
+                        prose-p:text-slate-700 dark:prose-p:text-gray-300 prose-p:leading-7 prose-p:mb-4
                         prose-ul:list-disc prose-ul:ml-4 prose-ul:mb-4 prose-ul:space-y-1.5
                         prose-ol:list-decimal prose-ol:ml-4 prose-ol:mb-4 prose-ol:space-y-1.5
-                        prose-li:text-slate-700 prose-li:leading-relaxed
-                        prose-strong:text-slate-900 prose-strong:font-semibold
-                        prose-code:text-purple-600 prose-code:bg-purple-50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
-                        prose-pre:bg-slate-900 prose-pre:text-slate-100 prose-pre:rounded-xl prose-pre:p-4
-                        prose-blockquote:border-l-4 prose-blockquote:border-purple-500 prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:text-slate-600
-                        prose-a:text-purple-600 prose-a:no-underline hover:prose-a:underline
+                        prose-li:text-slate-700 dark:prose-li:text-gray-300 prose-li:leading-relaxed
+                        prose-strong:text-slate-900 dark:prose-strong:text-gray-100 prose-strong:font-semibold
+                        prose-code:text-purple-600 dark:prose-code:text-purple-400 prose-code:bg-purple-50 dark:prose-code:bg-purple-900/30 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
+                        prose-pre:bg-slate-900 dark:prose-pre:bg-gray-950 prose-pre:text-slate-100 dark:prose-pre:text-gray-100 prose-pre:rounded-xl prose-pre:p-4
+                        prose-blockquote:border-l-4 prose-blockquote:border-purple-500 dark:prose-blockquote:border-purple-600 prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:text-slate-600 dark:prose-blockquote:text-gray-400
+                        prose-a:text-purple-600 dark:prose-a:text-purple-400 prose-a:no-underline hover:prose-a:underline
                         prose-table:border-collapse prose-table:w-full prose-table:text-sm
-                        prose-th:border prose-th:border-slate-300 prose-th:bg-slate-100 prose-th:px-4 prose-th:py-2 prose-th:text-left prose-th:font-semibold
-                        prose-td:border prose-td:border-slate-300 prose-td:px-4 prose-td:py-2
+                        prose-th:border prose-th:border-slate-300 dark:prose-th:border-gray-700 prose-th:bg-slate-100 dark:prose-th:bg-gray-800 prose-th:px-4 prose-th:py-2 prose-th:text-left prose-th:font-semibold
+                        prose-td:border prose-td:border-slate-300 dark:prose-td:border-gray-700 prose-td:px-4 prose-td:py-2
                       ">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {message.content}
@@ -722,21 +724,21 @@ export default function AIChat() {
           {/* Current streaming response with thinking progress */}
           {(isLoading && (thinkingSteps.length > 0 || streamingContent)) && (
             <div className="flex justify-start">
-              <div className="max-w-[85%] bg-white/90 backdrop-blur-sm border border-slate-200 rounded-3xl px-6 py-4 shadow-lg shadow-slate-100">
+              <div className="max-w-[85%] bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border border-slate-200 dark:border-gray-700 rounded-3xl px-6 py-4 shadow-lg shadow-slate-100 dark:shadow-gray-900/30">
                 {thinkingSteps.length > 0 && (
                   <div className="mb-4">
                     <ThinkingProgress steps={thinkingSteps} />
                   </div>
                 )}
                 {streamingContent && (
-                  <div className="prose prose-slate prose-sm max-w-none text-slate-800 leading-relaxed
-                    prose-headings:font-bold prose-headings:text-slate-900 prose-headings:mb-3 prose-headings:mt-6 first:prose-headings:mt-0
+                  <div className="prose prose-slate dark:prose-invert prose-sm max-w-none text-slate-800 dark:text-gray-200 leading-relaxed
+                    prose-headings:font-bold prose-headings:text-slate-900 dark:prose-headings:text-gray-100 prose-headings:mb-3 prose-headings:mt-6 first:prose-headings:mt-0
                     prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg
-                    prose-p:text-slate-700 prose-p:leading-7 prose-p:mb-4
+                    prose-p:text-slate-700 dark:prose-p:text-gray-300 prose-p:leading-7 prose-p:mb-4
                     prose-ul:list-disc prose-ul:ml-4 prose-ul:mb-4 prose-ul:space-y-1.5
                     prose-ol:list-decimal prose-ol:ml-4 prose-ol:mb-4 prose-ol:space-y-1.5
-                    prose-li:text-slate-700 prose-li:leading-relaxed
-                    prose-strong:text-slate-900 prose-strong:font-semibold
+                    prose-li:text-slate-700 dark:prose-li:text-gray-300 prose-li:leading-relaxed
+                    prose-strong:text-slate-900 dark:prose-strong:text-gray-100 prose-strong:font-semibold
                   ">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {streamingContent}
@@ -763,7 +765,7 @@ export default function AIChat() {
               placeholder="Ask me anything about your agency..."
               disabled={isLoading}
               rows={1}
-              className="flex-1 min-h-[56px] max-h-[200px] pl-5 pr-5 py-4 text-base rounded-3xl border-2 border-slate-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-100 shadow-2xl bg-white backdrop-blur-sm transition-all resize-none overflow-y-auto focus:outline-none"
+              className="flex-1 min-h-[56px] max-h-[200px] pl-5 pr-5 py-4 text-base rounded-3xl border-2 border-slate-200 dark:border-gray-700 focus:border-purple-400 dark:focus:border-purple-500 focus:ring-4 focus:ring-purple-100 dark:focus:ring-purple-900/30 shadow-2xl bg-white dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500 backdrop-blur-sm transition-all resize-none overflow-y-auto focus:outline-none"
               style={{
                 scrollbarWidth: 'thin',
                 scrollbarColor: '#cbd5e1 transparent'

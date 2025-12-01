@@ -16,6 +16,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { UpgradePrompt } from "@/components/upgrade-prompt"
+import { createClient } from "@/lib/supabase/client"
 
 // Types for the API responses
 interface Deal {
@@ -162,6 +164,29 @@ export default function BookOfBusiness() {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [userTier, setUserTier] = useState<string>('free')
+
+  // Fetch user subscription tier
+  useEffect(() => {
+    const fetchUserTier = async () => {
+      try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const { data: userData } = await supabase
+            .from('users')
+            .select('subscription_tier')
+            .eq('auth_user_id', user.id)
+            .single()
+
+          setUserTier(userData?.subscription_tier || 'free')
+        }
+      } catch (error) {
+        console.error('Error fetching user tier:', error)
+      }
+    }
+    fetchUserTier()
+  }, [])
 
   // Fetch filter options on component mount
   useEffect(() => {
@@ -364,9 +389,23 @@ export default function BookOfBusiness() {
   ]
 
   return (
-    <div className="space-y-6 max-w-full overflow-hidden">
-      {/* Header with Status Slider and View Mode Slider */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 max-w-full overflow-hidden relative">
+      {/* Upgrade prompt overlay for Basic tier viewing downlines */}
+      {userTier === 'basic' && viewMode === 'downlines' && (
+        <div className="fixed z-40 pointer-events-none" style={{ top: '3rem', left: '16rem', right: 0, bottom: 0 }}>
+          <div className="h-full flex items-center justify-center pointer-events-auto">
+            <UpgradePrompt
+              title="Upgrade to View Downline Data"
+              message="Upgrade to Pro or Expert tier to view and manage your team's deals"
+              requiredTier="Pro"
+              blur={false}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Header with Status Slider and View Mode Slider - Always interactive */}
+      <div className="flex items-center justify-between relative z-50">
         <h1 className="text-4xl font-bold text-primary">Book of Business</h1>
 
         <div className="flex items-center gap-4">
@@ -485,8 +524,8 @@ export default function BookOfBusiness() {
         </div>
       )}
 
-      {/* Filter Controls */}
-      <Card className="professional-card !rounded-md">
+      {/* Filter Controls - Always interactive */}
+      <Card className="professional-card !rounded-md relative z-50">
         <CardContent className="p-4">
           <div className="space-y-4">
             {/* Add Filter Button and Active Filters */}
@@ -748,7 +787,10 @@ export default function BookOfBusiness() {
       </Card>
 
       {/* Policies Table */}
-      <div className="table-container">
+      <div className={cn(
+        "table-container",
+        userTier === 'basic' && viewMode === 'downlines' && "blur-sm pointer-events-none"
+      )}>
         <div className="table-wrapper custom-scrollbar">
           <table className="jira-table min-w-full">
             <thead>
@@ -893,7 +935,6 @@ export default function BookOfBusiness() {
               </tbody>
             </table>
         </div>
-      </div>
         {!loading && deals.length > 0 ? (
           <div className="flex justify-center py-4">
             <Button
@@ -911,6 +952,7 @@ export default function BookOfBusiness() {
             </Button>
           </div>
         ) : null}
+      </div>
 
       {/* Policy Details Modal */}
       {selectedDealId && (

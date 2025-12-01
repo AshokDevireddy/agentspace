@@ -2887,10 +2887,10 @@ export default function ConfigurationPage() {
                     <div className="bg-accent/30 rounded-lg p-6 border border-border">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <h3 className="text-xl font-semibold text-foreground mb-2">Enable Automated Messaging</h3>
+                          <h3 className="text-xl font-semibold text-foreground mb-2">Enable Automated Messaging and Notifications</h3>
                           <p className="text-sm text-muted-foreground">
                             When enabled, automated messages will be sent for birthdays, billing reminders, and lapse notifications.
-                            When disabled, no automated messages will be sent to your clients.
+                            When disabled, no automated messages will be sent to your clients and no notifications will be sent to your agents.
                           </p>
                           {!agencyPhoneNumber && (
                             <p className="text-sm text-amber-700 mt-2 font-medium">

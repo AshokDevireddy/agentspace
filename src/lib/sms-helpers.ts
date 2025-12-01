@@ -88,6 +88,7 @@ export async function getConversationIfExists(
 /**
  * Gets or creates a conversation for an agent-client pair
  * Uses client phone number to prevent duplicate conversations
+ * Updates the phone number if it has changed on the deal
  */
 export async function getOrCreateConversation(
   agentId: string,
@@ -111,25 +112,32 @@ export async function getOrCreateConversation(
     .maybeSingle();
 
   if (existingByDeal) {
+    // If conversation exists but phone number has changed, update it
+    if (normalizedPhone && existingByDeal.client_phone !== normalizedPhone) {
+      console.log(`📞 Updating phone number for conversation ${existingByDeal.id}: ${existingByDeal.client_phone} → ${normalizedPhone}`);
+
+      const { data: updated, error: updateError } = await supabase
+        .from('conversations')
+        .update({ client_phone: normalizedPhone })
+        .eq('id', existingByDeal.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Failed to update conversation phone number:', updateError);
+        // Return existing conversation even if update failed
+        return existingByDeal as ConversationResult;
+      }
+
+      return updated as ConversationResult;
+    }
+
     return existingByDeal as ConversationResult;
   }
 
-  // If not found by deal, check if conversation exists for this phone number
-  // (to handle case where client has multiple deals but we want one conversation)
-  if (normalizedPhone) {
-    const { data: existingByPhone } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('agency_id', agencyId)
-      .eq('client_phone', normalizedPhone)
-      .eq('type', 'sms')
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (existingByPhone) {
-      return existingByPhone as ConversationResult;
-    }
-  }
+  // NOTE: We do NOT reuse conversations by phone number
+  // Each deal gets its own conversation, even if the phone number matches another deal
+  // Phone number uniqueness is enforced at the deal level in the API
 
   // Create new conversation with normalized phone
   // Auto-opt-in for informational messages (billing, birthday reminders, etc.)

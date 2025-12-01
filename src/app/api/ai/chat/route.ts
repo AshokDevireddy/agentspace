@@ -2,6 +2,8 @@ import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest } from 'next/server';
 import { executeToolCall } from '@/lib/ai-tools';
+import { getTierLimits } from '@/lib/subscription-tiers';
+import { reportAIUsage, getMeteredSubscriptionItems } from '@/lib/stripe-usage';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -471,19 +473,78 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Check if user is admin
+    // AI Mode requires BOTH Expert tier AND admin status
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('is_admin, agency_id')
+      .select('id, is_admin, role, agency_id, subscription_tier, ai_requests_count, ai_requests_reset_date, stripe_subscription_id, billing_cycle_end')
       .eq('auth_user_id', user.id)
       .single();
 
-    if (userError || !userData || !userData.is_admin) {
-      return new Response(JSON.stringify({ error: 'Admin access required' }), {
+    if (userError || !userData) {
+      return new Response(JSON.stringify({ error: 'User not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Check if user is admin
+    const isAdmin = userData.role === 'admin' || userData.is_admin === true;
+
+    // Check if user has Expert tier
+    const hasExpertTier = userData.subscription_tier === 'expert';
+
+    // AI Mode requires BOTH conditions
+    if (!hasExpertTier) {
+      return new Response(JSON.stringify({
+        error: 'Expert tier required',
+        message: 'AI Mode is only available with Expert tier subscription.',
+        tier_required: 'expert',
+        current_tier: userData.subscription_tier
+      }), {
         status: 403,
         headers: { 'Content-Type': 'application/json' }
       });
     }
+
+    if (!isAdmin) {
+      return new Response(JSON.stringify({
+        error: 'Admin access required',
+        message: 'AI Mode is only available for admin users with Expert tier subscription.',
+        admin_required: true,
+        is_admin: isAdmin
+      }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // AI usage limits: 50 requests per billing cycle included for Expert tier admins
+    const AI_REQUEST_LIMIT = 50;
+    let aiRequestsCount = userData.ai_requests_count || 0;
+    const billingCycleEnd = userData.billing_cycle_end ? new Date(userData.billing_cycle_end) : null;
+    const now = new Date();
+
+    // Reset count if we're past the billing cycle end
+    let shouldReset = false;
+    if (billingCycleEnd && now > billingCycleEnd && userData.stripe_subscription_id) {
+      shouldReset = true;
+      console.log(`⚠️ User ${userData.id} is past billing cycle end (${billingCycleEnd.toISOString()}), AI counter will be reset`);
+    }
+
+    if (shouldReset) {
+      await supabase
+        .from('users')
+        .update({
+          ai_requests_count: 0,
+          ai_requests_reset_date: now.toISOString()
+        })
+        .eq('id', userData.id);
+      aiRequestsCount = 0;
+      console.log(`✅ Reset AI request counter for user ${userData.id} - new billing cycle started`);
+    }
+
+    // No hard limit - usage-based billing allows unlimited AI requests
+    const isOverLimit = aiRequestsCount >= AI_REQUEST_LIMIT;
 
     const { messages } = await request.json();
 
@@ -695,14 +756,33 @@ WHEN TO USE EACH TOOL:
 
 Remember: Keep it clean, structured, and easy to scan. Only provide what was asked for - no extra visualizations or tables.`;
 
+    // Increment AI request count
+    await supabase
+      .from('users')
+      .update({
+        ai_requests_count: aiRequestsCount + 1,
+        ai_requests_reset_date: userData.ai_requests_reset_date || new Date().toISOString()
+      })
+      .eq('id', userData.id);
+
+    // If user has exceeded their tier limit, report usage to Stripe for metered billing
+    if (isOverLimit && userData.stripe_subscription_id) {
+      const { aiItemId } = await getMeteredSubscriptionItems(userData.stripe_subscription_id);
+      if (aiItemId) {
+        await reportAIUsage(userData.stripe_subscription_id, aiItemId, 1);
+        console.log(`💰 User ${userData.id} will be charged $0.25 for AI request overage`);
+      }
+    }
+
     // Create a ReadableStream for streaming the response
     const stream = new ReadableStream({
       async start(controller) {
+        let isStreamActive = true;
         try {
           let conversationMessages = [...messages];
           let shouldContinue = true;
 
-          while (shouldContinue) {
+          while (shouldContinue && isStreamActive) {
             const messageStream = await anthropic.messages.create({
               model: 'claude-sonnet-4-5',
               max_tokens: 4096,
@@ -719,6 +799,9 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
             const toolResultsMap = new Map<string, any>();
 
             for await (const event of messageStream) {
+              // Check if stream is still active before enqueueing
+              if (!isStreamActive) break;
+
               // Send the event to the client
               const chunk = `data: ${JSON.stringify(event)}\n\n`;
               controller.enqueue(new TextEncoder().encode(chunk));
@@ -853,12 +936,23 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
             }
           }
 
-          // Send done signal
-          controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
-          controller.close();
+          // Send done signal only if stream is still active
+          if (isStreamActive) {
+            controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+            controller.close();
+            isStreamActive = false;
+          }
         } catch (error) {
           console.error('Streaming error:', error);
-          controller.error(error);
+          if (isStreamActive) {
+            try {
+              controller.error(error);
+            } catch (e) {
+              // Controller already closed, ignore
+              console.error('Controller already closed:', e);
+            }
+            isStreamActive = false;
+          }
         }
       },
     });

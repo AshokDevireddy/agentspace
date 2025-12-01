@@ -512,6 +512,7 @@ export default function AnalyticsTestPage() {
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
 	const [userId, setUserId] = React.useState<string | null>(null)
+	const [subscriptionTier, setSubscriptionTier] = React.useState<string>('free')
 	const [downlineTitle, setDownlineTitle] = React.useState<string | null>(null)
 	const [downlineBreadcrumbInfo, setDownlineBreadcrumbInfo] = React.useState<{ currentAgentName: string; breadcrumbs: Array<{ agentId: string; agentName: string }>; isAtRoot: boolean } | null>(null)
 	const downlineChartRef = React.useRef<DownlineProductionChartHandle>(null)
@@ -530,7 +531,7 @@ export default function AnalyticsTestPage() {
 
 				const { data: userRow, error: userError } = await supabase
 					.from("users")
-					.select("id, agency_id")
+					.select("id, agency_id, subscription_tier")
 					.eq("auth_user_id", userId)
 					.single()
 				if (userError || !userRow?.id) return
@@ -550,6 +551,7 @@ export default function AnalyticsTestPage() {
 				if (isMounted) {
 					setAnalyticsData(rpcData as AnalyticsTestValue)
 					setUserId(userRow.id)
+					setSubscriptionTier(userRow.subscription_tier || 'free')
 				}
 			} catch (_) {
 				// swallow for now; can add toast/logging later
@@ -1400,6 +1402,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			</div>
 
 			{/* Total Submitted Business / Status Breakdown */}
+			<div className="relative">
 			<Card className="rounded-md">
 				<CardContent className="p-4 sm:p-6">
 					{isLoading ? (
@@ -2204,8 +2207,27 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 					)}
 				</CardContent>
 			</Card>
+			{(subscriptionTier === 'free' || subscriptionTier === 'basic') && (
+				<div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-900/70 backdrop-blur-md rounded-md">
+					<div className="bg-white dark:bg-gray-800 rounded-lg p-8 shadow-xl text-center max-w-md">
+						<div className="text-4xl mb-4">🔒</div>
+						<h3 className="text-xl font-bold mb-2">Upgrade to View Analytics</h3>
+						<p className="text-gray-600 dark:text-gray-400 mb-4">
+							Upgrade to Pro or Expert tier to unlock full analytics and insights
+						</p>
+						<a
+							href="/user/profile"
+							className="inline-block bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
+						>
+							Upgrade Now
+						</a>
+					</div>
+				</div>
+			)}
+			</div>
 
 			{/* Performance Trends */}
+			<div className="relative">
 			<Card className="rounded-md">
 				<CardContent className="p-4 sm:p-6">
 					<div className="mb-4 text-xs font-medium tracking-wide text-muted-foreground">PERFORMANCE TRENDS</div>
@@ -3355,6 +3377,24 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 					)}
 				</CardContent>
 			</Card>
+			{(subscriptionTier === 'free' || subscriptionTier === 'basic') && (
+				<div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-900/70 backdrop-blur-md rounded-md">
+					<div className="bg-white dark:bg-gray-800 rounded-lg p-8 shadow-xl text-center max-w-md">
+						<div className="text-4xl mb-4">🔒</div>
+						<h3 className="text-xl font-bold mb-2">Upgrade to View Analytics</h3>
+						<p className="text-gray-600 dark:text-gray-400 mb-4">
+							Upgrade to Pro or Expert tier to unlock full analytics and insights
+						</p>
+						<a
+							href="/user/profile"
+							className="inline-block bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
+						>
+							Upgrade Now
+						</a>
+					</div>
+				</div>
+			)}
+			</div>
 
 			<Tabs defaultValue="overview" className="hidden">
 				<TabsList>

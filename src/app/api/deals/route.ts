@@ -228,8 +228,68 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ deal, operation, message: "Deal updated successfully" }, { status: 200 });
     } else {
       // Create new deal
-      // IMPORTANT: Before creating a deal, we must verify that ALL agents in the upline have positions set
-      // This is a strict business rule - if even one agent in the upline doesn't have a position,
+
+      // STEP 1: Check subscription limits for free users
+      if (agent_id) {
+        const { data: agentData, error: agentError } = await supabase
+          .from('users')
+          .select('subscription_tier, deals_created_count')
+          .eq('id', agent_id)
+          .single();
+
+        if (agentError) {
+          console.error('[Deals API] Error fetching agent subscription data:', agentError);
+        } else if (agentData) {
+          const subscriptionTier = agentData.subscription_tier || 'free';
+          const dealsCreated = agentData.deals_created_count || 0;
+
+          // If user is on free plan and has reached the limit of 10 deals
+          if (subscriptionTier === 'free' && dealsCreated >= 10) {
+            return NextResponse.json(
+              {
+                error: 'You have reached the maximum of 10 deals on the Free plan. Please upgrade your subscription to create more deals.',
+                message: 'You have reached the maximum of 10 deals on the Free plan. Please upgrade your subscription to create more deals.',
+                limit_reached: true
+              },
+              { status: 403 }
+            );
+          }
+        }
+      }
+
+      // STEP 2: Check if phone number already exists for another deal in the same agency
+      if (client_phone && agency_id) {
+        const { normalizePhoneForStorage } = await import('@/lib/telnyx');
+        const normalizedPhone = normalizePhoneForStorage(client_phone);
+
+        const { data: existingDeal, error: phoneCheckError } = await supabase
+          .from('deals')
+          .select('id, client_name, policy_number')
+          .eq('client_phone', normalizedPhone)
+          .eq('agency_id', agency_id)
+          .maybeSingle();
+
+        if (phoneCheckError && phoneCheckError.code !== 'PGRST116') {
+          console.error('[Deals API] Error checking phone uniqueness:', phoneCheckError);
+          return NextResponse.json(
+            { error: `Failed to validate phone number: ${phoneCheckError.message}` },
+            { status: 400 }
+          );
+        }
+
+        if (existingDeal) {
+          return NextResponse.json(
+            {
+              error: `Phone number ${client_phone} already exists for another deal in your agency (${existingDeal.client_name}, Policy: ${existingDeal.policy_number || 'N/A'}). Each deal must have a unique phone number within the agency.`,
+              existing_deal_id: existingDeal.id,
+            },
+            { status: 409 } // 409 Conflict
+          );
+        }
+      }
+
+      // STEP 3: Verify that ALL agents in the upline have positions set
+      // IMPORTANT: This is a strict business rule - if even one agent in the upline doesn't have a position,
       // the deal cannot be created because we won't have commission percentages for the hierarchy snapshot
 
       if (agent_id && product_id) {
@@ -363,6 +423,22 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 400 });
       }
 
+      // Increment deals_created_count for the agent
+      if (agent_id) {
+        const { data: currentAgent } = await supabase
+          .from('users')
+          .select('deals_created_count')
+          .eq('id', agent_id)
+          .single();
+
+        if (currentAgent) {
+          await supabase
+            .from('users')
+            .update({ deals_created_count: (currentAgent.deals_created_count || 0) + 1 })
+            .eq('id', agent_id);
+        }
+      }
+
       // Create hierarchy snapshot for the new deal
       if (deal?.id && deal.agent_id && deal.product_id) {
         try {
@@ -476,6 +552,26 @@ export async function PUT(req: NextRequest) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    // If client_phone was updated, also update the conversation's client_phone field
+    // This ensures the conversation stays associated with the deal even when phone changes
+    if (updateData.client_phone !== undefined && deal.id) {
+      const { normalizePhoneForStorage } = await import('@/lib/telnyx');
+      const normalizedPhone = updateData.client_phone ? normalizePhoneForStorage(updateData.client_phone) : null;
+
+      const { error: convError } = await supabase
+        .from("conversations")
+        .update({ client_phone: normalizedPhone })
+        .eq("deal_id", deal.id)
+        .eq("is_active", true);
+
+      if (convError) {
+        console.error('Error updating conversation phone number:', convError);
+        // Don't fail the whole request if conversation update fails
+      } else {
+        console.log(`📞 Updated conversation phone number for deal ${deal.id} to ${normalizedPhone}`);
+      }
     }
 
     return NextResponse.json({ deal, message: "Deal updated successfully" }, { status: 200 });

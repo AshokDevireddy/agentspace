@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/client"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { DollarSign, TrendingUp, Calendar } from "lucide-react"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
+import { UpgradePrompt } from "@/components/upgrade-prompt"
+import { cn } from "@/lib/utils"
 
 interface PayoutData {
   month: string
@@ -82,6 +84,7 @@ export default function ExpectedPayoutsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [userTier, setUserTier] = useState<string>('free')
 
   // Options
   const [carrierOptions, setCarrierOptions] = useState<CarrierOption[]>([{ value: "all", label: "All Carriers" }])
@@ -105,13 +108,14 @@ export default function ExpectedPayoutsPage() {
 
         const { data: userData } = await supabase
           .from('users')
-          .select('id, role, agency_id')
+          .select('id, role, agency_id, subscription_tier')
           .eq('auth_user_id', user.id)
           .single()
 
         if (!userData) return
 
         setCurrentUserId(userData.id)
+        setUserTier(userData.subscription_tier || 'free')
         // Set default agent if not already set (first time load)
         if (!appliedFilters.agent) {
           setLocalFilters({ agent: userData.id })
@@ -278,8 +282,14 @@ export default function ExpectedPayoutsPage() {
   const uniqueMonths = new Set(payouts.map(p => p.month)).size
   const averagePerMonth = uniqueMonths > 0 ? totalExpectedPayout / uniqueMonths : 0
 
+  // Check if Basic tier user is viewing another agent's data
+  const isViewingOtherAgent = userTier === 'basic' &&
+    appliedFilters.agent &&
+    currentUserId &&
+    appliedFilters.agent !== currentUserId
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       {/* Header */}
       <div>
         <h1 className="text-4xl font-bold text-primary mb-2">Expected Payouts</h1>
@@ -288,8 +298,8 @@ export default function ExpectedPayoutsPage() {
         </p>
       </div>
 
-      {/* Filters */}
-      <Card className="professional-card">
+      {/* Filters - Always interactive */}
+      <Card className="professional-card relative z-[60]">
         <CardContent className="py-4">
           <div className="flex gap-4 items-end flex-wrap">
             {/* Agent Selector */}
@@ -347,8 +357,24 @@ export default function ExpectedPayoutsPage() {
         </CardContent>
       </Card>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Content area with upgrade prompt */}
+      <div className="relative">
+        {/* Upgrade prompt overlay for Basic tier viewing other agents */}
+        {isViewingOtherAgent && (
+          <div className="absolute inset-0 z-50 pointer-events-none">
+            <div className="h-full flex items-center justify-center pointer-events-auto">
+              <UpgradePrompt
+                title="Upgrade to View Other Agent Data"
+                message="Upgrade to Pro or Expert tier to view expected payouts for other agents in your team"
+                requiredTier="Pro"
+                blur={false}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Summary Cards */}
+        <div className={cn("grid grid-cols-1 md:grid-cols-3 gap-6", isViewingOtherAgent && "blur-sm pointer-events-none")}>
         {loading ? (
           <>
             <Card className="professional-card">
@@ -430,10 +456,10 @@ export default function ExpectedPayoutsPage() {
             </Card>
           </>
         )}
-      </div>
+        </div>
 
-      {/* Chart */}
-      <Card className="professional-card">
+        {/* Chart */}
+        <Card className={cn("professional-card mt-6", isViewingOtherAgent && "blur-sm pointer-events-none")}>
         <CardHeader>
           <CardTitle>Expected Payouts Over Time</CardTitle>
         </CardHeader>
@@ -495,7 +521,8 @@ export default function ExpectedPayoutsPage() {
             </ResponsiveContainer>
           )}
         </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   )
 }

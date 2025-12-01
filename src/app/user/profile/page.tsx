@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/providers/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
+import { PricingTierCard } from "@/components/pricing-tier-card";
+import { SubscriptionManager } from "@/components/subscription-manager";
+import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";
 
 interface ProfileData {
   id: string;
@@ -13,12 +16,22 @@ interface ProfileData {
   totalProduction: number;
   totalPoliciesSold: number;
   is_admin: boolean;
+  role: string;
   position_id: string | null;
   position: {
     id: string;
     name: string;
     level: number;
   } | null;
+  subscription_status?: string;
+  subscription_tier?: string;
+  deals_created_count?: number;
+  ai_requests_count?: number;
+  messages_sent_count?: number;
+  billing_cycle_start?: string | null;
+  billing_cycle_end?: string | null;
+  scheduled_tier_change?: string | null;
+  scheduled_tier_change_date?: string | null;
 }
 
 interface Position {
@@ -28,6 +41,17 @@ interface Position {
   description: string | null;
   is_active: boolean;
 }
+
+// Helper function to format date as "Month DD, YYYY"
+const formatRenewalDate = (dateString: string | null | undefined): string => {
+  if (!dateString) return 'Not available';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+};
 
 export default function ProfilePage() {
   const { user, loading: authLoading } = useAuth();
@@ -224,6 +248,349 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+
+      {/* Subscription Section */}
+      <div className="w-full max-w-7xl mb-8">
+        <h2 className="text-3xl font-bold text-foreground mb-2 text-center">Choose Your Plan</h2>
+        <p className="text-muted-foreground text-center mb-8">Select the perfect tier for your needs</p>
+
+        {/* Current Subscription Status */}
+        {profileData.subscription_tier && profileData.subscription_tier !== 'free' && (
+          <div className="mb-8">
+            <SubscriptionManager
+              subscriptionStatus={profileData.subscription_status || 'active'}
+              hasAiAddon={false}
+            />
+
+            {/* Billing Cycle Information */}
+            {profileData.billing_cycle_end && (
+              <div className="mt-4 p-4 bg-muted/50 rounded-lg border border-border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Next Billing Date</p>
+                    <p className="text-lg font-semibold text-foreground">
+                      {formatRenewalDate(profileData.billing_cycle_end)}
+                    </p>
+                  </div>
+
+                  {/* Show scheduled tier change if any */}
+                  {profileData.scheduled_tier_change && (
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                        Scheduled Change
+                      </p>
+                      <p className="text-base font-semibold text-amber-700 dark:text-amber-300 capitalize">
+                        → {profileData.scheduled_tier_change} Tier
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Usage Stats */}
+        {profileData.subscription_tier === 'free' && (
+          <div className="mb-8 rounded-xl border-2 border-yellow-300 bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20 dark:border-yellow-700 p-6">
+            <h3 className="font-bold text-yellow-900 dark:text-yellow-200 mb-3 text-lg">Free Tier Usage</h3>
+            <div className="grid gap-3">
+              <div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-sm text-yellow-800 dark:text-yellow-300">Deals Created</span>
+                  <span className="text-sm font-medium text-yellow-900 dark:text-yellow-200">
+                    {profileData.deals_created_count || 0} / 10
+                  </span>
+                </div>
+                <div className="w-full bg-yellow-200 dark:bg-yellow-900/30 rounded-full h-2">
+                  <div
+                    className="bg-yellow-600 dark:bg-yellow-500 h-2 rounded-full transition-all"
+                    style={{ width: `${Math.min(((profileData.deals_created_count || 0) / 10) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-sm text-yellow-800 dark:text-yellow-300">Messages Sent</span>
+                  <span className="text-sm font-medium text-yellow-900 dark:text-yellow-200">
+                    {profileData.messages_sent_count || 0} / 10
+                  </span>
+                </div>
+                <div className="w-full bg-yellow-200 dark:bg-yellow-900/30 rounded-full h-2">
+                  <div
+                    className="bg-yellow-600 dark:bg-yellow-500 h-2 rounded-full transition-all"
+                    style={{ width: `${Math.min(((profileData.messages_sent_count || 0) / 10) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+            {((profileData.deals_created_count || 0) >= 10 || (profileData.messages_sent_count || 0) >= 10) && (
+              <p className="text-sm font-semibold text-red-600 dark:text-red-400 mt-4">
+                ⚠️ You've reached your limits. Upgrade to unlock more!
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Pricing Tiers Grid */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {/* Free Tier */}
+          <PricingTierCard
+            tier="free"
+            name={TIER_LIMITS.free.name}
+            price={TIER_LIMITS.free.price}
+            features={TIER_LIMITS.free.features}
+            priceId=""
+            isCurrentPlan={profileData.subscription_tier === 'free'}
+            currentTier={(profileData.subscription_tier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+            hasActiveSubscription={profileData.subscription_status === 'active' && profileData.subscription_tier !== 'free'}
+          />
+
+          {/* Basic Tier */}
+          <PricingTierCard
+            tier="basic"
+            name={TIER_LIMITS.basic.name}
+            price={TIER_LIMITS.basic.price}
+            features={TIER_LIMITS.basic.features}
+            priceId={TIER_PRICE_IDS.basic}
+            isCurrentPlan={profileData.subscription_tier === 'basic'}
+            currentTier={(profileData.subscription_tier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+            hasActiveSubscription={profileData.subscription_status === 'active' && profileData.subscription_tier !== 'free'}
+          />
+
+          {/* Pro Tier */}
+          <PricingTierCard
+            tier="pro"
+            name={TIER_LIMITS.pro.name}
+            price={TIER_LIMITS.pro.price}
+            features={TIER_LIMITS.pro.features}
+            priceId={TIER_PRICE_IDS.pro}
+            isCurrentPlan={profileData.subscription_tier === 'pro'}
+            recommended={true}
+            currentTier={(profileData.subscription_tier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+            hasActiveSubscription={profileData.subscription_status === 'active' && profileData.subscription_tier !== 'free'}
+          />
+
+          {/* Expert Tier */}
+          <PricingTierCard
+            tier="expert"
+            name={TIER_LIMITS.expert.name}
+            price={TIER_LIMITS.expert.price}
+            features={TIER_LIMITS.expert.features}
+            priceId={TIER_PRICE_IDS.expert}
+            isCurrentPlan={profileData.subscription_tier === 'expert'}
+            currentTier={(profileData.subscription_tier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+            hasActiveSubscription={profileData.subscription_status === 'active' && profileData.subscription_tier !== 'free'}
+          />
+        </div>
+
+        {/* Basic Tier Usage */}
+        {profileData.subscription_tier === 'basic' && (() => {
+          const msgUsage = profileData.messages_sent_count || 0;
+          const msgLimit = 50;
+          const msgOverage = Math.max(msgUsage - msgLimit, 0);
+          const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
+          const msgOverageCost = msgOverage * 0.10;
+
+          return (
+            <div className="mt-8 rounded-xl border-2 border-blue-300 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 dark:border-blue-700 p-6">
+              <h3 className="font-bold text-blue-900 dark:text-blue-200 mb-3 text-lg flex items-center gap-2">
+                <span>Basic Tier Usage This Month</span>
+              </h3>
+              <div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-sm text-blue-800 dark:text-blue-300">Messages Sent</span>
+                  <span className="text-sm font-medium text-blue-900 dark:text-blue-200">
+                    {msgUsage} / {msgLimit} included
+                  </span>
+                </div>
+                <div className="w-full bg-blue-200 dark:bg-blue-900/30 rounded-full h-2">
+                  <div
+                    className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all"
+                    style={{ width: `${msgPercentage}%` }}
+                  />
+                </div>
+                {msgOverage > 0 && (
+                  <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                    Overage: {msgOverage} messages × $0.10 = ${msgOverageCost.toFixed(2)}
+                  </p>
+                )}
+              </div>
+              {msgOverageCost > 0 && (
+                <div className="mt-4 pt-4 border-t border-blue-300 dark:border-blue-700">
+                  <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+                    Estimated overage charges this month: ${msgOverageCost.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                    Will be added to your next invoice
+                  </p>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Pro Tier Usage */}
+        {profileData.subscription_tier === 'pro' && (() => {
+          const msgUsage = profileData.messages_sent_count || 0;
+          const msgLimit = 200;
+          const msgOverage = Math.max(msgUsage - msgLimit, 0);
+          const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
+          const msgOverageCost = msgOverage * 0.08;
+
+          return (
+            <div className="mt-8 rounded-xl border-2 border-purple-300 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 dark:border-purple-700 p-6">
+              <h3 className="font-bold text-purple-900 dark:text-purple-200 mb-3 text-lg flex items-center gap-2">
+                <span>Pro Tier Usage This Month</span>
+              </h3>
+              <div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-sm text-purple-800 dark:text-purple-300">Messages Sent</span>
+                  <span className="text-sm font-medium text-purple-900 dark:text-purple-200">
+                    {msgUsage} / {msgLimit} included
+                  </span>
+                </div>
+                <div className="w-full bg-purple-200 dark:bg-purple-900/30 rounded-full h-2">
+                  <div
+                    className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all"
+                    style={{ width: `${msgPercentage}%` }}
+                  />
+                </div>
+                {msgOverage > 0 && (
+                  <p className="text-xs text-purple-700 dark:text-purple-400 mt-1">
+                    Overage: {msgOverage} messages × $0.08 = ${msgOverageCost.toFixed(2)}
+                  </p>
+                )}
+              </div>
+              {msgOverageCost > 0 && (
+                <div className="mt-4 pt-4 border-t border-purple-300 dark:border-purple-700">
+                  <p className="text-sm font-semibold text-purple-900 dark:text-purple-200">
+                    Estimated overage charges this month: ${msgOverageCost.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-purple-700 dark:text-purple-400 mt-1">
+                    Will be added to your next invoice
+                  </p>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Expert Tier Usage (for all Expert tier users) */}
+        {profileData.subscription_tier === 'expert' && (() => {
+          const msgUsage = profileData.messages_sent_count || 0;
+          const msgLimit = 1000;
+          const msgOverage = Math.max(msgUsage - msgLimit, 0);
+          const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
+          const msgOverageCost = msgOverage * 0.05;
+
+          // Admin users see both AI and messages
+          if (profileData.is_admin) {
+            const aiUsage = profileData.ai_requests_count || 0;
+            const aiLimit = 50;
+            const aiOverage = Math.max(aiUsage - aiLimit, 0);
+            const aiPercentage = Math.min((aiUsage / aiLimit) * 100, 100);
+            const aiOverageCost = aiOverage * 0.25;
+            const totalOverageCost = aiOverageCost + msgOverageCost;
+
+            return (
+              <div className="mt-8 rounded-xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 dark:border-amber-700 p-6">
+                <h3 className="font-bold text-amber-900 dark:text-amber-200 mb-3 text-lg flex items-center gap-2">
+                  <span>Expert Tier Usage This Month</span>
+                </h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-sm text-amber-800 dark:text-amber-300">AI Requests</span>
+                      <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                        {aiUsage} / {aiLimit} included
+                      </span>
+                    </div>
+                    <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
+                      <div
+                        className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
+                        style={{ width: `${aiPercentage}%` }}
+                      />
+                    </div>
+                    {aiOverage > 0 && (
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                        Overage: {aiOverage} requests × $0.25 = ${aiOverageCost.toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-sm text-amber-800 dark:text-amber-300">Messages Sent</span>
+                      <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                        {msgUsage} / {msgLimit} included
+                      </span>
+                    </div>
+                    <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
+                      <div
+                        className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
+                        style={{ width: `${msgPercentage}%` }}
+                      />
+                    </div>
+                    {msgOverage > 0 && (
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                        Overage: {msgOverage} messages × $0.05 = ${msgOverageCost.toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {totalOverageCost > 0 && (
+                  <div className="mt-4 pt-4 border-t border-amber-300 dark:border-amber-700">
+                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                      Estimated overage charges this month: ${totalOverageCost.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                      Will be added to your next invoice
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          // Non-admin users see only messages
+          return (
+            <div className="mt-8 rounded-xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 dark:border-amber-700 p-6">
+              <h3 className="font-bold text-amber-900 dark:text-amber-200 mb-3 text-lg flex items-center gap-2">
+                <span>Expert Tier Usage This Month</span>
+              </h3>
+              <div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-sm text-amber-800 dark:text-amber-300">Messages Sent</span>
+                  <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                    {msgUsage} / {msgLimit} included
+                  </span>
+                </div>
+                <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
+                  <div
+                    className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
+                    style={{ width: `${msgPercentage}%` }}
+                  />
+                </div>
+                {msgOverage > 0 && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                    Overage: {msgOverage} messages × $0.05 = ${msgOverageCost.toFixed(2)}
+                  </p>
+                )}
+              </div>
+              {msgOverageCost > 0 && (
+                <div className="mt-4 pt-4 border-t border-amber-300 dark:border-amber-700">
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    Estimated overage charges this month: ${msgOverageCost.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                    Will be added to your next invoice
+                  </p>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
     </div>
   );
 }

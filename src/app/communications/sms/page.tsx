@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
+import { UpgradePrompt } from "@/components/upgrade-prompt"
 
 interface Conversation {
   id: string
@@ -152,6 +153,7 @@ function SMSMessagingPageContent() {
   const [approvingDrafts, setApprovingDrafts] = useState<Set<string>>(new Set())
   const [rejectingDrafts, setRejectingDrafts] = useState<Set<string>>(new Set())
   const [isHydrated, setIsHydrated] = useState(false)
+  const [userTier, setUserTier] = useState<string>('free')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const conversationRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const messageInputRef = useRef<HTMLTextAreaElement>(null)
@@ -270,7 +272,7 @@ function SMSMessagingPageContent() {
 
       const { data: userData, error } = await supabase
         .from('users')
-        .select('is_admin')
+        .select('is_admin, subscription_tier')
         .eq('auth_user_id', user.id)
         .single()
 
@@ -279,8 +281,10 @@ function SMSMessagingPageContent() {
       }
 
       const adminStatus = userData?.is_admin || false
-      console.log('🔐 Admin status:', adminStatus)
+      const tier = userData?.subscription_tier || 'free'
+      console.log('🔐 Admin status:', adminStatus, 'Tier:', tier)
       setIsAdmin(adminStatus)
+      setUserTier(tier)
       setIsAdminChecked(true)
     }
 
@@ -506,6 +510,28 @@ function SMSMessagingPageContent() {
               return prev
             }
 
+            // Check if this is replacing an optimistic message
+            // Look for messages with matching body and direction sent recently (within 10 seconds)
+            const recentOptimisticIndex = prev.findIndex(m =>
+              m.id.startsWith('temp-') &&
+              m.body === newMessage.body &&
+              m.direction === newMessage.direction &&
+              m.conversation_id === newMessage.conversation_id
+            )
+
+            if (recentOptimisticIndex !== -1) {
+              console.log('🔄 Replacing optimistic message with real message')
+              // Replace the optimistic message with the real one
+              const updated = [...prev]
+              updated[recentOptimisticIndex] = newMessage
+              return updated.sort((a, b) => {
+                if (!a.sent_at && !b.sent_at) return 0
+                if (!a.sent_at) return 1
+                if (!b.sent_at) return -1
+                return new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
+              })
+            }
+
             // Add new message and sort: sent messages by sent_at, drafts (sent_at=null) always at bottom
             const updated = [...prev, newMessage].sort((a, b) => {
               // Drafts (null sent_at) always go to the bottom
@@ -661,7 +687,7 @@ function SMSMessagingPageContent() {
         direction: 'outbound',
         sent_at: new Date().toISOString(),
         status: 'sending',
-        metadata: {},
+        metadata: { temp_id: tempId }, // Store temp ID for matching
       }
 
       setMessages(prev => [...prev, optimisticMessage])
@@ -691,8 +717,7 @@ function SMSMessagingPageContent() {
         throw new Error(error.error || 'Failed to send message')
       }
 
-      // Real-time subscription will handle updating with the actual message
-      // and will update conversations list via debounced refresh
+      // Don't remove optimistic message here - let real-time replace it
     } catch (error) {
       console.error('Error sending message:', error)
       alert(error instanceof Error ? error.message : 'Failed to send message')
@@ -913,13 +938,27 @@ function SMSMessagingPageContent() {
 
   return (
     <div className="h-[calc(100vh-3rem)] flex bg-background relative">
+      {/* Upgrade prompt overlay for Basic tier viewing downlines */}
+      {userTier === 'basic' && viewMode === 'downlines' && (
+        <div className="absolute inset-0 z-50 pointer-events-none">
+          <div className="h-full flex items-center justify-center pointer-events-auto">
+            <UpgradePrompt
+              title="Upgrade to View Downline Data"
+              message="Upgrade to Pro or Expert tier to view and manage your team's conversations"
+              requiredTier="Pro"
+              blur={false}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Conversations Sidebar */}
       <div
         className="bg-card border-r border-border flex flex-col"
         style={{ width: `${sidebarWidth}px`, minWidth: '200px', maxWidth: '800px' }}
       >
-        {/* Header */}
-        <div className="p-4 border-b border-border">
+        {/* Header - Always interactive */}
+        <div className="p-4 border-b border-border relative z-[60]">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-xl font-semibold text-foreground">Messages</h1>
           </div>
@@ -1022,7 +1061,10 @@ function SMSMessagingPageContent() {
             }}
           />
         ) : (
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className={cn(
+            "flex-1 overflow-y-auto custom-scrollbar",
+            userTier === 'basic' && viewMode === 'downlines' && "blur-sm pointer-events-none"
+          )}>
           {loading ? (
             <div className="flex items-center justify-center p-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1093,7 +1135,10 @@ function SMSMessagingPageContent() {
       </div>
 
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={cn(
+        "flex-1 flex flex-col min-w-0",
+        userTier === 'basic' && viewMode === 'downlines' && "blur-sm pointer-events-none"
+      )}>
         {selectedConversation ? (
           <>
             {/* Chat Header */}
@@ -1315,7 +1360,10 @@ function SMSMessagingPageContent() {
       {/* Deal Details Panel */}
       {selectedConversation && (
         <div
-          className="bg-card border-l border-border flex flex-col custom-scrollbar transition-all duration-300 ease-in-out"
+          className={cn(
+            "bg-card border-l border-border flex flex-col custom-scrollbar transition-all duration-300 ease-in-out",
+            userTier === 'basic' && viewMode === 'downlines' && "blur-sm pointer-events-none"
+          )}
           style={{
             width: dealPanelCollapsed ? '60px' : `${rightPanelWidth}px`,
             minWidth: dealPanelCollapsed ? '60px' : '200px',

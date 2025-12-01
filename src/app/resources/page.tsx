@@ -35,7 +35,7 @@ export default function Resources() {
     <div className="w-full h-[calc(100vh-2rem)] flex flex-col p-6 overflow-y-auto">
       <div className="professional-card p-6">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-primary mb-2">Carrier Resources</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Carrier Resources</h1>
           <p className="text-muted-foreground">
             Click on any carrier to view their resources and information
           </p>

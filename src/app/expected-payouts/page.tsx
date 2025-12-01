@@ -292,7 +292,7 @@ export default function ExpectedPayoutsPage() {
     <div className="space-y-6 relative">
       {/* Header */}
       <div>
-        <h1 className="text-4xl font-bold text-primary mb-2">Expected Payouts</h1>
+        <h1 className="text-4xl font-bold text-foreground mb-2">Expected Payouts</h1>
         <p className="text-muted-foreground">
           View projected commission payouts based on posted deals
         </p>

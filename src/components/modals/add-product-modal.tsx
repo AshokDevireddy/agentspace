@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -144,6 +144,7 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white text-gray-900">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-gray-900 mb-6">Add a Product</DialogTitle>
+          <DialogDescription>Add a new product for this carrier</DialogDescription>
         </DialogHeader>
 
         {errors.length > 0 && (

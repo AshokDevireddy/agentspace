@@ -411,7 +411,7 @@ export default function BookOfBusiness() {
 
       {/* Header with Status Slider and View Mode Slider - Always interactive */}
       <div className="flex items-center justify-between relative z-50">
-        <h1 className="text-4xl font-bold text-primary">Book of Business</h1>
+        <h1 className="text-4xl font-bold text-foreground">Book of Business</h1>
 
         <div className="flex items-center gap-4">
           {/* View Mode Slider */}

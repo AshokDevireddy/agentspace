@@ -61,7 +61,7 @@ export function SimpleSearchableSelect({
   const selectedOption = options.find(option => option.value === value)
 
   return (
-    <div className={cn("relative", open ? "z-50" : "z-auto", className)} ref={dropdownRef}>
+    <div className={cn("relative", className)} ref={dropdownRef}>
       <Button
         variant="outline"
         role="combobox"
@@ -79,7 +79,7 @@ export function SimpleSearchableSelect({
       </Button>
 
       {open && (
-        <div className="absolute top-full left-0 z-[51] w-full mt-1 bg-card border border-border rounded-md shadow-2xl backdrop-blur-sm">
+        <div className="absolute top-full left-0 z-[9999] w-full mt-1 bg-card border border-border rounded-md shadow-2xl backdrop-blur-sm">
           <div className="p-1.5">
             <Input
               type="text"
@@ -96,29 +96,37 @@ export function SimpleSearchableSelect({
                 No option found.
               </div>
             ) : (
-              filteredOptions.map((option) => (
-                <button
-                  type="button"
-                  key={option.value}
-                  className={cn(
-                    "w-full flex items-center px-3 py-2 text-sm text-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors text-left",
-                    value === option.value && "bg-primary text-primary-foreground hover:bg-primary/90"
-                  )}
-                  onClick={() => {
-                    onValueChange?.(option.value === value ? "" : option.value)
-                    setOpen(false)
-                    setSearchTerm("")
-                  }}
-                >
-                  <Check
+              filteredOptions.map((option) => {
+                const isSelected = value === option.value
+                return (
+                  <button
+                    type="button"
+                    key={option.value}
                     className={cn(
-                      "mr-2 h-4 w-4 shrink-0 transition-opacity",
-                      value === option.value ? "opacity-100 text-primary-foreground" : "opacity-0"
+                      "w-full flex items-center px-3 py-2 text-sm cursor-pointer transition-colors text-left",
+                      isSelected
+                        ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+                        : "text-foreground hover:bg-accent hover:text-accent-foreground"
                     )}
-                  />
-                  <span className="text-left flex-1">{option.label}</span>
-                </button>
-              ))
+                    onClick={() => {
+                      onValueChange?.(option.value === value ? "" : option.value)
+                      setOpen(false)
+                      setSearchTerm("")
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4 shrink-0 transition-opacity",
+                        isSelected ? "opacity-100 text-primary-foreground" : "opacity-0"
+                      )}
+                    />
+                    <span className={cn(
+                      "text-left flex-1",
+                      isSelected && "text-primary-foreground"
+                    )}>{option.label}</span>
+                  </button>
+                )
+              })
             )}
           </div>
         </div>

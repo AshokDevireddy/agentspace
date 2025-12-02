@@ -375,6 +375,9 @@ export default function BookOfBusiness() {
       case 'dateRange':
         setLocalFilters({ effectiveDateStart: '', effectiveDateEnd: '' })
         break
+      case 'persistencyPlacement':
+        setStatusMode('all')
+        break
     }
   }
 
@@ -387,6 +390,7 @@ export default function BookOfBusiness() {
     { id: 'billingCycle', label: 'Billing Cycle' },
     { id: 'leadSource', label: 'Lead Source' },
     { id: 'dateRange', label: 'Date Range' },
+    { id: 'persistencyPlacement', label: 'Persistency/Placement' },
   ]
 
   return (
@@ -450,71 +454,6 @@ export default function BookOfBusiness() {
             </div>
           </div>
 
-          {/* Status Mode Slider */}
-          <div className="relative bg-muted/50 p-1 rounded-lg">
-            {/* Animated background */}
-            <div
-              className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out"
-              style={{
-                left: statusMode === 'all' ? '4px' : statusMode === 'active' ? 'calc(25%)' : statusMode === 'pending' ? 'calc(50%)' : 'calc(75% - 4px)',
-                width: 'calc(25% - 4px)'
-              }}
-            />
-            <div className="relative z-10 flex">
-              <button
-                onClick={() => setStatusMode('all')}
-                disabled={loading}
-                className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 flex-1 text-center flex items-center justify-center",
-                  statusMode === 'all'
-                    ? 'text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                  loading && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setStatusMode('active')}
-                disabled={loading}
-                className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 flex-1 text-center flex items-center justify-center",
-                  statusMode === 'active'
-                    ? 'text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                  loading && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                Active
-              </button>
-              <button
-                onClick={() => setStatusMode('pending')}
-                disabled={loading}
-                className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 flex-1 text-center flex items-center justify-center",
-                  statusMode === 'pending'
-                    ? 'text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                  loading && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                Not Placed
-              </button>
-              <button
-                onClick={() => setStatusMode('inactive')}
-                disabled={loading}
-                className={cn(
-                  "relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 flex-1 text-center flex items-center justify-center",
-                  statusMode === 'inactive'
-                    ? 'text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                  loading && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                Inactive
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -633,6 +572,15 @@ export default function BookOfBusiness() {
                   <X
                     className="h-3 w-3 ml-2 cursor-pointer"
                     onClick={() => removeFilter('dateRange')}
+                  />
+                </Badge>
+              )}
+              {visibleFilters.has('persistencyPlacement') && (
+                <Badge variant="outline" className="h-8 px-3">
+                  Persistency/Placement
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('persistencyPlacement')}
                   />
                 </Badge>
               )}
@@ -778,6 +726,26 @@ export default function BookOfBusiness() {
                       endDate={localFilters.effectiveDateEnd}
                       onRangeChange={(start, end) => setLocalFilters({ effectiveDateStart: start, effectiveDateEnd: end })}
                       disabled={loading}
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('persistencyPlacement') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Persistency/Placement
+                    </label>
+                    <SimpleSearchableSelect
+                      options={[
+                        { value: 'all', label: 'All' },
+                        { value: 'active', label: 'Active' },
+                        { value: 'pending', label: 'Not Placed' },
+                        { value: 'inactive', label: 'Inactive' }
+                      ]}
+                      value={statusMode}
+                      onValueChange={(value) => setStatusMode(value as 'all' | 'active' | 'pending' | 'inactive')}
+                      placeholder="Select status..."
+                      searchPlaceholder="Search..."
                     />
                   </div>
                 )}

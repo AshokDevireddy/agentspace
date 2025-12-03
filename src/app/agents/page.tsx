@@ -95,19 +95,22 @@ const renderForeignObjectNode = ({
 }: any) => {
   const hasChildren = nodeDatum.children && nodeDatum.children.length > 0
   const isCollapsed = nodeDatum.__rd3t?.collapsed ?? false
+  
+  // Check for dark mode using document class - stable, doesn't cause re-renders
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
 
   return (
     <g>
       <foreignObject {...foreignObjectProps}>
         <div style={{
-          backgroundColor: "#ffffff",
-          border: "2px solid #e5e7eb",
+          backgroundColor: isDark ? "hsl(var(--card))" : "#ffffff",
+          border: isDark ? "2px solid hsl(var(--border))" : "2px solid #e5e7eb",
           borderRadius: "8px",
-          color: "#111827",
+          color: isDark ? "hsl(var(--foreground))" : "#111827",
           padding: "16px",
           minWidth: "200px",
           position: "relative",
-          boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
+          boxShadow: isDark ? "0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px 0 rgba(0, 0, 0, 0.2)" : "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
         }}>
           {/* Collapse/Expand Button */}
           {hasChildren && (
@@ -118,7 +121,7 @@ const renderForeignObjectNode = ({
                 top: "8px",
                 right: "8px",
                 background: "transparent",
-                border: "1px solid #d1d5db",
+                border: isDark ? "1px solid hsl(var(--border))" : "1px solid #d1d5db",
                 borderRadius: "4px",
                 width: "24px",
                 height: "24px",
@@ -126,16 +129,16 @@ const renderForeignObjectNode = ({
                 alignItems: "center",
                 justifyContent: "center",
                 cursor: "pointer",
-                color: "#6b7280",
+                color: isDark ? "hsl(var(--muted-foreground))" : "#6b7280",
                 transition: "all 0.2s ease"
               }}
               onMouseEnter={(e) => {
-                (e.target as HTMLButtonElement).style.backgroundColor = "#f3f4f6";
-                (e.target as HTMLButtonElement).style.borderColor = "#9ca3af";
+                (e.target as HTMLButtonElement).style.backgroundColor = isDark ? "hsl(var(--accent))" : "#f3f4f6";
+                (e.target as HTMLButtonElement).style.borderColor = isDark ? "hsl(var(--border))" : "#9ca3af";
               }}
               onMouseLeave={(e) => {
                 (e.target as HTMLButtonElement).style.backgroundColor = "transparent";
-                (e.target as HTMLButtonElement).style.borderColor = "#d1d5db";
+                (e.target as HTMLButtonElement).style.borderColor = isDark ? "hsl(var(--border))" : "#d1d5db";
               }}
             >
               {isCollapsed ? (
@@ -155,13 +158,13 @@ const renderForeignObjectNode = ({
               marginBottom: "12px"
             }}>
               <div style={{
-                backgroundColor: "#f3f4f6",
-                border: "1px solid #d1d5db",
+                backgroundColor: isDark ? "hsl(var(--muted))" : "#f3f4f6",
+                border: isDark ? "1px solid hsl(var(--border))" : "1px solid #d1d5db",
                 borderRadius: "6px",
                 padding: "4px 8px",
                 fontSize: "10px",
                 fontWeight: "600",
-                color: "#374151",
+                color: isDark ? "hsl(var(--foreground))" : "#374151",
                 textTransform: "uppercase",
                 letterSpacing: "0.5px"
               }}>
@@ -174,7 +177,7 @@ const renderForeignObjectNode = ({
               margin: "0 0 16px 0",
               fontSize: "16px",
               fontWeight: "700",
-              color: "#111827",
+              color: isDark ? "hsl(var(--foreground))" : "#111827",
               letterSpacing: "0.025em",
               lineHeight: "1.2"
             }}>{nodeDatum.name}</h3>
@@ -190,17 +193,17 @@ const renderForeignObjectNode = ({
                     justifyContent: "space-between",
                     alignItems: "center",
                     fontSize: "11px",
-                    color: "#6b7280",
+                    color: isDark ? "hsl(var(--muted-foreground))" : "#6b7280",
                     marginBottom: "6px",
                     padding: "2px 0"
                   }}>
                     <span style={{
-                      color: "#9ca3af",
+                      color: isDark ? "hsl(var(--muted-foreground))" : "#9ca3af",
                       fontWeight: "500",
                       textTransform: "capitalize"
                     }}>{label}:</span>
                     <span style={{
-                      color: "#374151",
+                      color: isDark ? "hsl(var(--foreground))" : "#374151",
                       fontWeight: "600"
                     }}>{String(value)}</span>
                   </div>
@@ -211,9 +214,9 @@ const renderForeignObjectNode = ({
             <div style={{ display: 'flex', justifyContent: 'center'}}>
                 <AddUserModal trigger={
                     <button style={{
-                      backgroundColor: "#f9fafb",
-                      color: "#374151",
-                      border: "1px solid #d1d5db",
+                      backgroundColor: isDark ? "hsl(var(--muted))" : "#f9fafb",
+                      color: isDark ? "hsl(var(--foreground))" : "#374151",
+                      border: isDark ? "1px solid hsl(var(--border))" : "1px solid #d1d5db",
                       borderRadius: "6px",
                       padding: "6px 12px",
                       fontSize: "12px",
@@ -225,12 +228,12 @@ const renderForeignObjectNode = ({
                       gap: "4px"
                     }}
                     onMouseEnter={(e) => {
-                      (e.target as HTMLButtonElement).style.backgroundColor = "#f3f4f6";
-                      (e.target as HTMLButtonElement).style.borderColor = "#9ca3af";
+                      (e.target as HTMLButtonElement).style.backgroundColor = isDark ? "hsl(var(--accent))" : "#f3f4f6";
+                      (e.target as HTMLButtonElement).style.borderColor = isDark ? "hsl(var(--border))" : "#9ca3af";
                     }}
                     onMouseLeave={(e) => {
-                      (e.target as HTMLButtonElement).style.backgroundColor = "#f9fafb";
-                      (e.target as HTMLButtonElement).style.borderColor = "#d1d5db";
+                      (e.target as HTMLButtonElement).style.backgroundColor = isDark ? "hsl(var(--muted))" : "#f9fafb";
+                      (e.target as HTMLButtonElement).style.borderColor = isDark ? "hsl(var(--border))" : "#d1d5db";
                     }}>
                         <span style={{ fontSize: "14px" }}>+</span> Add Agent
                     </button>
@@ -1458,10 +1461,9 @@ export default function Agents() {
         </div>
       ) : view === 'tree' ? (
         <div
-          className="w-full"
+          className="w-full bg-background dark:bg-card"
           style={{
             height: 'calc(100vh - 120px)',
-            backgroundColor: '#f9fafb',
             borderRadius: '8px',
             overflow: 'hidden'
           }}
@@ -1487,7 +1489,10 @@ export default function Agents() {
                         renderForeignObjectNode({ ...rd3tProps, foreignObjectProps })
                     }
                     nodeSize={nodeSize}
-                    pathClassFunc={() => "tree-path-light"}
+                    pathClassFunc={() => {
+                      const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+                      return isDark ? "tree-path" : "tree-path-light"
+                    }}
                     collapsible={true}
                     initialDepth={Infinity}
                     />

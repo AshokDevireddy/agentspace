@@ -92,6 +92,8 @@ export default function ExpectedPayoutsPage() {
 
   // Fetch current user and available agents
   useEffect(() => {
+    let isMounted = true
+
     const fetchUserAndAgents = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
@@ -104,7 +106,7 @@ export default function ExpectedPayoutsPage() {
 
         // Get current user
         const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
+        if (!user || !isMounted) return
 
         const { data: userData } = await supabase
           .from('users')
@@ -112,14 +114,21 @@ export default function ExpectedPayoutsPage() {
           .eq('auth_user_id', user.id)
           .single()
 
-        if (!userData) return
+        if (!userData || !isMounted) return
 
         setCurrentUserId(userData.id)
         setUserTier(userData.subscription_tier || 'free')
+
         // Set default agent if not already set (first time load)
-        if (!appliedFilters.agent) {
+        if (!appliedFilters.agent && isMounted) {
+          // Use a combined state update to ensure atomicity
           setLocalFilters({ agent: userData.id })
-          applyFilters() // Apply the default immediately
+          // Trigger apply in the next tick to ensure state is updated
+          setTimeout(() => {
+            if (isMounted) {
+              applyFilters()
+            }
+          }, 0)
         }
 
         // Fetch available agents based on role
@@ -132,7 +141,7 @@ export default function ExpectedPayoutsPage() {
             .in('role', ['agent', 'admin'])
             .order('first_name')
 
-          if (agents) {
+          if (agents && isMounted) {
             setAgentOptions(agents.map(a => ({
               value: a.id,
               label: `${a.first_name} ${a.last_name}`
@@ -143,7 +152,7 @@ export default function ExpectedPayoutsPage() {
           const { data: downlines } = await supabase
             .rpc('get_agent_downline', { agent_id: userData.id })
 
-          if (downlines) {
+          if (downlines && isMounted) {
             setAgentOptions(downlines.map((a: any) => ({
               value: a.id,
               label: `${a.first_name} ${a.last_name}`
@@ -157,19 +166,25 @@ export default function ExpectedPayoutsPage() {
           .select('id, name')
           .order('name')
 
-        if (carriers) {
+        if (carriers && isMounted) {
           setCarrierOptions([
             { value: "all", label: "All Carriers" },
             ...carriers.map(c => ({ value: c.id, label: c.name }))
           ])
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load user data')
+        if (isMounted) {
+          setError(err instanceof Error ? err.message : 'Failed to load user data')
+        }
       }
     }
 
     fetchUserAndAgents()
-  }, [])
+
+    return () => {
+      isMounted = false
+    }
+  }, [supabase, appliedFilters.agent, setLocalFilters, applyFilters])
 
   // Fetch payouts data (only when applied filters change)
   useEffect(() => {

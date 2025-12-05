@@ -17,35 +17,40 @@ export async function POST(request: Request) {
     // Use admin client only (no user authentication needed)
     const supabaseAdmin = createAdminClient()
 
-    // Check if user exists (but don't reveal this information to prevent enumeration)
+    // Check if user exists and get their agency (but don't reveal this information to prevent enumeration)
     const { data: existingUser } = await supabaseAdmin
       .from('users')
-      .select('id, status, auth_user_id, agency_id')
+      .select('id, status, auth_user_id, agency_id, agencies(name)')
       .eq('email', email)
       .maybeSingle()
 
     // Even if user doesn't exist, we'll return success to prevent email enumeration
     // But only send the email if the user actually exists
     if (existingUser && existingUser.auth_user_id) {
-      // Get agency info for white-label redirect URL
-      let redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/forgot-password`
+      // WHITE-LABEL AUTH STRATEGY:
+      // All password reset links go to the main domain (app.useagentspace.com/forgot-password)
+      // After successful password reset, we redirect users to their white-label domain
+      // This is the industry-standard approach (used by Stripe, Shopify, etc.)
 
-      if (existingUser.agency_id) {
-        const { data: agencyData } = await supabaseAdmin
-          .from('agencies')
-          .select('whitelabel_domain')
-          .eq('id', existingUser.agency_id)
-          .single()
+      // Store agency_id in the redirect URL as a query parameter
+      // This allows the forgot-password page to redirect back to the correct white-label domain
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const redirectUrl = existingUser.agency_id
+        ? `${baseUrl}/forgot-password?agency_id=${existingUser.agency_id}`
+        : `${baseUrl}/forgot-password`
 
-        if (agencyData?.whitelabel_domain) {
-          const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http'
-          redirectUrl = `${protocol}://${agencyData.whitelabel_domain}/forgot-password`
-        }
-      }
+      console.log('Sending password reset email with redirectTo:', redirectUrl)
 
-      // Use resetPasswordForEmail - this actually sends the email using Supabase's email service
-      // We use the admin client but call the regular auth method which will use SMTP
-      // This is similar to how inviteUserByEmail works for invitations
+      // Get agency name for email template
+      const agencyName = (existingUser.agencies as any)?.name || 'AgentSpace'
+
+      console.log('Sending password reset for user in agency:', agencyName)
+
+      // LIMITATION: Supabase's resetPasswordForEmail does NOT support custom data like inviteUserByEmail
+      // User metadata is also not reliably available in password reset email templates
+      // SOLUTION: Either use a generic subject line, or implement custom email sending via Resend
+      // For now, we'll use the standard Supabase email (you may want to make subject generic)
+
       const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
         redirectTo: redirectUrl
       })

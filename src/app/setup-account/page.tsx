@@ -183,7 +183,8 @@ export default function SetupAccount() {
 
       if (passwordError) {
         console.error('Error updating password:', passwordError)
-        setErrors(['Failed to update password. Please try again.'])
+        setErrors([passwordError.message || 'Failed to update password. Please try again.'])
+        window.scrollTo({ top: 0, behavior: 'smooth' })
         return
       }
 

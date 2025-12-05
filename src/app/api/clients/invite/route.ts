@@ -28,10 +28,10 @@ export async function POST(request: Request) {
     // Create Supabase admin client with service role key
     const supabaseAdmin = createAdminClient()
 
-    // Get agency info for white-label redirect URL
+    // Get agency info for white-label redirect URL and email
     const { data: agencyData } = await supabaseAdmin
       .from('agencies')
-      .select('whitelabel_domain')
+      .select('whitelabel_domain, name')
       .eq('id', currentUser.agency_id)
       .single()
 
@@ -60,7 +60,10 @@ export async function POST(request: Request) {
       const { data: authData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
         email,
         {
-          redirectTo: getRedirectUrl()
+          redirectTo: getRedirectUrl(),
+          data: {
+            agency_name: agencyData?.name || 'AgentSpace'
+          }
         }
       )
 
@@ -118,7 +121,10 @@ export async function POST(request: Request) {
     const { data: authData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       email,
       {
-        redirectTo: getRedirectUrl()
+        redirectTo: getRedirectUrl(),
+        data: {
+          agency_name: agencyData?.name || 'AgentSpace'
+        }
       }
     )
 

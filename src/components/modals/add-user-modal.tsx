@@ -502,7 +502,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to invite agent')
+        // Display the error message from the API
+        setErrors([data.error || 'Failed to invite agent'])
+        return
       }
 
       // Show success message
@@ -536,7 +538,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       window.location.reload()
     } catch (error) {
       console.error('Error inviting agent:', error)
-      setErrors([error instanceof Error ? error.message : 'Failed to invite agent. Please try again.'])
+      setErrors(['An unexpected error occurred. Please try again.'])
     } finally {
       setSubmitting(false)
     }
@@ -765,114 +767,117 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             )}
           </div>
 
-          {/* First name */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-foreground">
-              First name
-            </label>
-            <Input
-              type="text"
-              value={formData.firstName}
-              onChange={(e) => handleInputChange("firstName", e.target.value)}
-              className={`h-12 ${errorFields.firstName ? 'border-red-500' : ''} ${selectedPreInviteUserId ? 'bg-muted text-foreground/80 cursor-not-allowed' : ''}`}
-              required
-              readOnly={!!selectedPreInviteUserId}
-              aria-readonly={selectedPreInviteUserId ? true : undefined}
-            />
-            {errorFields.firstName && (
-              <p className="text-red-500 text-sm">{errorFields.firstName}</p>
-            )}
-            {selectedPreInviteUserId && (
-              <p className="text-xs text-muted-foreground">Name cannot be changed for existing users</p>
-            )}
+          {/* First Name and Last Name - Side by Side */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-foreground">
+                First name
+              </label>
+              <Input
+                type="text"
+                value={formData.firstName}
+                onChange={(e) => handleInputChange("firstName", e.target.value)}
+                className={`h-12 ${errorFields.firstName ? 'border-red-500' : ''} ${selectedPreInviteUserId ? 'bg-muted text-foreground/80 cursor-not-allowed' : ''}`}
+                required
+                readOnly={!!selectedPreInviteUserId}
+                aria-readonly={selectedPreInviteUserId ? true : undefined}
+              />
+              {errorFields.firstName && (
+                <p className="text-red-500 text-sm">{errorFields.firstName}</p>
+              )}
+              {selectedPreInviteUserId && (
+                <p className="text-xs text-muted-foreground">Name cannot be changed for existing users</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-foreground">
+                Last name
+              </label>
+              <Input
+                type="text"
+                value={formData.lastName}
+                onChange={(e) => handleInputChange("lastName", e.target.value)}
+                className={`h-12 ${selectedPreInviteUserId ? 'bg-muted text-foreground/80 cursor-not-allowed' : ''}`}
+                required
+                readOnly={!!selectedPreInviteUserId}
+                aria-readonly={selectedPreInviteUserId ? true : undefined}
+              />
+              {selectedPreInviteUserId && (
+                <p className="text-xs text-muted-foreground">Name cannot be changed for existing users</p>
+              )}
+            </div>
           </div>
 
-          {/* Last name */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-foreground">
-              Last name
-            </label>
-            <Input
-              type="text"
-              value={formData.lastName}
-              onChange={(e) => handleInputChange("lastName", e.target.value)}
-              className={`h-12 ${selectedPreInviteUserId ? 'bg-muted text-foreground/80 cursor-not-allowed' : ''}`}
-              required
-              readOnly={!!selectedPreInviteUserId}
-              aria-readonly={selectedPreInviteUserId ? true : undefined}
-            />
-            {selectedPreInviteUserId && (
-              <p className="text-xs text-muted-foreground">Name cannot be changed for existing users</p>
-            )}
+          {/* Email and Phone Number - Side by Side */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-foreground">
+                Email
+              </label>
+              <Input
+                type="email"
+                value={formData.email}
+                onChange={(e) => handleInputChange("email", e.target.value)}
+                className="h-12"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-foreground">
+                Phone number
+              </label>
+              <Input
+                type="tel"
+                value={formData.phoneNumber}
+                onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
+                className={`h-12 ${errorFields.phoneNumber ? 'border-red-500' : ''}`}
+                placeholder="xxx-xxx-xxxx"
+                required
+              />
+              {errorFields.phoneNumber && (
+                <p className="text-red-500 text-sm">{errorFields.phoneNumber}</p>
+              )}
+            </div>
           </div>
 
-          {/* Email */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-foreground">
-              Email
-            </label>
-            <Input
-              type="email"
-              value={formData.email}
-              onChange={(e) => handleInputChange("email", e.target.value)}
-              className="h-12"
-              required
-            />
+          {/* Permission Level and Position - Side by Side */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-foreground">
+                Permission Level
+              </label>
+              <SimpleSearchableSelect
+                options={permissionLevels}
+                value={formData.permissionLevel}
+                onValueChange={(value) => handleInputChange("permissionLevel", value)}
+                placeholder="Select permission level"
+                searchPlaceholder="Search permission levels..."
+              />
+              {errorFields.permissionLevel && (
+                <p className="text-red-500 text-sm">{errorFields.permissionLevel}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-foreground">
+                Position <span className="text-red-500">*</span>
+              </label>
+              <SimpleSearchableSelect
+                options={positions}
+                value={formData.positionId}
+                onValueChange={(value) => handleInputChange("positionId", value)}
+                placeholder="Select position..."
+                searchPlaceholder="Search positions..."
+              />
+              <p className="text-xs text-muted-foreground">
+                Only positions below your level are shown.
+              </p>
+            </div>
           </div>
 
-          {/* Phone number */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-foreground">
-              Phone number
-            </label>
-            <Input
-              type="tel"
-              value={formData.phoneNumber}
-              onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
-              className={`h-12 ${errorFields.phoneNumber ? 'border-red-500' : ''}`}
-              placeholder="xxx-xxx-xxxx"
-              required
-            />
-            {errorFields.phoneNumber && (
-              <p className="text-red-500 text-sm">{errorFields.phoneNumber}</p>
-            )}
-          </div>
-
-          {/* Permission Level */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-foreground">
-              Permission Level
-            </label>
-            <SimpleSearchableSelect
-              options={permissionLevels}
-              value={formData.permissionLevel}
-              onValueChange={(value) => handleInputChange("permissionLevel", value)}
-              placeholder="Select permission level"
-              searchPlaceholder="Search permission levels..."
-            />
-            {errorFields.permissionLevel && (
-              <p className="text-red-500 text-sm">{errorFields.permissionLevel}</p>
-            )}
-          </div>
-
-          {/* Position Selection (Optional) */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-foreground">
-              Position <span className="text-red-500">*</span>
-            </label>
-            <SimpleSearchableSelect
-              options={positions}
-              value={formData.positionId}
-              onValueChange={(value) => handleInputChange("positionId", value)}
-              placeholder="Select position..."
-              searchPlaceholder="Search positions..."
-            />
-            <p className="text-sm text-muted-foreground">
-              Select a position for this agent. Only positions below your level are shown.
-            </p>
-          </div>
-
-          {/* Upline Agent Selection */}
+          {/* Upline Agent Selection - Full Width */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-foreground">
               Upline Agent (Optional)
@@ -938,7 +943,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               </div>
             )}
 
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Start typing to search by name or email. Minimum 2 characters required.
             </p>
             {errorFields.uplineAgentId && (

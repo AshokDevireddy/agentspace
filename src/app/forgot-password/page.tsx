@@ -125,10 +125,13 @@ export default function ForgotPassword() {
         throw error
       }
 
-      return true
-    } catch (error) {
+      return { success: true }
+    } catch (error: any) {
       console.error('Error updating password:', error)
-      return false
+      return {
+        success: false,
+        message: error?.message || 'Failed to update password. Please try again.'
+      }
     }
   }
 
@@ -145,10 +148,11 @@ export default function ForgotPassword() {
     try {
       // Update password securely through Supabase Auth
       // User is already authenticated from PASSWORD_RECOVERY event
-      const passwordUpdated = await updatePassword(formData.password)
+      const result = await updatePassword(formData.password)
 
-      if (!passwordUpdated) {
-        setErrors(['Failed to update password. Please try again.'])
+      if (!result.success) {
+        setErrors([result.message || 'Failed to update password. Please try again.'])
+        window.scrollTo({ top: 0, behavior: 'smooth' })
         return
       }
 
@@ -158,7 +162,27 @@ export default function ForgotPassword() {
         confirmPassword: ""
       })
 
-      // Redirect to login page with success message
+      // Check if user has a white-label domain to redirect to
+      const urlParams = new URLSearchParams(window.location.search)
+      const agencyId = urlParams.get('agency_id')
+
+      if (agencyId) {
+        // Fetch agency's white-label domain
+        const { data: agencyData } = await supabase
+          .from('agencies')
+          .select('whitelabel_domain')
+          .eq('id', agencyId)
+          .single()
+
+        if (agencyData?.whitelabel_domain) {
+          // Redirect to white-label domain login page
+          const protocol = window.location.protocol
+          window.location.href = `${protocol}//${agencyData.whitelabel_domain}/login?message=password-reset-success`
+          return
+        }
+      }
+
+      // Default: redirect to main domain login page
       router.push('/login?message=password-reset-success')
     } catch (error) {
       console.error('Error updating password:', error)

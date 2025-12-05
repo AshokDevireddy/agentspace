@@ -102,6 +102,7 @@ export default function BookOfBusiness() {
       policyNumber: "all",
       billingCycle: "all",
       leadSource: "all",
+      status: "all",
       effectiveDateStart: "",
       effectiveDateEnd: "",
       statusMode: 'all' as 'all' | 'active' | 'pending' | 'inactive',
@@ -203,7 +204,7 @@ export default function BookOfBusiness() {
         setFilterOptions({
           carriers: data.carriers || [{ value: "all", label: "All Carriers" }],
           products: data.products || [{ value: "all", label: "All Products" }],
-          statuses: [],
+          statuses: data.statusStandardized || [],
           billingCycles: data.billingCycles || [{ value: "all", label: "All Billing Cycles" }],
           leadSources: data.leadSources || [{ value: "all", label: "All Lead Sources" }]
         })
@@ -235,6 +236,7 @@ export default function BookOfBusiness() {
       if (appliedFilters.statusMode && appliedFilters.statusMode !== 'all') params.append('status_mode', appliedFilters.statusMode)
       if (appliedFilters.billingCycle !== 'all') params.append('billing_cycle', appliedFilters.billingCycle)
       if (appliedFilters.leadSource !== 'all') params.append('lead_source', appliedFilters.leadSource)
+      if (appliedFilters.status !== 'all') params.append('status_standardized', appliedFilters.status)
       if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
       if (appliedFilters.effectiveDateEnd) params.append('effective_date_end', appliedFilters.effectiveDateEnd)
       if (appliedFilters.viewMode) params.append('view', appliedFilters.viewMode)
@@ -334,6 +336,7 @@ export default function BookOfBusiness() {
     appliedFilters.policyNumber !== 'all' ||
     appliedFilters.billingCycle !== 'all' ||
     appliedFilters.leadSource !== 'all' ||
+    appliedFilters.status !== 'all' ||
     appliedFilters.effectiveDateStart ||
     appliedFilters.effectiveDateEnd
 
@@ -372,6 +375,9 @@ export default function BookOfBusiness() {
       case 'leadSource':
         setLocalFilters({ leadSource: 'all' })
         break
+      case 'status':
+        setLocalFilters({ status: 'all' })
+        break
       case 'dateRange':
         setLocalFilters({ effectiveDateStart: '', effectiveDateEnd: '' })
         break
@@ -389,6 +395,7 @@ export default function BookOfBusiness() {
     { id: 'policyNumber', label: 'Policy #' },
     { id: 'billingCycle', label: 'Billing Cycle' },
     { id: 'leadSource', label: 'Lead Source' },
+    { id: 'status', label: 'Status' },
     { id: 'dateRange', label: 'Date Range' },
     { id: 'persistencyPlacement', label: 'Persistency/Placement' },
   ]
@@ -566,6 +573,15 @@ export default function BookOfBusiness() {
                   />
                 </Badge>
               )}
+              {visibleFilters.has('status') && (
+                <Badge variant="outline" className="h-8 px-3">
+                  Status
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('status')}
+                  />
+                </Badge>
+              )}
               {visibleFilters.has('dateRange') && (
                 <Badge variant="outline" className="h-8 px-3">
                   Date Range
@@ -711,6 +727,21 @@ export default function BookOfBusiness() {
                       value={localFilters.leadSource}
                       onValueChange={(value) => setLocalFilters({ leadSource: value })}
                       placeholder="All Lead Sources"
+                      searchPlaceholder="Search..."
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('status') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Status
+                    </label>
+                    <SimpleSearchableSelect
+                      options={filterOptions.statuses}
+                      value={localFilters.status}
+                      onValueChange={(value) => setLocalFilters({ status: value })}
+                      placeholder="All Statuses"
                       searchPlaceholder="Search..."
                     />
                   </div>

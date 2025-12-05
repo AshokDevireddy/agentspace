@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
+import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
+import { useTheme } from "next-themes"
 
 interface UserData {
   id: string
@@ -23,6 +25,8 @@ interface UserData {
 export default function SetupAccount() {
   const supabase = createClient()
   const router = useRouter()
+  const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
+  const { setTheme } = useTheme()
 
   const [userData, setUserData] = useState<UserData | null>(null)
   const [formData, setFormData] = useState({
@@ -39,6 +43,17 @@ export default function SetupAccount() {
   const [submitting, setSubmitting] = useState(false)
   const [agencyName, setAgencyName] = useState<string>("AgentSpace")
   const errorRef = useRef<HTMLDivElement>(null)
+
+  // Force light mode for non-white-labeled sites, use agency theme for white-labeled sites
+  useEffect(() => {
+    if (!brandingLoading) {
+      if (isWhiteLabel && branding?.theme_mode) {
+        setTheme(branding.theme_mode)
+      } else {
+        setTheme('light')
+      }
+    }
+  }, [isWhiteLabel, branding, brandingLoading, setTheme])
 
   useEffect(() => {
     fetchUserData()

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
+import { useTheme } from "next-themes"
 
 type UserRole = 'admin' | 'agent' | 'client'
 
@@ -11,12 +12,26 @@ export default function LoginPage() {
   const router = useRouter()
   const supabase = createClient()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
+  const { setTheme } = useTheme()
   const [activeTab, setActiveTab] = useState<UserRole>('agent')
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [isProcessingInvite, setIsProcessingInvite] = useState(false)
+
+  // Force light mode for non-white-labeled sites, use agency theme for white-labeled sites
+  useEffect(() => {
+    if (!brandingLoading) {
+      if (isWhiteLabel && branding?.theme_mode) {
+        // White-labeled site: use agency's theme preference
+        setTheme(branding.theme_mode)
+      } else {
+        // Default AgentSpace site: always use light mode
+        setTheme('light')
+      }
+    }
+  }, [isWhiteLabel, branding, brandingLoading, setTheme])
 
   // Handle invite tokens in URL hash
   useEffect(() => {

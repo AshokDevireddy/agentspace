@@ -1,17 +1,32 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
+import { useTheme } from "next-themes"
 
 export default function ResetPassword() {
   const router = useRouter()
+  const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
+  const { setTheme } = useTheme()
 
   const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+
+  // Force light mode for non-white-labeled sites, use agency theme for white-labeled sites
+  useEffect(() => {
+    if (!brandingLoading) {
+      if (isWhiteLabel && branding?.theme_mode) {
+        setTheme(branding.theme_mode)
+      } else {
+        setTheme('light')
+      }
+    }
+  }, [isWhiteLabel, branding, brandingLoading, setTheme])
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/

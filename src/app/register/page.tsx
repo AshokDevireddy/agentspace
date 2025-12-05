@@ -1,15 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
+import { useTheme } from "next-themes"
 
 export default function RegisterPage() {
   const supabase = createClient()
   const router = useRouter()
+  const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
+  const { setTheme } = useTheme()
 
   const [formData, setFormData] = useState({
     email: "",
@@ -21,6 +25,17 @@ export default function RegisterPage() {
   const [errors, setErrors] = useState<string[]>([])
   const [errorFields, setErrorFields] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+
+  // Force light mode for non-white-labeled sites, use agency theme for white-labeled sites
+  useEffect(() => {
+    if (!brandingLoading) {
+      if (isWhiteLabel && branding?.theme_mode) {
+        setTheme(branding.theme_mode)
+      } else {
+        setTheme('light')
+      }
+    }
+  }, [isWhiteLabel, branding, brandingLoading, setTheme])
 
   const validateForm = () => {
     const newErrors: string[] = []

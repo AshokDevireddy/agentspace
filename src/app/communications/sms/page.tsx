@@ -105,7 +105,7 @@ function SMSMessagingPageContent() {
     'communications',
     {
       searchQuery: "",
-      notificationFilter: 'all' as 'all' | 'lapse' | 'needs_info' | 'drafts',
+      notificationFilter: 'all' as 'all' | 'lapse' | 'needs_info' | 'drafts' | 'unread',
       viewMode: 'self' as 'downlines' | 'self',
       selectedConversationId: null as string | null
     }
@@ -120,7 +120,7 @@ function SMSMessagingPageContent() {
   const setSearchQuery = (value: string) => {
     setAndApply({ searchQuery: value })
   }
-  const setNotificationFilter = (value: 'all' | 'lapse' | 'needs_info' | 'drafts') => {
+  const setNotificationFilter = (value: 'all' | 'lapse' | 'needs_info' | 'drafts' | 'unread') => {
     setAndApply({ notificationFilter: value })
   }
   const setViewMode = (value: 'downlines' | 'self') => {
@@ -204,6 +204,8 @@ function SMSMessagingPageContent() {
       return conv.statusStandardized === 'lapse_notified';
     } else if (notificationFilter === 'needs_info') {
       return conv.statusStandardized === 'needs_more_info_notified';
+    } else if (notificationFilter === 'unread') {
+      return conv.unreadCount > 0;
     }
 
     return true; // 'all' shows everything
@@ -965,13 +967,14 @@ function SMSMessagingPageContent() {
 
           {/* Filter Dropdown */}
           <div className="mb-4">
-            <Select value={notificationFilter} onValueChange={(value: 'all' | 'lapse' | 'needs_info' | 'drafts') => setNotificationFilter(value)}>
+            <Select value={notificationFilter} onValueChange={(value: 'all' | 'lapse' | 'needs_info' | 'drafts' | 'unread') => setNotificationFilter(value)}>
               <SelectTrigger className="w-full h-8 text-xs">
                 <Filter className="h-3 w-3 mr-2" />
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="z-[70]">
                 <SelectItem value="all">All Messages</SelectItem>
+                <SelectItem value="unread">Unread</SelectItem>
                 <SelectItem value="lapse">Lapse Notifications</SelectItem>
                 <SelectItem value="needs_info">Needs More Info</SelectItem>
                 <SelectItem value="drafts">View Drafts</SelectItem>

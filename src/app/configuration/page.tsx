@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -73,8 +73,27 @@ interface Commission {
 
 type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord"
 
+// Default primary color schemes for light and dark mode
+const DEFAULT_PRIMARY_COLOR_LIGHT = "0 0% 0%" // Black for light mode
+const DEFAULT_PRIMARY_COLOR_DARK = "0 0% 100%" // White for dark mode
+
+// Helper function to get default primary color for a theme mode
+const getDefaultPrimaryColor = (mode: 'light' | 'dark' | 'system' | string | null): string => {
+  if (mode === 'dark') return DEFAULT_PRIMARY_COLOR_DARK
+  if (mode === 'light') return DEFAULT_PRIMARY_COLOR_LIGHT
+  // For system mode, we'll need to check the resolved theme
+  // Default to light mode default
+  return DEFAULT_PRIMARY_COLOR_LIGHT
+}
+
+// Helper function to check if a color is the default for a given mode
+const isDefaultColorForMode = (color: string, mode: 'light' | 'dark' | 'system' | string | null): boolean => {
+  const defaultColor = getDefaultPrimaryColor(mode)
+  return color === defaultColor
+}
+
 export default function ConfigurationPage() {
-  const { theme, setTheme } = useTheme()
+  const { theme, setTheme, resolvedTheme } = useTheme()
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>("agency-profile")
@@ -118,6 +137,56 @@ export default function ConfigurationPage() {
     setLightness(hsl.l)
     setPendingColor(null) // Clear pending when primaryColor is updated from server
   }, [primaryColor])
+
+  // Track previous resolved theme to detect mode switches
+  const previousResolvedThemeRef = useRef<string | null>(null)
+
+  // Handle automatic primary color switching when theme changes (from ThemeToggle)
+  useEffect(() => {
+    if (!agency || !resolvedTheme) return
+    
+    const previousResolvedTheme = previousResolvedThemeRef.current
+    const currentResolvedTheme = resolvedTheme
+    
+    // Only proceed if theme actually changed from light to dark or dark to light
+    if (previousResolvedTheme && previousResolvedTheme !== currentResolvedTheme && 
+        (previousResolvedTheme === 'light' || previousResolvedTheme === 'dark') &&
+        (currentResolvedTheme === 'light' || currentResolvedTheme === 'dark')) {
+      
+      // Check if current primary color is the default for the previous mode
+      const currentColor = primaryColor
+      const isCurrentColorDefault = isDefaultColorForMode(currentColor, previousResolvedTheme as 'light' | 'dark')
+      
+      // If current color was the default for the previous mode, switch to default for new mode
+      if (isCurrentColorDefault) {
+        const newDefaultColor = getDefaultPrimaryColor(currentResolvedTheme as 'light' | 'dark')
+        
+        // Update local state and CSS variable
+        setPrimaryColor(newDefaultColor)
+        setPendingColor(null)
+        document.documentElement.style.setProperty('--primary', newDefaultColor)
+        const textColor = getContrastTextColor(newDefaultColor)
+        document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
+        
+        // Update database
+        const supabase = createClient()
+        supabase
+          .from('agencies')
+          .update({ primary_color: newDefaultColor })
+          .eq('id', agency.id)
+          .then(({ error }) => {
+            if (error) {
+              console.error('Error updating primary color:', error)
+            } else {
+              setAgency({ ...agency, primary_color: newDefaultColor })
+            }
+          })
+      }
+    }
+    
+    // Update the ref for next comparison
+    previousResolvedThemeRef.current = currentResolvedTheme
+  }, [resolvedTheme, agency, primaryColor])
   
   // Track color changes (don't auto-save)
   const updateColorFromHSL = (h: number, s: number, l: number) => {
@@ -799,16 +868,43 @@ export default function ConfigurationPage() {
       setSavingTheme(true)
       const supabase = createClient()
 
+      // Determine the current resolved theme (light or dark) before the change
+      const currentResolvedTheme = resolvedTheme || (agencyThemeMode === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : agencyThemeMode)
+      
+      // Determine the new resolved theme
+      const newResolvedTheme = newTheme === 'system' 
+        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : newTheme
+
+      // Check if we need to update the primary color
+      const currentColor = primaryColor
+      const isCurrentColorDefault = isDefaultColorForMode(currentColor, currentResolvedTheme as 'light' | 'dark')
+      
+      const updates: any = { theme_mode: newTheme }
+      
+      // If current color is the default for the current mode, switch to default for new mode
+      if (isCurrentColorDefault && currentResolvedTheme !== newResolvedTheme) {
+        const newDefaultColor = getDefaultPrimaryColor(newResolvedTheme as 'light' | 'dark')
+        updates.primary_color = newDefaultColor
+        setPrimaryColor(newDefaultColor)
+        setPendingColor(null) // Clear any pending color changes
+        
+        // Update CSS variable immediately
+        document.documentElement.style.setProperty('--primary', newDefaultColor)
+        const textColor = getContrastTextColor(newDefaultColor)
+        document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
+      }
+
       const { error } = await supabase
         .from('agencies')
-        .update({ theme_mode: newTheme })
+        .update(updates)
         .eq('id', agency.id)
 
       if (error) throw error
 
       setAgencyThemeMode(newTheme)
       setTheme(newTheme) // Apply the theme immediately
-      setAgency({ ...agency, theme_mode: newTheme })
+      setAgency({ ...agency, ...updates })
     } catch (error) {
       console.error('Error updating theme:', error)
       alert('Failed to update theme preference')

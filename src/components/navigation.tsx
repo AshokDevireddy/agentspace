@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn, getContrastTextColor } from "@/lib/utils"
+import { useTheme } from "next-themes"
 import {
   User,
   BarChart3,
@@ -41,16 +42,36 @@ const adminNavigationItems = [
   { name: "AI Mode", href: "/ai-chat", icon: Sparkles },
 ]
 
+// Default primary color schemes for light and dark mode
+const DEFAULT_PRIMARY_COLOR_LIGHT = "0 0% 0%" // Black for light mode
+const DEFAULT_PRIMARY_COLOR_DARK = "0 0% 100%" // White for dark mode
+
+// Helper function to get default primary color for a theme mode
+const getDefaultPrimaryColor = (mode: 'light' | 'dark' | 'system' | string | null): string => {
+  if (mode === 'dark') return DEFAULT_PRIMARY_COLOR_DARK
+  if (mode === 'light') return DEFAULT_PRIMARY_COLOR_LIGHT
+  return DEFAULT_PRIMARY_COLOR_LIGHT
+}
+
+// Helper function to check if a color is the default for a given mode
+const isDefaultColorForMode = (color: string, mode: 'light' | 'dark' | 'system' | string | null): boolean => {
+  const defaultColor = getDefaultPrimaryColor(mode)
+  return color === defaultColor
+}
+
 export default function Navigation() {
   const { signOut, user } = useAuth()
   const pathname = usePathname()
+  const { resolvedTheme } = useTheme()
   const [isAdmin, setIsAdmin] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [agencyName, setAgencyName] = useState<string>("AgentSpace")
   const [agencyLogo, setAgencyLogo] = useState<string | null>(null)
   const [agencyColor, setAgencyColor] = useState<string>("217 91% 60%")
+  const [agencyId, setAgencyId] = useState<string | null>(null)
   const [isLoadingAgency, setIsLoadingAgency] = useState(true)
+  const previousResolvedThemeRef = useRef<string | null>(null)
 
   // Check if user is admin and fetch agency data
   useEffect(() => {
@@ -76,6 +97,7 @@ export default function Navigation() {
 
           // Fetch agency data if user has an agency
           if (userData?.agency_id) {
+            setAgencyId(userData.agency_id)
             const { data: agencyData } = await supabase
               .from('agencies')
               .select('display_name, name, logo_url, primary_color')
@@ -108,6 +130,57 @@ export default function Navigation() {
 
     checkAdminAndFetchAgency()
   }, [user])
+
+  // Handle automatic primary color switching when theme changes (from ThemeToggle)
+  useEffect(() => {
+    if (!agencyId || !resolvedTheme || !agencyColor) return
+    
+    const previousResolvedTheme = previousResolvedThemeRef.current
+    const currentResolvedTheme = resolvedTheme
+    
+    // Only proceed if theme actually changed from light to dark or dark to light
+    if (previousResolvedTheme && previousResolvedTheme !== currentResolvedTheme && 
+        (previousResolvedTheme === 'light' || previousResolvedTheme === 'dark') &&
+        (currentResolvedTheme === 'light' || currentResolvedTheme === 'dark')) {
+      
+      // Check if current primary color is the default for the previous mode
+      const currentColor = agencyColor
+      const isCurrentColorDefault = isDefaultColorForMode(currentColor, previousResolvedTheme as 'light' | 'dark')
+      
+      // If current color was the default for the previous mode, switch to default for new mode
+      if (isCurrentColorDefault) {
+        const newDefaultColor = getDefaultPrimaryColor(currentResolvedTheme as 'light' | 'dark')
+        
+        // Update local state and CSS variable
+        setAgencyColor(newDefaultColor)
+        document.documentElement.style.setProperty('--primary', newDefaultColor)
+        const textColor = getContrastTextColor(newDefaultColor)
+        document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
+        
+        // Update database
+        const updateColor = async () => {
+          try {
+            const supabase = createClient()
+            const { error } = await supabase
+              .from('agencies')
+              .update({ primary_color: newDefaultColor })
+              .eq('id', agencyId)
+            
+            if (error) {
+              console.error('Error updating primary color:', error)
+            }
+          } catch (error) {
+            console.error('Error updating primary color:', error)
+          }
+        }
+        
+        updateColor()
+      }
+    }
+    
+    // Update the ref for next comparison
+    previousResolvedThemeRef.current = currentResolvedTheme
+  }, [resolvedTheme, agencyId, agencyColor])
 
   // Fetch unread message count
   useEffect(() => {

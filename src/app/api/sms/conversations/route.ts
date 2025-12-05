@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
     const formattedConversations = (conversations as any[])?.map((conv: any) => ({
       id: conv.conversation_id,
       dealId: conv.deal_id,
+      agentId: conv.agent_id,
       clientName: conv.client_name || 'Unknown',
       clientPhone: conv.client_phone || '',
       lastMessage: conv.last_message || '',

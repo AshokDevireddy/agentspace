@@ -36,6 +36,7 @@ import { UpgradePrompt } from "@/components/upgrade-prompt"
 interface Conversation {
   id: string
   dealId: string
+  agentId: string
   clientName: string
   clientPhone: string
   lastMessage: string
@@ -124,7 +125,7 @@ function SMSMessagingPageContent() {
     setAndApply({ notificationFilter: value })
   }
   const setViewMode = (value: 'downlines' | 'self') => {
-    setAndApply({ viewMode: value })
+    setAndApply({ viewMode: value, selectedConversationId: null })
   }
   const setPersistedConversationId = (value: string | null) => {
     setAndApply({ selectedConversationId: value })
@@ -147,6 +148,7 @@ function SMSMessagingPageContent() {
   const [dealPanelCollapsed, setDealPanelCollapsed] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [isAdminChecked, setIsAdminChecked] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
   const [editingDraftBody, setEditingDraftBody] = useState("")
@@ -175,15 +177,19 @@ function SMSMessagingPageContent() {
 
   // Restore selected conversation when conversations are loaded
   useEffect(() => {
-    if (conversations.length > 0 && !selectedConversation && isHydrated && persistedConversationId) {
+    if (conversations.length > 0 && !selectedConversation && isHydrated && persistedConversationId && isAdminChecked) {
       const conversation = conversations.find(c => c.id === persistedConversationId)
       if (conversation) {
         // Directly set the conversation and fetch data
         setSelectedConversation(conversation)
         // Fetch messages and deal details will be triggered by another useEffect
+      } else {
+        // Clear the persisted conversation ID if it's not in the current list
+        // This happens when switching view modes or when the conversation is no longer accessible
+        setPersistedConversationId(null)
       }
     }
-  }, [conversations, selectedConversation, isHydrated, persistedConversationId])
+  }, [conversations, selectedConversation, isHydrated, persistedConversationId, isAdminChecked])
 
   // Fetch messages and deal details when selectedConversation changes
   useEffect(() => {
@@ -274,7 +280,7 @@ function SMSMessagingPageContent() {
 
       const { data: userData, error } = await supabase
         .from('users')
-        .select('is_admin, subscription_tier')
+        .select('id, is_admin, subscription_tier')
         .eq('auth_user_id', user.id)
         .single()
 
@@ -287,6 +293,7 @@ function SMSMessagingPageContent() {
       console.log('🔐 Admin status:', adminStatus, 'Tier:', tier)
       setIsAdmin(adminStatus)
       setUserTier(tier)
+      setCurrentUserId(userData?.id || null)
       setIsAdminChecked(true)
     }
 
@@ -342,6 +349,8 @@ function SMSMessagingPageContent() {
   // Initial fetch and when view mode changes
   useEffect(() => {
     fetchConversations()
+    // Clear selected conversation when view mode changes to avoid permission issues
+    setSelectedConversation(null)
   }, [fetchConversations]) // Include fetchConversations in dependencies
 
   // Debounced conversation refresh to avoid hammering the API
@@ -359,12 +368,21 @@ function SMSMessagingPageContent() {
       setMessagesLoading(true)
       // Use same view mode logic as conversations
       const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
+      console.log('🔄 Fetching messages:', { conversationId, effectiveViewMode, isAdmin, viewMode })
+
       const response = await fetch(
         `/api/sms/messages?conversationId=${conversationId}&view=${effectiveViewMode}`,
         { credentials: 'include' }
       )
 
       if (!response.ok) {
+        console.error('❌ Failed to fetch messages:', response.status, response.statusText)
+        // If unauthorized, clear the persisted conversation to prevent retry loops
+        if (response.status === 403) {
+          console.log('🚫 Unauthorized - clearing persisted conversation')
+          setPersistedConversationId(null)
+          setSelectedConversation(null)
+        }
         throw new Error('Failed to fetch messages')
       }
 
@@ -377,6 +395,7 @@ function SMSMessagingPageContent() {
         return new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
       })
       setMessages(sortedMessages)
+      console.log('✅ Messages fetched successfully:', sortedMessages.length)
     } catch (error) {
       console.error('Error fetching messages:', error)
     } finally {
@@ -1308,33 +1327,50 @@ function SMSMessagingPageContent() {
 
             {/* Message Input */}
             <div className="p-4 bg-card border-t border-border">
-              <div className="flex items-end gap-2">
-                <textarea
-                  ref={messageInputRef}
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyDown={handleKeyPress}
-                  placeholder="Type a message..."
-                  disabled={sending}
-                  rows={1}
-                  className="flex-1 min-h-[40px] max-h-[150px] px-3 py-2 text-sm rounded-lg border border-border focus:border-primary focus:ring-2 focus:ring-primary/20 bg-input text-foreground transition-all resize-none overflow-y-auto focus:outline-none"
-                  style={{
-                    scrollbarWidth: 'thin'
-                  }}
-                />
-                <Button
-                  size="sm"
-                  onClick={handleSendMessage}
-                  disabled={!messageInput.trim() || sending}
-                  className="btn-gradient h-10 px-4"
-                >
-                  {sending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
+              {(() => {
+                console.log('🔍 Message input check:', {
+                  currentUserId,
+                  conversationAgentId: selectedConversation.agentId,
+                  matches: selectedConversation.agentId === currentUserId,
+                  shouldBlock: currentUserId && selectedConversation.agentId !== currentUserId
+                })
+                return null
+              })()}
+              {currentUserId && selectedConversation.agentId !== currentUserId ? (
+                <div className="flex items-center justify-center p-4 bg-muted/50 rounded-lg border border-border">
+                  <p className="text-sm text-muted-foreground text-center">
+                    This is not your conversation. You can only send messages in conversations where you are the agent.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-end gap-2">
+                  <textarea
+                    ref={messageInputRef}
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    onKeyDown={handleKeyPress}
+                    placeholder="Type a message..."
+                    disabled={sending}
+                    rows={1}
+                    className="flex-1 min-h-[40px] max-h-[150px] px-3 py-2 text-sm rounded-lg border border-border focus:border-primary focus:ring-2 focus:ring-primary/20 bg-input text-foreground transition-all resize-none overflow-y-auto focus:outline-none"
+                    style={{
+                      scrollbarWidth: 'thin'
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleSendMessage}
+                    disabled={!messageInput.trim() || sending}
+                    className="btn-gradient h-10 px-4"
+                  >
+                    {sending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
           </>
         ) : (

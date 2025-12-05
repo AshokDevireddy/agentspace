@@ -127,6 +127,15 @@ export async function POST(request: NextRequest) {
       deal.client_phone
     );
 
+    // IMPORTANT: Verify that the current user is the agent for this conversation
+    // Prevent uplines from sending messages in conversations they don't own
+    if (conversation.agent_id !== userData.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized: You can only send messages in your own conversations' },
+        { status: 403 }
+      );
+    }
+
     // Check opt-out status before sending
     if (conversation.sms_opt_in_status === 'opted_out') {
       return NextResponse.json(

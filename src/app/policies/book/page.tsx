@@ -56,6 +56,7 @@ interface FilterOptions {
   statuses: FilterOption[]
   billingCycles: FilterOption[]
   leadSources: FilterOption[]
+  effectiveDateSort: FilterOption[]
 }
 
 // Dynamic color generator for status values - MORE VIBRANT
@@ -103,6 +104,7 @@ export default function BookOfBusiness() {
       billingCycle: "all",
       leadSource: "all",
       status: "all",
+      effectiveDateSort: "all",
       effectiveDateStart: "",
       effectiveDateEnd: "",
       statusMode: 'all' as 'all' | 'active' | 'pending' | 'inactive',
@@ -162,7 +164,8 @@ export default function BookOfBusiness() {
     products: [{ value: "all", label: "All Products" }],
     statuses: [],
     billingCycles: [{ value: "all", label: "All Billing Cycles" }],
-    leadSources: [{ value: "all", label: "All Lead Sources" }]
+    leadSources: [{ value: "all", label: "All Lead Sources" }],
+    effectiveDateSort: []
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -206,7 +209,8 @@ export default function BookOfBusiness() {
           products: data.products || [{ value: "all", label: "All Products" }],
           statuses: data.statusStandardized || [],
           billingCycles: data.billingCycles || [{ value: "all", label: "All Billing Cycles" }],
-          leadSources: data.leadSources || [{ value: "all", label: "All Lead Sources" }]
+          leadSources: data.leadSources || [{ value: "all", label: "All Lead Sources" }],
+          effectiveDateSort: data.effectiveDateSort || []
         })
       } catch (err) {
         console.error('Error fetching filter options:', err)
@@ -237,6 +241,7 @@ export default function BookOfBusiness() {
       if (appliedFilters.billingCycle !== 'all') params.append('billing_cycle', appliedFilters.billingCycle)
       if (appliedFilters.leadSource !== 'all') params.append('lead_source', appliedFilters.leadSource)
       if (appliedFilters.status !== 'all') params.append('status_standardized', appliedFilters.status)
+      if (appliedFilters.effectiveDateSort !== 'all') params.append('effective_date_sort', appliedFilters.effectiveDateSort)
       if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
       if (appliedFilters.effectiveDateEnd) params.append('effective_date_end', appliedFilters.effectiveDateEnd)
       if (appliedFilters.viewMode) params.append('view', appliedFilters.viewMode)
@@ -337,6 +342,7 @@ export default function BookOfBusiness() {
     appliedFilters.billingCycle !== 'all' ||
     appliedFilters.leadSource !== 'all' ||
     appliedFilters.status !== 'all' ||
+    appliedFilters.effectiveDateSort !== 'all' ||
     appliedFilters.effectiveDateStart ||
     appliedFilters.effectiveDateEnd
 
@@ -378,6 +384,9 @@ export default function BookOfBusiness() {
       case 'status':
         setLocalFilters({ status: 'all' })
         break
+      case 'effectiveDateSort':
+        setLocalFilters({ effectiveDateSort: 'all' })
+        break
       case 'dateRange':
         setLocalFilters({ effectiveDateStart: '', effectiveDateEnd: '' })
         break
@@ -396,6 +405,7 @@ export default function BookOfBusiness() {
     { id: 'billingCycle', label: 'Billing Cycle' },
     { id: 'leadSource', label: 'Lead Source' },
     { id: 'status', label: 'Status' },
+    { id: 'effectiveDateSort', label: 'Oldest/Newest' },
     { id: 'dateRange', label: 'Date Range' },
     { id: 'persistencyPlacement', label: 'Persistency/Placement' },
   ]
@@ -582,6 +592,15 @@ export default function BookOfBusiness() {
                   />
                 </Badge>
               )}
+              {visibleFilters.has('effectiveDateSort') && (
+                <Badge variant="outline" className="h-8 px-3">
+                  Oldest/Newest
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('effectiveDateSort')}
+                  />
+                </Badge>
+              )}
               {visibleFilters.has('dateRange') && (
                 <Badge variant="outline" className="h-8 px-3">
                   Date Range
@@ -742,6 +761,21 @@ export default function BookOfBusiness() {
                       value={localFilters.status}
                       onValueChange={(value) => setLocalFilters({ status: value })}
                       placeholder="All Statuses"
+                      searchPlaceholder="Search..."
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('effectiveDateSort') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Oldest/Newest
+                    </label>
+                    <SimpleSearchableSelect
+                      options={filterOptions.effectiveDateSort || []}
+                      value={localFilters.effectiveDateSort}
+                      onValueChange={(value) => setLocalFilters({ effectiveDateSort: value })}
+                      placeholder="Select sort order..."
                       searchPlaceholder="Search..."
                     />
                   </div>

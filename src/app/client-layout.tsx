@@ -6,7 +6,7 @@ import Navigation from '@/components/navigation'
 import { Building2 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-// import { useTheme } from 'next-themes'
+import { useTheme } from 'next-themes'
 import { useAgencyBranding } from '@/contexts/AgencyBrandingContext'
 
 // Pages that should not show the navigation sidebar
@@ -29,49 +29,54 @@ export default function ClientLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
-  // const { setTheme } = useTheme()
+  const { setTheme } = useTheme()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isClientPage = CLIENT_PAGES.some(page => pathname.startsWith(page))
   const [userRole, setUserRole] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Force light theme on auth pages and restore agency theme on dashboard
-  // COMMENTED OUT FOR TESTING - may be causing theme switching loop
-  // useEffect(() => {
-  //   const handleTheme = async () => {
-  //     if (isAuthPage) {
-  //       // Always use light theme on auth pages
-  //       setTheme('light')
-  //     } else {
-  //       // On authenticated pages, load and apply agency theme
-  //       const supabase = createClient()
-  //       const { data: { user } } = await supabase.auth.getUser()
+  // Apply agency theme on authenticated pages (non-auth pages)
+  useEffect(() => {
+    const applyAgencyTheme = async () => {
+      // Skip if on auth pages - let auth pages handle their own theme
+      if (isAuthPage) return
 
-  //       if (user) {
-  //         const { data: userData } = await supabase
-  //           .from('users')
-  //           .select('agency_id')
-  //           .eq('auth_user_id', user.id)
-  //           .single()
+      // Skip if branding is still loading
+      if (brandingLoading) return
 
-  //         if (userData?.agency_id) {
-  //           const { data: agencyInfo } = await supabase
-  //             .from('agencies')
-  //             .select('theme_mode')
-  //             .eq('id', userData.agency_id)
-  //             .single()
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
 
-  //           if (agencyInfo?.theme_mode) {
-  //             setTheme(agencyInfo.theme_mode)
-  //           }
-  //         }
-  //       }
-  //     }
-  //   }
+      if (user) {
+        // Get user's agency ID
+        const { data: userData } = await supabase
+          .from('users')
+          .select('agency_id')
+          .eq('auth_user_id', user.id)
+          .single()
 
-  //   handleTheme()
-  // }, [isAuthPage, setTheme, pathname])
+        if (userData?.agency_id) {
+          // Get agency theme preference
+          const { data: agencyInfo } = await supabase
+            .from('agencies')
+            .select('theme_mode')
+            .eq('id', userData.agency_id)
+            .single()
+
+          if (agencyInfo?.theme_mode) {
+            // Apply agency theme
+            setTheme(agencyInfo.theme_mode)
+          } else {
+            // Default to system if no theme preference set
+            setTheme('system')
+          }
+        }
+      }
+    }
+
+    applyAgencyTheme()
+  }, [isAuthPage, pathname, brandingLoading, setTheme])
 
   useEffect(() => {
     const checkUserRole = async () => {

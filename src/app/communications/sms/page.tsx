@@ -1190,15 +1190,15 @@ function SMSMessagingPageContent() {
                           className={cn(
                             "max-w-[70%] rounded-2xl px-4 py-2 shadow-sm",
                             isDraft
-                              ? "bg-yellow-100 text-gray-900 border-2 border-yellow-400"
+                              ? "bg-yellow-100 dark:bg-yellow-900/30 text-gray-900 dark:text-gray-100 border-2 border-yellow-400 dark:border-yellow-600"
                               : isOutbound
                               ? "bg-blue-600 text-white"
                               : "bg-card text-card-foreground border border-border"
                           )}
                         >
                           {isDraft && (
-                            <div className="text-xs font-semibold mb-2 text-yellow-800 flex items-center gap-1">
-                              <span className="inline-block w-2 h-2 bg-yellow-500 rounded-full"></span>
+                            <div className="text-xs font-semibold mb-2 text-yellow-800 dark:text-yellow-400 flex items-center gap-1">
+                              <span className="inline-block w-2 h-2 bg-yellow-500 dark:bg-yellow-400 rounded-full"></span>
                               DRAFT - Pending Approval
                             </div>
                           )}
@@ -1213,7 +1213,7 @@ function SMSMessagingPageContent() {
                               <textarea
                                 value={editingDraftBody}
                                 onChange={(e) => setEditingDraftBody(e.target.value)}
-                                className="w-full text-sm p-3 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 resize-none"
+                                className="w-full text-sm p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-yellow-500 dark:focus:ring-yellow-400 focus:border-yellow-500 dark:focus:border-yellow-400 resize-none"
                                 rows={8}
                                 style={{ minHeight: '150px' }}
                               />
@@ -1240,40 +1240,42 @@ function SMSMessagingPageContent() {
                               <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p>
 
                               {isDraft && (
-                                <div className="flex gap-2 mt-3 pt-2 border-t border-yellow-300">
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleApproveDraft(message.id)}
-                                    disabled={approvingDrafts.has(message.id)}
-                                    className="bg-green-600 hover:bg-green-700 text-white text-xs flex-1"
-                                  >
-                                    {approvingDrafts.has(message.id) ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                    ) : (
-                                      'Approve & Send'
-                                    )}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleStartEditDraft(message.id, message.body)}
-                                    className="text-xs"
-                                  >
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={() => handleRejectDraft(message.id)}
-                                    disabled={rejectingDrafts.has(message.id)}
-                                    className="text-xs"
-                                  >
-                                    {rejectingDrafts.has(message.id) ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                    ) : (
-                                      'Reject'
-                                    )}
-                                  </Button>
+                                <div className="mt-3 pt-2 border-t border-yellow-300 dark:border-yellow-700 -mx-4 px-4 overflow-x-auto">
+                                  <div className="flex gap-2 min-w-max">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleApproveDraft(message.id)}
+                                      disabled={approvingDrafts.has(message.id)}
+                                      className="bg-green-600 hover:bg-green-700 text-white text-xs flex-1 min-w-[110px]"
+                                    >
+                                      {approvingDrafts.has(message.id) ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        'Approve & Send'
+                                      )}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleStartEditDraft(message.id, message.body)}
+                                      className="text-xs min-w-[60px] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => handleRejectDraft(message.id)}
+                                      disabled={rejectingDrafts.has(message.id)}
+                                      className="text-xs min-w-[60px]"
+                                    >
+                                      {rejectingDrafts.has(message.id) ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        'Reject'
+                                      )}
+                                    </Button>
+                                  </div>
                                 </div>
                               )}
 

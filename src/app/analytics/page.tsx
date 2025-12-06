@@ -570,7 +570,11 @@ export default function AnalyticsTestPage() {
 		const fetchAgents = async () => {
 			try {
 				// Fetch agents using the API endpoint which calls get_agent_options
+				// Using view=table ensures the same admin logic as the agents page:
+				// - Admins get full agency access (p_include_full_agency: true)
+				// - Regular agents only see their downlines (p_include_full_agency: false)
 				const params = new URLSearchParams()
+				params.append('view', 'table')
 				params.append('page', '1')
 				params.append('limit', '1') // We only need the allAgents array
 				

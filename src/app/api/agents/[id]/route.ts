@@ -56,15 +56,17 @@ export async function GET(
       }, { status: 404 });
     }
 
-    // Get position name
+    // Get position name and level
     let positionName = "Unknown";
+    let positionLevel = null;
     if (agent.position_id) {
       const { data: position } = await supabase
         .from("positions")
-        .select("name")
+        .select("name, level")
         .eq("id", agent.position_id)
         .single();
       positionName = position?.name || "Unknown";
+      positionLevel = position?.level || null;
     }
 
     // Get upline name
@@ -118,6 +120,7 @@ export async function GET(
       role: agent.role || null,
       position: positionName,
       position_id: agent.position_id || null,
+      position_level: positionLevel,
       upline: uplineName,
       upline_id: agent.upline_id || null,
       created: new Date(agent.created_at || "").toLocaleString("en-US", {

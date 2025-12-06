@@ -87,6 +87,30 @@ const statusColors: { [key: string]: string } = {
   "inactive": "bg-red-500/20 text-red-400 border-red-500/30",
 }
 
+// Position colors based on hierarchy level (top 10 positions get distinct colors, rest are gray)
+const positionLevelColors: string[] = [
+  "bg-amber-500/20 text-amber-400 border-amber-500/30",      // Level 1 (highest) - Gold
+  "bg-orange-500/20 text-orange-400 border-orange-500/30",   // Level 2 - Orange
+  "bg-blue-500/20 text-blue-400 border-blue-500/30",         // Level 3 - Blue
+  "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",         // Level 4 - Cyan
+  "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",   // Level 5 - Indigo
+  "bg-purple-500/20 text-purple-400 border-purple-500/30",   // Level 6 - Purple
+  "bg-violet-500/20 text-violet-400 border-violet-500/30",   // Level 7 - Violet
+  "bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/30", // Level 8 - Fuchsia
+  "bg-pink-500/20 text-pink-400 border-pink-500/30",         // Level 9 - Pink
+  "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", // Level 10 - Emerald
+]
+
+// This function will be used with the positionColorMap from state
+const getPositionColorByLevel = (positionLevel: number | null | undefined, colorMap: Map<number, string>): string => {
+  if (positionLevel === null || positionLevel === undefined) {
+    return "bg-slate-500/20 text-slate-400 border-slate-500/30"
+  }
+
+  // Get color from the map (which is populated based on agency's position ranking)
+  return colorMap.get(positionLevel) || "bg-gray-500/20 text-gray-400 border-gray-500/30"
+}
+
 
 const renderForeignObjectNode = ({
   nodeDatum,
@@ -278,6 +302,7 @@ export default function Agents() {
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
   const [translate, setTranslate] = useState({ x: 0, y: 0 })
+  const [positionColorMap, setPositionColorMap] = useState<Map<number, string>>(new Map())
 
   // Pending positions state
   const [pendingAgents, setPendingAgents] = useState<PendingAgent[]>([])
@@ -326,7 +351,17 @@ export default function Agents() {
       return 'None'
     }
     const normalized = upline.replace(/[\s,]/g, '')
-    return normalized ? upline : 'None'
+    if (!normalized) return 'None'
+
+    // Convert "Last, First" to "First Last"
+    if (upline.includes(',')) {
+      const parts = upline.split(',').map(p => p.trim())
+      if (parts.length === 2) {
+        return `${parts[1]} ${parts[0]}`
+      }
+    }
+
+    return upline
   }
 
   const formatDate = (dateString?: string | null) => {
@@ -346,12 +381,93 @@ export default function Agents() {
     return formatted
   }
 
-    const containerRef = useCallback((containerElem: HTMLDivElement | null) => {
+  const formatDateCompact = (dateString?: string | null) => {
+    if (!dateString) return 'N/A'
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return 'N/A'
+
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    // Less than 1 hour ago
+    if (diffMins < 60) {
+      return diffMins <= 1 ? 'Just now' : `${diffMins}m ago`
+    }
+
+    // Less than 24 hours ago
+    if (diffHours < 24) {
+      return `${diffHours}h ago`
+    }
+
+    // Less than 7 days ago
+    if (diffDays < 7) {
+      return `${diffDays}d ago`
+    }
+
+    // Less than 30 days ago
+    if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7)
+      return `${weeks}w ago`
+    }
+
+    // Format as MMM DD, YYYY
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
+  }
+
+  const containerRef = useCallback((containerElem: HTMLDivElement | null) => {
         if (containerElem !== null) {
             const { width, height } = containerElem.getBoundingClientRect();
             setTranslate({ x: width / 2, y: height / 5 });
         }
     }, []);
+
+  // Fetch all positions for the agency and build color map based on rank
+  useEffect(() => {
+    const fetchPositionsForColorMap = async () => {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const accessToken = session?.access_token
+
+        if (!accessToken) return
+
+        // Fetch all positions for the agency
+        const response = await fetch('/api/positions', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+
+          // Sort positions by level (descending - highest level first)
+          const sortedPositions = [...data].sort((a, b) => b.level - a.level)
+
+          // Create a map of level -> color based on rank
+          const colorMap = new Map<number, string>()
+          sortedPositions.forEach((position, index) => {
+            // Top 10 positions get distinct colors, rest get gray
+            if (index < 10) {
+              colorMap.set(position.level, positionLevelColors[index])
+            } else {
+              colorMap.set(position.level, "bg-gray-500/20 text-gray-400 border-gray-500/30")
+            }
+          })
+
+          setPositionColorMap(colorMap)
+        }
+      } catch (err) {
+        console.error('Error fetching positions for color map:', err)
+      }
+    }
+
+    fetchPositionsForColorMap()
+  }, [])
 
   // Fetch agents data from API (only when active filters change, not local filters)
   useEffect(() => {
@@ -418,6 +534,8 @@ export default function Agents() {
                 return agent
               })
             )
+
+            // Agents are already sorted hierarchically by the database RPC
             setAgentsData(agentsWithEmail)
             setTotalPages(data.pagination.totalPages)
             setTotalCount(data.pagination.totalCount)
@@ -1206,13 +1324,13 @@ export default function Agents() {
             <table className="jira-table min-w-full">
               <thead>
                 <tr>
-                  <th>Agent</th>
-                  <th>Position</th>
-                  <th>Upline</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th>Last Login</th>
-                  <th>Downlines</th>
+                  <th className="text-xs uppercase tracking-wider">Agent</th>
+                  <th className="text-xs uppercase tracking-wider">Position</th>
+                  <th className="text-xs uppercase tracking-wider">Upline</th>
+                  <th className="text-xs uppercase tracking-wider">Status</th>
+                  <th className="text-xs uppercase tracking-wider">Created</th>
+                  <th className="text-xs uppercase tracking-wider">Last Login</th>
+                  <th className="text-xs uppercase tracking-wider">Downlines</th>
                 </tr>
               </thead>
               <tbody>
@@ -1259,18 +1377,26 @@ export default function Agents() {
                       <td>
                         <div className="flex items-center space-x-3">
                           <div className="flex-shrink-0">
-                            <div className={`w-8 h-8 rounded-full ${badgeColors[agent.badge] || 'bg-muted text-muted-foreground'} flex items-center justify-center text-xs font-bold border`}>
-                              {agent.badge.charAt(0)}
+                            <div className={`w-9 h-9 rounded-full ${badgeColors[agent.badge] || 'bg-muted text-muted-foreground'} flex items-center justify-center text-xs font-bold border-2 shadow-sm`}>
+                              {agent.name.split(' ').map(n => n.charAt(0)).slice(0, 2).join('')}
                             </div>
                           </div>
                           <div>
-                            <div className="font-medium text-foreground">{agent.name}</div>
-                            <Badge
-                              className={`mt-1 ${badgeColors[agent.badge] || 'bg-muted text-muted-foreground border-border'} border`}
-                              variant="outline"
-                            >
-                              {agent.badge}
-                            </Badge>
+                            <div className="font-semibold text-lg text-foreground">{agent.name}</div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge
+                                className={`${
+                                  agent.badge.toLowerCase().includes('admin')
+                                    ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
+                                    : agent.badge.toLowerCase().includes('ega') || agent.badge.toLowerCase().includes('efo') || agent.badge.toLowerCase().includes('ejo')
+                                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                    : 'bg-green-500/20 text-green-400 border-green-500/30'
+                                } border text-xs font-semibold`}
+                                variant="outline"
+                              >
+                                {agent.badge}
+                              </Badge>
+                            </div>
                             <div className="mt-2">
                               {agent.status?.toLowerCase() === 'pre-invite' && agent.email && (
                                 <Button
@@ -1330,19 +1456,23 @@ export default function Agents() {
                       <td>
                         {agent.position_name ? (
                           <Badge
-                            className="bg-blue-500/20 text-blue-400 border-blue-500/30 border"
+                            className={`${getPositionColorByLevel(agent.position_level, positionColorMap)} border font-semibold text-xs`}
                             variant="outline"
                           >
                             {agent.position_name}
                           </Badge>
                         ) : (
-                          <span className="text-muted-foreground text-sm">Not Set</span>
+                          <span className="text-muted-foreground text-sm italic">Not Set</span>
                         )}
                       </td>
-                      <td>{formatUplineLabel(agent.upline)}</td>
+                      <td>
+                        <span className={`text-base ${formatUplineLabel(agent.upline) === 'None' ? 'text-muted-foreground italic' : 'text-foreground font-semibold'}`}>
+                          {formatUplineLabel(agent.upline)}
+                        </span>
+                      </td>
                       <td>
                         <Badge
-                          className={`border ${statusColors[agent.status] || 'bg-muted text-muted-foreground border-border'}`}
+                          className={`border font-semibold text-xs ${statusColors[agent.status] || 'bg-muted text-muted-foreground border-border'}`}
                           variant="outline"
                         >
                           {agent.status
@@ -1351,20 +1481,30 @@ export default function Agents() {
                             .join('-')}
                         </Badge>
                       </td>
-                      <td className="text-muted-foreground">{agent.created}</td>
-                      <td className="text-muted-foreground">{agent.lastLogin}</td>
+                      <td>
+                        <div className="text-sm">
+                          <div className="text-foreground font-medium">{formatDateCompact(agent.created)}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {agent.created && agent.created !== 'N/A' && new Date(agent.created).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="text-sm">
+                          <div className="text-foreground font-medium">{formatDateCompact(agent.lastLogin)}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {agent.lastLogin && agent.lastLogin !== 'N/A' && new Date(agent.lastLogin).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </div>
+                        </div>
+                      </td>
                       <td>
                         <div className="flex items-center space-x-2">
-                          <span className="font-medium">{agent.downlines}</span>
-                          {agent.downlines > 0 && (
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Users className="h-4 w-4" />
-                            </Button>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            <Users className={`h-4 w-4 ${agent.downlines > 0 ? 'text-primary' : 'text-muted-foreground'}`} />
+                            <span className={`font-semibold text-sm ${agent.downlines > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                              {agent.downlines}
+                            </span>
+                          </div>
                         </div>
                       </td>
                     </tr>

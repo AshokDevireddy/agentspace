@@ -36,6 +36,29 @@ const statusColors: { [key: string]: string } = {
   "inactive": "bg-red-500/20 text-red-400 border-red-500/30",
 }
 
+// Position colors based on hierarchy level (top 10 positions get distinct colors, rest are gray)
+const positionLevelColors: string[] = [
+  "bg-amber-500/20 text-amber-400 border-amber-500/30",      // Level 1 (highest) - Gold
+  "bg-orange-500/20 text-orange-400 border-orange-500/30",   // Level 2 - Orange
+  "bg-blue-500/20 text-blue-400 border-blue-500/30",         // Level 3 - Blue
+  "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",         // Level 4 - Cyan
+  "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",   // Level 5 - Indigo
+  "bg-purple-500/20 text-purple-400 border-purple-500/30",   // Level 6 - Purple
+  "bg-violet-500/20 text-violet-400 border-violet-500/30",   // Level 7 - Violet
+  "bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/30", // Level 8 - Fuchsia
+  "bg-pink-500/20 text-pink-400 border-pink-500/30",         // Level 9 - Pink
+  "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", // Level 10 - Emerald
+]
+
+const getPositionColorByLevel = (positionLevel: number | null | undefined, colorMap: Map<number, string>): string => {
+  if (positionLevel === null || positionLevel === undefined) {
+    return "bg-slate-500/20 text-slate-400 border-slate-500/30"
+  }
+
+  // Get color from the map (which is populated based on agency's position ranking)
+  return colorMap.get(positionLevel) || "bg-gray-500/20 text-gray-400 border-gray-500/30"
+}
+
 const getAgentStatusSteps = (status: string | null | undefined) => {
   const currentStatus = (status || 'pre-invite').toLowerCase()
 
@@ -76,14 +99,56 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
   const [isEditing, setIsEditing] = useState(false)
   const [editedData, setEditedData] = useState<any>(null)
   const [saving, setSaving] = useState(false)
+  const [positionColorMap, setPositionColorMap] = useState<Map<number, string>>(new Map())
 
   useEffect(() => {
     if (open && agentId) {
       fetchAgentDetails()
       fetchDownlines()
       checkAdminStatus()
+      fetchPositionsForColorMap()
     }
   }, [open, agentId])
+
+  const fetchPositionsForColorMap = async () => {
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) return
+
+      // Fetch all positions for the agency
+      const response = await fetch('/api/positions', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+
+        // Sort positions by level (descending - highest level first)
+        const sortedPositions = [...data].sort((a: any, b: any) => b.level - a.level)
+
+        // Create a map of level -> color based on rank
+        const colorMap = new Map<number, string>()
+        sortedPositions.forEach((position: any, index: number) => {
+          // Top 10 positions get distinct colors, rest get gray
+          if (index < 10) {
+            colorMap.set(position.level, positionLevelColors[index])
+          } else {
+            colorMap.set(position.level, "bg-gray-500/20 text-gray-400 border-gray-500/30")
+          }
+        })
+
+        setPositionColorMap(colorMap)
+        console.log('[AgentDetailsModal] Position color map created:', colorMap)
+      }
+    } catch (err) {
+      console.error('Error fetching positions for color map:', err)
+    }
+  }
 
   const checkAdminStatus = async () => {
     try {
@@ -315,12 +380,27 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
                 </div>
               </div>
               <div className="flex items-center gap-4 mt-4">
-                <Badge 
-                  className={`${badgeColors[agent.badge] || 'bg-muted text-muted-foreground border-border'} border text-sm px-3 py-1`} 
+                {/* Show position badge if available */}
+                {agent.position && (
+                  <Badge
+                    className={`${getPositionColorByLevel(agent.position_level, positionColorMap)} border text-sm px-3 py-1 font-semibold`}
+                    variant="outline"
+                  >
+                    <UserCog className="h-3 w-3 mr-1" />
+                    {agent.position}
+                  </Badge>
+                )}
+                {/* Show role badge (Admin/Agent) */}
+                <Badge
+                  className={`${
+                    agent.badge?.toLowerCase().includes('admin')
+                      ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
+                      : 'bg-green-500/20 text-green-400 border-green-500/30'
+                  } border text-sm px-3 py-1 font-semibold`}
                   variant="outline"
                 >
                   <UserCog className="h-3 w-3 mr-1" />
-                  {agent.badge || agent.position || 'Agent'}
+                  {agent.badge?.toLowerCase().includes('admin') ? 'Admin' : 'Agent'}
                 </Badge>
                 <Badge
                   className={`border ${statusColors[agent.status?.toLowerCase()] || 'bg-muted text-muted-foreground border-border'} text-sm px-3 py-1`}
@@ -476,7 +556,16 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Position</label>
-                  <p className="text-lg font-semibold text-foreground">{agent.position || 'Not Set'}</p>
+                  {agent.position ? (
+                    <Badge
+                      className={`${getPositionColorByLevel(agent.position_level, positionColorMap)} border font-semibold text-sm mt-1`}
+                      variant="outline"
+                    >
+                      {agent.position}
+                    </Badge>
+                  ) : (
+                    <p className="text-lg font-semibold text-muted-foreground italic">Not Set</p>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
@@ -579,11 +668,20 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
                       >
                         <div className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded-full ${badgeColors[downline.badge] || 'bg-muted text-muted-foreground'} flex items-center justify-center text-xs font-bold border`}>
-                            {downline.badge?.charAt(0) || downline.name?.charAt(0) || 'A'}
+                            {downline.name?.split(' ').map((n: string) => n.charAt(0)).slice(0, 2).join('') || 'A'}
                           </div>
                           <div>
                             <p className="font-semibold text-foreground">{downline.name}</p>
-                            <p className="text-xs text-muted-foreground">{downline.position || 'Agent'}</p>
+                            {downline.position ? (
+                              <Badge
+                                className={`${getPositionColorByLevel(downline.position_level, positionColorMap)} border text-xs mt-1 font-semibold`}
+                                variant="outline"
+                              >
+                                {downline.position}
+                              </Badge>
+                            ) : (
+                              <p className="text-xs text-muted-foreground italic">No Position</p>
+                            )}
                           </div>
                         </div>
                         <Badge

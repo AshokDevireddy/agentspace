@@ -251,7 +251,7 @@
   top: 0;
   background-color: hsl(var(--accent));
   z-index: 2; /* Above normal cells */
-  @apply py-3 px-4 font-semibold text-sm text-muted-foreground text-left border border-border;
+  @apply py-3.5 px-5 font-semibold text-sm text-muted-foreground text-left border border-border;
   white-space: nowrap;
 }
 
@@ -317,11 +317,12 @@
 }
 
 .jira-table tbody tr:hover {
-  @apply bg-accent/50;
+  @apply bg-accent/70;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
 }
 
 .jira-table td {
-  @apply py-3 px-4 text-sm text-foreground border border-border;
+  @apply py-4 px-5 text-sm text-foreground border border-border;
   white-space: nowrap;
   position: relative;
   z-index: 0; /* Normal cells have lowest z-index */

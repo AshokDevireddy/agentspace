@@ -685,6 +685,8 @@ export default function AnalyticsTestPage() {
 		let totalActive = 0
 		let totalInactive = 0
 		let totalSubmittedValue = 0
+		let totalPlaced = 0
+		let totalNotPlaced = 0
 
 		for (const row of (_analyticsData?.series ?? [])) {
 			if (!periods.includes(row.period)) continue
@@ -694,14 +696,45 @@ export default function AnalyticsTestPage() {
 			totalSubmittedValue += row.submitted || 0
 		}
 
+		// Calculate placement from windows_by_carrier data
+		const windowKey = timeWindow === "all" ? "all_time" : `${timeWindow}m` as "3m" | "6m" | "9m" | "all_time"
+		const windowsByCarrier = _analyticsData?.windows_by_carrier
+		
+		if (carrierFilter === "ALL") {
+			// Sum across all carriers
+			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
+				if (!windowsByCarrier || !(carrier in windowsByCarrier)) continue
+				const carrierData = windowsByCarrier[carrier as keyof typeof windowsByCarrier]
+				if (!carrierData) continue
+				const windowData = carrierData[windowKey]
+				if (!windowData) continue
+				totalPlaced += (windowData as any).placed || 0
+				totalNotPlaced += (windowData as any).not_placed || 0
+			}
+		} else {
+			// Single carrier
+			if (windowsByCarrier && carrierFilter in windowsByCarrier) {
+				const carrierData = windowsByCarrier[carrierFilter as keyof typeof windowsByCarrier]
+				if (carrierData) {
+					const windowData = carrierData[windowKey]
+					if (windowData) {
+						totalPlaced = (windowData as any).placed || 0
+						totalNotPlaced = (windowData as any).not_placed || 0
+					}
+				}
+			}
+		}
+
 		const persistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
+		const placement = totalPlaced + totalNotPlaced > 0 ? totalPlaced / (totalPlaced + totalNotPlaced) : 0
 
 		return {
 			persistency: persistency,
+			placement: placement,
 			submitted: totalSubmittedValue,
 			active: totalActive,
 		}
-	}, [periods, carrierFilter])
+	}, [periods, carrierFilter, timeWindow, _analyticsData])
 
 const CUMULATIVE_COLOR = "#8b5cf6" // Purple for cumulative
 
@@ -1484,11 +1517,17 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 
 			{/* KPI tiles centered to middle 1/3rd */}
 			<div className="flex w-full justify-center">
-				<div className="grid w-full max-w-3xl grid-cols-3 gap-3">
+				<div className="grid w-full max-w-4xl grid-cols-4 gap-3">
 					<Card className="rounded-md">
 						<CardContent className="p-4">
 							<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
 							<div className="text-2xl font-bold mt-2">{(topStats.persistency * 100).toFixed(2)}%</div>
+						</CardContent>
+					</Card>
+					<Card className="rounded-md">
+						<CardContent className="p-4">
+							<div className="text-xs text-muted-foreground uppercase font-medium">Placement</div>
+							<div className="text-2xl font-bold mt-2">{(topStats.placement * 100).toFixed(2)}%</div>
 						</CardContent>
 					</Card>
 					<Card className="rounded-md">

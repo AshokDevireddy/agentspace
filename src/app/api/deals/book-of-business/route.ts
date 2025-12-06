@@ -38,6 +38,8 @@ export async function GET(req: NextRequest) {
     const clientId = searchParams.get("client_id");
     const policyNumber = searchParams.get("policy_number");
     const statusMode = searchParams.get("status_mode");
+    const statusStandardized = searchParams.get("status_standardized");
+    const effectiveDateSort = searchParams.get("effective_date_sort");
     const billingCycle = searchParams.get("billing_cycle");
     const leadSource = searchParams.get("lead_source");
     const effectiveDateStart = searchParams.get("effective_date_start");
@@ -59,6 +61,12 @@ export async function GET(req: NextRequest) {
         ? policyNumber.trim()
         : null,
       status_mode: statusMode || null,
+      status_standardized: statusStandardized && statusStandardized !== "all"
+        ? statusStandardized
+        : null,
+      effective_date_sort: effectiveDateSort && effectiveDateSort !== "all"
+        ? effectiveDateSort
+        : null,
       billing_cycle: billingCycle && billingCycle !== "all"
         ? billingCycle
         : null,
@@ -97,16 +105,55 @@ export async function GET(req: NextRequest) {
       const shouldHidePhone = view === "downlines" && !isAdmin &&
         !isWritingAgent && isActiveOrPending;
 
+      // Helper function to parse and format date safely
+      const parseAndFormatDate = (
+        dateValue: string | null | undefined,
+      ): string => {
+        if (!dateValue) return "N/A";
+      
+        // Fix timezone shift for YYYY-MM-DD dates by adding "T00:00:00"
+        const safeDateString = dateValue.length === 10
+          ? `${dateValue}T00:00:00`
+          : dateValue;
+      
+        const date = new Date(safeDateString);
+        if (isNaN(date.getTime())) return "N/A";
+      
+        const year = date.getFullYear();
+        if (year < 2000) return "N/A";
+      
+        // Return in MM/DD/YYYY format
+        return date.toLocaleDateString("en-US", {
+          month: "2-digit",
+          day: "2-digit",
+          year: "numeric", // important: gives 4-digit year
+        });
+      };
+      
+
+      // Determine which date to use for the date column
+      const effectiveDateObj = deal.policy_effective_date
+      ? new Date(deal.policy_effective_date + "T00:00:00")
+      : null;
+    
+    const effectiveDateYear =
+      effectiveDateObj && !isNaN(effectiveDateObj.getTime())
+        ? effectiveDateObj.getFullYear()
+        : null;
+    
+    const useEffectiveDate =
+      effectiveDateYear !== null && effectiveDateYear >= 2000;
+    
+    const dateToUse = useEffectiveDate
+      ? deal.policy_effective_date
+      : deal.created_at;
+    
+    
+
       return {
         id: deal.id,
         carrierId: deal.carrier_id || "",
-        date: deal.created_at
-          ? new Date(deal.created_at).toLocaleDateString("en-US", {
-            month: "numeric",
-            day: "numeric",
-            year: "2-digit",
-          })
-          : "N/A",
+        date: parseAndFormatDate(dateToUse),
         agent: deal.agent_last_name
           ? `${deal.agent_last_name}, ${deal.agent_first_name || "Agent"}`
           : "Unknown, Agent",
@@ -118,13 +165,7 @@ export async function GET(req: NextRequest) {
         clientPhone: shouldHidePhone ? "HIDDEN" : (deal.client_phone || ""),
         phoneHidden: shouldHidePhone,
         agentId: deal.agent_id,
-        effectiveDate: deal.policy_effective_date
-          ? new Date(deal.policy_effective_date).toLocaleDateString("en-US", {
-            month: "numeric",
-            day: "numeric",
-            year: "2-digit",
-          })
-          : "N/A",
+        effectiveDate: parseAndFormatDate(deal.policy_effective_date),
         annualPremium: `$${Number(deal.annual_premium || 0).toFixed(2)}`,
         billingCycle: deal.billing_cycle || "",
         leadSource: deal.lead_source || "",

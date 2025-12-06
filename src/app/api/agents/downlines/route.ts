@@ -45,7 +45,8 @@ export async function GET(request: Request) {
     const formattedDownlines = (downlines || []).map((downline: any) => ({
       id: downline.id,
       name: `${downline.first_name} ${downline.last_name}`,
-      position: downline.position?.name || "Agent",
+      position: downline.position?.name || null,
+      position_level: downline.position?.level || null,
       badge: downline.position?.name || "Agent",
       status: downline.status || "active",
       created_at: downline.created_at,

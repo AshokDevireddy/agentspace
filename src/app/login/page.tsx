@@ -6,14 +6,11 @@ import { createClient } from "@/lib/supabase/client"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 import { useTheme } from "next-themes"
 
-type UserRole = 'admin' | 'agent' | 'client'
-
 export default function LoginPage() {
   const router = useRouter()
   const supabase = createClient()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const { setTheme } = useTheme()
-  const [activeTab, setActiveTab] = useState<UserRole>('agent')
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -240,12 +237,6 @@ export default function LoginPage() {
         throw new Error('Account status is invalid. Please contact support.')
       }
 
-      // Verify user is logging in with correct tab
-      if (userData.role !== activeTab) {
-        await supabase.auth.signOut()
-        throw new Error(`Please use the ${userData.role} login tab`)
-      }
-
       // Route based on role
       // Use window.location.href to force a full page reload with the new auth state
       // This ensures cookies are properly set before the redirect on Vercel
@@ -260,12 +251,6 @@ export default function LoginPage() {
       setSubmitting(false)
     }
   }
-
-  const tabs: { value: UserRole; label: string }[] = [
-    { value: 'agent', label: 'Agent' },
-    { value: 'admin', label: 'Admin' },
-    { value: 'client', label: 'Client' },
-  ]
 
   // Show loading state while processing invite
   if (isProcessingInvite) {
@@ -317,24 +302,6 @@ export default function LoginPage() {
           <div className="w-3/5 bg-card p-10 flex flex-col justify-center">
             <h2 className="text-3xl font-bold mb-6 text-foreground">Log In</h2>
 
-          {/* Tabs */}
-          <div className="flex border-b border-border mb-6">
-            {tabs.map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                onClick={() => setActiveTab(tab.value)}
-                className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
-                  activeTab === tab.value
-                    ? 'border-b-2 border-foreground text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block font-semibold mb-1 text-foreground" htmlFor="email">
@@ -381,15 +348,13 @@ export default function LoginPage() {
             >
               Forgot Password?
             </button>
-            {activeTab === 'admin' && (
-              <button
-                type="button"
-                className="w-full py-2 rounded-md bg-secondary text-secondary-foreground font-semibold hover:bg-secondary/80 transition"
-                onClick={() => router.push('/register')}
-              >
-                Create Admin Account
-              </button>
-            )}
+            <button
+              type="button"
+              className="w-full py-2 rounded-md bg-secondary text-secondary-foreground font-semibold hover:bg-secondary/80 transition"
+              onClick={() => router.push('/register')}
+            >
+              Create Admin Account
+            </button>
           </form>
         </div>
         {/* Right: Logo/Brand */}

@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import {
 	Select,
 	SelectContent,
@@ -516,6 +517,9 @@ export default function AnalyticsTestPage() {
 	const [downlineTitle, setDownlineTitle] = React.useState<string | null>(null)
 	const [downlineBreadcrumbInfo, setDownlineBreadcrumbInfo] = React.useState<{ currentAgentName: string; breadcrumbs: Array<{ agentId: string; agentName: string }>; isAtRoot: boolean } | null>(null)
 	const downlineChartRef = React.useRef<DownlineProductionChartHandle>(null)
+	const [allAgents, setAllAgents] = React.useState<Array<{ id: string; name: string }>>([])
+	const [selectedAgentId, setSelectedAgentId] = React.useState<string>("")
+	const [originalUserId, setOriginalUserId] = React.useState<string | null>(null)
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
 	React.	useEffect(() => {
@@ -551,6 +555,7 @@ export default function AnalyticsTestPage() {
 				if (isMounted) {
 					setAnalyticsData(rpcData as AnalyticsTestValue)
 					setUserId(userRow.id)
+					setOriginalUserId(userRow.id)
 					setSubscriptionTier(userRow.subscription_tier || 'free')
 				}
 			} catch (_) {
@@ -559,6 +564,87 @@ export default function AnalyticsTestPage() {
 		})()
 		return () => { isMounted = false }
 	}, [])
+
+	// Fetch all agents for the search dropdown
+	React.useEffect(() => {
+		const fetchAgents = async () => {
+			try {
+				// Fetch agents using the API endpoint which calls get_agent_options
+				const params = new URLSearchParams()
+				params.append('page', '1')
+				params.append('limit', '1') // We only need the allAgents array
+				
+				const response = await fetch(`/api/agents?${params.toString()}`)
+				if (!response.ok) {
+					throw new Error('Failed to fetch agents')
+				}
+				const data = await response.json()
+				if (data.allAgents) {
+					setAllAgents(data.allAgents)
+				}
+			} catch (err) {
+				console.error('Error fetching agents:', err)
+			}
+		}
+
+		fetchAgents()
+	}, [])
+
+	// Fetch analytics when selected agent changes
+	React.useEffect(() => {
+		let isMounted = true
+		
+		const fetchAnalyticsForAgent = async () => {
+			if (!selectedAgentId) {
+				// If no agent selected, use original user
+				if (originalUserId) {
+					const supabase = createClient()
+					const { data: rpcData, error: rpcError } = await supabase
+						.rpc("get_analytics_from_deals_for_agent", { p_user_id: originalUserId })
+					
+					if (!rpcError && rpcData && isMounted) {
+						setAnalyticsData(rpcData as AnalyticsTestValue)
+						setUserId(originalUserId)
+					}
+				}
+				return
+			}
+
+			// Clear analytics data while loading
+			if (isMounted) {
+				setAnalyticsData(null)
+			}
+
+			try {
+				const supabase = createClient()
+				console.log('[Analytics] Fetching analytics for agent ID:', selectedAgentId)
+				const { data: rpcData, error: rpcError } = await supabase
+					.rpc("get_analytics_from_deals_for_agent", { p_user_id: selectedAgentId })
+
+				if (rpcError) {
+					console.error('[Analytics] RPC Error:', rpcError)
+					return
+				}
+
+				if (!rpcData) {
+					console.warn('[Analytics] No data returned from RPC')
+					return
+				}
+
+				if (isMounted) {
+					console.log('[Analytics] Successfully fetched analytics for agent:', selectedAgentId)
+					setAnalyticsData(rpcData as AnalyticsTestValue)
+					setUserId(selectedAgentId)
+				}
+			} catch (err) {
+				console.error('[Analytics] Error fetching analytics:', err)
+			}
+		}
+
+		fetchAnalyticsForAgent()
+		
+		return () => { isMounted = false }
+	}, [selectedAgentId, originalUserId])
 
 	const isLoading = !_analyticsData
 	const analyticsData = _analyticsData as AnalyticsTestValue | null
@@ -1348,6 +1434,21 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							))}
 						</SelectContent>
 					</Select>
+
+					{/* Agent Search */}
+					<SimpleSearchableSelect
+						options={[
+							{ value: "", label: "View My Analytics" },
+							...allAgents.map(agent => ({ value: agent.id, label: agent.name }))
+						]}
+						value={selectedAgentId}
+						onValueChange={(value) => {
+							setSelectedAgentId(value)
+						}}
+						placeholder="Search agent to view their analytics..."
+						searchPlaceholder="Type agent name..."
+						className="w-[240px]"
+					/>
 
 					<Button
 						className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-md h-9 text-sm"

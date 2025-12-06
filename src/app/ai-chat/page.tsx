@@ -563,7 +563,7 @@ export default function AIChat() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50/50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900/50 overflow-hidden">
+    <div className="flex flex-col h-screen bg-slate-50 dark:bg-gray-900 overflow-hidden">
       {/* Header - Fixed at top */}
       <div className="fixed top-0 left-0 right-0 z-10 backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 shadow-sm lg:left-64">
         <div className="max-w-4xl mx-auto px-4 py-3">

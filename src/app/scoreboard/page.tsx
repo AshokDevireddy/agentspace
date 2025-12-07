@@ -54,7 +54,7 @@ export default function Scoreboard() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ScoreboardData | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [timeframe, setTimeframe] = useState<TimeframeOption>('this_week')
+  const [timeframe, setTimeframe] = useState<TimeframeOption>('ytd')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
@@ -356,10 +356,10 @@ export default function Scoreboard() {
 
           <div className="flex items-center gap-3">
             <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeOption)}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-[160px] rounded-md h-9 text-sm">
                 <SelectValue placeholder="Select timeframe" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-md max-h-[300px]">
                 {timeframeOptions.map(option => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}

@@ -623,7 +623,36 @@ export default function ConfigurationPage() {
 
       if (response.ok) {
         const data = await response.json()
+        
+        console.log('[Commission Fetch] API response received:', {
+          count: data?.length || 0,
+          sample: data?.[0] ? {
+            commission_id: data[0].commission_id,
+            position_id: data[0].position_id,
+            position_id_length: data[0].position_id?.length,
+            position_id_type: typeof data[0].position_id,
+            product_id: data[0].product_id,
+            product_id_length: data[0].product_id?.length,
+            product_id_type: typeof data[0].product_id,
+          } : null,
+          allPositionIds: data?.map((c: Commission) => ({
+            id: c.position_id,
+            length: c.position_id?.length,
+            type: typeof c.position_id
+          })) || [],
+          allProductIds: data?.map((c: Commission) => ({
+            id: c.product_id,
+            length: c.product_id?.length,
+            type: typeof c.product_id
+          })) || [],
+        })
+        
         setCommissions(data)
+        
+        console.log('[Commission Fetch] Commissions set to state, first entry:', {
+          position_id: data?.[0]?.position_id,
+          product_id: data?.[0]?.product_id,
+        })
       }
     } catch (error) {
       console.error('Error fetching commissions:', error)
@@ -1174,7 +1203,21 @@ export default function ConfigurationPage() {
 
   // Commission management functions
   const handleCommissionChange = (positionId: string, productId: string, value: string, originalValue?: number) => {
+    console.log('[Commission Change] handleCommissionChange called:', {
+      positionId,
+      positionId_length: positionId?.length,
+      positionId_type: typeof positionId,
+      productId,
+      productId_length: productId?.length,
+      productId_type: typeof productId,
+    })
+    
     const key = `${positionId}-${productId}`
+    
+    console.log('[Commission Change] Key created:', {
+      key,
+      key_length: key.length,
+    })
     
     // Allow empty string while typing
     if (value === '') {
@@ -1226,10 +1269,34 @@ export default function ConfigurationPage() {
       const commissionsToSave = Object.entries(commissionEdits)
         .filter(([_, percentage]) => percentage !== null) // Filter out null values (empty cells)
         .map(([key, percentage]) => {
-          const [position_id, product_id] = key.split('-')
+          // UUIDs are 36 characters long. Split by taking first 36 chars as position_id
+          // and everything after the separator dash (position 37+) as product_id
+          const position_id = key.substring(0, 36)
+          const product_id = key.substring(37) // Skip the dash separator at position 36
+          
           // If percentage is null or undefined, default to 0
-          return { position_id, product_id, commission_percentage: percentage ?? 0 }
+          const result = { position_id, product_id, commission_percentage: percentage ?? 0 }
+          
+          // Log each commission entry to debug key splitting issues
+          console.log('[Commission Save] Parsed commission entry:', {
+            originalKey: key,
+            originalKeyLength: key.length,
+            position_id,
+            position_id_length: position_id.length,
+            product_id,
+            product_id_length: product_id.length,
+            commission_percentage: percentage ?? 0,
+          })
+          
+          return result
         })
+
+      console.log('[Commission Save] Sending commissions to API:', {
+        totalCommissions: commissionsToSave.length,
+        commissions: commissionsToSave,
+        uniquePositionIds: [...new Set(commissionsToSave.map(c => c.position_id))],
+        uniqueProductIds: [...new Set(commissionsToSave.map(c => c.product_id))]
+      })
 
       const response = await fetch('/api/positions/product-commissions', {
         method: 'POST',
@@ -1242,6 +1309,13 @@ export default function ConfigurationPage() {
 
       if (!response.ok) {
         const data = await response.json()
+        console.error('[Commission Save] API error response:', {
+          status: response.status,
+          error: data.error,
+          detail: data.detail,
+          missingPositionIds: data.missingPositionIds,
+          missingProductIds: data.missingProductIds
+        })
         throw new Error(data.error || 'Failed to save commissions')
       }
 
@@ -1980,6 +2054,27 @@ export default function ConfigurationPage() {
 
     if (carrierCommissions.length === 0) return null
 
+    console.log('[Commission Grid] Building grid from commissions:', {
+      totalCommissions: carrierCommissions.length,
+      sampleCommission: carrierCommissions[0] ? {
+        commission_id: carrierCommissions[0].commission_id,
+        position_id: carrierCommissions[0].position_id,
+        position_id_length: carrierCommissions[0].position_id?.length,
+        position_id_type: typeof carrierCommissions[0].position_id,
+        product_id: carrierCommissions[0].product_id,
+        product_id_length: carrierCommissions[0].product_id?.length,
+        product_id_type: typeof carrierCommissions[0].product_id,
+      } : null,
+      allPositionIds: carrierCommissions.map(c => ({
+        id: c.position_id,
+        length: c.position_id?.length
+      })),
+      allProductIds: carrierCommissions.map(c => ({
+        id: c.product_id,
+        length: c.product_id?.length
+      })),
+    })
+
     // Get unique positions and products
     const uniquePositions = Array.from(new Set(carrierCommissions.map(c => c.position_id)))
       .map(posId => {
@@ -1994,6 +2089,21 @@ export default function ConfigurationPage() {
         return { id: prodId, name: comm.product_name }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
+
+    console.log('[Commission Grid] Grid data created:', {
+      positionsCount: uniquePositions.length,
+      productsCount: uniqueProducts.length,
+      samplePosition: uniquePositions[0] ? {
+        id: uniquePositions[0].id,
+        id_length: uniquePositions[0].id?.length,
+        name: uniquePositions[0].name,
+      } : null,
+      sampleProduct: uniqueProducts[0] ? {
+        id: uniqueProducts[0].id,
+        id_length: uniqueProducts[0].id?.length,
+        name: uniqueProducts[0].name,
+      } : null,
+    })
 
     return { positions: uniquePositions, products: uniqueProducts, commissions: carrierCommissions }
   }
@@ -3058,6 +3168,23 @@ export default function ConfigurationPage() {
                                     const commission = gridData.commissions.find(
                                       c => c.position_id === position.id && c.product_id === product.id
                                     )
+                                    
+                                    // Log first entry to see what IDs look like when creating keys
+                                    if (position.id === gridData.positions[0]?.id && product.id === gridData.products[0]?.id) {
+                                      console.log('[Commission Table] Creating key for first cell:', {
+                                        position_id: position.id,
+                                        position_id_length: position.id?.length,
+                                        position_id_type: typeof position.id,
+                                        product_id: product.id,
+                                        product_id_length: product.id?.length,
+                                        product_id_type: typeof product.id,
+                                        commission_position_id: commission?.position_id,
+                                        commission_position_id_length: commission?.position_id?.length,
+                                        commission_product_id: commission?.product_id,
+                                        commission_product_id_length: commission?.product_id?.length,
+                                      })
+                                    }
+                                    
                                     const key = `${position.id}-${product.id}`
                                     const editedValue = commissionEdits[key]
                                     const originalValue = commission?.commission_percentage

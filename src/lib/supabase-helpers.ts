@@ -207,3 +207,21 @@ export async function createProduct(product: {
   if (error) throw error
   return data
 }
+
+// Update agency unique carriers from NIPR analysis
+export async function updateAgencyCarriers(agencyId: string, carriers: string[]) {
+  const carriersObject: { carriers: string[], count: number, lastUpdated: string } = {
+    carriers: carriers,
+    count: carriers.length,
+    lastUpdated: new Date().toISOString()
+  }
+
+  const { data, error } = await supabase
+    .from('agencies')
+    .update({ unique_carriers: carriersObject })
+    .eq('id', agencyId)
+    .select()
+
+  if (error) throw error
+  return data
+}

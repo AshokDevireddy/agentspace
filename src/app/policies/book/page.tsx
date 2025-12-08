@@ -197,15 +197,36 @@ export default function BookOfBusiness() {
   useEffect(() => {
     const fetchFilterOptions = async () => {
       try {
-        const response = await fetch('/api/deals/filter-options')
-        if (!response.ok) {
+        // Fetch both filter options and NIPR-filtered carriers in parallel
+        const [filterResponse, carriersResponse] = await Promise.all([
+          fetch('/api/deals/filter-options'),
+          fetch('/api/carriers?filter=nipr')
+        ])
+
+        if (!filterResponse.ok) {
           throw new Error('Failed to fetch filter options')
         }
-        const data = await response.json()
+        const data = await filterResponse.json()
+
+        // Get NIPR-filtered carriers if available
+        let filteredCarriers = data.carriers || [{ value: "all", label: "All Carriers" }]
+        if (carriersResponse.ok) {
+          const niprCarriers = await carriersResponse.json()
+          if (Array.isArray(niprCarriers) && niprCarriers.length > 0) {
+            // Map carriers to filter option format and add "All" option
+            filteredCarriers = [
+              { value: "all", label: "All Carriers" },
+              ...niprCarriers.map((c: { id: string; display_name: string }) => ({
+                value: c.id,
+                label: c.display_name
+              }))
+            ]
+          }
+        }
 
         // Ensure all required fields exist
         setFilterOptions({
-          carriers: data.carriers || [{ value: "all", label: "All Carriers" }],
+          carriers: filteredCarriers,
           products: data.products || [{ value: "all", label: "All Products" }],
           statuses: data.statusStandardized || [],
           billingCycles: data.billingCycles || [{ value: "all", label: "All Billing Cycles" }],

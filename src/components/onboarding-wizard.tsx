@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Upload, Users, Loader2, X, FileText, Plus, CheckCircle2 } from "lucide-react"
+import { Upload, Users, Loader2, X, FileText, Plus, CheckCircle2, Shield, AlertCircle } from "lucide-react"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 
@@ -106,9 +106,48 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   const [isNameSearching, setIsNameSearching] = useState(false)
   const [selectedPreInviteUserId, setSelectedPreInviteUserId] = useState<string | null>(null)
 
+  // NIPR verification state
+  const [niprForm, setNiprForm] = useState({
+    lastName: '',
+    npn: '',
+    ssn: '',
+    dob: ''
+  })
+  const [niprRunning, setNiprRunning] = useState(false)
+  const [niprResult, setNiprResult] = useState<{
+    success: boolean
+    message: string
+    files?: string[]
+    analysis?: {
+      success: boolean
+      carriers: string[]
+      licensedStates: { resident: string[]; nonResident: string[] }
+      analyzedAt: string
+    }
+  } | null>(null)
+
+  // Carrier upload progress state (for step-by-step upload)
+  const [currentCarrierIndex, setCurrentCarrierIndex] = useState(0)
+  const [carrierUploads, setCarrierUploads] = useState<Record<string, File | null>>({})
+  const [uploadingCarrier, setUploadingCarrier] = useState(false)
+
+  // Matched carriers state (filtered by fuzzy matching with active carriers)
+  const [matchedCarriers, setMatchedCarriers] = useState<Array<{
+    id: string
+    name: string
+    display_name: string
+    matchedWith: string
+    similarity: number
+  }>>([])
+  const [loadingMatches, setLoadingMatches] = useState(false)
+
+  // NIPR already completed state
+  const [niprAlreadyCompleted, setNiprAlreadyCompleted] = useState(false)
+  const [storedCarriers, setStoredCarriers] = useState<string[]>([])
+
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
-  const [currentStep, setCurrentStep] = useState(userData.is_admin ? 1 : 2) // Admins start at 1 (policy reports), agents start at 2 (team)
+  const [currentStep, setCurrentStep] = useState(userData.is_admin ? 1 : 3) // Admins start at 1 (NIPR), agents start at 3 (team)
   const errorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -232,10 +271,80 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
   // Check for existing uploaded files when user is admin
   useEffect(() => {
-    if (userData.is_admin && currentStep === 1) {
+    if (userData.is_admin && currentStep === 2) {
       checkExistingFiles()
     }
   }, [userData, currentStep])
+
+  // Check if NIPR has already been completed for this agency
+  useEffect(() => {
+    const checkNiprStatus = async () => {
+      if (!userData.agency_id || !userData.is_admin) return
+
+      try {
+        const response = await fetch('/api/nipr/status')
+        if (!response.ok) return
+
+        const { completed, carriers } = await response.json()
+
+        if (completed && carriers.length > 0) {
+          setNiprAlreadyCompleted(true)
+          setStoredCarriers(carriers)
+          // Auto-advance to step 2 if on step 1
+          if (currentStep === 1) {
+            setCurrentStep(2)
+          }
+        }
+      } catch (error) {
+        console.error('[ONBOARDING] Error checking NIPR status:', error)
+      }
+    }
+
+    checkNiprStatus()
+  }, [userData.agency_id, userData.is_admin])
+
+  // Fetch active carriers and match with NIPR results when entering step 2
+  useEffect(() => {
+    const fetchAndMatchCarriers = async () => {
+      // Get carriers to match - either from NIPR result or stored carriers
+      const carriersToMatch = niprResult?.analysis?.unique_carriers || storedCarriers
+
+      if (!carriersToMatch || carriersToMatch.length === 0 || currentStep !== 2) {
+        return
+      }
+
+      setLoadingMatches(true)
+      try {
+        // Fetch active carriers from API
+        const response = await fetch('/api/carriers')
+        if (!response.ok) {
+          console.error('[ONBOARDING] Failed to fetch carriers')
+          return
+        }
+
+        const activeCarriers = await response.json()
+
+        // Import and use fuzzy matching
+        const { findMatchingCarriers } = await import('@/lib/nipr/fuzzy-match')
+        const matches = findMatchingCarriers(
+          carriersToMatch,
+          activeCarriers,
+          0.8 // 80% threshold
+        )
+
+        console.log('[ONBOARDING] Matched carriers:', matches.length, 'out of', carriersToMatch.length, 'NIPR carriers')
+        setMatchedCarriers(matches)
+      } catch (error) {
+        console.error('[ONBOARDING] Error matching carriers:', error)
+      } finally {
+        setLoadingMatches(false)
+      }
+    }
+
+    if (currentStep === 2 && userData.is_admin) {
+      fetchAndMatchCarriers()
+    }
+  }, [currentStep, niprResult, storedCarriers, userData.is_admin])
 
   const checkExistingFiles = async () => {
     if (!userData.agency_id) return
@@ -591,15 +700,138 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     }
   }
 
+  // Store NIPR carriers in database (non-blocking)
+  const storeCarriersInDatabase = async (carriers: string[], agencyId: string) => {
+    try {
+      // Validate inputs
+      if (!agencyId || !agencyId.trim()) {
+        console.warn('[ONBOARDING] Cannot store carriers: Invalid agency ID')
+        return
+      }
+
+      if (!Array.isArray(carriers)) {
+        console.warn('[ONBOARDING] Cannot store carriers: Invalid carriers data type')
+        return
+      }
+
+      // Filter and clean carriers array
+      const validCarriers = carriers
+        .filter(carrier => carrier && typeof carrier === 'string' && carrier.trim().length > 0)
+        .map(carrier => carrier.trim())
+
+      if (validCarriers.length === 0) {
+        console.warn('[ONBOARDING] No valid carriers to store')
+        return
+      }
+
+      console.log('[ONBOARDING] Storing carriers in database:', validCarriers)
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ unique_carriers: validCarriers })
+        .eq('id', agencyId)
+
+      if (error) {
+        console.error('[ONBOARDING] Failed to store NIPR carriers:', error)
+        // Non-blocking error - UI flow continues
+      } else {
+        console.log('[ONBOARDING] Successfully stored NIPR carriers:', validCarriers.length, 'carriers for agency', agencyId)
+      }
+    } catch (error) {
+      console.error('[ONBOARDING] Database storage error:', error)
+      // Non-blocking error - UI flow continues
+    }
+  }
+
+  // NIPR automation handler
+  const runNiprAutomation = async () => {
+    setErrors([])
+    setNiprRunning(true)
+    setNiprResult(null)
+
+    try {
+      // Validate form
+      const validationErrors: string[] = []
+      if (!niprForm.lastName.trim()) validationErrors.push('Last name is required')
+      if (!niprForm.npn.trim()) validationErrors.push('NPN is required')
+      if (!/^\d+$/.test(niprForm.npn)) validationErrors.push('NPN must be numeric')
+      if (!niprForm.ssn.trim()) validationErrors.push('Last 4 SSN is required')
+      if (!/^\d{4}$/.test(niprForm.ssn)) validationErrors.push('SSN must be exactly 4 digits')
+      if (!niprForm.dob.trim()) validationErrors.push('Date of birth is required')
+      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(niprForm.dob)) validationErrors.push('DOB must be in MM/DD/YYYY format')
+
+      if (validationErrors.length > 0) {
+        setErrors(validationErrors)
+        setNiprRunning(false)
+        return
+      }
+
+      const response = await fetch('/api/nipr/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(niprForm)
+      })
+
+      const result = await response.json()
+
+      // Store carriers in database if analysis was successful
+      if (result.success && result.analysis?.unique_carriers && userData.agency_id) {
+        // Additional validation before storage
+        if (Array.isArray(result.analysis.unique_carriers) && result.analysis.unique_carriers.length > 0) {
+          console.log('[ONBOARDING] NIPR analysis found', result.analysis.unique_carriers.length, 'carriers, storing to database...')
+          await storeCarriersInDatabase(result.analysis.unique_carriers, userData.agency_id)
+        } else {
+          console.warn('[ONBOARDING] NIPR analysis returned no carriers to store')
+        }
+      } else {
+        console.log('[ONBOARDING] Skipping carrier storage. Reason:', {
+          automationSucceeded: result.success,
+          hasAnalysisData: !!result.analysis,
+          hasUniqueCarriers: !!result.analysis?.unique_carriers,
+          carriersCount: result.analysis?.unique_carriers?.length || 0,
+          carriersIsArray: Array.isArray(result.analysis?.unique_carriers),
+          hasAgencyId: !!userData.agency_id,
+          agencyId: userData.agency_id || 'NOT_SET',
+          errorMessage: result.error || 'Unknown error',
+          analysisTimestamp: result.analysis?.analyzedAt || 'No timestamp'
+        })
+      }
+
+      setNiprResult(result)
+
+      if (result.success) {
+        // Auto-advance to next step after success
+        setTimeout(() => {
+          setCurrentStep(2)
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }, 2000)
+      }
+    } catch (error) {
+      console.error('NIPR automation error:', error)
+      setNiprResult({
+        success: false,
+        message: 'Failed to run NIPR automation. Please try again.'
+      })
+    } finally {
+      setNiprRunning(false)
+    }
+  }
+
+  const goToStep = (step: number) => {
+    setErrors([])
+    setCurrentStep(step)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const nextStep = () => {
     setErrors([])
-    setCurrentStep(2)
+    setCurrentStep(prev => prev + 1)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const prevStep = () => {
     setErrors([])
-    setCurrentStep(1)
+    setCurrentStep(prev => prev - 1)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -637,91 +869,109 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
         {/* Content Card */}
         <div className="bg-card rounded-lg shadow-lg border border-border p-8">
-          {/* Step 1: Upload Policy Reports (Admin only) */}
+          {/* Step 1: NIPR Verification (Admin only) */}
           {currentStep === 1 && userData.is_admin && (
             <div className="space-y-6">
               <div className="border-b border-border pb-4">
-                <h2 className="text-2xl font-bold text-foreground">Upload Policy Reports</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Upload CSV or Excel files for each carrier to track persistency rates
-                </p>
+                <div className="flex items-center gap-3">
+                  <Shield className="h-8 w-8 text-primary" />
+                  <div>
+                    <h2 className="text-2xl font-bold text-foreground">NIPR Verification</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Enter your National Insurance Producer Registry information to verify your credentials
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              {checkingExistingFiles && (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Checking for existing uploads...</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-foreground">
+                    Last Name <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    type="text"
+                    value={niprForm.lastName}
+                    onChange={(e) => setNiprForm({ ...niprForm, lastName: e.target.value })}
+                    className="h-10"
+                    placeholder="Enter your last name"
+                    disabled={niprRunning}
+                  />
                 </div>
-              )}
 
-              {uploadedFilesInfo.length > 0 && (
-                <Alert className="bg-blue-50 border-blue-200">
-                  <AlertDescription className="text-blue-800">
-                    <strong>Note:</strong> Previous uploads detected. New uploads will replace existing files for those carriers.
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-foreground">
+                    NPN (National Producer Number) <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    type="text"
+                    value={niprForm.npn}
+                    onChange={(e) => setNiprForm({ ...niprForm, npn: e.target.value.replace(/\D/g, '') })}
+                    className="h-10"
+                    placeholder="e.g., 12345678"
+                    disabled={niprRunning}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-foreground">
+                    Last 4 digits of SSN <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    type="password"
+                    value={niprForm.ssn}
+                    onChange={(e) => setNiprForm({ ...niprForm, ssn: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                    className="h-10"
+                    placeholder="XXXX"
+                    maxLength={4}
+                    disabled={niprRunning}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-foreground">
+                    Date of Birth <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    type="text"
+                    value={niprForm.dob}
+                    onChange={(e) => {
+                      let value = e.target.value.replace(/[^\d/]/g, '')
+                      // Auto-format as MM/DD/YYYY
+                      if (value.length === 2 && !value.includes('/')) {
+                        value = value + '/'
+                      } else if (value.length === 5 && value.charAt(2) === '/' && !value.slice(3).includes('/')) {
+                        value = value + '/'
+                      }
+                      setNiprForm({ ...niprForm, dob: value.slice(0, 10) })
+                    }}
+                    className="h-10"
+                    placeholder="MM/DD/YYYY"
+                    maxLength={10}
+                    disabled={niprRunning}
+                  />
+                </div>
+              </div>
+
+              {/* NIPR Result */}
+              {niprResult && (
+                <Alert className={niprResult.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}>
+                  <AlertDescription className={niprResult.success ? "text-green-800" : "text-red-800"}>
+                    <div className="flex items-center gap-2">
+                      {niprResult.success ? (
+                        <CheckCircle2 className="h-5 w-5" />
+                      ) : (
+                        <AlertCircle className="h-5 w-5" />
+                      )}
+                      <span>{niprResult.message}</span>
+                    </div>
                   </AlertDescription>
                 </Alert>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {uploads.map((upload, index) => (
-                  <div key={upload.carrier} className="space-y-2">
-                    <h3 className="text-sm font-medium text-gray-700 text-center">
-                      {upload.carrier}
-                    </h3>
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 min-h-[200px] flex flex-col items-center justify-center">
-                      {upload.file ? (
-                        <div className="text-center">
-                          <FileText className="h-12 w-12 text-gray-600 mx-auto mb-3" />
-                          <p className="text-sm font-medium text-gray-900 mb-1">
-                            {upload.file.name}
-                          </p>
-                          <p className="text-xs text-gray-500 mb-4">
-                            {(upload.file.size / 1024).toFixed(2)} KB
-                          </p>
-                          <Button
-                            onClick={() => handleFileRemove(index)}
-                            variant="outline"
-                            size="sm"
-                          >
-                            <X className="h-4 w-4 mr-1" />
-                            Remove
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="text-center">
-                          <Upload className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-sm font-medium text-gray-700 mb-1">
-                            Click to upload
-                          </p>
-                          <p className="text-xs text-gray-500 mb-4">
-                            CSV or Excel file
-                          </p>
-                          <input
-                            type="file"
-                            accept=".csv,.xlsx,.xls"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0]
-                              if (file) handleFileUpload(index, file)
-                            }}
-                            className="hidden"
-                            id={`upload-${index}`}
-                          />
-                          <label
-                            htmlFor={`upload-${index}`}
-                            className="cursor-pointer bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded text-sm text-gray-700 inline-block"
-                          >
-                            Choose File
-                          </label>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
               <Alert className="bg-amber-50 border-amber-200">
                 <AlertDescription className="text-amber-800">
-                  <strong>Optional:</strong> You can skip this step and upload reports later in the Configuration page.
+                  <strong>Note:</strong> This verification process takes 3-5 minutes to complete. You can skip this step and complete it later.
                 </AlertDescription>
               </Alert>
 
@@ -732,25 +982,209 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={nextStep}
+                    onClick={() => goToStep(2)}
+                    disabled={niprRunning}
                     className="h-12 px-6"
                   >
                     Skip for Now
                   </Button>
                   <Button
                     type="button"
-                    onClick={nextStep}
+                    onClick={runNiprAutomation}
+                    disabled={niprRunning}
                     className="h-12 px-6 bg-black hover:bg-black/90 text-white"
                   >
-                    Next
+                    {niprRunning ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Running Verification...
+                      </>
+                    ) : (
+                      <>
+                        <Shield className="mr-2 h-4 w-4" />
+                        Run Verification
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Step 2: Add Team Members */}
-          {currentStep === 2 && (
+          {/* Step 2: Upload Policy Reports (Admin only) - Step by Step */}
+          {currentStep === 2 && userData.is_admin && (
+            <div className="space-y-6">
+              {/* Loading state while matching carriers */}
+              {loadingMatches ? (
+                <div className="text-center py-12 space-y-4">
+                  <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
+                  <p className="text-muted-foreground">Matching carriers with your licenses...</p>
+                </div>
+              ) : matchedCarriers.length > 0 ? (
+                <>
+                  {/* Minimal Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="w-full h-1 bg-gray-200 rounded-full">
+                      <div
+                        className="h-1 bg-primary rounded-full transition-all duration-300"
+                        style={{ width: `${((currentCarrierIndex + 1) / matchedCarriers.length) * 100}%` }}
+                      />
+                    </div>
+                    <p className="text-sm text-muted-foreground text-center">
+                      {Math.round(((currentCarrierIndex + 1) / matchedCarriers.length) * 100)}% complete
+                      <span className="mx-2">•</span>
+                      {currentCarrierIndex + 1} of {matchedCarriers.length} carriers
+                    </p>
+                  </div>
+
+                  {/* Current Carrier Upload */}
+                  <div className="text-center space-y-6 py-8">
+                    <div>
+                      <h2 className="text-2xl font-bold text-foreground">
+                        Upload Document for:
+                      </h2>
+                      <p className="text-3xl font-bold text-primary mt-2">
+                        {matchedCarriers[currentCarrierIndex]?.display_name}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Matched from: {matchedCarriers[currentCarrierIndex]?.matchedWith}
+                      </p>
+                    </div>
+
+                    <div className="max-w-md mx-auto">
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 hover:border-primary transition-colors">
+                        {carrierUploads[matchedCarriers[currentCarrierIndex]?.id] ? (
+                          <div className="text-center">
+                            <FileText className="h-16 w-16 text-primary mx-auto mb-4" />
+                            <p className="text-sm font-medium text-foreground mb-1">
+                              {carrierUploads[matchedCarriers[currentCarrierIndex]?.id]?.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground mb-4">
+                              {((carrierUploads[matchedCarriers[currentCarrierIndex]?.id]?.size || 0) / 1024).toFixed(2)} KB
+                            </p>
+                            <Button
+                              onClick={() => {
+                                const carrierId = matchedCarriers[currentCarrierIndex]?.id
+                                setCarrierUploads(prev => ({ ...prev, [carrierId]: null }))
+                              }}
+                              variant="outline"
+                              size="sm"
+                            >
+                              <X className="h-4 w-4 mr-1" />
+                              Remove
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="text-center">
+                            <Upload className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                            <p className="text-lg font-medium text-foreground mb-2">
+                              Drop file here or click to upload
+                            </p>
+                            <p className="text-sm text-muted-foreground mb-4">
+                              CSV or Excel file
+                            </p>
+                            <input
+                              type="file"
+                              accept=".csv,.xlsx,.xls"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) {
+                                  const carrierId = matchedCarriers[currentCarrierIndex]?.id
+                                  setCarrierUploads(prev => ({ ...prev, [carrierId]: file }))
+                                }
+                              }}
+                              className="hidden"
+                              id="carrier-upload"
+                            />
+                            <label
+                              htmlFor="carrier-upload"
+                              className="cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-3 rounded-lg text-sm font-medium inline-block"
+                            >
+                              Choose File
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Navigation */}
+                  <div className="flex justify-between items-center pt-6 border-t border-border">
+                    <div>
+                      {currentCarrierIndex > 0 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setCurrentCarrierIndex(i => i - 1)}
+                          className="h-12 px-6"
+                        >
+                          Previous Carrier
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          // Skip this carrier
+                          if (currentCarrierIndex < matchedCarriers.length - 1) {
+                            setCurrentCarrierIndex(i => i + 1)
+                          } else {
+                            handleComplete()
+                          }
+                        }}
+                        className="h-12 px-6"
+                      >
+                        Skip
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          if (currentCarrierIndex < matchedCarriers.length - 1) {
+                            setCurrentCarrierIndex(i => i + 1)
+                          } else {
+                            handleComplete()
+                          }
+                        }}
+                        className="h-12 px-6 bg-black hover:bg-black/90 text-white"
+                      >
+                        {currentCarrierIndex === matchedCarriers.length - 1
+                          ? "Complete Setup"
+                          : "Next Carrier →"}
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* Fallback: No matching carriers found - show skip option */
+                <div className="text-center py-12 space-y-6">
+                  <div className="text-muted-foreground">
+                    <FileText className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                    <h2 className="text-xl font-semibold text-foreground mb-2">No Matching Carriers Found</h2>
+                    <p>
+                      {(niprResult?.analysis?.unique_carriers?.length || storedCarriers.length) > 0
+                        ? "None of your NIPR carriers match our active carrier list."
+                        : "No carrier information was found from the NIPR verification."}
+                      <br />
+                      You can upload policy reports later from the Configuration page.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleComplete}
+                    className="h-12 px-8 bg-black hover:bg-black/90 text-white"
+                  >
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    Complete Setup
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Add Team Members */}
+          {currentStep === 3 && (
             <div className="space-y-6">
               <div className="border-b border-border pb-4">
                 <h2 className="text-2xl font-bold text-foreground">Add Team Members</h2>
@@ -1073,7 +1507,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={prevStep}
+                    onClick={() => goToStep(2)}
                     className="h-12 px-6"
                   >
                     Previous

@@ -305,12 +305,12 @@ const handleAnalyze = async () => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-white">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
         <DialogHeader>
-          <DialogTitle className="text-center text-2xl font-bold text-gray-900">
+          <DialogTitle className="text-center text-2xl font-bold text-foreground">
             Upload Policy Reports
           </DialogTitle>
-          <DialogDescription className="text-center">
+          <DialogDescription className="text-center text-muted-foreground">
             Upload CSV or Excel files for each carrier to analyze persistency rates
           </DialogDescription>
         </DialogHeader>
@@ -318,22 +318,22 @@ const handleAnalyze = async () => {
         <div className="grid grid-cols-3 gap-6 mt-8">
           {uploads.map((upload, index) => (
             <div key={upload.carrier} className="space-y-2">
-              <h3 className="text-sm font-medium text-gray-700 text-center">
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-100 text-center">
                 {upload.carrier}
               </h3>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 min-h-[200px] flex flex-col items-center justify-center">
+              <div className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-6 min-h-[200px] flex flex-col items-center justify-center hover:border-gray-400 dark:hover:border-slate-500 transition-colors bg-transparent dark:bg-slate-900/40">
                 {upload.file ? (
                   <div className="text-center">
-                    <FileText className="h-12 w-12 text-gray-600 mx-auto mb-3" />
-                    <p className="text-sm font-medium text-gray-900 mb-1">
+                    <FileText className="h-12 w-12 text-gray-600 dark:text-gray-300 mx-auto mb-3" />
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
                       {upload.file.name}
                     </p>
-                    <p className="text-xs text-gray-500 mb-4">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
                       {(upload.file.size / 1024).toFixed(2)} KB
                     </p>
                     <Button
                       onClick={() => handleFileRemove(index)}
-                      className="bg-black text-white hover:bg-gray-800 px-4 py-2 text-sm"
+                      className="bg-black text-white hover:bg-gray-800 dark:bg-white/10 dark:hover:bg-white/20 px-4 py-2 text-sm"
                     >
                       <X className="h-4 w-4 mr-1" />
                       Remove
@@ -341,11 +341,11 @@ const handleAnalyze = async () => {
                   </div>
                 ) : (
                   <div className="text-center">
-                    <Upload className="h-12 w-12 text-gray-600 mx-auto mb-3" />
-                    <p className="text-sm font-medium text-gray-900 mb-1">
+                    <Upload className="h-12 w-12 text-gray-400 dark:text-gray-300 mx-auto mb-3" />
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">
                       Click to upload
                     </p>
-                    <p className="text-xs text-gray-500 mb-4">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
                       CSV or Excel file
                     </p>
                     <input
@@ -360,7 +360,7 @@ const handleAnalyze = async () => {
                     />
                     <label
                       htmlFor={`upload-${index}`}
-                      className="cursor-pointer bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded text-sm text-gray-700"
+                      className="cursor-pointer bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 rounded text-sm text-gray-700 dark:text-gray-100 border border-border inline-block transition-colors"
                     >
                       Choose File
                     </label>
@@ -381,7 +381,7 @@ const handleAnalyze = async () => {
           </Button>
           <Button
             onClick={handleAnalyze}
-            className="bg-black text-white hover:bg-gray-800 px-6 py-2"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2"
           >
             <TrendingUp className="h-4 w-4 mr-2" />
             Analyze Persistency

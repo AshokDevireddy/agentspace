@@ -3817,12 +3817,12 @@ export default function ConfigurationPage() {
               ) : (
                 <div className="overflow-x-auto rounded-lg border border-border shadow-sm">
                   <table className="w-full text-lg bg-card">
-                    <thead className="sticky top-0 bg-white z-10">
-                      <tr className="border-b-2 border-border bg-gradient-to-r from-gray-50 to-gray-100">
-                        <th className="text-left py-4 px-6 font-bold text-gray-800">Product Name</th>
-                        <th className="text-left py-4 px-6 font-bold text-gray-800">Product Code</th>
-                        <th className="text-left py-4 px-6 font-bold text-gray-800">Status</th>
-                        <th className="text-right py-4 px-6 font-bold text-gray-800">Actions</th>
+                    <thead className="sticky top-0 bg-gray-50 dark:bg-gray-800 z-10">
+                      <tr className="border-b-2 border-border bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900">
+                        <th className="text-left py-4 px-6 font-bold text-gray-800 dark:text-gray-200">Product Name</th>
+                        <th className="text-left py-4 px-6 font-bold text-gray-800 dark:text-gray-200">Product Code</th>
+                        <th className="text-left py-4 px-6 font-bold text-gray-800 dark:text-gray-200">Status</th>
+                        <th className="text-right py-4 px-6 font-bold text-gray-800 dark:text-gray-200">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3834,7 +3834,7 @@ export default function ConfigurationPage() {
                         </tr>
                       ) : (
                         products.map((product: Product) => (
-                          <tr key={product.id} className="border-b border-border hover:bg-blue-50 transition-colors duration-150">
+                          <tr key={product.id} className="border-b border-border hover:bg-blue-50 dark:hover:bg-gray-700/50 transition-colors duration-150">
                             <td className="py-5 px-6 text-foreground font-medium">
                               {editingProductId === product.id ? (
                                 <Input

@@ -3,13 +3,39 @@ import { runNIPRAutomation } from '@/lib/nipr'
 import type { NIPRInput } from '@/lib/nipr'
 import { getCurrentUser, updateAgencyCarriers } from '@/lib/supabase-helpers'
 import { createAdminClient } from '@/lib/supabase/server'
+import { checkRateLimit, recordRequest, getSecondsUntilReset } from '@/lib/rate-limiter'
 
 export const maxDuration = 300 // 5 minutes timeout for long-running automation
 
 export async function POST(request: NextRequest) {
   try {
-    // Check if NIPR has already been run for this agency
+    // Rate limiting check - get user or fall back to IP
     const currentUser = await getCurrentUser()
+    const rateLimitIdentifier = currentUser?.id
+      || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')
+      || 'unknown'
+
+    const { allowed, remaining, resetAt } = checkRateLimit(rateLimitIdentifier)
+    if (!allowed) {
+      const retryAfter = getSecondsUntilReset(resetAt)
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Rate limit exceeded. Maximum 20 requests per hour.',
+          retryAfter
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(retryAfter) }
+        }
+      )
+    }
+
+    // Record this request for rate limiting
+    recordRequest(rateLimitIdentifier)
+
+    // Check if NIPR has already been run for this agency
     if (currentUser?.agency_id) {
       const supabase = createAdminClient()
       const { data: agency } = await supabase
@@ -91,7 +117,6 @@ export async function POST(request: NextRequest) {
       // Save unique carriers to database if analysis was successful
       if (result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0) {
         try {
-          const currentUser = await getCurrentUser()
           if (currentUser?.agency_id) {
             await updateAgencyCarriers(currentUser.agency_id, result.analysis.unique_carriers)
             console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers to agency ${currentUser.agency_id}`)

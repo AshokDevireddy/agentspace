@@ -774,6 +774,27 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
       const result = await response.json()
 
+      // Handle rate limit error specifically
+      if (response.status === 429) {
+        const retryMinutes = Math.ceil((result.retryAfter || 3600) / 60)
+        setNiprResult({
+          success: false,
+          message: `Rate limit exceeded. Please try again in ${retryMinutes} minute${retryMinutes !== 1 ? 's' : ''}.`
+        })
+        setNiprRunning(false)
+        return
+      }
+
+      // Handle other errors
+      if (!response.ok) {
+        setNiprResult({
+          success: false,
+          message: result.error || 'NIPR verification failed. Please try again.'
+        })
+        setNiprRunning(false)
+        return
+      }
+
       // Store carriers in database if analysis was successful
       if (result.success && result.analysis?.unique_carriers && userData.agency_id) {
         // Additional validation before storage

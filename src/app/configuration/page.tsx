@@ -448,19 +448,18 @@ export default function ConfigurationPage() {
 
   // Load commissions when commissions tab is opened
   useEffect(() => {
-    if (activeTab === 'commissions' && !commissionsLoading) {
+    if (activeTab === 'commissions' && !commissionsLoading && selectedCommissionCarrier) {
       // Only fetch if we don't have commissions loaded yet, or if we have a carrier selected
       // but no commissions for that carrier
       if (commissions.length === 0) {
-        fetchCommissions(selectedCommissionCarrier || undefined)
-      } else if (selectedCommissionCarrier && 
-                 !commissions.some(c => c.carrier_id === selectedCommissionCarrier)) {
+        fetchCommissions(selectedCommissionCarrier)
+      } else if (!commissions.some(c => c.carrier_id === selectedCommissionCarrier)) {
         // We have commissions but not for the selected carrier, fetch for that carrier
         fetchCommissions(selectedCommissionCarrier)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab])
+  }, [activeTab, selectedCommissionCarrier])
 
   // Filter products when carrier is selected
   useEffect(() => {
@@ -528,7 +527,8 @@ export default function ConfigurationPage() {
       }
 
       const [carriersResponse, productsResponse] = await Promise.all([
-        fetch('/api/carriers', {
+        // Only fetch carriers that actually have products for this agency
+        fetch('/api/carriers/agency', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -1361,8 +1361,9 @@ export default function ConfigurationPage() {
         const data = await response.json()
         console.log(`Auto-synced commissions for carrier ${carrierId}: created ${data.created || 0} entries`)
         
-        // Refresh commissions if this carrier is currently selected or if forced
-        if (forceRefresh || selectedCommissionCarrier === carrierId) {
+        // Refresh commissions only when we added new entries and this carrier is active.
+        // Avoid forcing a refetch here to prevent double-loading; the tab/useEffect will handle initial fetch.
+        if (data.created > 0 && selectedCommissionCarrier === carrierId) {
           await fetchCommissions(carrierId)
         }
       } else {

@@ -449,7 +449,15 @@ export default function ConfigurationPage() {
   // Load commissions when commissions tab is opened
   useEffect(() => {
     if (activeTab === 'commissions' && !commissionsLoading) {
-      fetchCommissions()
+      // Only fetch if we don't have commissions loaded yet, or if we have a carrier selected
+      // but no commissions for that carrier
+      if (commissions.length === 0) {
+        fetchCommissions(selectedCommissionCarrier || undefined)
+      } else if (selectedCommissionCarrier && 
+                 !commissions.some(c => c.carrier_id === selectedCommissionCarrier)) {
+        // We have commissions but not for the selected carrier, fetch for that carrier
+        fetchCommissions(selectedCommissionCarrier)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
@@ -1432,8 +1440,11 @@ export default function ConfigurationPage() {
         }
       }
       
-      // Refresh the commissions view
-      await fetchCommissions(selectedCommissionCarrier)
+      // Only refresh the commissions view if new commissions were created
+      // If nothing was created, the data is already up to date
+      if (data.created > 0) {
+        await fetchCommissions(selectedCommissionCarrier)
+      }
     } catch (error) {
       console.error('Error syncing commissions:', error)
       if (!silent) {
@@ -3065,10 +3076,8 @@ export default function ConfigurationPage() {
                             setSelectedCommissionCarrier(carrierId)
                             setCommissionEdits({})
                             
-                            // Fetch commissions for the selected carrier
-                            await fetchCommissions(carrierId || undefined)
-                            
                             // If a carrier is selected, automatically sync missing commissions (silently)
+                            // The sync function will fetch commissions at the end, so no need to fetch here
                             if (carrierId) {
                               // Always sync when a carrier is selected to ensure all products/positions are covered
                               setTimeout(async () => {
@@ -3121,9 +3130,8 @@ export default function ConfigurationPage() {
                       <p>Select a carrier to view and edit commission percentages</p>
                     </div>
                   ) : !gridData ? (
-                    <div className="text-center py-12 text-muted-foreground">
-                      <p>No commission data found for this carrier.</p>
-                      <p className="text-sm mt-2">Make sure you have positions and products configured.</p>
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
                     </div>
                   ) : (
                     <>

@@ -1668,7 +1668,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 													<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
 												</filter>
 											</defs>
-											<circle cx={160} cy={160} r={100} fill="#fff" />
+											<circle cx={160} cy={160} r={100} style={{ fill: 'hsl(var(--card))' }} />
 											<g filter="url(#shadow-status)">
 												{statusBreakdown.wedges.map((w, idx) => {
 													const path = describeDonutArc(160, 160, 150, 100, w.start, w.end)

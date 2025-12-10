@@ -1440,13 +1440,61 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		) : (
 			<div className="flex w-full flex-col gap-6 p-6">
 			{/* Header */}
-			<div className="flex items-center justify-between">
-				<h1 className="text-4xl font-bold text-foreground">Agency Analytics</h1>
+			<div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 xl:gap-2">
+				<div className="flex items-center justify-between gap-2 flex-wrap">
+					<h1 className="text-4xl font-bold text-foreground whitespace-nowrap leading-none flex-shrink-0">Agency Analytics</h1>
 
-				<div className="flex items-center gap-2">
+					<div className="flex items-center gap-2 flex-wrap xl:hidden">
+						{/* Time window: 3,6,9,All Time */}
+						<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
+							<SelectTrigger className="w-[120px] rounded-md h-9 text-sm flex-shrink-0"><SelectValue placeholder="3 Months" /></SelectTrigger>
+							<SelectContent className="rounded-md">
+								<SelectItem value="3">3 Months</SelectItem>
+								<SelectItem value="6">6 Months</SelectItem>
+								<SelectItem value="9">9 Months</SelectItem>
+								<SelectItem value="all">All Time</SelectItem>
+							</SelectContent>
+						</Select>
+
+						{/* Carrier selector sourced from JSON */}
+						<Select value={carrierFilter} onValueChange={(value) => {
+							setCarrierFilter(value)
+							if (value === "ALL") {
+								setSelectedCarrier(null)
+							} else if (groupBy === "carrier") {
+								setSelectedCarrier(value)
+							}
+						}}>
+							<SelectTrigger className="w-[160px] rounded-md h-9 text-sm flex-shrink-0"><SelectValue placeholder="All Carriers" /></SelectTrigger>
+							<SelectContent className="rounded-md">
+								{carriers.map((c) => (
+									<SelectItem key={c} value={c}>{c === "ALL" ? "All Carriers" : c}</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+
+						{/* Agent Search */}
+						<SimpleSearchableSelect
+							options={[
+								{ value: "", label: "View My Analytics" },
+								...allAgents.map(agent => ({ value: agent.id, label: agent.name }))
+							]}
+							value={selectedAgentId}
+							onValueChange={(value) => {
+								setSelectedAgentId(value)
+							}}
+							placeholder="Search agent to view their analytics..."
+							searchPlaceholder="Type agent name..."
+							className="w-[240px] flex-shrink-0"
+						/>
+					</div>
+				</div>
+
+				{/* Controls for xl screens - right aligned */}
+				<div className="hidden xl:flex items-center gap-2">
 					{/* Time window: 3,6,9,All Time */}
 					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
-						<SelectTrigger className="w-[120px] rounded-md h-9 text-sm"><SelectValue placeholder="3 Months" /></SelectTrigger>
+						<SelectTrigger className="w-[120px] rounded-md h-9 text-sm flex-shrink-0"><SelectValue placeholder="3 Months" /></SelectTrigger>
 						<SelectContent className="rounded-md">
 							<SelectItem value="3">3 Months</SelectItem>
 							<SelectItem value="6">6 Months</SelectItem>
@@ -1464,7 +1512,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							setSelectedCarrier(value)
 						}
 					}}>
-						<SelectTrigger className="w-[160px] rounded-md h-9 text-sm"><SelectValue placeholder="All Carriers" /></SelectTrigger>
+						<SelectTrigger className="w-[160px] rounded-md h-9 text-sm flex-shrink-0"><SelectValue placeholder="All Carriers" /></SelectTrigger>
 						<SelectContent className="rounded-md">
 							{carriers.map((c) => (
 								<SelectItem key={c} value={c}>{c === "ALL" ? "All Carriers" : c}</SelectItem>
@@ -1484,22 +1532,41 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 						}}
 						placeholder="Search agent to view their analytics..."
 						searchPlaceholder="Type agent name..."
-						className="w-[240px]"
+						className="w-[240px] flex-shrink-0"
 					/>
 
 					<Button
-						className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-md h-9 text-sm"
+						className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-md h-9 text-sm whitespace-nowrap flex-shrink-0"
 						onClick={() => setIsUploadModalOpen(true)}
 					>
 						Upload Reports
 					</Button>
 
-					{/* AI Mode Button */}
 					<Button
 						variant="outline"
-						className="rounded-md border-2 border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700 font-medium h-9 text-sm ml-2"
+						className="rounded-md border-2 border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700 font-medium h-9 text-sm whitespace-nowrap flex-shrink-0"
 						onClick={() => {
-							// Navigate to AI chat or open modal
+							window.location.href = '/ai-chat'
+						}}
+					>
+						<span className="mr-1.5">✨</span>
+						Ask AI to make Custom graphs
+					</Button>
+				</div>
+
+				{/* Buttons row - visible on smaller screens only */}
+				<div className="flex items-center gap-2 justify-end xl:hidden">
+					<Button
+						className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-md h-9 text-sm whitespace-nowrap flex-shrink-0"
+						onClick={() => setIsUploadModalOpen(true)}
+					>
+						Upload Reports
+					</Button>
+
+					<Button
+						variant="outline"
+						className="rounded-md border-2 border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700 font-medium h-9 text-sm whitespace-nowrap flex-shrink-0"
+						onClick={() => {
 							window.location.href = '/ai-chat'
 						}}
 					>

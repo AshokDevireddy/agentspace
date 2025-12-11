@@ -1,16 +1,66 @@
 /**
  * NIPR Automation Service
  * Browser automation for retrieving PDB Detail Reports from nipr.com
+ *
+ * Uses Supabase database queue for concurrency control on serverless (Vercel)
  */
 
-import { chromium, Browser, Page } from 'playwright'
+import { chromium, Browser } from 'playwright'
 import path from 'path'
 import fs from 'fs'
+import crypto from 'crypto'
 import type { NIPRInput, NIPRResult, NIPRConfig, NIPRAnalysisResult } from './types'
 import { analyzePDFReport } from './pdf-analyzer'
+import { createAdminClient } from '@/lib/supabase/server'
+
+// Progress steps with percentages and messages
+const PROGRESS_STEPS = {
+  STARTING: { progress: 0, message: 'Starting verification...' },
+  BROWSER_LAUNCH: { progress: 5, message: 'Launching secure browser...' },
+  NAVIGATING: { progress: 10, message: 'Connecting to NIPR...' },
+  ENTERING_INFO: { progress: 20, message: 'Entering your information...' },
+  VERIFYING_IDENTITY: { progress: 30, message: 'Verifying your identity...' },
+  SELECTING_REPORT: { progress: 40, message: 'Selecting report type...' },
+  PROCESSING_REQUEST: { progress: 50, message: 'Processing your request...' },
+  CONFIRMING_DETAILS: { progress: 60, message: 'Confirming your details...' },
+  FINALIZING_REQUEST: { progress: 70, message: 'Finalizing your request...' },
+  DOWNLOADING_REPORT: { progress: 80, message: 'Downloading your report...' },
+  ANALYZING_REPORT: { progress: 90, message: 'AI is analyzing your report...' },
+  COMPLETE: { progress: 100, message: 'Verification complete!' },
+} as const
+
+// Generate unique ID for each request to prevent file collisions
+function generateRequestId(): string {
+  return `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
+}
+
+/**
+ * Update job progress in the database
+ */
+async function updateProgress(jobId: string, step: keyof typeof PROGRESS_STEPS): Promise<void> {
+  if (!jobId || jobId.startsWith('legacy-')) {
+    // Skip progress updates for legacy jobs without database tracking
+    return
+  }
+
+  const { progress, message } = PROGRESS_STEPS[step]
+
+  try {
+    const supabase = createAdminClient()
+    await supabase.rpc('update_nipr_job_progress', {
+      p_job_id: jobId,
+      p_progress: progress,
+      p_message: message
+    })
+    console.log(`[NIPR] Progress: ${progress}% - ${message}`)
+  } catch (error) {
+    // Non-blocking - just log the error
+    console.error('[NIPR] Failed to update progress:', error)
+  }
+}
 
 // Validate and load NIPR configuration from environment variables
-const getDefaultConfig = (): NIPRConfig => {
+export const getDefaultConfig = (): NIPRConfig => {
   // Required billing environment variables
   const requiredBillingVars = [
     'NIPR_BILLING_FIRST_NAME',
@@ -59,11 +109,24 @@ const getDefaultConfig = (): NIPRConfig => {
 }
 
 /**
- * Run the NIPR automation to retrieve PDB Detail Report
+ * Job data structure from the database queue
  */
-export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
+export interface NIPRJobData {
+  job_id: string
+  job_user_id: string
+  job_last_name: string
+  job_npn: string
+  job_ssn_last4: string
+  job_dob: string
+}
+
+/**
+ * Execute the NIPR automation for a specific job
+ * This is called by the job processor, not directly by users
+ */
+export async function executeNIPRAutomation(job: NIPRJobData): Promise<NIPRResult> {
   const config = getDefaultConfig()
-  const currentDate = new Date().toISOString().split('T')[0]
+  const requestId = generateRequestId()
 
   // Create downloads folder
   const downloadsFolder = path.join(process.cwd(), 'public', 'nipr-downloads')
@@ -73,10 +136,19 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
 
   let browser: Browser | null = null
 
+  const input: NIPRInput = {
+    lastName: job.job_last_name,
+    npn: job.job_npn,
+    ssn: job.job_ssn_last4,
+    dob: job.job_dob
+  }
+
   try {
-    console.log('[NIPR] Starting automation...')
+    console.log(`[NIPR] Starting automation (job: ${job.job_id}, request: ${requestId})...`)
+    await updateProgress(job.job_id, 'STARTING')
 
     // Launch browser in headless mode
+    await updateProgress(job.job_id, 'BROWSER_LAUNCH')
     try {
       browser = await chromium.launch({ headless: true })
       console.log('[NIPR] Browser launched successfully')
@@ -102,6 +174,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     const page = await browser.newPage()
 
     // Navigate to NIPR
+    await updateProgress(job.job_id, 'NAVIGATING')
     console.log('[NIPR] Navigating to NIPR...')
     await page.goto('https://pdb.nipr.com/my-nipr/frontend/user-menu')
 
@@ -112,6 +185,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     await button.click()
 
     // Step 2: Select NPN radio button
+    await updateProgress(job.job_id, 'ENTERING_INFO')
     console.log('[NIPR] Selecting NPN radio...')
     const radioButton = page.locator("//input[@type='radio' and @value='NPN']")
     await radioButton.waitFor({ state: 'visible' })
@@ -142,6 +216,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     await submitButton.click()
 
     // Step 7: Fill in SSN field (from user input - last 4 digits)
+    await updateProgress(job.job_id, 'VERIFYING_IDENTITY')
     console.log('[NIPR] Filling SSN...')
     const ssnInput = page.locator("//input[@name='ssn']")
     await ssnInput.waitFor({ state: 'visible' })
@@ -160,6 +235,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     await submitButton2.click()
 
     // Step 10: Click start-flow button
+    await updateProgress(job.job_id, 'SELECTING_REPORT')
     console.log('[NIPR] Starting flow...')
     const startFlowButton = page.locator("//button[@to='/start-flow']")
     await startFlowButton.waitFor({ state: 'visible' })
@@ -178,6 +254,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     await submitButton3.click()
 
     // Step 13: Click btn-primary button
+    await updateProgress(job.job_id, 'PROCESSING_REQUEST')
     console.log('[NIPR] Proceeding to payment...')
     const primaryButton = page.locator("//button[contains(@class, 'btn-primary')]")
     await primaryButton.waitFor({ state: 'visible' })
@@ -195,6 +272,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     await submitButton4.click()
 
     // Step 16: Click submit and pay button
+    await updateProgress(job.job_id, 'CONFIRMING_DETAILS')
     console.log('[NIPR] Initiating payment...')
     const submitPayButton = page.locator("//li[contains(@class, 'next')]/button[contains(@class, 'btn-default')]")
     await submitPayButton.waitFor({ state: 'visible' })
@@ -249,6 +327,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     await cardCvcFrame.locator("input[name='cvc']").fill(config.payment.cvc)
 
     // Step 22: Click payment submit
+    await updateProgress(job.job_id, 'FINALIZING_REQUEST')
     console.log('[NIPR] Submitting payment...')
     const paymentSubmitButton = page.locator("//button[@id='next']")
     await paymentSubmitButton.waitFor({ state: 'visible' })
@@ -259,6 +338,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     await page.waitForTimeout(3000)
 
     // Step 23: Download Detail Report
+    await updateProgress(job.job_id, 'DOWNLOADING_REPORT')
     console.log('[NIPR] Downloading report...')
     const detailButton = page.locator("//span[text()='View Detail']/ancestor::button")
     await detailButton.waitFor({ state: 'visible' })
@@ -268,7 +348,8 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
       detailButton.click()
     ])
 
-    const reportPath = path.join(downloadsFolder, `report_${currentDate}.pdf`)
+    // Use unique requestId to prevent file collisions between concurrent users
+    const reportPath = path.join(downloadsFolder, `report_${requestId}.pdf`)
     await reportDownload.saveAs(reportPath)
     console.log(`[NIPR] Report saved: ${reportPath}`)
 
@@ -277,7 +358,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     browser = null
 
     const files = [
-      `/nipr-downloads/report_${currentDate}.pdf`
+      `/nipr-downloads/report_${requestId}.pdf`
     ]
 
     console.log('[NIPR] PDFs downloaded successfully!')
@@ -286,6 +367,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     let analysis: NIPRAnalysisResult | undefined
 
     if (config.analyzeWithAI && config.anthropicApiKey) {
+      await updateProgress(job.job_id, 'ANALYZING_REPORT')
       console.log('[NIPR] Running AI analysis on report...')
       try {
         analysis = await analyzePDFReport(reportPath)
@@ -301,6 +383,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
       console.log('[NIPR] AI analysis skipped (not configured).')
     }
 
+    await updateProgress(job.job_id, 'COMPLETE')
     console.log('[NIPR] Automation completed successfully!')
 
     return {
@@ -324,4 +407,20 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
       error: error instanceof Error ? error.message : String(error),
     }
   }
+}
+
+/**
+ * Legacy function for backwards compatibility
+ * Now just executes directly (queue is handled at the API level)
+ */
+export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
+  const jobData: NIPRJobData = {
+    job_id: `legacy-${generateRequestId()}`,
+    job_user_id: '',
+    job_last_name: input.lastName,
+    job_npn: input.npn,
+    job_ssn_last4: input.ssn,
+    job_dob: input.dob
+  }
+  return executeNIPRAutomation(jobData)
 }

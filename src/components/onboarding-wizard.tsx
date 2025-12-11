@@ -6,7 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Upload, Users, Loader2, X, FileText, Plus, CheckCircle2, Shield, AlertCircle } from "lucide-react"
+import { Upload, Users, Loader2, X, FileText, Plus, CheckCircle2, Shield, AlertCircle, Clock } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 
@@ -125,6 +126,12 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       analyzedAt: string
     }
   } | null>(null)
+
+  // NIPR job progress tracking
+  const [niprJobId, setNiprJobId] = useState<string | null>(null)
+  const [niprProgress, setNiprProgress] = useState(0)
+  const [niprProgressMessage, setNiprProgressMessage] = useState('')
+  const [niprQueuePosition, setNiprQueuePosition] = useState<number | null>(null)
 
   // Carrier upload progress state (for step-by-step upload)
   const [currentCarrierIndex, setCurrentCarrierIndex] = useState(0)
@@ -303,6 +310,65 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
     checkNiprStatus()
   }, [userData.id])
+
+  // Poll for NIPR job progress when we have a job ID
+  useEffect(() => {
+    if (!niprJobId || !niprRunning) return
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/nipr/job/${niprJobId}`)
+        if (!response.ok) return
+
+        const job = await response.json()
+
+        setNiprProgress(job.progress || 0)
+        setNiprProgressMessage(job.progressMessage || '')
+        setNiprQueuePosition(job.position || null)
+
+        // If job is completed or failed, stop polling and handle result
+        if (job.status === 'completed') {
+          setNiprRunning(false)
+          setNiprResult({
+            success: true,
+            message: 'NIPR verification completed successfully!',
+            files: job.resultFiles,
+            analysis: {
+              success: true,
+              carriers: job.resultCarriers || [],
+              unique_carriers: job.resultCarriers || [],
+              licensedStates: { resident: [], nonResident: [] },
+              analyzedAt: job.completedAt
+            }
+          })
+
+          // Store carriers if we have them
+          if (job.resultCarriers && job.resultCarriers.length > 0 && userData.id) {
+            await storeCarriersInDatabase(job.resultCarriers, userData.id)
+          }
+
+          // Auto-advance to next step
+          setTimeout(() => {
+            setCurrentStep(userData.is_admin ? 2 : 3)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }, 2000)
+
+          clearInterval(pollInterval)
+        } else if (job.status === 'failed') {
+          setNiprRunning(false)
+          setNiprResult({
+            success: false,
+            message: job.errorMessage || 'NIPR verification failed. Please try again.'
+          })
+          clearInterval(pollInterval)
+        }
+      } catch (error) {
+        console.error('[ONBOARDING] Error polling job status:', error)
+      }
+    }, 10000) // Poll every 10 seconds
+
+    return () => clearInterval(pollInterval)
+  }, [niprJobId, niprRunning, userData.id, userData.is_admin])
 
   // Fetch active carriers and match with NIPR results when entering step 2
   useEffect(() => {
@@ -749,6 +815,10 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     setErrors([])
     setNiprRunning(true)
     setNiprResult(null)
+    setNiprJobId(null)
+    setNiprProgress(0)
+    setNiprProgressMessage('Submitting verification request...')
+    setNiprQueuePosition(null)
 
     try {
       // Validate form
@@ -786,8 +856,18 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         return
       }
 
+      // Handle conflict (already has pending job)
+      if (response.status === 409) {
+        // Already has a pending job - start polling it
+        if (result.jobId) {
+          setNiprJobId(result.jobId)
+          setNiprProgressMessage(result.status === 'processing' ? 'Verification in progress...' : 'Waiting in queue...')
+        }
+        return
+      }
+
       // Handle other errors
-      if (!response.ok) {
+      if (!response.ok && !result.queued) {
         setNiprResult({
           success: false,
           message: result.error || 'NIPR verification failed. Please try again.'
@@ -796,6 +876,24 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         return
       }
 
+      // If job was queued (waiting for another job to finish), start polling
+      if (result.queued && result.jobId) {
+        setNiprJobId(result.jobId)
+        setNiprQueuePosition(result.position || null)
+        setNiprProgressMessage(`Waiting in queue (position ${result.position || '?'})...`)
+        // The useEffect will handle polling
+        return
+      }
+
+      // If job started processing, start polling for progress
+      if (result.processing && result.jobId) {
+        setNiprJobId(result.jobId)
+        setNiprProgressMessage('Starting verification...')
+        // The useEffect will handle polling
+        return
+      }
+
+      // Job completed immediately (legacy mode or already completed)
       // Store carriers in database if analysis was successful
       if (result.success && result.analysis?.unique_carriers && userData.id) {
         // Additional validation before storage
@@ -805,21 +903,12 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         } else {
           console.warn('[ONBOARDING] NIPR analysis returned no carriers to store')
         }
-      } else {
-        console.log('[ONBOARDING] Skipping carrier storage. Reason:', {
-          automationSucceeded: result.success,
-          hasAnalysisData: !!result.analysis,
-          hasUniqueCarriers: !!result.analysis?.unique_carriers,
-          carriersCount: result.analysis?.unique_carriers?.length || 0,
-          carriersIsArray: Array.isArray(result.analysis?.unique_carriers),
-          hasUserId: !!userData.id,
-          userId: userData.id || 'NOT_SET',
-          errorMessage: result.error || 'Unknown error',
-          analysisTimestamp: result.analysis?.analyzedAt || 'No timestamp'
-        })
       }
 
       setNiprResult(result)
+      setNiprRunning(false)
+      setNiprProgress(100)
+      setNiprProgressMessage('Complete!')
 
       if (result.success) {
         // Auto-advance to next step after success
@@ -831,12 +920,11 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       }
     } catch (error) {
       console.error('NIPR automation error:', error)
+      setNiprRunning(false)
       setNiprResult({
         success: false,
         message: 'Failed to run NIPR automation. Please try again.'
       })
-    } finally {
-      setNiprRunning(false)
     }
   }
 
@@ -973,8 +1061,38 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                 </div>
               </div>
 
+              {/* NIPR Progress Bar */}
+              {niprRunning && (
+                <div className="space-y-4 p-6 bg-muted/50 rounded-lg border border-border">
+                  <div className="flex items-center gap-3">
+                    {niprQueuePosition ? (
+                      <Clock className="h-5 w-5 text-amber-500 animate-pulse" />
+                    ) : (
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    )}
+                    <div className="flex-1">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-medium text-foreground">
+                          {niprQueuePosition
+                            ? `Waiting in queue (position ${niprQueuePosition})`
+                            : 'NIPR Verification in Progress'}
+                        </span>
+                        <span className="text-sm text-muted-foreground">{niprProgress}%</span>
+                      </div>
+                      <Progress value={niprProgress} className="h-2" />
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {niprProgressMessage || 'Processing...'}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Please do not close this page. This process typically takes 3-5 minutes.
+                  </p>
+                </div>
+              )}
+
               {/* NIPR Result */}
-              {niprResult && (
+              {niprResult && !niprRunning && (
                 <Alert className={niprResult.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}>
                   <AlertDescription className={niprResult.success ? "text-green-800" : "text-red-800"}>
                     <div className="flex items-center gap-2">
@@ -989,11 +1107,13 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                 </Alert>
               )}
 
-              <Alert className="bg-amber-50 border-amber-200">
-                <AlertDescription className="text-amber-800">
-                  <strong>Note:</strong> This verification process takes 3-5 minutes to complete. You can skip this step and complete it later.
-                </AlertDescription>
-              </Alert>
+              {!niprRunning && (
+                <Alert className="bg-amber-50 border-amber-200">
+                  <AlertDescription className="text-amber-800">
+                    <strong>Note:</strong> This verification process takes 3-5 minutes to complete. You can skip this step and complete it later.
+                  </AlertDescription>
+                </Alert>
+              )}
 
               {/* Navigation */}
               <div className="flex justify-between items-center pt-6 mt-8 border-t border-border">

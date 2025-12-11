@@ -141,10 +141,10 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
       <DialogTrigger asChild>
         {trigger}
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white text-gray-900">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card text-foreground">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-gray-900 mb-6">Add a Product</DialogTitle>
-          <DialogDescription>Add a new product for this carrier</DialogDescription>
+          <DialogTitle className="text-2xl font-bold text-foreground mb-6">Add a Product</DialogTitle>
+          <DialogDescription className="text-muted-foreground">Add a new product for this carrier</DialogDescription>
         </DialogHeader>
 
         {errors.length > 0 && (
@@ -160,14 +160,14 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Product Name */}
           <div className="space-y-3">
-            <label className="block text-lg font-bold text-gray-900">
+            <label className="block text-lg font-bold text-foreground">
               Product Name *
             </label>
             <Input
               type="text"
               value={formData.name}
               onChange={(e) => handleInputChange("name", e.target.value)}
-              className={`h-12 text-lg bg-white text-gray-900 border-2 ${errorFields.name ? 'border-red-500' : 'border-gray-300'}`}
+              className={`h-12 text-lg bg-background text-foreground border-2 ${errorFields.name ? 'border-red-500' : 'border-border'}`}
               placeholder="Enter product name"
               required
             />
@@ -178,21 +178,21 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
 
           {/* Product Code */}
           <div className="space-y-3">
-            <label className="block text-lg font-bold text-gray-900">
+            <label className="block text-lg font-bold text-foreground">
               Product Code (Optional)
             </label>
             <Input
               type="text"
               value={formData.productCode}
               onChange={(e) => handleInputChange("productCode", e.target.value)}
-              className="h-12 text-lg bg-white text-gray-900 border-2 border-gray-300"
+              className="h-12 text-lg bg-background text-foreground border-2 border-border"
               placeholder="Enter product code"
             />
           </div>
 
           {/* Status */}
           <div className="space-y-3">
-            <label className="block text-lg font-bold text-gray-900">
+            <label className="block text-lg font-bold text-foreground">
               Status
             </label>
             <div className="flex items-center space-x-4">
@@ -200,7 +200,7 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
                 checked={formData.status}
                 onCheckedChange={(checked) => handleInputChange("status", checked)}
               />
-              <span className="text-lg font-medium text-gray-900">
+              <span className="text-lg font-medium text-foreground">
                 {formData.status ? "Active" : "Inactive"}
               </span>
             </div>

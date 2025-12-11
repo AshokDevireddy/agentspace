@@ -3,7 +3,6 @@
 import * as React from "react"
 import { Check, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
 interface SimpleSearchableSelectProps {
@@ -46,37 +45,78 @@ export function SimpleSearchableSelect({
 
   // Close dropdown when clicking outside
   React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+    if (!open) return
+
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as HTMLElement
+      
+      // If clicking inside our dropdown, don't close
+      if (dropdownRef.current?.contains(target)) {
+        return
+      }
+      
+      // Close on any click outside - use setTimeout to ensure it happens after other handlers
+      setTimeout(() => {
+        setOpen(false)
+      }, 0)
+    }
+
+    // Watch for Radix Select content appearing (when other Select dropdowns open)
+    const checkForOtherDropdowns = () => {
+      if (!open) return
+      
+      // Check if any Radix Select content is visible
+      const selectContent = document.querySelector('[data-radix-select-content]')
+      if (selectContent) {
         setOpen(false)
       }
     }
 
-    document.addEventListener('mousedown', handleClickOutside)
+    const observer = new MutationObserver(checkForOtherDropdowns)
+    observer.observe(document.body, { childList: true, subtree: true })
+
+    // Check periodically for other dropdowns
+    const intervalId = setInterval(checkForOtherDropdowns, 50)
+
+    // Use capture phase to catch clicks early, before other handlers
+    document.addEventListener('mousedown', handleClickOutside, true)
+    document.addEventListener('click', handleClickOutside, true)
+    document.addEventListener('touchstart', handleClickOutside, true)
+    
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('mousedown', handleClickOutside, true)
+      document.removeEventListener('click', handleClickOutside, true)
+      document.removeEventListener('touchstart', handleClickOutside, true)
+      observer.disconnect()
+      clearInterval(intervalId)
     }
-  }, [])
+  }, [open])
 
   const selectedOption = options.find(option => option.value === value)
 
   return (
     <div className={cn("relative", className)} ref={dropdownRef}>
-      <Button
-        variant="outline"
+      <button
+        type="button"
         role="combobox"
         aria-expanded={open}
         className={cn(
-          "w-full justify-between h-10 text-sm border-border bg-card text-foreground hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-0",
-          open && "ring-2 ring-primary/60"
+          "flex h-10 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 transition-colors hover:bg-accent hover:text-accent-foreground",
+          open && "ring-1 ring-ring"
         )}
-        onClick={() => setOpen(!open)}
+        onMouseDown={(e) => {
+          e.stopPropagation()
+        }}
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen(!open)
+        }}
       >
-        <span className="truncate flex-1 text-left">
+        <span className="truncate flex-1 text-left line-clamp-1">
           {selectedOption ? selectedOption.label : placeholder}
         </span>
         <ChevronDown className={cn("ml-2 h-4 w-4 shrink-0 opacity-50", open && "rotate-180")} />
-      </Button>
+      </button>
 
       {open && (
         <div className="absolute top-full left-0 z-[9999] w-full mt-1 bg-card border border-border rounded-md shadow-2xl backdrop-blur-sm">
@@ -103,10 +143,7 @@ export function SimpleSearchableSelect({
                     type="button"
                     key={option.value}
                     className={cn(
-                      "w-full flex items-center px-3 py-2 text-sm cursor-pointer transition-colors text-left",
-                      isSelected
-                        ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
-                        : "text-foreground hover:bg-accent hover:text-accent-foreground"
+                      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none text-foreground hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground transition-colors"
                     )}
                     onClick={() => {
                       onValueChange?.(option.value === value ? "" : option.value)
@@ -114,16 +151,15 @@ export function SimpleSearchableSelect({
                       setSearchTerm("")
                     }}
                   >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4 shrink-0 transition-opacity",
-                        isSelected ? "opacity-100 text-primary-foreground" : "opacity-0"
-                      )}
-                    />
-                    <span className={cn(
-                      "text-left flex-1",
-                      isSelected && "text-primary-foreground"
-                    )}>{option.label}</span>
+                    <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+                      <Check
+                        className={cn(
+                          "h-4 w-4 transition-opacity",
+                          isSelected ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                    </span>
+                    <span className="text-left flex-1">{option.label}</span>
                   </button>
                 )
               })

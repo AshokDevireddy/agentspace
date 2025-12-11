@@ -1,7 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, BarChart3, FileText, DollarSign, TrendingUp, Briefcase, UserCog } from "lucide-react"
+import { Users, BarChart3, FileText, Briefcase, UserCog } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { useState, useEffect } from "react"
 import { useAuth } from "@/providers/AuthProvider"
@@ -400,7 +400,7 @@ export default function Home() {
 
       {/* Dashboard Stats Cards */}
       {isLoadingDashboardData ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="professional-card rounded-md">
             <CardContent className="p-4">
               <div className="animate-pulse">
@@ -443,7 +443,7 @@ export default function Home() {
           </Card>
         </div>
       ) : !isLoadingDashboardData && dashboardData ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Active Policies */}
           <Card className="professional-card rounded-md">
             <CardContent className="p-4">
@@ -455,23 +455,6 @@ export default function Home() {
                   </div>
                   <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     {(dashboardData.totals.active_policies ?? 0).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Monthly Commissions */}
-          <Card className="professional-card rounded-md">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden min-w-0">
-                  <div className="flex items-center gap-2 mb-3">
-                    <DollarSign className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Monthly Commissions</p>
-                  </div>
-                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
-                    ${(dashboardData.totals.monthly_commissions ?? 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </p>
                 </div>
               </div>

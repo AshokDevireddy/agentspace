@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Search, Loader2, Phone, User, Building, Package } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useNotification } from '@/contexts/notification-context'
 
 interface Deal {
   id: string
@@ -30,6 +31,7 @@ export function CreateConversationModal({
   onOpenChange,
   onConversationCreated,
 }: CreateConversationModalProps) {
+  const { showSuccess, showError } = useNotification()
   const [clientNameSearch, setClientNameSearch] = useState("")
   const [clientPhoneSearch, setClientPhoneSearch] = useState("")
   const [searchResults, setSearchResults] = useState<Deal[]>([])
@@ -111,7 +113,7 @@ export function CreateConversationModal({
       }
     } catch (error) {
       console.error('Error checking conversation:', error)
-      alert(error instanceof Error ? error.message : 'Failed to check conversation')
+      showError(error instanceof Error ? error.message : 'Failed to check conversation')
       setSelectedDeal(null)
     } finally {
       setCreating(false)
@@ -146,7 +148,7 @@ export function CreateConversationModal({
       handleClose()
     } catch (error) {
       console.error('Error creating conversation:', error)
-      alert(error instanceof Error ? error.message : 'Failed to create conversation')
+      showError(error instanceof Error ? error.message : 'Failed to create conversation')
     } finally {
       setCreating(false)
     }

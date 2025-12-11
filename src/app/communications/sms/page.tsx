@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
+import { useNotification } from '@/contexts/notification-context'
 
 interface Conversation {
   id: string
@@ -94,6 +95,7 @@ interface DealDetails {
 }
 
 function SMSMessagingPageContent() {
+  const { showSuccess } = useNotification()
   const searchParams = useSearchParams()
   const conversationIdFromUrl = searchParams.get('conversation')
   const { user } = useAuth()
@@ -741,7 +743,7 @@ function SMSMessagingPageContent() {
       // Don't remove optimistic message here - let real-time replace it
     } catch (error) {
       console.error('Error sending message:', error)
-      alert(error instanceof Error ? error.message : 'Failed to send message')
+      showError(error instanceof Error ? error.message : 'Failed to send message')
       setMessageInput(messageText) // Restore message input on error
     } finally {
       setSending(false)
@@ -775,10 +777,10 @@ function SMSMessagingPageContent() {
       // Real-time subscription will handle updating conversations list
       await fetchDealDetails(dealDetails.id)
 
-      alert('Notification resolved successfully')
+      showSuccess('Notification resolved successfully')
     } catch (error) {
       console.error('Error resolving notification:', error)
-      alert(error instanceof Error ? error.message : 'Failed to resolve notification')
+      showError(error instanceof Error ? error.message : 'Failed to resolve notification')
     } finally {
       setResolving(false)
     }
@@ -876,7 +878,7 @@ function SMSMessagingPageContent() {
       console.log('✅ Draft approved successfully')
     } catch (error) {
       console.error('Error approving draft:', error)
-      alert(error instanceof Error ? error.message : 'Failed to approve draft')
+      showError(error instanceof Error ? error.message : 'Failed to approve draft')
     } finally {
       setApprovingDrafts(prev => {
         const next = new Set(prev)
@@ -908,7 +910,7 @@ function SMSMessagingPageContent() {
       console.log('✅ Draft rejected successfully')
     } catch (error) {
       console.error('Error rejecting draft:', error)
-      alert(error instanceof Error ? error.message : 'Failed to reject draft')
+      showError(error instanceof Error ? error.message : 'Failed to reject draft')
     } finally {
       setRejectingDrafts(prev => {
         const next = new Set(prev)
@@ -953,7 +955,7 @@ function SMSMessagingPageContent() {
       console.log('✅ Draft updated successfully')
     } catch (error) {
       console.error('Error updating draft:', error)
-      alert(error instanceof Error ? error.message : 'Failed to update draft')
+      showError(error instanceof Error ? error.message : 'Failed to update draft')
     }
   }
 

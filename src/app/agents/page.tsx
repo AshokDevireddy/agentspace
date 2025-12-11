@@ -19,6 +19,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { useNotification } from "@/contexts/notification-context"
 
 // Agent data type
 interface Agent {
@@ -272,6 +273,8 @@ const renderForeignObjectNode = ({
 
 
 export default function Agents() {
+  const { showSuccess, showError, showWarning } = useNotification()
+
   // Persisted filter state using custom hook (includes view/tab state)
   const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply] = usePersistedFilters(
     'agents',
@@ -774,7 +777,7 @@ export default function Agents() {
   // Handle position assignment
   const handleAssignPosition = async (agentId: string, positionId: string) => {
     if (!positionId) {
-      alert('Please select a position')
+      showWarning('Please select a position')
       return
     }
 
@@ -827,10 +830,10 @@ export default function Agents() {
       setSelectedAgentId(null)
       setAssigningAgentId(null)
 
-      alert('Position assigned successfully!')
+      showSuccess('Position assigned successfully!')
     } catch (err) {
       console.error('Error assigning position:', err)
-      alert(err instanceof Error ? err.message : 'Failed to assign position')
+      showError(err instanceof Error ? err.message : 'Failed to assign position')
     } finally {
       setAssigningAgentId(null)
     }
@@ -854,10 +857,10 @@ export default function Agents() {
         throw new Error(data.error || 'Failed to resend invitation')
       }
 
-      alert(data.message || 'Invitation resent successfully!')
+      showSuccess(data.message || 'Invitation resent successfully!')
     } catch (err) {
       console.error('Error resending invite:', err)
-      alert(err instanceof Error ? err.message : 'Failed to resend invitation')
+      showError(err instanceof Error ? err.message : 'Failed to resend invitation')
     } finally {
       setResendingInviteId(null)
     }
@@ -866,7 +869,7 @@ export default function Agents() {
   // Handle send invite for pre-invite users
   const handleSendInvite = async (agent: Agent) => {
     if (!agent.email) {
-      alert('Agent email is required to send invitation')
+      showWarning('Agent email is required to send invitation')
       return
     }
 
@@ -947,11 +950,11 @@ export default function Agents() {
           }
         }
       }
-      
-      alert('Invitation sent successfully!')
+
+      showSuccess('Invitation sent successfully!')
     } catch (err) {
       console.error('Error sending invite:', err)
-      alert(err instanceof Error ? err.message : 'Failed to send invitation')
+      showError(err instanceof Error ? err.message : 'Failed to send invitation')
     } finally {
       setSendingInvite(false)
       setAgentToInvite(null)

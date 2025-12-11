@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { AgencyBrandingProvider } from "@/contexts/AgencyBrandingContext";
+import { NotificationProvider } from "@/contexts/notification-context";
 import ClientLayout from "./client-layout";
 import { headers } from "next/headers";
 import { createServerClient } from "@/lib/supabase/server";
@@ -73,9 +74,11 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <AuthProvider>
-              <ClientLayout>
-                {children}
-              </ClientLayout>
+              <NotificationProvider>
+                <ClientLayout>
+                  {children}
+                </ClientLayout>
+              </NotificationProvider>
             </AuthProvider>
           </ThemeProvider>
         </AgencyBrandingProvider>

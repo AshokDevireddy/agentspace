@@ -10,6 +10,7 @@ import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select
 import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2, Mail, Check, Circle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
+import { useNotification } from "@/contexts/notification-context"
 
 interface PolicyDetailsModalProps {
   open: boolean
@@ -84,6 +85,7 @@ const getClientStatusSteps = (status: string | null | undefined) => {
 }
 
 export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewMode = 'downlines' }: PolicyDetailsModalProps) {
+  const { showSuccess, showError, showWarning, showInfo } = useNotification()
   const [deal, setDeal] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -250,7 +252,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
       onUpdate?.()
     } catch (err) {
       console.error('Error updating policy:', err)
-      alert(err instanceof Error ? err.message : 'Failed to update policy')
+      showError(err instanceof Error ? err.message : 'Failed to update policy')
     } finally {
       setSaving(false)
     }
@@ -276,7 +278,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
           // Close the dialog and refresh to show the existing conversation
           setStartConversationDialogOpen(false)
           await fetchConversation()
-          alert('A conversation with this phone number already exists. Showing existing conversation.')
+          showInfo('A conversation with this phone number already exists. Showing existing conversation.')
           return
         }
 
@@ -290,7 +292,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
       await fetchConversation()
     } catch (err) {
       console.error('Error starting conversation:', err)
-      alert(err instanceof Error ? err.message : 'Failed to start conversation')
+      showError(err instanceof Error ? err.message : 'Failed to start conversation')
     } finally {
       setStartingConversation(false)
     }
@@ -315,7 +317,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
 
   const handleSendInvite = async () => {
     if (!deal || !deal.client_email) {
-      alert('Client email is required to send an invitation')
+      showWarning('Client email is required to send an invitation')
       return
     }
 
@@ -337,19 +339,19 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
       const data = await checkResponse.json()
 
       if (checkResponse.ok) {
-        alert(data.message || 'Invitation sent successfully!')
+        showSuccess(data.message || 'Invitation sent successfully!')
         await fetchDealDetails() // Refresh deal details
       } else {
         // If client exists but not invited, try resend endpoint
         if (data.status) {
-          alert(`Client already has status: ${data.status}. ${data.error}`)
+          showWarning(`Client already has status: ${data.status}. ${data.error}`)
         } else {
           throw new Error(data.error || 'Failed to send invitation')
         }
       }
     } catch (err) {
       console.error('Error sending invite:', err)
-      alert(err instanceof Error ? err.message : 'Failed to send invitation')
+      showError(err instanceof Error ? err.message : 'Failed to send invitation')
     } finally {
       setSendingInvite(false)
     }
@@ -357,7 +359,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
 
   const handleResendClientInvite = async () => {
     if (!deal || !deal.client_email) {
-      alert('Client email is required to resend invitation')
+      showWarning('Client email is required to resend invitation')
       return
     }
 
@@ -378,10 +380,10 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
         throw new Error(data.error || 'Failed to resend invitation')
       }
 
-      alert(data.message || 'Invitation resent successfully!')
+      showSuccess(data.message || 'Invitation resent successfully!')
     } catch (err) {
       console.error('Error resending invite:', err)
-      alert(err instanceof Error ? err.message : 'Failed to resend invitation')
+      showError(err instanceof Error ? err.message : 'Failed to resend invitation')
     } finally {
       setSendingInvite(false)
     }

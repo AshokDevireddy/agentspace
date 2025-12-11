@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
+import { useNotification } from '@/contexts/notification-context'
 
 interface Product {
   id: string
@@ -27,6 +28,7 @@ interface AddProductModalProps {
 
 export default function AddProductModal({ trigger, carrierId, onProductCreated }: AddProductModalProps) {
   const { user } = useAuth()
+  const { showSuccess, showError } = useNotification()
   const [formData, setFormData] = useState({
     name: "",
     productCode: "",
@@ -112,7 +114,7 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
 
       // Show success message about setting commissions
       if (data.message) {
-        alert(data.message)
+        showSuccess(data.message)
       }
 
       setIsOpen(false)

@@ -11,6 +11,7 @@ import { AsyncSearchableSelect } from "@/components/ui/async-searchable-select"
 import { Loader2, User, Calendar, DollarSign, Users, Building2, Mail, Phone, CheckCircle2, UserCog, TrendingUp, Circle, X, Edit, Save } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
+import { useNotification } from "@/contexts/notification-context"
 
 interface AgentDetailsModalProps {
   open: boolean
@@ -91,6 +92,7 @@ const getAgentStatusSteps = (status: string | null | undefined) => {
 }
 
 export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: AgentDetailsModalProps) {
+  const { showSuccess, showError } = useNotification()
   const [agent, setAgent] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [downlines, setDownlines] = useState<any[]>([])
@@ -254,19 +256,16 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
   const handleSave = async () => {
     if (!agent || !editedData) return
 
-    // Check if we should prompt for invite
+    // Check if we should send an invite automatically
     const wasPreInvite = agent.status?.toLowerCase() === 'pre-invite'
     const hasEmail = editedData.email && editedData.email.trim() !== ''
     const emailChanged = editedData.email !== agent.email
-    const shouldPromptInvite = wasPreInvite && hasEmail && emailChanged
+    const shouldSendInvite = wasPreInvite && hasEmail && emailChanged
 
-    if (shouldPromptInvite) {
-      const sendInvite = confirm('Would you like to send an invitation email to this user? Click OK to send invite, or Cancel to save without sending.')
-      
-      if (sendInvite) {
-        // Send invite using the invite API
-        setSaving(true)
-        try {
+    if (shouldSendInvite) {
+      // Send invite using the invite API
+      setSaving(true)
+      try {
           // First, get the agent's name parts
           const nameParts = agent.name.split(' ')
           const firstName = nameParts[0] || ''
@@ -301,16 +300,15 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
           await fetchAgentDetails()
           setIsEditing(false)
           setEditedData(null)
-          alert('Invitation sent successfully!')
+          showSuccess('Invitation sent successfully!')
           onOpenChange(false)
           return
         } catch (err) {
           console.error('Error sending invite:', err)
-          alert(err instanceof Error ? err.message : 'Failed to send invitation')
+          showError(err instanceof Error ? err.message : 'Failed to send invitation')
           setSaving(false)
           return
         }
-      }
     }
 
     // Regular save (without invite)
@@ -330,10 +328,11 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
       await fetchAgentDetails()
       setIsEditing(false)
       setEditedData(null)
+      showSuccess('Agent updated successfully!')
       onOpenChange(false)
     } catch (err) {
       console.error('Error updating agent:', err)
-      alert(err instanceof Error ? err.message : 'Failed to update agent')
+      showError(err instanceof Error ? err.message : 'Failed to update agent')
     } finally {
       setSaving(false)
     }

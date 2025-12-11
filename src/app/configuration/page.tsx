@@ -12,6 +12,7 @@ import { cn, getContrastTextColor } from "@/lib/utils"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 import { HexColorPicker } from 'react-colorful'
 import { useTheme } from "next-themes"
+import { useNotification } from "@/contexts/notification-context"
 
 // Types for carrier data
 interface Carrier {
@@ -93,6 +94,7 @@ const isDefaultColorForMode = (color: string, mode: 'light' | 'dark' | 'system' 
 }
 
 export default function ConfigurationPage() {
+  const { showSuccess, showError, showWarning } = useNotification()
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
@@ -244,7 +246,7 @@ export default function ConfigurationPage() {
       }
       
       if (Object.keys(updates).length === 0) {
-        alert('No changes to save')
+        showWarning('No changes to save')
         return
       }
       
@@ -276,7 +278,7 @@ export default function ConfigurationPage() {
       window.location.reload()
     } catch (error) {
       console.error('Error saving changes:', error)
-      alert('Failed to save changes')
+      showError('Failed to save changes')
     } finally {
       setSavingAllChanges(false)
     }
@@ -575,7 +577,7 @@ export default function ConfigurationPage() {
 
     } catch (error) {
       console.error('Error fetching data:', error)
-      alert(`Error loading data: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      showError(`Error loading data: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setCarriersLoading(false)
       setProductsLoading(false)
@@ -698,7 +700,7 @@ export default function ConfigurationPage() {
       setDisplayNameValue("")
     } catch (error) {
       console.error('Error updating display name:', error)
-      alert('Failed to update display name')
+      showError('Failed to update display name')
     } finally {
       setSavingDisplayName(false)
     }
@@ -711,21 +713,21 @@ export default function ConfigurationPage() {
 
   const handleLogoUpload = async (file: File) => {
     if (!agency) {
-      alert('Agency information not loaded. Please refresh the page.')
+      showError('Agency information not loaded. Please refresh the page.')
       return
     }
 
     // Validate file size (max 5MB)
     const maxSize = 5 * 1024 * 1024 // 5MB
     if (file.size > maxSize) {
-      alert('File size must be less than 5MB')
+      showWarning('File size must be less than 5MB')
       return
     }
 
     // Validate file type
     const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp']
     if (!validTypes.includes(file.type)) {
-      alert('Please upload a valid image file (PNG, JPG, SVG, or WebP)')
+      showWarning('Please upload a valid image file (PNG, JPG, SVG, or WebP)')
       return
     }
 
@@ -783,7 +785,7 @@ export default function ConfigurationPage() {
     } catch (error) {
       console.error('Error uploading logo:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-      alert(`Failed to upload logo: ${errorMessage}. Check console for details.`)
+      showError(`Failed to upload logo: ${errorMessage}. Check console for details.`)
     } finally {
       setUploadingLogo(false)
     }
@@ -944,7 +946,7 @@ export default function ConfigurationPage() {
       setAgency({ ...agency, ...updates })
     } catch (error) {
       console.error('Error updating theme:', error)
-      alert('Failed to update theme preference')
+      showError('Failed to update theme preference')
     } finally {
       setSavingTheme(false)
     }
@@ -980,7 +982,7 @@ export default function ConfigurationPage() {
       setEditingWhitelabelDomain(false)
     } catch (error) {
       console.error('Error updating whitelabel domain:', error)
-      alert('Failed to update whitelabel domain')
+      showError('Failed to update whitelabel domain')
     } finally {
       setSavingWhitelabelDomain(false)
     }
@@ -1059,7 +1061,7 @@ export default function ConfigurationPage() {
   // Position management functions
   const handleAddPosition = async () => {
     if (!newPosition.name.trim() || newPosition.level === 0) {
-      alert('Please enter a position name and level')
+      showWarning('Please enter a position name and level')
       return
     }
 
@@ -1098,7 +1100,7 @@ export default function ConfigurationPage() {
       await syncCommissionsForAllCarriers()
     } catch (error) {
       console.error('Error creating position:', error)
-      alert(error instanceof Error ? error.message : 'Failed to create position')
+      showError(error instanceof Error ? error.message : 'Failed to create position')
     } finally {
       setSavingPosition(false)
     }
@@ -1164,7 +1166,7 @@ export default function ConfigurationPage() {
       await fetchPositions()
     } catch (error) {
       console.error('Error updating position:', error)
-      alert(error instanceof Error ? error.message : 'Failed to update position')
+      showError(error instanceof Error ? error.message : 'Failed to update position')
     } finally {
       setSavingPosition(false)
     }
@@ -1203,7 +1205,7 @@ export default function ConfigurationPage() {
       fetchPositions()
     } catch (error) {
       console.error('Error deleting position:', error)
-      alert(error instanceof Error ? error.message : 'Failed to delete position')
+      showError(error instanceof Error ? error.message : 'Failed to delete position')
     } finally {
       setDeletingPosition(false)
     }
@@ -1262,7 +1264,7 @@ export default function ConfigurationPage() {
 
   const handleSaveCommissions = async () => {
     if (Object.keys(commissionEdits).length === 0) {
-      alert('No changes to save')
+      showWarning('No changes to save')
       return
     }
 
@@ -1329,10 +1331,10 @@ export default function ConfigurationPage() {
 
       setCommissionEdits({})
       fetchCommissions(selectedCommissionCarrier || undefined)
-      alert('Commissions saved successfully!')
+      showSuccess('Commissions saved successfully!')
     } catch (error) {
       console.error('Error saving commissions:', error)
-      alert(error instanceof Error ? error.message : 'Failed to save commissions')
+      showError(error instanceof Error ? error.message : 'Failed to save commissions')
     } finally {
       setSavingCommissions(false)
     }
@@ -1405,7 +1407,7 @@ export default function ConfigurationPage() {
   const handleSyncMissingCommissions = async (silent: boolean = false) => {
     if (!selectedCommissionCarrier) {
       if (!silent) {
-        alert('Please select a carrier first')
+        showWarning('Please select a carrier first')
       }
       return
     }
@@ -1435,9 +1437,9 @@ export default function ConfigurationPage() {
 
       if (!silent) {
         if (data.created === 0) {
-          alert('All products for this carrier already have commission entries!')
+          showWarning('All products for this carrier already have commission entries!')
         } else {
-          alert(`Successfully created ${data.created} missing commission entries for this carrier!`)
+          showSuccess(`Successfully created ${data.created} missing commission entries for this carrier!`)
         }
       }
       
@@ -1449,7 +1451,7 @@ export default function ConfigurationPage() {
     } catch (error) {
       console.error('Error syncing commissions:', error)
       if (!silent) {
-        alert(error instanceof Error ? error.message : 'Failed to sync commissions')
+        showError(error instanceof Error ? error.message : 'Failed to sync commissions')
       }
     } finally {
       setSyncingMissingCommissions(false)
@@ -1718,7 +1720,7 @@ export default function ConfigurationPage() {
       setNewLeadSource("")
     } catch (error) {
       console.error('Error adding lead source:', error)
-      alert('Failed to add lead source')
+      showError('Failed to add lead source')
     } finally {
       setSavingLeadSources(false)
     }
@@ -1751,7 +1753,7 @@ export default function ConfigurationPage() {
       setEditLeadSourceValue("")
     } catch (error) {
       console.error('Error updating lead source:', error)
-      alert('Failed to update lead source')
+      showError('Failed to update lead source')
     } finally {
       setSavingLeadSources(false)
     }
@@ -1784,7 +1786,7 @@ export default function ConfigurationPage() {
       setLeadSources(updatedLeadSources)
     } catch (error) {
       console.error('Error deleting lead source:', error)
-      alert('Failed to delete lead source')
+      showError('Failed to delete lead source')
     } finally {
       setSavingLeadSources(false)
     }
@@ -1815,7 +1817,7 @@ export default function ConfigurationPage() {
       setPhoneNumberValue("")
     } catch (error) {
       console.error('Error updating phone number:', error)
-      alert('Failed to update phone number')
+      showError('Failed to update phone number')
     } finally {
       setSavingPhoneNumber(false)
     }
@@ -1844,7 +1846,7 @@ export default function ConfigurationPage() {
       setMessagingEnabled(enabled)
     } catch (error) {
       console.error('Error updating messaging settings:', error)
-      alert('Failed to update messaging settings')
+      showError('Failed to update messaging settings')
       setMessagingEnabled(!enabled)
     } finally {
       setSavingMessagingEnabled(false)
@@ -1876,7 +1878,7 @@ export default function ConfigurationPage() {
       setDiscordWebhookValue("")
     } catch (error) {
       console.error('Error updating Discord webhook:', error)
-      alert('Failed to update Discord webhook URL')
+      showError('Failed to update Discord webhook URL')
     } finally {
       setSavingDiscordWebhook(false)
     }
@@ -1930,7 +1932,7 @@ export default function ConfigurationPage() {
   const handleAnalyzePersistency = async () => {
     const uploadedFiles = uploads.filter(u => u.file !== null) as Array<{ carrier: string; file: File }>;
     if (uploadedFiles.length === 0) {
-      alert('Please upload at least one policy report before analyzing.')
+      showWarning('Please upload at least one policy report before analyzing.')
       return
     }
 
@@ -1960,7 +1962,7 @@ export default function ConfigurationPage() {
       } catch {}
 
       if (!agencyId) {
-        alert('Could not resolve your agency. Please refresh and try again.')
+        showError('Could not resolve your agency. Please refresh and try again.')
         return
       }
 
@@ -1976,7 +1978,7 @@ export default function ConfigurationPage() {
       const jobJson = await jobResp.json().catch(() => null)
       if (!jobResp.ok || !jobJson?.job?.jobId) {
         console.error('Failed to create ingest job', { status: jobResp.status, body: jobJson })
-        alert('Could not start ingest job. Please try again.')
+        showError('Could not start ingest job. Please try again.')
         return
       }
       const jobId = jobJson.job.jobId as string
@@ -1998,7 +2000,7 @@ export default function ConfigurationPage() {
       const signJson = await signResp.json().catch(() => null)
       if (!signResp.ok || !Array.isArray(signJson?.files)) {
         console.error('Presign failed', { status: signResp.status, body: signJson })
-        alert('Could not generate upload URLs. Please try again.')
+        showError('Could not generate upload URLs. Please try again.')
         return
       }
 
@@ -2031,15 +2033,15 @@ export default function ConfigurationPage() {
       if (failures.length) console.error('Failed uploads:', failures);
 
       if (failures.length === 0) {
-        alert(`Successfully uploaded ${successes.length} file(s).`)
+        showSuccess(`Successfully uploaded ${successes.length} file(s).`)
         setUploads(uploads.map(u => ({ carrier: u.carrier, file: null })))
         checkExistingPolicyFiles()
       } else {
-        alert(`Uploaded ${successes.length} file(s), but ${failures.length} failed: ${failures.join(', ')}`)
+        showWarning(`Uploaded ${successes.length} file(s), but ${failures.length} failed: ${failures.join(', ')}`)
       }
     } catch (err) {
       console.error('Unexpected error during upload:', err);
-      alert('An unexpected error occurred while uploading. Please try again.')
+      showError('An unexpected error occurred while uploading. Please try again.')
     } finally {
       setUploadingReports(false)
     }

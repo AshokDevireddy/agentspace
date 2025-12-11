@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { createClient } from '@/lib/supabase/client'
+import { useNotification } from "@/contexts/notification-context"
 
 interface AddUserModalProps {
   trigger: React.ReactNode
@@ -120,6 +121,7 @@ function useAgentSearch(pauseSearch = false) {
 }
 
 export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
+  const { showSuccess } = useNotification()
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -511,7 +513,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       const message = selectedPreInviteUserId
         ? `User ${formData.firstName} ${formData.lastName} updated and invitation sent to ${formData.email}!`
         : `Invitation sent successfully to ${formData.email}!`
-      alert(message)
+      showSuccess(message, 7000)
 
       setIsOpen(false)
       // Reset form
@@ -534,7 +536,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setSelectedPreInviteUserId(null)
       setHasSetDefaultUpline(false) // Reset default upline flag
 
-      // Optionally refresh the page to show new agent
+      // Refresh the page to show new agent
       window.location.reload()
     } catch (error) {
       console.error('Error inviting agent:', error)

@@ -290,9 +290,10 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         if (completed && carriers.length > 0) {
           setNiprAlreadyCompleted(true)
           setStoredCarriers(carriers)
-          // Auto-advance to step 2 if on step 1
+          // Auto-advance if on step 1
+          // Admins go to policy upload (step 2), agents skip to invite team (step 3)
           if (currentStep === 1) {
-            setCurrentStep(2)
+            setCurrentStep(userData.is_admin ? 2 : 3)
           }
         }
       } catch (error) {
@@ -822,8 +823,9 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
       if (result.success) {
         // Auto-advance to next step after success
+        // Admins go to policy upload (step 2), agents skip to invite team (step 3)
         setTimeout(() => {
-          setCurrentStep(2)
+          setCurrentStep(userData.is_admin ? 2 : 3)
           window.scrollTo({ top: 0, behavior: 'smooth' })
         }, 2000)
       }
@@ -1000,7 +1002,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => goToStep(2)}
+                    onClick={() => goToStep(userData.is_admin ? 2 : 3)}
                     disabled={niprRunning}
                     className="h-12 px-6"
                   >
@@ -1521,17 +1523,14 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
               {/* Navigation */}
               <div className="flex justify-between items-center pt-6 mt-8 border-t border-border">
-                {userData.is_admin && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => goToStep(2)}
-                    className="h-12 px-6"
-                  >
-                    Previous
-                  </Button>
-                )}
-                {!userData.is_admin && <div></div>}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => goToStep(userData.is_admin ? 2 : 1)}
+                  className="h-12 px-6"
+                >
+                  Previous
+                </Button>
                 <div className="flex gap-3">
                   <Button
                     type="button"

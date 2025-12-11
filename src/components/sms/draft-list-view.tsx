@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 import { Loader2, MessageSquare, UserCircle } from "lucide-react"
+import { useNotification } from '@/contexts/notification-context'
 
 interface DraftMessage {
   id: string
@@ -30,6 +31,7 @@ interface DraftListViewProps {
 }
 
 export function DraftListView({ viewMode, onClose, onConversationClick }: DraftListViewProps) {
+  const { showSuccess, showError } = useNotification()
   const [draftGroups, setDraftGroups] = useState<DraftGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedDrafts, setSelectedDrafts] = useState<Set<string>>(new Set())
@@ -104,10 +106,10 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
       // Refresh the list
       await fetchDrafts()
       setSelectedDrafts(new Set())
-      alert(`Successfully approved ${selectedDrafts.size} draft(s)`)
+      showSuccess(`Successfully approved ${selectedDrafts.size} draft(s)`)
     } catch (error) {
       console.error('Error approving drafts:', error)
-      alert(error instanceof Error ? error.message : 'Failed to approve drafts')
+      showError(error instanceof Error ? error.message : 'Failed to approve drafts')
     } finally {
       setApproving(false)
     }
@@ -137,10 +139,10 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
       // Refresh the list
       await fetchDrafts()
       setSelectedDrafts(new Set())
-      alert(`Successfully rejected ${selectedDrafts.size} draft(s)`)
+      showSuccess(`Successfully rejected ${selectedDrafts.size} draft(s)`)
     } catch (error) {
       console.error('Error rejecting drafts:', error)
-      alert(error instanceof Error ? error.message : 'Failed to reject drafts')
+      showError(error instanceof Error ? error.message : 'Failed to reject drafts')
     } finally {
       setRejecting(false)
     }

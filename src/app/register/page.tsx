@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 import { useTheme } from "next-themes"
+import { useNotification } from '@/contexts/notification-context'
 
 export default function RegisterPage() {
   const supabase = createClient()
+  const { showSuccess } = useNotification()
   const router = useRouter()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const { setTheme } = useTheme()
@@ -119,7 +121,7 @@ export default function RegisterPage() {
       })
 
       // Show success message and redirect to login
-      alert('Registration successful! Please check your email for an invitation link to complete your account setup.')
+      showSuccess('Registration successful! Please check your email for an invitation link to complete your account setup.')
       router.push('/login')
     } catch (error: any) {
       console.error('Error during registration:', error)

@@ -11,6 +11,7 @@ import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useNotification } from "@/contexts/notification-context"
 
 // Options are loaded dynamically from Supabase based on the user's agency
 
@@ -56,6 +57,7 @@ export default function PostDeal() {
   const { user } = useAuth()
   const supabase = createClient()
   const router = useRouter()
+  const { showSuccess, showError, showWarning } = useNotification()
 
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -446,7 +448,7 @@ export default function PostDeal() {
         // Don't fail the whole operation if Discord notification fails
       })
 
-      alert(successMessage)
+      showSuccess(successMessage, 7000)
       setBeneficiaries([])
 
       router.push("/policies/book")

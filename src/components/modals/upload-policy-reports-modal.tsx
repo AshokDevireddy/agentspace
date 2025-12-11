@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Upload, FileText, X, TrendingUp } from "lucide-react"
 import {requestSignedUrl, putToSignedUrlSmart, putToSignedUrl} from '@/lib/upload-policy-reports/client'
 import { createClient } from '@/lib/supabase/client'
+import { useNotification } from '@/contexts/notification-context'
 
 interface CarrierUpload {
   carrier: string
@@ -25,6 +26,7 @@ const carriers = [
 ]
 
 export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
+  const { showSuccess, showError, showWarning } = useNotification()
   const [uploads, setUploads] = useState<CarrierUpload[]>(
     carriers.map(carrier => ({ carrier, file: null }))
   )
@@ -61,7 +63,7 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
 const handleAnalyze = async () => {
   const uploadedFiles = uploads.filter(u => u.file !== null) as Array<{ carrier: string; file: File }>;
   if (uploadedFiles.length === 0) {
-    alert('Please upload at least one policy report before analyzing.');
+    showWarning('Please upload at least one policy report before analyzing.');
     return;
   }
 
@@ -89,7 +91,7 @@ const handleAnalyze = async () => {
     } catch {}
 
     if (!agencyId) {
-      alert('Could not resolve your agency. Please refresh and try again.')
+      showError('Could not resolve your agency. Please refresh and try again.')
       return
     }
     const jobResp = await fetch('/api/upload-policy-reports/create-job', {
@@ -104,7 +106,7 @@ const handleAnalyze = async () => {
     const jobJson = await jobResp.json().catch(() => null)
     if (!jobResp.ok || !jobJson?.job?.jobId) {
       console.error('Failed to create ingest job', { status: jobResp.status, body: jobJson })
-      alert('Could not start ingest job. Please try again.')
+      showError('Could not start ingest job. Please try again.')
       return
     }
     const jobId = jobJson.job.jobId as string
@@ -126,7 +128,7 @@ const handleAnalyze = async () => {
     const signJson = await signResp.json().catch(() => null)
     if (!signResp.ok || !Array.isArray(signJson?.files)) {
       console.error('Presign failed', { status: signResp.status, body: signJson })
-      alert('Could not generate upload URLs. Please try again.')
+      showError('Could not generate upload URLs. Please try again.')
       return
     }
 
@@ -221,7 +223,7 @@ const handleAnalyze = async () => {
     // }
   } catch (err) {
     console.error('Unexpected error during upload/enqueue:', err);
-    alert('An unexpected error occurred while uploading or enqueueing. Please try again.');
+    showError('An unexpected error occurred while uploading or enqueueing. Please try again.');
   } finally {
     onClose();
   }
@@ -232,7 +234,7 @@ const handleAnalyze = async () => {
   // const handleAnalyze = async () => {
   //   const uploadedFiles = uploads.filter(upload => upload.file !== null)
   //   if (uploadedFiles.length === 0) {
-  //     alert('Please upload at least one policy report before analyzing.')
+  //     showWarning('Please upload at least one policy report before analyzing.')
   //     return
   //   }
 

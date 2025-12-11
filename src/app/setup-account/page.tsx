@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 import { useTheme } from "next-themes"
+import { useNotification } from '@/contexts/notification-context'
 
 interface UserData {
   id: string
@@ -24,6 +25,7 @@ interface UserData {
 
 export default function SetupAccount() {
   const supabase = createClient()
+  const { showSuccess } = useNotification()
   const router = useRouter()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const { setTheme } = useTheme()
@@ -225,11 +227,11 @@ export default function SetupAccount() {
 
       // Success! Redirect to dashboard
       if (userData?.role === 'client') {
-        alert('Password set successfully! Redirecting to your dashboard...')
+        showSuccess('Password set successfully! Redirecting to your dashboard...')
         router.refresh()
         router.push('/client/dashboard')
       } else {
-        alert('Password set successfully! Redirecting to complete your account setup...')
+        showSuccess('Password set successfully! Redirecting to complete your account setup...')
         router.refresh()
         router.push('/')
       }

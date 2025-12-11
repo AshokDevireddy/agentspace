@@ -147,7 +147,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
-  const [currentStep, setCurrentStep] = useState(userData.is_admin ? 1 : 3) // Admins start at 1 (NIPR), agents start at 3 (team)
+  const [currentStep, setCurrentStep] = useState(1) // All users start at NIPR verification
   const errorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -269,17 +269,17 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     return () => clearTimeout(debounceTimer)
   }, [nameSearchTerm])
 
-  // Check for existing uploaded files when user is admin
+  // Check for existing uploaded files when on step 2
   useEffect(() => {
-    if (userData.is_admin && currentStep === 2) {
+    if (currentStep === 2) {
       checkExistingFiles()
     }
-  }, [userData, currentStep])
+  }, [currentStep])
 
-  // Check if NIPR has already been completed for this agency
+  // Check if NIPR has already been completed for this user
   useEffect(() => {
     const checkNiprStatus = async () => {
-      if (!userData.agency_id || !userData.is_admin) return
+      if (!userData.id) return
 
       try {
         const response = await fetch('/api/nipr/status')
@@ -301,7 +301,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     }
 
     checkNiprStatus()
-  }, [userData.agency_id, userData.is_admin])
+  }, [userData.id])
 
   // Fetch active carriers and match with NIPR results when entering step 2
   useEffect(() => {
@@ -341,10 +341,10 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       }
     }
 
-    if (currentStep === 2 && userData.is_admin) {
+    if (currentStep === 2) {
       fetchAndMatchCarriers()
     }
-  }, [currentStep, niprResult, storedCarriers, userData.is_admin])
+  }, [currentStep, niprResult, storedCarriers])
 
   const checkExistingFiles = async () => {
     if (!userData.agency_id) return
@@ -701,11 +701,11 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   }
 
   // Store NIPR carriers in database (non-blocking)
-  const storeCarriersInDatabase = async (carriers: string[], agencyId: string) => {
+  const storeCarriersInDatabase = async (carriers: string[], userId: string) => {
     try {
       // Validate inputs
-      if (!agencyId || !agencyId.trim()) {
-        console.warn('[ONBOARDING] Cannot store carriers: Invalid agency ID')
+      if (!userId || !userId.trim()) {
+        console.warn('[ONBOARDING] Cannot store carriers: Invalid user ID')
         return
       }
 
@@ -727,15 +727,15 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       console.log('[ONBOARDING] Storing carriers in database:', validCarriers)
 
       const { error } = await supabase
-        .from('agencies')
+        .from('users')
         .update({ unique_carriers: validCarriers })
-        .eq('id', agencyId)
+        .eq('id', userId)
 
       if (error) {
         console.error('[ONBOARDING] Failed to store NIPR carriers:', error)
         // Non-blocking error - UI flow continues
       } else {
-        console.log('[ONBOARDING] Successfully stored NIPR carriers:', validCarriers.length, 'carriers for agency', agencyId)
+        console.log('[ONBOARDING] Successfully stored NIPR carriers:', validCarriers.length, 'carriers for user', userId)
       }
     } catch (error) {
       console.error('[ONBOARDING] Database storage error:', error)
@@ -796,11 +796,11 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       }
 
       // Store carriers in database if analysis was successful
-      if (result.success && result.analysis?.unique_carriers && userData.agency_id) {
+      if (result.success && result.analysis?.unique_carriers && userData.id) {
         // Additional validation before storage
         if (Array.isArray(result.analysis.unique_carriers) && result.analysis.unique_carriers.length > 0) {
           console.log('[ONBOARDING] NIPR analysis found', result.analysis.unique_carriers.length, 'carriers, storing to database...')
-          await storeCarriersInDatabase(result.analysis.unique_carriers, userData.agency_id)
+          await storeCarriersInDatabase(result.analysis.unique_carriers, userData.id)
         } else {
           console.warn('[ONBOARDING] NIPR analysis returned no carriers to store')
         }
@@ -811,8 +811,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
           hasUniqueCarriers: !!result.analysis?.unique_carriers,
           carriersCount: result.analysis?.unique_carriers?.length || 0,
           carriersIsArray: Array.isArray(result.analysis?.unique_carriers),
-          hasAgencyId: !!userData.agency_id,
-          agencyId: userData.agency_id || 'NOT_SET',
+          hasUserId: !!userData.id,
+          userId: userData.id || 'NOT_SET',
           errorMessage: result.error || 'Unknown error',
           analysisTimestamp: result.analysis?.analyzedAt || 'No timestamp'
         })
@@ -869,10 +869,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
             Complete Your Setup
           </h1>
           <p className="text-muted-foreground">
-            {userData.is_admin
-              ? 'Upload policy reports and invite your team to get started'
-              : 'Invite your team members to get started'
-            }
+            Verify your credentials, upload policy reports, and invite your team to get started
           </p>
         </div>
 
@@ -890,8 +887,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
         {/* Content Card */}
         <div className="bg-card rounded-lg shadow-lg border border-border p-8">
-          {/* Step 1: NIPR Verification (Admin only) */}
-          {currentStep === 1 && userData.is_admin && (
+          {/* Step 1: NIPR Verification */}
+          {currentStep === 1 && (
             <div className="space-y-6">
               <div className="border-b border-border pb-4">
                 <div className="flex items-center gap-3">
@@ -1032,8 +1029,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
             </div>
           )}
 
-          {/* Step 2: Upload Policy Reports (Admin only) - Step by Step */}
-          {currentStep === 2 && userData.is_admin && (
+          {/* Step 2: Upload Policy Reports - Step by Step */}
+          {currentStep === 2 && (
             <div className="space-y-6">
               {/* Loading state while matching carriers */}
               {loadingMatches ? (
@@ -1152,7 +1149,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                           if (currentCarrierIndex < matchedCarriers.length - 1) {
                             setCurrentCarrierIndex(i => i + 1)
                           } else {
-                            handleComplete()
+                            goToStep(3)
                           }
                         }}
                         className="h-12 px-6"
@@ -1165,13 +1162,13 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                           if (currentCarrierIndex < matchedCarriers.length - 1) {
                             setCurrentCarrierIndex(i => i + 1)
                           } else {
-                            handleComplete()
+                            goToStep(3)
                           }
                         }}
                         className="h-12 px-6 bg-black hover:bg-black/90 text-white"
                       >
                         {currentCarrierIndex === matchedCarriers.length - 1
-                          ? "Complete Setup"
+                          ? "Next: Invite Team"
                           : "Next Carrier →"}
                       </Button>
                     </div>
@@ -1193,11 +1190,11 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                   </div>
                   <Button
                     type="button"
-                    onClick={handleComplete}
+                    onClick={() => goToStep(3)}
                     className="h-12 px-8 bg-black hover:bg-black/90 text-white"
                   >
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Complete Setup
+                    <Users className="mr-2 h-4 w-4" />
+                    Next: Invite Team
                   </Button>
                 </div>
               )}

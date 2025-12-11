@@ -1,16 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runNIPRAutomation } from '@/lib/nipr'
 import type { NIPRInput } from '@/lib/nipr'
-import { getCurrentUser, updateAgencyCarriers } from '@/lib/supabase-helpers'
-import { createAdminClient } from '@/lib/supabase/server'
+import { updateUserCarriers } from '@/lib/supabase-helpers'
+import { createAdminClient, createServerClient } from '@/lib/supabase/server'
 import { checkRateLimit, recordRequest, getSecondsUntilReset } from '@/lib/rate-limiter'
 
 export const maxDuration = 300 // 5 minutes timeout for long-running automation
 
 export async function POST(request: NextRequest) {
   try {
-    // Rate limiting check - get user or fall back to IP
-    const currentUser = await getCurrentUser()
+    // Get authenticated user from server-side session
+    const supabase = await createServerClient()
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+
+    // Get user record from database if authenticated
+    let currentUser: { id: string; is_admin?: boolean } | null = null
+    if (authUser) {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id, is_admin')
+        .eq('auth_user_id', authUser.id)
+        .single()
+      currentUser = userData
+    }
+
+    // Rate limiting check - use user ID if authenticated, fall back to IP
     const rateLimitIdentifier = currentUser?.id
       || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
       || request.headers.get('x-real-ip')
@@ -35,21 +49,21 @@ export async function POST(request: NextRequest) {
     // Record this request for rate limiting
     recordRequest(rateLimitIdentifier)
 
-    // Check if NIPR has already been run for this agency
-    if (currentUser?.agency_id) {
-      const supabase = createAdminClient()
-      const { data: agency } = await supabase
-        .from('agencies')
+    // Check if NIPR has already been run for this user
+    if (currentUser?.id) {
+      const supabaseAdmin = createAdminClient()
+      const { data: userData } = await supabaseAdmin
+        .from('users')
         .select('unique_carriers')
-        .eq('id', currentUser.agency_id)
+        .eq('id', currentUser.id)
         .single()
 
-      // Check if unique_carriers exists and has data
-      const carriersData = agency?.unique_carriers as { carriers?: string[] } | null
-      if (carriersData?.carriers && carriersData.carriers.length > 0) {
+      // Check if unique_carriers exists and has data (now text[] type)
+      const carriers = userData?.unique_carriers as string[] | null
+      if (carriers && carriers.length > 0) {
         return NextResponse.json({
           success: false,
-          error: 'NIPR verification has already been completed for this agency',
+          error: 'NIPR verification has already been completed for your account',
           alreadyCompleted: true
         }, { status: 400 })
       }
@@ -117,15 +131,15 @@ export async function POST(request: NextRequest) {
       // Save unique carriers to database if analysis was successful
       if (result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0) {
         try {
-          if (currentUser?.agency_id) {
-            await updateAgencyCarriers(currentUser.agency_id, result.analysis.unique_carriers)
-            console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers to agency ${currentUser.agency_id}`)
+          if (currentUser?.id) {
+            await updateUserCarriers(currentUser.id, result.analysis.unique_carriers)
+            console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers to user ${currentUser.id}`)
 
             // Update analysis result with database persistence metadata
             result.analysis.savedToDatabase = true
-            result.analysis.agencyId = currentUser.agency_id
+            result.analysis.userId = currentUser.id
           } else {
-            console.warn('[API/NIPR] No agency_id found for current user - carriers not saved to database')
+            console.warn('[API/NIPR] No user id found for current user - carriers not saved to database')
             result.analysis.savedToDatabase = false
           }
         } catch (dbError) {

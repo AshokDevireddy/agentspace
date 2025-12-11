@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(carriers || [])
     }
 
-    // Get current user's agency unique_carriers for filtering
+    // Get current user's unique_carriers for filtering
     const supabase = await createServerClient()
     const { data: { user: authUser } } = await supabase.auth.getUser()
 
@@ -50,34 +50,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(carriers || [])
     }
 
-    // Get user's agency_id
+    // Get user's unique_carriers directly from users table
     const { data: userData } = await supabase
       .from('users')
-      .select('agency_id')
+      .select('unique_carriers')
       .eq('auth_user_id', authUser.id)
       .single()
 
-    if (!userData?.agency_id) {
-      // No agency - return all carriers
-      return NextResponse.json(carriers || [])
-    }
-
-    // Get agency's unique_carriers
-    const { data: agency } = await adminClient
-      .from('agencies')
-      .select('unique_carriers')
-      .eq('id', userData.agency_id)
-      .single()
-
-    // Handle both formats: plain array OR {carriers: [...]} object
-    let uniqueCarriers: string[] = []
-    const uniqueCarriersData = agency?.unique_carriers
-
-    if (Array.isArray(uniqueCarriersData)) {
-      uniqueCarriers = uniqueCarriersData
-    } else if (uniqueCarriersData && typeof uniqueCarriersData === 'object' && 'carriers' in uniqueCarriersData) {
-      uniqueCarriers = (uniqueCarriersData as { carriers: string[] }).carriers || []
-    }
+    // unique_carriers is now text[] on users table
+    const uniqueCarriers: string[] = userData?.unique_carriers || []
 
     // If no unique_carriers, return all carriers (backwards compatibility)
     if (uniqueCarriers.length === 0) {

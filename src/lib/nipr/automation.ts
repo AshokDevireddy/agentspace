@@ -258,23 +258,7 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     console.log('[NIPR] Processing payment...')
     await page.waitForTimeout(3000)
 
-    // Step 23: Download Receipt
-    console.log('[NIPR] Downloading receipt...')
-    const receiptButton = page.locator("//span[text()='View Receipt']/ancestor::button")
-    await receiptButton.waitFor({ state: 'visible' })
-
-    const [receiptDownload] = await Promise.all([
-      page.waitForEvent('download'),
-      receiptButton.click()
-    ])
-
-    const receiptPath = path.join(downloadsFolder, `receipt_${currentDate}.pdf`)
-    await receiptDownload.saveAs(receiptPath)
-    console.log(`[NIPR] Receipt saved: ${receiptPath}`)
-
-    await page.waitForTimeout(2000)
-
-    // Step 24: Download Detail Report
+    // Step 23: Download Detail Report
     console.log('[NIPR] Downloading report...')
     const detailButton = page.locator("//span[text()='View Detail']/ancestor::button")
     await detailButton.waitFor({ state: 'visible' })
@@ -293,7 +277,6 @@ export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
     browser = null
 
     const files = [
-      `/nipr-downloads/receipt_${currentDate}.pdf`,
       `/nipr-downloads/report_${currentDate}.pdf`
     ]
 

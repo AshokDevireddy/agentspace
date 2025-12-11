@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createServerClient, createAdminClient } from '@/lib/supabase/server'
+import { createServerClient } from '@/lib/supabase/server'
 
 export async function GET() {
   try {
@@ -11,36 +11,15 @@ export async function GET() {
       return NextResponse.json({ completed: false, carriers: [] })
     }
 
-    // Get user's agency_id from users table
+    // Get user's unique_carriers directly from users table
     const { data: userData } = await supabase
       .from('users')
-      .select('agency_id')
+      .select('unique_carriers')
       .eq('auth_user_id', authUser.id)
       .single()
 
-    if (!userData?.agency_id) {
-      return NextResponse.json({ completed: false, carriers: [] })
-    }
-
-    // Use admin client to read agencies table (bypasses RLS)
-    const adminClient = createAdminClient()
-    const { data: agency } = await adminClient
-      .from('agencies')
-      .select('unique_carriers')
-      .eq('id', userData.agency_id)
-      .single()
-
-    // Handle both formats: plain array OR {carriers: [...]} object
-    let carriers: string[] = []
-    const uniqueCarriers = agency?.unique_carriers
-
-    if (Array.isArray(uniqueCarriers)) {
-      // Data is stored as plain array
-      carriers = uniqueCarriers
-    } else if (uniqueCarriers && typeof uniqueCarriers === 'object' && 'carriers' in uniqueCarriers) {
-      // Data is stored as {carriers: [...]} object
-      carriers = (uniqueCarriers as { carriers: string[] }).carriers || []
-    }
+    // unique_carriers is now text[], not JSONB
+    const carriers: string[] = userData?.unique_carriers || []
 
     return NextResponse.json({
       completed: carriers.length > 0,

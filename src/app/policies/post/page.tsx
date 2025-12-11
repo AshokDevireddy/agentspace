@@ -620,7 +620,7 @@ export default function PostDeal() {
   )
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
+    <div className="space-y-8 max-w-5xl mx-auto post-deal-content" data-tour="post-deal">
       {/* Header */}
       <div>
         <h1 className="text-4xl font-bold text-foreground mb-2">Post a Deal</h1>

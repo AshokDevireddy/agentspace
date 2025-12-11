@@ -6,16 +6,18 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useState, useEffect } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import OnboardingWizard from "@/components/onboarding-wizard"
-import { useRouter } from "next/navigation"
+import { useTour } from "@/contexts/onboarding-tour-context"
 import { createClient } from "@/lib/supabase/client"
 
 export default function Home() {
-  const router = useRouter()
   const { user, loading: authLoading } = useAuth()
+  const { startTour, setUserRole, isTourActive } = useTour()
   const [firstName, setFirstName] = useState<string>('')
   const [userDataLoading, setUserDataLoading] = useState(true)
   const [userData, setUserData] = useState<any>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showWizard, setShowWizard] = useState(false)
+  const [hasStartedTour, setHasStartedTour] = useState(false)
   const [topProducers, setTopProducers] = useState<any[]>([])
   const [productionData, setProductionData] = useState<any[]>([])
   const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' })
@@ -44,9 +46,15 @@ export default function Home() {
           setFirstName(result.data.firstName || 'User')
           setUserData(result.data)
 
+          // Set user role for tour
+          setUserRole(result.data.is_admin ? 'admin' : 'agent')
+
           // Check if user is in onboarding status
           if (result.data.status === 'onboarding') {
             setShowOnboarding(true)
+            // For now, always show wizard first on first visit
+            // When wizard completes via onComplete callback, we'll switch to tour
+            setShowWizard(true)
           }
         } else {
           console.error('API Error:', result.error)
@@ -225,10 +233,48 @@ export default function Home() {
     fetchDashboardData()
   }, [user])
 
-  const handleOnboardingComplete = () => {
-    // Refresh the page to show the normal dashboard
-    router.refresh()
-    window.location.reload()
+  // Auto-start tour for newly active users (who just completed the wizard)
+  useEffect(() => {
+    if (!authLoading && !userDataLoading && userData && user?.id) {
+      // Migration: Remove old localStorage key
+      const oldKey = `tour_shown_${user.id}`
+      if (localStorage.getItem(oldKey)) {
+        localStorage.removeItem(oldKey)
+      }
+
+      // Check if user just became active and hasn't completed the tour yet
+      const tourCompleted = localStorage.getItem(`tour_completed_${user.id}`)
+
+      console.log('Tour check:', {
+        status: userData.status,
+        tourCompleted,
+        isTourActive,
+        hasStartedTour
+      })
+
+      if (userData.status === 'active' && !tourCompleted && !isTourActive && !hasStartedTour) {
+        console.log('Starting tour...')
+        // Small delay to ensure navbar is rendered
+        setTimeout(() => {
+          startTour()
+          setHasStartedTour(true)
+        }, 500)
+      }
+    }
+  }, [authLoading, userDataLoading, userData, isTourActive, hasStartedTour, startTour, user?.id])
+
+  const handleOnboardingComplete = async () => {
+    // Wizard completed - update user status to active
+    try {
+      await fetch('/api/user/complete-onboarding', {
+        method: 'POST',
+      })
+
+      // Reload to get fresh user status
+      window.location.reload()
+    } catch (error) {
+      console.error('Error completing onboarding:', error)
+    }
   }
 
   // Combined loading state - wait for auth, user data, and both RPCs to complete
@@ -361,8 +407,8 @@ export default function Home() {
     )
   }
 
-  // Show onboarding wizard if user is in onboarding status
-  if (showOnboarding && userData) {
+  // Show onboarding wizard if user is in onboarding status and hasn't completed wizard
+  if (showOnboarding && showWizard && userData) {
     return (
       <OnboardingWizard
         userData={userData}
@@ -372,7 +418,7 @@ export default function Home() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 dashboard-content" data-tour="dashboard">
       {/* Header */}
       {isLoadingDashboardData ? (
         <div>
@@ -443,7 +489,7 @@ export default function Home() {
           </Card>
         </div>
       ) : !isLoadingDashboardData && dashboardData ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4" data-tour="dashboard-stats">
           {/* Active Policies */}
           <Card className="professional-card rounded-md">
             <CardContent className="p-4">

@@ -1025,7 +1025,7 @@ export default function Agents() {
   const foreignObjectProps = { width: nodeSize.x, height: nodeSize.y, x: -110, y: 10 };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 agents-content" data-tour="agents">
       {/* Header */}
       <div>
         <div className="flex items-center justify-between mb-4">
@@ -1048,6 +1048,7 @@ export default function Agents() {
                 onClick={() => setView('tree')}
                 disabled={loading}
                 className={`flex items-center gap-2 ${view === 'tree' ? 'bg-primary hover:bg-primary/90 text-primary-foreground' : ''}`}
+                data-tour="graph-button"
               >
                 <GitMerge className="h-4 w-4" />
                 Graph
@@ -1058,6 +1059,7 @@ export default function Agents() {
                 onClick={() => setView('pending-positions')}
                 disabled={loading}
                 className={`flex items-center gap-2 relative ${view === 'pending-positions' ? 'bg-primary hover:bg-primary/90 text-primary-foreground' : ''}`}
+                data-tour="pending-positions"
               >
                 <UserCog className="h-4 w-4" />
                 Pending Positions

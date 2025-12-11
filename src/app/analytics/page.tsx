@@ -520,6 +520,7 @@ export default function AnalyticsTestPage() {
 	const [allAgents, setAllAgents] = React.useState<Array<{ id: string; name: string }>>([])
 	const [selectedAgentId, setSelectedAgentId] = React.useState<string>("")
 	const [originalUserId, setOriginalUserId] = React.useState<string | null>(null)
+	const [userRole, setUserRole] = React.useState<string | null>(null)
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
 	React.	useEffect(() => {
@@ -535,7 +536,7 @@ export default function AnalyticsTestPage() {
 
 				const { data: userRow, error: userError } = await supabase
 					.from("users")
-					.select("id, agency_id, subscription_tier")
+					.select("id, agency_id, subscription_tier, role")
 					.eq("auth_user_id", userId)
 					.single()
 				if (userError || !userRow?.id) return
@@ -557,6 +558,7 @@ export default function AnalyticsTestPage() {
 					setUserId(userRow.id)
 					setOriginalUserId(userRow.id)
 					setSubscriptionTier(userRow.subscription_tier || 'free')
+					setUserRole(userRow.role || null)
 				}
 			} catch (_) {
 				// swallow for now; can add toast/logging later
@@ -1438,13 +1440,13 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 				<div className="text-sm text-muted-foreground">Loading analytics…</div>
 			</div>
 		) : (
-			<div className="flex w-full flex-col gap-6 p-6">
+			<div className="flex w-full flex-col gap-6 p-6 analytics-content" data-tour="analytics">
 			{/* Header */}
-			<div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 xl:gap-2">
-				<div className="flex items-center justify-between gap-2 flex-wrap">
+			<div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
+				<div className="flex items-center gap-4 flex-wrap">
 					<h1 className="text-4xl font-bold text-foreground whitespace-nowrap leading-none flex-shrink-0">Agency Analytics</h1>
 
-					<div className="flex items-center gap-2 flex-wrap xl:hidden">
+					<div className="flex items-center gap-2 flex-wrap xl:hidden ml-auto">
 						{/* Time window: 3,6,9,All Time */}
 						<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
 							<SelectTrigger className="w-[120px] rounded-md h-9 text-sm flex-shrink-0"><SelectValue placeholder="3 Months" /></SelectTrigger>
@@ -1491,7 +1493,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 				</div>
 
 				{/* Controls for xl screens - right aligned */}
-				<div className="hidden xl:flex items-center gap-2">
+				<div className="hidden xl:flex items-center gap-2 flex-wrap">
 					{/* Time window: 3,6,9,All Time */}
 					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
 						<SelectTrigger className="w-[120px] rounded-md h-9 text-sm flex-shrink-0"><SelectValue placeholder="3 Months" /></SelectTrigger>
@@ -1542,20 +1544,22 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 						Upload Reports
 					</Button>
 
-					<Button
-						variant="outline"
-						className="rounded-md border-2 border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700 font-medium h-9 text-sm whitespace-nowrap flex-shrink-0"
-						onClick={() => {
-							window.location.href = '/ai-chat'
-						}}
-					>
-						<span className="mr-1.5">✨</span>
-						Ask AI to make Custom graphs
-					</Button>
+					{userRole === 'admin' && (
+						<Button
+							variant="outline"
+							className="rounded-md border-2 border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700 font-medium h-9 text-sm whitespace-nowrap flex-shrink-0"
+							onClick={() => {
+								window.location.href = '/ai-chat'
+							}}
+						>
+							<span className="mr-1.5">✨</span>
+							Ask AI to make Custom graphs
+						</Button>
+					)}
 				</div>
 
 				{/* Buttons row - visible on smaller screens only */}
-				<div className="flex items-center gap-2 justify-end xl:hidden">
+				<div className="flex items-center gap-2 justify-end xl:hidden flex-wrap">
 					<Button
 						className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-md h-9 text-sm whitespace-nowrap flex-shrink-0"
 						onClick={() => setIsUploadModalOpen(true)}
@@ -1563,16 +1567,18 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 						Upload Reports
 					</Button>
 
-					<Button
-						variant="outline"
-						className="rounded-md border-2 border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700 font-medium h-9 text-sm whitespace-nowrap flex-shrink-0"
-						onClick={() => {
-							window.location.href = '/ai-chat'
-						}}
-					>
-						<span className="mr-1.5">✨</span>
-						Ask AI to make Custom graphs
-					</Button>
+					{userRole === 'admin' && (
+						<Button
+							variant="outline"
+							className="rounded-md border-2 border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700 font-medium h-9 text-sm whitespace-nowrap flex-shrink-0"
+							onClick={() => {
+								window.location.href = '/ai-chat'
+							}}
+						>
+							<span className="mr-1.5">✨</span>
+							Ask AI to make Custom graphs
+						</Button>
+					)}
 				</div>
 			</div>
 

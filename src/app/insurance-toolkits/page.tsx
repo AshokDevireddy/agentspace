@@ -2,7 +2,7 @@
 
 export default function InsuranceToolkits() {
   return (
-    <div className="w-full h-[calc(100vh-2rem)] flex flex-col">
+    <div className="w-full h-[calc(100vh-2rem)] flex flex-col toolkits-content" data-tour="toolkits">
       {/* Iframe Container */}
       <div className="flex-1 w-full professional-card overflow-hidden">
         <iframe

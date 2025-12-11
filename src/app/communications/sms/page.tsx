@@ -960,7 +960,7 @@ function SMSMessagingPageContent() {
   }
 
   return (
-    <div className="h-[calc(100vh-3rem)] flex bg-background relative">
+    <div className="h-[calc(100vh-3rem)] flex bg-background relative communication-content" data-tour="communication">
       {/* Upgrade prompt overlay for Basic tier viewing downlines */}
       {userTier === 'basic' && viewMode === 'downlines' && (
         <div className="absolute inset-0 z-50 pointer-events-none">

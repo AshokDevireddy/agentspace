@@ -411,7 +411,7 @@ export default function BookOfBusiness() {
   ]
 
   return (
-    <div className="space-y-6 max-w-full overflow-hidden relative">
+    <div className="space-y-6 max-w-full overflow-hidden relative book-content" data-tour="book">
       {/* Upgrade prompt overlay for Basic tier viewing downlines */}
       {userTier === 'basic' && viewMode === 'downlines' && (
         <div className="fixed z-40 pointer-events-none" style={{ top: '3rem', left: '16rem', right: 0, bottom: 0 }}>

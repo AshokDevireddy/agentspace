@@ -343,7 +343,7 @@ export default function Scoreboard() {
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 scoreboard-content" data-tour="scoreboard">
       {/* Header */}
       <div>
         <h1 className="text-4xl font-bold text-foreground mb-2">Scoreboard</h1>

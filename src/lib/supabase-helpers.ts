@@ -207,3 +207,16 @@ export async function createProduct(product: {
   if (error) throw error
   return data
 }
+
+// Update user unique carriers from NIPR analysis
+export async function updateUserCarriers(userId: string, carriers: string[]) {
+  // Note: users.unique_carriers is text[], not JSONB object
+  const { data, error } = await supabase
+    .from('users')
+    .update({ unique_carriers: carriers })
+    .eq('id', userId)
+    .select()
+
+  if (error) throw error
+  return data
+}

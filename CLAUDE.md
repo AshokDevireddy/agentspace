@@ -1,0 +1,2 @@
+- always make a migration file for db changes. do not run the migration without explicit consent
+- run command is npm run dev

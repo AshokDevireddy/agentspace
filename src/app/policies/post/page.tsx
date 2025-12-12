@@ -185,6 +185,29 @@ export default function PostDeal() {
           carrierMap.set(c.id, { id: c.id, display_name: c.display_name })
         }
       })
+
+      // Also fetch NIPR-filtered carriers and intersect
+      try {
+        const niprResponse = await fetch('/api/carriers?filter=nipr')
+        if (niprResponse.ok) {
+          const niprCarriers = await niprResponse.json()
+          if (Array.isArray(niprCarriers) && niprCarriers.length > 0) {
+            // Create a set of NIPR carrier IDs for quick lookup
+            const niprCarrierIds = new Set(niprCarriers.map((c: { id: string }) => c.id))
+            // Filter carrierMap to only include carriers that match NIPR
+            for (const [id] of carrierMap) {
+              if (!niprCarrierIds.has(id)) {
+                carrierMap.delete(id)
+              }
+            }
+          }
+          // If niprCarriers is empty, we don't filter (backwards compatibility)
+        }
+      } catch (err) {
+        console.error('Error fetching NIPR carriers:', err)
+        // Continue with unfiltered carriers on error
+      }
+
       setCarriersOptions(Array.from(carrierMap.values()).map(c => ({ value: c.id, label: c.display_name })))
     }
 

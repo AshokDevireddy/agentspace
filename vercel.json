@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/needs-more-info-notifications",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/nipr-queue",
+      "schedule": "*/1 * * * *"
     }
   ]
 }

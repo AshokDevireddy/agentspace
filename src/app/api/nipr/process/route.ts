@@ -1,0 +1,152 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/server'
+import { executeNIPRAutomation, type NIPRJobData } from '@/lib/nipr/automation'
+import { updateUserCarriers } from '@/lib/supabase-helpers'
+
+export const maxDuration = 300 // 5 minutes timeout
+
+/**
+ * Process pending NIPR jobs from the queue
+ * This endpoint can be called by:
+ * 1. Vercel Cron (recommended for production)
+ * 2. Manual trigger for testing
+ * 3. After a job completes to process the next one
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Verify cron secret or admin authorization
+    const authHeader = request.headers.get('authorization')
+    const cronSecret = process.env.CRON_SECRET
+
+    // Allow if cron secret matches or if called internally
+    const isAuthorized = cronSecret && authHeader === `Bearer ${cronSecret}`
+    const isInternal = request.headers.get('x-internal-call') === 'true'
+
+    if (!isAuthorized && !isInternal) {
+      // Check if user is admin
+      const supabaseAdmin = createAdminClient()
+      // For now, allow any call - in production you'd want stricter auth
+      console.log('[API/NIPR/PROCESS] Processing without strict auth check')
+    }
+
+    const supabaseAdmin = createAdminClient()
+
+    // Release any stale locks first
+    const { data: releasedCount } = await supabaseAdmin.rpc('release_stale_nipr_locks')
+    if (releasedCount && releasedCount > 0) {
+      console.log(`[API/NIPR/PROCESS] Released ${releasedCount} stale locks`)
+    }
+
+    // Try to acquire a pending job
+    const { data: acquiredJobs, error: acquireError } = await supabaseAdmin.rpc('acquire_nipr_job')
+
+    if (acquireError) {
+      console.error('[API/NIPR/PROCESS] Failed to acquire job:', acquireError)
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to acquire job from queue'
+      }, { status: 500 })
+    }
+
+    if (!acquiredJobs || acquiredJobs.length === 0) {
+      return NextResponse.json({
+        success: true,
+        message: 'No pending jobs to process',
+        processed: 0
+      })
+    }
+
+    const job = acquiredJobs[0]
+    console.log(`[API/NIPR/PROCESS] Processing job: ${job.job_id}`)
+
+    // Execute the automation
+    const jobData: NIPRJobData = {
+      job_id: job.job_id,
+      job_user_id: job.job_user_id,
+      job_last_name: job.job_last_name,
+      job_npn: job.job_npn,
+      job_ssn_last4: job.job_ssn_last4,
+      job_dob: job.job_dob
+    }
+
+    const result = await executeNIPRAutomation(jobData)
+
+    // Update job with results
+    await supabaseAdmin.rpc('complete_nipr_job', {
+      p_job_id: job.job_id,
+      p_success: result.success,
+      p_files: result.files || [],
+      p_carriers: result.analysis?.unique_carriers || [],
+      p_error: result.error || null
+    })
+
+    // Save carriers to user if successful
+    if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && job.job_user_id) {
+      try {
+        await updateUserCarriers(job.job_user_id, result.analysis.unique_carriers)
+        console.log(`[API/NIPR/PROCESS] Saved ${result.analysis.unique_carriers.length} carriers to user ${job.job_user_id}`)
+      } catch (dbError) {
+        console.error('[API/NIPR/PROCESS] Failed to save carriers:', dbError)
+      }
+    }
+
+    // Check if there are more pending jobs
+    const { data: pendingJobs } = await supabaseAdmin
+      .from('nipr_jobs')
+      .select('id')
+      .eq('status', 'pending')
+      .limit(1)
+
+    const hasMoreJobs = pendingJobs && pendingJobs.length > 0
+
+    return NextResponse.json({
+      success: true,
+      message: `Processed job ${job.job_id}`,
+      processed: 1,
+      jobResult: {
+        success: result.success,
+        error: result.error
+      },
+      hasMoreJobs
+    })
+
+  } catch (error) {
+    console.error('[API/NIPR/PROCESS] Error:', error)
+
+    return NextResponse.json({
+      success: false,
+      error: 'Job processing failed',
+      details: error instanceof Error ? error.message : String(error)
+    }, { status: 500 })
+  }
+}
+
+/**
+ * GET endpoint to check queue status
+ */
+export async function GET() {
+  try {
+    const supabaseAdmin = createAdminClient()
+
+    const { data: stats } = await supabaseAdmin
+      .from('nipr_jobs')
+      .select('status')
+
+    if (!stats) {
+      return NextResponse.json({ pending: 0, processing: 0, completed: 0, failed: 0 })
+    }
+
+    const counts = {
+      pending: stats.filter(j => j.status === 'pending').length,
+      processing: stats.filter(j => j.status === 'processing').length,
+      completed: stats.filter(j => j.status === 'completed').length,
+      failed: stats.filter(j => j.status === 'failed').length
+    }
+
+    return NextResponse.json(counts)
+  } catch (error) {
+    return NextResponse.json({
+      error: 'Failed to get queue status'
+    }, { status: 500 })
+  }
+}

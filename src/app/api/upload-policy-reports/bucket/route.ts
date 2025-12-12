@@ -452,7 +452,7 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET handler for retrieving upload status or file information
- * Can be used to check existing files or get upload history
+ * Returns files organized by carrier folder for the agency
  */
 export async function GET(request: NextRequest) {
   try {
@@ -479,27 +479,65 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // List files in the agency's folder
-    const { data: files, error } = await supabase.storage
+    // List carrier folders in the agency's folder
+    const { data: folders, error: folderError } = await supabase.storage
       .from(bucketName)
       .list(agencyId, {
         limit: 100,
         offset: 0
       })
 
-    if (error) {
-      console.error('Error listing files:', error)
+    if (folderError) {
+      console.error('Error listing folders:', folderError)
       return NextResponse.json(
-        { error: 'Failed to list files', detail: error.message },
+        { error: 'Failed to list folders', detail: folderError.message },
         { status: 500 }
       )
+    }
+
+    // For each carrier folder, get the files inside
+    const carrierFiles: Record<string, Array<{
+      name: string
+      displayName: string
+      path: string
+      updated_at: string
+    }>> = {}
+
+    for (const folder of folders || []) {
+      // Supabase storage returns folders with id = null
+      if (folder.id === null) {
+        const { data: files, error: filesError } = await supabase.storage
+          .from(bucketName)
+          .list(`${agencyId}/${folder.name}`, { limit: 100 })
+
+        if (!filesError && files && files.length > 0) {
+          carrierFiles[folder.name] = files
+            .filter(f => f.id !== null) // Only include actual files, not subfolders
+            .map(f => {
+              // Extract original filename from timestamp_filename format
+              // Format: 2024-01-15T10-30-00-000Z_originalname.csv
+              const nameParts = f.name.split('_')
+              const displayName = nameParts.length > 1
+                ? nameParts.slice(1).join('_') // Everything after first underscore
+                : f.name
+
+              return {
+                name: f.name,
+                displayName: displayName,
+                path: `${agencyId}/${folder.name}/${f.name}`,
+                updated_at: f.updated_at || new Date().toISOString()
+              }
+            })
+        }
+      }
     }
 
     return NextResponse.json({
       success: true,
       agencyId,
       bucketName,
-      files: files || []
+      files: folders || [], // Keep for backwards compatibility
+      carrierFiles // New structured response
     })
 
   } catch (error) {

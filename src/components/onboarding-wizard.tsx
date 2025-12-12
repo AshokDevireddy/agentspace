@@ -84,6 +84,12 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     carriers.map(carrier => ({ carrier, file: null }))
   )
   const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
+  const [existingCarrierFiles, setExistingCarrierFiles] = useState<Record<string, Array<{
+    name: string
+    displayName: string
+    path: string
+    updated_at: string
+  }>>>({})
   const [checkingExistingFiles, setCheckingExistingFiles] = useState(false)
 
   // Downline invitation state
@@ -428,12 +434,47 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         if (data.files && data.files.length > 0) {
           setUploadedFilesInfo(data.files)
         }
+        // Set carrier files mapping for showing existing documents
+        if (data.carrierFiles) {
+          setExistingCarrierFiles(data.carrierFiles)
+          console.log('[ONBOARDING] Existing carrier files:', data.carrierFiles)
+        }
       }
     } catch (error) {
       console.error('Error checking existing files:', error)
     } finally {
       setCheckingExistingFiles(false)
     }
+  }
+
+  // Helper to find existing file for a carrier by matching sanitized names
+  const getExistingFileForCarrier = (carrierName: string) => {
+    if (!carrierName || Object.keys(existingCarrierFiles).length === 0) {
+      return null
+    }
+
+    // Sanitize carrier name the same way the API does
+    const sanitizedName = carrierName
+      .replace(/[^a-zA-Z0-9\s-_]/g, '')
+      .replace(/\s+/g, '_')
+      .toLowerCase()
+      .trim()
+
+    // Try exact match first
+    if (existingCarrierFiles[sanitizedName] && existingCarrierFiles[sanitizedName].length > 0) {
+      return existingCarrierFiles[sanitizedName][0]
+    }
+
+    // Try case-insensitive match on all keys
+    const matchingKey = Object.keys(existingCarrierFiles).find(
+      key => key.toLowerCase() === sanitizedName
+    )
+
+    if (matchingKey && existingCarrierFiles[matchingKey].length > 0) {
+      return existingCarrierFiles[matchingKey][0]
+    }
+
+    return null
   }
 
   const validateAgentForm = () => {
@@ -1193,57 +1234,102 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
                     <div className="max-w-md mx-auto">
                       <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 hover:border-primary transition-colors">
-                        {carrierUploads[matchedCarriers[currentCarrierIndex]?.id] ? (
-                          <div className="text-center">
-                            <FileText className="h-16 w-16 text-primary mx-auto mb-4" />
-                            <p className="text-sm font-medium text-foreground mb-1">
-                              {carrierUploads[matchedCarriers[currentCarrierIndex]?.id]?.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground mb-4">
-                              {((carrierUploads[matchedCarriers[currentCarrierIndex]?.id]?.size || 0) / 1024).toFixed(2)} KB
-                            </p>
-                            <Button
-                              onClick={() => {
-                                const carrierId = matchedCarriers[currentCarrierIndex]?.id
-                                setCarrierUploads(prev => ({ ...prev, [carrierId]: null }))
-                              }}
-                              variant="outline"
-                              size="sm"
-                            >
-                              <X className="h-4 w-4 mr-1" />
-                              Remove
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="text-center">
-                            <Upload className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                            <p className="text-lg font-medium text-foreground mb-2">
-                              Drop file here or click to upload
-                            </p>
-                            <p className="text-sm text-muted-foreground mb-4">
-                              CSV or Excel file
-                            </p>
-                            <input
-                              type="file"
-                              accept=".csv,.xlsx,.xls"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0]
-                                if (file) {
-                                  const carrierId = matchedCarriers[currentCarrierIndex]?.id
-                                  setCarrierUploads(prev => ({ ...prev, [carrierId]: file }))
-                                }
-                              }}
-                              className="hidden"
-                              id="carrier-upload"
-                            />
-                            <label
-                              htmlFor="carrier-upload"
-                              className="cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-3 rounded-lg text-sm font-medium inline-block"
-                            >
-                              Choose File
-                            </label>
-                          </div>
-                        )}
+                        {(() => {
+                          const carrierId = matchedCarriers[currentCarrierIndex]?.id
+                          const carrierName = matchedCarriers[currentCarrierIndex]?.display_name
+                          const newFile = carrierUploads[carrierId]
+                          const existingFile = getExistingFileForCarrier(carrierName)
+
+                          // Case 1: New file selected (either replacing existing or new upload)
+                          if (newFile) {
+                            return (
+                              <div className="text-center">
+                                <FileText className="h-16 w-16 text-primary mx-auto mb-4" />
+                                <p className="text-sm font-medium text-foreground mb-1">
+                                  {newFile.name}
+                                </p>
+                                <p className="text-xs text-muted-foreground mb-4">
+                                  {(newFile.size / 1024).toFixed(2)} KB
+                                  {existingFile && (
+                                    <span className="ml-2 text-amber-600">(Replacing existing)</span>
+                                  )}
+                                </p>
+                                <Button
+                                  onClick={() => setCarrierUploads(prev => ({ ...prev, [carrierId]: null }))}
+                                  variant="outline"
+                                  size="sm"
+                                >
+                                  <X className="h-4 w-4 mr-1" />
+                                  Remove
+                                </Button>
+                              </div>
+                            )
+                          }
+
+                          // Case 2: Existing file found, no new file selected
+                          if (existingFile) {
+                            return (
+                              <div className="text-center">
+                                <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" />
+                                <p className="text-sm font-medium text-foreground mb-1">
+                                  {existingFile.displayName}
+                                </p>
+                                <p className="text-xs text-muted-foreground mb-4">
+                                  Uploaded: {new Date(existingFile.updated_at).toLocaleDateString()}
+                                </p>
+                                <input
+                                  type="file"
+                                  accept=".csv,.xlsx,.xls"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0]
+                                    if (file) {
+                                      setCarrierUploads(prev => ({ ...prev, [carrierId]: file }))
+                                    }
+                                  }}
+                                  className="hidden"
+                                  id="carrier-upload"
+                                />
+                                <label
+                                  htmlFor="carrier-upload"
+                                  className="cursor-pointer bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-lg text-sm font-medium inline-block"
+                                >
+                                  Replace Existing Policy
+                                </label>
+                              </div>
+                            )
+                          }
+
+                          // Case 3: No existing file, no selection - show upload prompt
+                          return (
+                            <div className="text-center">
+                              <Upload className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                              <p className="text-lg font-medium text-foreground mb-2">
+                                Drop file here or click to upload
+                              </p>
+                              <p className="text-sm text-muted-foreground mb-4">
+                                CSV or Excel file
+                              </p>
+                              <input
+                                type="file"
+                                accept=".csv,.xlsx,.xls"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0]
+                                  if (file) {
+                                    setCarrierUploads(prev => ({ ...prev, [carrierId]: file }))
+                                  }
+                                }}
+                                className="hidden"
+                                id="carrier-upload"
+                              />
+                              <label
+                                htmlFor="carrier-upload"
+                                className="cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-3 rounded-lg text-sm font-medium inline-block"
+                              >
+                                Choose File
+                              </label>
+                            </div>
+                          )
+                        })()}
                       </div>
                     </div>
                   </div>

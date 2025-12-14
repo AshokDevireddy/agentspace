@@ -367,7 +367,8 @@ export default function ConfigurationPage() {
     { carrier: 'Royal Neighbors', file: null },
     { carrier: 'Liberty Bankers Life', file: null },
     { carrier: 'Transamerica', file: null },
-    { carrier: 'Foresters', file: null }
+    { carrier: 'Foresters', file: null },
+    { carrier: 'Reagan CRM Data', file: null }
   ])
   const [uploadingReports, setUploadingReports] = useState(false)
   const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])

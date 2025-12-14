@@ -336,6 +336,7 @@ export default function Navigation() {
                 isActiveItem(item) && "active"
               )}
               title={isSidebarCollapsed ? item.name : undefined}
+              data-tour={`nav-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
             >
               {item.icon && <item.icon className="h-5 w-5 flex-shrink-0" />}
               {!isSidebarCollapsed && <span className="flex-1 text-left">{item.name}</span>}
@@ -358,6 +359,7 @@ export default function Navigation() {
                 isActiveItem(item) && "active from-purple-500/20 to-blue-500/20"
               )}
               title={isSidebarCollapsed ? item.name : undefined}
+              data-tour={`nav-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
             >
               {item.icon && <item.icon className="h-5 w-5 flex-shrink-0 text-purple-500" />}
               {!isSidebarCollapsed && (

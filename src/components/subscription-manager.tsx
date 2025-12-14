@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useNotification } from '@/contexts/notification-context'
 
 interface SubscriptionManagerProps {
   subscriptionStatus: string;
@@ -8,6 +9,7 @@ interface SubscriptionManagerProps {
 }
 
 export function SubscriptionManager({ subscriptionStatus, hasAiAddon }: SubscriptionManagerProps) {
+  const { showError } = useNotification()
   const [loading, setLoading] = useState(false);
 
   const handleManageSubscription = async () => {
@@ -28,7 +30,7 @@ export function SubscriptionManager({ subscriptionStatus, hasAiAddon }: Subscrip
       window.location.href = data.url;
     } catch (err) {
       console.error('Error opening billing portal:', err);
-      alert(err instanceof Error ? err.message : 'An error occurred');
+      showError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }

@@ -3,11 +3,13 @@
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import Navigation from '@/components/navigation'
+import OnboardingTour from '@/components/onboarding-tour'
 import { Building2 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme } from 'next-themes'
 import { useAgencyBranding } from '@/contexts/AgencyBrandingContext'
+import { useAuth } from '@/providers/AuthProvider'
 
 // Pages that should not show the navigation sidebar
 const AUTH_PAGES = [
@@ -29,11 +31,13 @@ export default function ClientLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const { user } = useAuth()
   const { setTheme } = useTheme()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isClientPage = CLIENT_PAGES.some(page => pathname.startsWith(page))
   const [userRole, setUserRole] = useState<string | null>(null)
+  const [userStatus, setUserStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   // Apply agency theme on authenticated pages (non-auth pages)
@@ -86,11 +90,12 @@ export default function ClientLayout({
       if (user) {
         const { data: userData } = await supabase
           .from('users')
-          .select('role')
+          .select('role, status')
           .eq('auth_user_id', user.id)
           .single()
 
         setUserRole(userData?.role || null)
+        setUserStatus(userData?.status || null)
       }
       setLoading(false)
     }
@@ -151,14 +156,17 @@ export default function ClientLayout({
     )
   }
 
-  // Determine if we should hide navigation (only for confirmed client users)
-  const shouldHideNavigation = !loading && userRole === 'client'
+  // Determine if we should hide navigation
+  // Hide for: client users OR users in onboarding wizard phase (status=onboarding AND on root path which shows wizard)
+  const isOnWizardPath = pathname === '/' && userStatus === 'onboarding'
+  const shouldHideNavigation = !loading && (userRole === 'client' || isOnWizardPath)
 
-  // Client pages - no navigation sidebar
+  // Client pages or wizard phase - no navigation sidebar
   if (isClientPage || shouldHideNavigation) {
     return (
       <div className="min-h-screen bg-background">
         {children}
+        <OnboardingTour />
       </div>
     )
   }
@@ -172,6 +180,7 @@ export default function ClientLayout({
           {children}
         </div>
       </main>
+      <OnboardingTour />
     </div>
   )
 }

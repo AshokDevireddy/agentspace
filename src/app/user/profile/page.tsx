@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { PricingTierCard } from "@/components/pricing-tier-card";
 import { SubscriptionManager } from "@/components/subscription-manager";
 import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";
+import { useNotification } from '@/contexts/notification-context'
 
 interface ProfileData {
   id: string;
@@ -55,6 +56,7 @@ const formatRenewalDate = (dateString: string | null | undefined): string => {
 
 export default function ProfilePage() {
   const { user, loading: authLoading } = useAuth();
+  const { showSuccess, showError } = useNotification()
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -141,7 +143,7 @@ export default function ProfilePage() {
       const accessToken = session?.access_token;
 
       if (!accessToken) {
-        alert('Not authenticated');
+        showError('Not authenticated');
         return;
       }
 
@@ -163,14 +165,14 @@ export default function ProfilePage() {
         if (profileResult.success) {
           setProfileData(profileResult.data);
         }
-        alert('Position updated successfully!');
+        showSuccess('Position updated successfully!');
       } else {
         console.error('Failed to update position:', result.error);
-        alert('Failed to update position: ' + result.error);
+        showError('Failed to update position: ' + result.error);
       }
     } catch (error) {
       console.error('Error updating position:', error);
-      alert('Error updating position');
+      showError('Error updating position');
     } finally {
       setUpdatingPosition(false);
     }

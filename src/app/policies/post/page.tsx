@@ -11,6 +11,7 @@ import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useNotification } from "@/contexts/notification-context"
 
 // Options are loaded dynamically from Supabase based on the user's agency
 
@@ -56,6 +57,7 @@ export default function PostDeal() {
   const { user } = useAuth()
   const supabase = createClient()
   const router = useRouter()
+  const { showSuccess, showError, showWarning } = useNotification()
 
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -183,6 +185,29 @@ export default function PostDeal() {
           carrierMap.set(c.id, { id: c.id, display_name: c.display_name })
         }
       })
+
+      // Also fetch NIPR-filtered carriers and intersect
+      try {
+        const niprResponse = await fetch('/api/carriers?filter=nipr')
+        if (niprResponse.ok) {
+          const niprCarriers = await niprResponse.json()
+          if (Array.isArray(niprCarriers) && niprCarriers.length > 0) {
+            // Create a set of NIPR carrier IDs for quick lookup
+            const niprCarrierIds = new Set(niprCarriers.map((c: { id: string }) => c.id))
+            // Filter carrierMap to only include carriers that match NIPR
+            for (const [id] of carrierMap) {
+              if (!niprCarrierIds.has(id)) {
+                carrierMap.delete(id)
+              }
+            }
+          }
+          // If niprCarriers is empty, we don't filter (backwards compatibility)
+        }
+      } catch (err) {
+        console.error('Error fetching NIPR carriers:', err)
+        // Continue with unfiltered carriers on error
+      }
+
       setCarriersOptions(Array.from(carrierMap.values()).map(c => ({ value: c.id, label: c.display_name })))
     }
 
@@ -446,7 +471,7 @@ export default function PostDeal() {
         // Don't fail the whole operation if Discord notification fails
       })
 
-      alert(successMessage)
+      showSuccess(successMessage, 7000)
       setBeneficiaries([])
 
       router.push("/policies/book")
@@ -618,7 +643,7 @@ export default function PostDeal() {
   )
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
+    <div className="space-y-8 max-w-5xl mx-auto post-deal-content" data-tour="post-deal">
       {/* Header */}
       <div>
         <h1 className="text-4xl font-bold text-foreground mb-2">Post a Deal</h1>

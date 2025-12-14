@@ -304,7 +304,7 @@ export default function ExpectedPayoutsPage() {
     appliedFilters.agent !== currentUserId
 
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-6 relative payouts-content" data-tour="payouts">
       {/* Header */}
       <div>
         <h1 className="text-4xl font-bold text-foreground mb-2">Expected Payouts</h1>

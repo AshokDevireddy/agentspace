@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Check, Sparkles, Crown, Zap } from 'lucide-react';
+import { useNotification } from '@/contexts/notification-context'
 
 interface PricingTierCardProps {
   tier: 'free' | 'basic' | 'pro' | 'expert';
@@ -64,6 +65,7 @@ export function PricingTierCard({
   currentTier,
   hasActiveSubscription,
 }: PricingTierCardProps) {
+  const { showSuccess, showError } = useNotification()
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,9 +102,9 @@ export function PricingTierCard({
 
         // If it's a downgrade, show success message
         if (!data.immediate) {
-          alert(`Downgrade scheduled! Your plan will change to ${tier} on ${new Date(data.effectiveDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
+          showSuccess(`Downgrade scheduled! Your plan will change to ${tier} on ${new Date(data.effectiveDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
         } else {
-          alert(`Successfully upgraded to ${tier} tier!`);
+          showSuccess(`Successfully upgraded to ${tier} tier!`);
         }
 
         // Reload page to reflect changes

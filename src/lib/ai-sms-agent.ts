@@ -17,7 +17,150 @@ interface AIProcessingResult {
   processingTimeMs: number;
 }
 
-type QuestionType = 'deal_related' | 'non_deal' | 'not_question';
+type QuestionType = 'deal_related' | 'non_deal';
+
+// Helper functions for 3-layer filtering system
+
+/**
+ * Layer 1: Hard Block - Block unsafe/non-factual content using regex patterns
+ * Returns true if message should be BLOCKED/ESCALATED
+ */
+function layer1HardBlock(messageText: string): boolean {
+  const text = messageText.toLowerCase().trim();
+
+  // Hard block patterns (return true = BLOCK/ESCALATE)
+  const hardBlockPatterns = [
+    // Claims and incidents
+    /\b(claim|accident|damage|incident|injury|file a claim|report|emergency)\b/,
+
+    // Policy changes and actions
+    /\b(cancel|modify|change|update|add|remove|switch|transfer)\b.*\b(policy|coverage|beneficiary|payment)\b/,
+    /\b(new policy|another policy|different policy|more coverage)\b/,
+
+    // Advice and recommendations
+    /\b(should i|what insurance|recommend|advice|opinion|suggest|better|compare|shop around)\b/,
+
+    // Legal and complaints
+    /\b(lawyer|sue|complaint|dispute|refund|fraud|legal)\b/,
+
+    // Action requests (I want/need)
+    /\b(i want|i need|i would like|help me|tell me|please)\b.*\b(to|cancel|change|file|get|add)\b/,
+
+    // How-to requests (procedural)
+    /\bhow (do i|can i|to)\b/
+  ];
+
+  return hardBlockPatterns.some(pattern => pattern.test(text));
+}
+
+/**
+ * Layer 2: Fact Question Shape Check - Only allow interrogative questions requesting information
+ * Returns true if message has proper question shape and should PROCEED TO LAYER 3
+ */
+function layer2FactQuestionShape(messageText: string): boolean {
+  const text = messageText.toLowerCase().trim();
+
+  // Must start with interrogative words or contain question mark
+  const interrogativeStarters = /^(what|when|where|who|which|how much|how many)\b/;
+  const hasQuestionMark = text.includes('?');
+  const hasInterrogativeWord = /\b(what|when|where|who|which|is|are)\b/.test(text);
+
+  // Must be requesting information, not action
+  const isInformationRequest = interrogativeStarters.test(text) ||
+    (hasQuestionMark && hasInterrogativeWord);
+
+  // Block statements disguised as questions
+  const statementPatterns = [
+    /\bi want to know\b/, // "I want to know..." = statement
+    /\bcan you tell me how to\b/, // procedural request
+    /\bwould like to\b/ // action request
+  ];
+
+  const isStatement = statementPatterns.some(pattern => pattern.test(text));
+
+  return isInformationRequest && !isStatement;
+}
+
+/**
+ * Helper function to get nested property from object
+ */
+function getNestedProperty(obj: any, path: string): any {
+  return path.split('.').reduce((current, key) => current?.[key], obj);
+}
+
+/**
+ * Layer 3: Deal Entity Reference Check - Ensure question references actual deal data fields
+ * Returns true if question references available data and should PROCEED
+ */
+function layer3DealEntityCheck(messageText: string, dealData: any): boolean {
+  const text = messageText.toLowerCase().trim();
+
+  // Map question patterns to deal data fields
+  const entityMappings = [
+    {
+      patterns: [/policy number/, /policy #/],
+      fields: ['policy_number'],
+      required: true
+    },
+    {
+      patterns: [/premium/, /payment/, /cost/, /how much/],
+      fields: ['monthly_premium', 'annual_premium'],
+      required: true
+    },
+    {
+      patterns: [/effective date/, /start date/, /when.*start/],
+      fields: ['policy_effective_date'],
+      required: true
+    },
+    {
+      patterns: [/carrier/, /company/, /insurer/],
+      fields: ['carrier.name'],
+      required: true
+    },
+    {
+      patterns: [/beneficiary/, /beneficiaries/],
+      fields: ['beneficiary'], // Note: may not always be available
+      required: false
+    },
+    {
+      patterns: [/agent/, /who.*agent/],
+      fields: ['agent.first_name', 'agent.last_name'],
+      required: true
+    },
+    {
+      patterns: [/status/, /active/, /is.*active/],
+      fields: ['status', 'status_standardized'],
+      required: true
+    },
+    {
+      patterns: [/billing cycle/, /billing/, /how often/],
+      fields: ['billing_cycle'],
+      required: false
+    }
+  ];
+
+  // Check if question matches any entity pattern
+  for (const mapping of entityMappings) {
+    const matchesPattern = mapping.patterns.some(pattern => pattern.test(text));
+
+    if (matchesPattern) {
+      // Check if corresponding data exists
+      const hasData = mapping.fields.some(field => {
+        const value = getNestedProperty(dealData, field);
+        return value !== null && value !== undefined && value !== '';
+      });
+
+      // If required field is missing, escalate
+      if (mapping.required && !hasData) {
+        return false; // ESCALATE
+      }
+
+      return true; // ALLOW
+    }
+  }
+
+  return false; // No matching entity = ESCALATE
+}
 
 interface ConversationResult {
   id: string;
@@ -91,30 +234,7 @@ export async function processAIMessage(
       };
     }
 
-    // Classify the message
-    const questionType = classifyMessage(messageText);
-
-    if (questionType === 'not_question') {
-      return {
-        success: true,
-        action: 'ignored',
-        reason: 'Not a question',
-        processingTimeMs: Date.now() - startTime
-      };
-    }
-
-    if (questionType === 'non_deal') {
-      // Flag the deal for agent attention
-      await flagDealForMoreInfo(deal.id);
-      return {
-        success: true,
-        action: 'escalated',
-        reason: 'Non-deal question flagged for agent',
-        processingTimeMs: Date.now() - startTime
-      };
-    }
-
-    // Deal-related question - generate AI response
+    // Get deal details for Layer 3 classification and AI response
     const dealDetails = await getDealWithDetails(deal.id);
     if (!dealDetails) {
       return {
@@ -124,6 +244,22 @@ export async function processAIMessage(
         processingTimeMs: Date.now() - startTime
       };
     }
+
+    // Classify the message using 3-layer system
+    const questionType = classifyMessage(messageText, dealDetails);
+
+    if (questionType === 'non_deal') {
+      // Flag the deal for agent attention - ALL non-deal messages escalated (no ignoring)
+      await flagDealForMoreInfo(deal.id);
+      return {
+        success: true,
+        action: 'escalated',
+        reason: 'Message flagged for agent attention',
+        processingTimeMs: Date.now() - startTime
+      };
+    }
+
+    // Deal-related question - continue with AI response
 
     // Check SMS usage limits (AI responses count as SMS messages)
     const canSendSMS = await checkSMSUsageLimits(agent);
@@ -211,49 +347,36 @@ export async function shouldProcessWithAI(
 }
 
 /**
- * Classify message type with conservative approach
+ * 3-Layer Classification System - Conservative approach that only allows factual questions about deal entities
+ * Layer 1: Hard Block - Block unsafe/non-factual content
+ * Layer 2: Fact Question Shape - Only allow proper interrogative questions
+ * Layer 3: Deal Entity Reference - Ensure question references available deal data
+ *
+ * Returns: 'deal_related' (AI responds) OR 'non_deal' (escalate to agent)
+ * PRINCIPLE: If AI doesn't respond, ALWAYS escalate to agent - never ignore messages
  */
-export function classifyMessage(messageText: string): QuestionType {
-  const text = messageText.toLowerCase().trim();
+export function classifyMessage(
+  messageText: string,
+  dealData?: any
+): QuestionType {
 
-  // Question indicators
-  const questionWords = ['what', 'when', 'where', 'who', 'why', 'how', 'can', 'will', 'is', 'are', 'do', 'does'];
-  const hasQuestionWord = questionWords.some(word => text.includes(word));
-  const hasQuestionMark = text.includes('?');
-
-  // If it's not likely a question, return early
-  if (!hasQuestionWord && !hasQuestionMark && !text.includes('tell me') && !text.includes('i need')) {
-    return 'not_question';
+  // Layer 1: Hard Block Check
+  if (layer1HardBlock(messageText)) {
+    return 'non_deal'; // ESCALATE
   }
 
-  // Deal-specific keywords (high confidence)
-  const dealKeywords = [
-    'policy', 'premium', 'payment', 'due', 'effective date', 'carrier',
-    'agent', 'coverage', 'beneficiary', 'policy number', 'billing cycle',
-    'monthly', 'annual', 'status', 'active', 'when does', 'how much'
-  ];
-
-  // Non-deal keywords (escalation triggers)
-  const nonDealKeywords = [
-    'claim', 'accident', 'damage', 'cancel', 'modify', 'change',
-    'new policy', 'should i', 'what insurance', 'how do i',
-    'advice', 'recommend', 'better', 'lawyer', 'sue', 'complaint'
-  ];
-
-  // Check for non-deal indicators first
-  const hasNonDealKeywords = nonDealKeywords.some(keyword => text.includes(keyword));
-  if (hasNonDealKeywords) {
-    return 'non_deal';
+  // Layer 2: Fact Question Shape Check
+  if (!layer2FactQuestionShape(messageText)) {
+    return 'non_deal'; // ESCALATE (not a proper question - agent should handle)
   }
 
-  // Check for deal-specific keywords
-  const hasDealKeywords = dealKeywords.some(keyword => text.includes(keyword));
-  if (hasDealKeywords && (hasQuestionWord || hasQuestionMark)) {
-    return 'deal_related';
+  // Layer 3: Deal Entity Reference Check
+  if (dealData && !layer3DealEntityCheck(messageText, dealData)) {
+    return 'non_deal'; // ESCALATE (question about unavailable data)
   }
 
-  // Conservative approach - if unclear, escalate to agent
-  return 'non_deal';
+  // All layers passed - allow AI response
+  return 'deal_related';
 }
 
 /**
@@ -263,15 +386,14 @@ async function generateAIResponse(
   messageText: string,
   dealDetails: any
 ): Promise<string> {
-  const systemPrompt = `You are a professional insurance assistant helping clients with questions about their specific policy. You can ONLY answer questions about the policy information provided. Keep responses under 320 characters for SMS.
+  const systemPrompt = `You are a policy information assistant. You ONLY answer questions about the specific policy details provided below. Keep responses under 320 characters for SMS.
 
 STRICT RULES:
-- Only answer questions about the specific policy data provided
-- Do not provide general insurance advice
-- Do not discuss other policies or companies
-- If asked about changes, claims, or general advice, respond: "Please contact your agent for assistance with that request."
-- Be professional and helpful
-- Always include: "For policy changes or complex questions, contact your agent directly."
+- ONLY answer direct questions about the policy information provided
+- You should NEVER receive questions about claims, changes, or advice (these are filtered out)
+- If you somehow receive a non-policy question, respond: "I cannot assist with that request"
+- Be professional and concise
+- Include brief disclaimer: "For policy changes, contact your agent"
 
 Policy Information:
 - Client: ${dealDetails.client_name}

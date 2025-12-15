@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { ThemeProvider } from "@/providers/ThemeProvider";
+import { ThemeCoordinatorProvider } from "@/contexts/ThemeCoordinatorContext";
 import { AgencyBrandingProvider } from "@/contexts/AgencyBrandingContext";
 import { NotificationProvider } from "@/contexts/notification-context";
 import { TourProvider } from "@/contexts/onboarding-tour-context";
@@ -75,13 +76,15 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <AuthProvider>
-              <NotificationProvider>
-                <TourProvider>
-                  <ClientLayout>
-                    {children}
-                  </ClientLayout>
-                </TourProvider>
-              </NotificationProvider>
+              <ThemeCoordinatorProvider>
+                <NotificationProvider>
+                  <TourProvider>
+                    <ClientLayout>
+                      {children}
+                    </ClientLayout>
+                  </TourProvider>
+                </NotificationProvider>
+              </ThemeCoordinatorProvider>
             </AuthProvider>
           </ThemeProvider>
         </AgencyBrandingProvider>

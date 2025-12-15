@@ -40,48 +40,6 @@ export default function ClientLayout({
   const [userStatus, setUserStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Apply agency theme on authenticated pages (non-auth pages)
-  useEffect(() => {
-    const applyAgencyTheme = async () => {
-      // Skip if on auth pages - let auth pages handle their own theme
-      if (isAuthPage) return
-
-      // Skip if branding is still loading
-      if (brandingLoading) return
-
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (user) {
-        // Get user's agency ID
-        const { data: userData } = await supabase
-          .from('users')
-          .select('agency_id')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        if (userData?.agency_id) {
-          // Get agency theme preference
-          const { data: agencyInfo } = await supabase
-            .from('agencies')
-            .select('theme_mode')
-            .eq('id', userData.agency_id)
-            .single()
-
-          if (agencyInfo?.theme_mode) {
-            // Apply agency theme
-            setTheme(agencyInfo.theme_mode)
-          } else {
-            // Default to system if no theme preference set
-            setTheme('system')
-          }
-        }
-      }
-    }
-
-    applyAgencyTheme()
-  }, [isAuthPage, pathname, brandingLoading, setTheme])
-
   useEffect(() => {
     const checkUserRole = async () => {
       const supabase = createClient()

@@ -15,6 +15,7 @@ import { HexColorPicker } from 'react-colorful'
 import { useTheme } from "next-themes"
 import { useNotification } from "@/contexts/notification-context"
 import { useAuth } from "@/providers/AuthProvider"
+import { updateUserTheme, ThemeMode } from "@/lib/theme"
 
 // Types for carrier data
 interface Carrier {
@@ -935,99 +936,45 @@ export default function ConfigurationPage() {
   }
 
 
-  // Theme Management Functions
-  const handleThemeChange = async (newTheme: 'light' | 'dark' | 'system') => {
+  const handleThemeChange = async (newTheme: ThemeMode) => {
     if (!agency) return
 
-    // Store previous theme for rollback on failure
     const previousTheme = agencyThemeMode
-    const previousPrimaryColor = primaryColor
-
-    // Optimistically apply theme immediately
     setAgencyThemeMode(newTheme)
     setTheme(newTheme)
 
-    // Determine the current resolved theme (light or dark) before the change
-    const currentResolvedTheme = resolvedTheme || (previousTheme === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : previousTheme)
-
-    // Determine the new resolved theme
-    const newResolvedTheme = newTheme === 'system'
+    // Update primary color if switching between light/dark with default colors
+    const currentResolved = resolvedTheme || (previousTheme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : previousTheme)
+    const newResolved = newTheme === 'system'
       ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
       : newTheme
 
-    // Check if we need to update the primary color (this still affects agency)
-    const currentColor = primaryColor
-    const isCurrentColorDefault = isDefaultColorForMode(currentColor, currentResolvedTheme as 'light' | 'dark')
-
-    // Optimistically update primary color if needed
-    let newDefaultColor: string | null = null
-    if (isCurrentColorDefault && currentResolvedTheme !== newResolvedTheme) {
-      newDefaultColor = getDefaultPrimaryColor(newResolvedTheme as 'light' | 'dark')
-      setPrimaryColor(newDefaultColor)
+    if (isDefaultColorForMode(primaryColor, currentResolved as 'light' | 'dark') && currentResolved !== newResolved) {
+      const newColor = getDefaultPrimaryColor(newResolved as 'light' | 'dark')
+      setPrimaryColor(newColor)
       setPendingColor(null)
-      setAgency({ ...agency, primary_color: newDefaultColor })
-
-      // Update CSS variable immediately
-      document.documentElement.style.setProperty('--primary', newDefaultColor)
-      const textColor = getContrastTextColor(newDefaultColor)
+      setAgency({ ...agency, primary_color: newColor })
+      document.documentElement.style.setProperty('--primary', newColor)
+      const textColor = getContrastTextColor(newColor)
       document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
+
+      // Update agency color in background
+      const supabase = createClient()
+      supabase.from('agencies').update({ primary_color: newColor }).eq('id', agency.id)
     }
 
-    // Perform API call in background
-    try {
-      setSavingTheme(true)
-      const supabase = createClient()
+    setSavingTheme(true)
+    const result = await updateUserTheme(newTheme)
+    setSavingTheme(false)
 
-      // Get current user's auth token
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError || !session) {
-        throw new Error('No authenticated session found')
-      }
-
-      // Update agency primary color if needed
-      if (newDefaultColor) {
-        const { error: colorError } = await supabase
-          .from('agencies')
-          .update({ primary_color: newDefaultColor })
-          .eq('id', agency.id)
-
-        if (colorError) throw colorError
-      }
-
-      // Update user's personal theme preference via API
-      const response = await fetch('/api/user/theme', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({ theme: newTheme })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to update theme preference')
-      }
-
+    if (result.success) {
       await refreshUserData()
-    } catch (error) {
-      console.error('Error updating theme:', error)
+    } else {
       showError('Failed to update theme preference')
-
-      // Rollback to previous theme on failure
       setAgencyThemeMode(previousTheme)
       setTheme(previousTheme)
-
-      // Rollback primary color if it was changed
-      if (newDefaultColor) {
-        setPrimaryColor(previousPrimaryColor)
-        setAgency({ ...agency, primary_color: previousPrimaryColor })
-        document.documentElement.style.setProperty('--primary', previousPrimaryColor)
-        const textColor = getContrastTextColor(previousPrimaryColor)
-        document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
-      }
-    } finally {
-      setSavingTheme(false)
     }
   }
 

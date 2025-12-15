@@ -411,7 +411,7 @@ Policy Information:
 Please provide a helpful response about their policy information. Keep it under 320 characters.`;
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5',
+    model: 'claude-haiku-4-5',
     max_tokens: 200,
     system: systemPrompt,
     messages: [

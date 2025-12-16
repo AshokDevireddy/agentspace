@@ -366,6 +366,9 @@ export default function ConfigurationPage() {
   const [carrierLoginUsername, setCarrierLoginUsername] = useState<string>("")
   const [carrierLoginPassword, setCarrierLoginPassword] = useState<string>("")
   const [loadingCarrierNames, setLoadingCarrierNames] = useState(false)
+  const [savingCarrierLogin, setSavingCarrierLogin] = useState(false)
+  const [carrierDropdownOpen, setCarrierDropdownOpen] = useState(false)
+  const carrierDropdownRef = useRef<HTMLDivElement | null>(null)
 
   // Policy Reports state
   const [uploads, setUploads] = useState<Array<{carrier: string, file: File | null}>>([
@@ -502,6 +505,25 @@ export default function ConfigurationPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
+
+  // Close carrier dropdown when clicking outside
+  useEffect(() => {
+    if (!carrierDropdownOpen) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        carrierDropdownRef.current &&
+        !carrierDropdownRef.current.contains(event.target as Node)
+      ) {
+        setCarrierDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [carrierDropdownOpen])
 
   // Filter products when carrier is selected
   useEffect(() => {
@@ -3831,31 +3853,49 @@ export default function ConfigurationPage() {
                       <label className="text-sm font-medium text-foreground mb-2 block">
                         Select Carrier
                       </label>
-                      <Select
-                        value={selectedCarrierLogin}
-                        onValueChange={(value) => {
-                          setSelectedCarrierLogin(value)
-                          setCarrierLoginUsername("")
-                          setCarrierLoginPassword("")
-                        }}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select a carrier..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {loadingCarrierNames ? (
-                            <div className="p-2 text-sm text-muted-foreground">Loading carriers...</div>
-                          ) : carrierNames.length === 0 ? (
-                            <div className="p-2 text-sm text-muted-foreground">No carriers available</div>
-                          ) : (
-                            carrierNames.map((name) => (
-                              <SelectItem key={name} value={name}>
-                                {name}
-                              </SelectItem>
-                            ))
+                      <div className="relative" ref={carrierDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setCarrierDropdownOpen((open) => !open)}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm",
+                            "hover:bg-accent/60 focus:outline-none focus:ring-2 focus:ring-ring"
                           )}
-                        </SelectContent>
-                      </Select>
+                        >
+                          <span className={cn("truncate", !selectedCarrierLogin && "text-muted-foreground")}>
+                            {selectedCarrierLogin || "Select a carrier..."}
+                          </span>
+                          <span className="ml-2 text-xs text-muted-foreground">▼</span>
+                        </button>
+                        {carrierDropdownOpen && (
+                          <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md">
+                            {loadingCarrierNames ? (
+                              <div className="p-2 text-sm text-muted-foreground">Loading carriers...</div>
+                            ) : carrierNames.length === 0 ? (
+                              <div className="p-2 text-sm text-muted-foreground">No carriers available</div>
+                            ) : (
+                              carrierNames.map((name) => (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCarrierLogin(name)
+                                    setCarrierLoginUsername("")
+                                    setCarrierLoginPassword("")
+                                    setCarrierDropdownOpen(false)
+                                  }}
+                                  className={cn(
+                                    "flex w-full items-center px-3 py-2 text-sm text-left hover:bg-accent",
+                                    selectedCarrierLogin === name && "bg-accent"
+                                  )}
+                                >
+                                  {name}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Login Interface */}
@@ -3940,9 +3980,55 @@ export default function ConfigurationPage() {
                         {/* Submit Button */}
                         <Button
                           className="w-full bg-gray-600 hover:bg-gray-700 text-white"
-                          disabled={!carrierLoginUsername || !carrierLoginPassword}
+                          disabled={!carrierLoginUsername || !carrierLoginPassword || savingCarrierLogin}
+                          onClick={async () => {
+                            if (!selectedCarrierLogin || !carrierLoginUsername || !carrierLoginPassword) return
+
+                            try {
+                              setSavingCarrierLogin(true)
+                              const supabase = createClient()
+                              const { data: { session } } = await supabase.auth.getSession()
+                              const accessToken = session?.access_token
+
+                              if (!accessToken) {
+                                showError('You must be logged in to save carrier logins.')
+                                return
+                              }
+
+                              const response = await fetch('/api/carrier-logins', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'Authorization': `Bearer ${accessToken}`
+                                },
+                                body: JSON.stringify({
+                                  carrier_name: selectedCarrierLogin,
+                                  login: carrierLoginUsername,
+                                  password: carrierLoginPassword
+                                })
+                              })
+
+                              const data = await response.json().catch(() => null)
+
+                              if (!response.ok) {
+                                const detail = data?.detail || data?.error || 'Failed to save carrier login.'
+                                showError(detail)
+                                return
+                              }
+
+                              showSuccess('Carrier login saved successfully.')
+                              // Clear credentials so user can enter another or switch carriers without reload
+                              setCarrierLoginUsername("")
+                              setCarrierLoginPassword("")
+                            } catch (error) {
+                              console.error('Error saving carrier login:', error)
+                              showError('An unexpected error occurred while saving carrier login.')
+                            } finally {
+                              setSavingCarrierLogin(false)
+                            }
+                          }}
                         >
-                          Submit
+                          {savingCarrierLogin ? 'Saving...' : 'Submit'}
                         </Button>
                       </div>
                     )}

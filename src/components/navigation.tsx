@@ -6,8 +6,6 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn, getContrastTextColor } from "@/lib/utils"
 import { useTheme } from "next-themes"
-import { updateUserTheme, ThemeMode } from "@/lib/theme"
-import { useNotification } from "@/contexts/notification-context"
 import {
   User,
   BarChart3,
@@ -23,10 +21,7 @@ import {
   BookOpen,
   Sparkles,
   FolderOpen,
-  DollarSign,
-  Sun,
-  Moon,
-  Monitor
+  DollarSign
 } from "lucide-react"
 import { createClient } from '@/lib/supabase/client'
 
@@ -65,10 +60,9 @@ const isDefaultColorForMode = (color: string, mode: 'light' | 'dark' | 'system' 
 }
 
 export default function Navigation() {
-  const { signOut, user, userData, refreshUserData } = useAuth()
+  const { signOut, user } = useAuth()
   const pathname = usePathname()
-  const { resolvedTheme, setTheme } = useTheme()
-  const { showError } = useNotification()
+  const { resolvedTheme } = useTheme()
   const [isAdmin, setIsAdmin] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
@@ -260,16 +254,6 @@ export default function Navigation() {
     }
   }, [user?.id])
 
-  const handleAgentThemeChange = async (newTheme: ThemeMode) => {
-    setTheme(newTheme)
-    const result = await updateUserTheme(newTheme)
-    if (result.success) {
-      await refreshUserData()
-    } else {
-      showError('Failed to update theme preference')
-    }
-  }
-
   const handleLogout = async () => {
     try {
       await signOut()
@@ -401,57 +385,6 @@ export default function Navigation() {
             <Settings className="h-5 w-5 flex-shrink-0" />
             {!isSidebarCollapsed && <span className="flex-1 text-left">Settings</span>}
           </Link>
-        </div>
-      )}
-
-      {/* Agent Theme Selector */}
-      {!isAdmin && userData?.role === 'agent' && (
-        <div className="p-4 border-t border-sidebar-border">
-          {isSidebarCollapsed ? (
-            <button
-              onClick={() => {
-                const themes: ThemeMode[] = ['light', 'dark', 'system']
-                const current = userData?.theme_mode || 'system'
-                const nextTheme = themes[(themes.indexOf(current) + 1) % themes.length]
-                handleAgentThemeChange(nextTheme)
-              }}
-              className="sidebar-nav-item w-full rounded-xl"
-              title="Toggle theme"
-            >
-              {userData?.theme_mode === 'dark' ? (
-                <Moon className="h-5 w-5 flex-shrink-0" />
-              ) : userData?.theme_mode === 'light' ? (
-                <Sun className="h-5 w-5 flex-shrink-0" />
-              ) : (
-                <Monitor className="h-5 w-5 flex-shrink-0" />
-              )}
-            </button>
-          ) : (
-            <div className="space-y-2">
-              <span className="text-xs font-medium text-muted-foreground px-3">Theme</span>
-              <div className="flex gap-1">
-                {([
-                  { value: 'light' as ThemeMode, icon: Sun, label: 'Light' },
-                  { value: 'dark' as ThemeMode, icon: Moon, label: 'Dark' },
-                  { value: 'system' as ThemeMode, icon: Monitor, label: 'System' },
-                ]).map(({ value, icon: Icon, label }) => (
-                  <button
-                    key={value}
-                    onClick={() => handleAgentThemeChange(value)}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs transition-colors",
-                      (userData?.theme_mode || 'system') === value
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-muted"
-                    )}
-                    title={label}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 

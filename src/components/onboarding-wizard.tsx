@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Upload, Users, Loader2, X, FileText, Plus, CheckCircle2, Shield, AlertCircle, Clock } from "lucide-react"
+import { Users, Loader2, X, Plus, CheckCircle2, Shield, AlertCircle, Clock, Upload, FileText } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
@@ -68,6 +68,9 @@ const permissionLevels = [
   { value: "admin", label: "Admin" }
 ]
 
+// localStorage key for persisting NIPR job ID across page refresh
+const NIPR_JOB_STORAGE_KEY = 'nipr_active_job_id'
+
 interface OnboardingWizardProps {
   userData: UserData
   onComplete: () => void
@@ -123,6 +126,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     analysis?: {
       success: boolean
       carriers: string[]
+      unique_carriers?: string[]
       licensedStates: { resident: string[]; nonResident: string[] }
       analyzedAt: string
     }
@@ -134,10 +138,22 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   const [niprProgressMessage, setNiprProgressMessage] = useState('')
   const [niprQueuePosition, setNiprQueuePosition] = useState<number | null>(null)
 
+  // NIPR upload mode state (alternative to automation)
+  const [niprMode, setNiprMode] = useState<'upload' | 'automation'>('upload')
+  const [niprUploadFile, setNiprUploadFile] = useState<File | null>(null)
+  const [niprUploading, setNiprUploading] = useState(false)
+  const [niprDragging, setNiprDragging] = useState(false)
+
   // Carrier upload progress state (for step-by-step upload)
   const [currentCarrierIndex, setCurrentCarrierIndex] = useState(0)
   const [carrierUploads, setCarrierUploads] = useState<Record<string, File | null>>({})
   const [uploadingCarrier, setUploadingCarrier] = useState(false)
+
+  // Carrier login collection state
+  const [carrierLoginUsername, setCarrierLoginUsername] = useState('')
+  const [carrierLoginPassword, setCarrierLoginPassword] = useState('')
+  const [savingCarrierLogin, setSavingCarrierLogin] = useState(false)
+  const [savedCarrierLogins, setSavedCarrierLogins] = useState<Set<string>>(new Set())
 
   // Matched carriers state (filtered by fuzzy matching with active carriers)
   const [matchedCarriers, setMatchedCarriers] = useState<Array<{
@@ -181,6 +197,43 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     }
     fetchAgencyColor()
   }, [userData.agency_id, supabase])
+
+  // Check for active NIPR job on mount (for page refresh resilience)
+  useEffect(() => {
+    const checkActiveJob = async () => {
+      const savedJobId = localStorage.getItem(NIPR_JOB_STORAGE_KEY)
+      if (!savedJobId) return
+
+      try {
+        // Check job status from API
+        const response = await fetch(`/api/nipr/job/${savedJobId}`)
+        if (!response.ok) {
+          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
+          return
+        }
+
+        const data = await response.json()
+
+        if (data.status === 'processing' || data.status === 'pending') {
+          // Resume polling - job is still active
+          setNiprJobId(savedJobId)
+          setNiprRunning(true)
+          setNiprProgress(data.progress || 0)
+          setNiprProgressMessage(data.progressMessage || 'Resuming verification...')
+          if (data.queuePosition) {
+            setNiprQueuePosition(data.queuePosition)
+          }
+        } else {
+          // Job completed or failed, clear storage
+          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
+        }
+      } catch (error) {
+        console.error('[ONBOARDING] Error checking active job:', error)
+        localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
+      }
+    }
+    checkActiveJob()
+  }, [])
 
   // Agent search debounce (for upline selection)
   useEffect(() => {
@@ -354,6 +407,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
             window.scrollTo({ top: 0, behavior: 'smooth' })
           }, 2000)
 
+          // Clear localStorage since job is complete
+          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
           clearInterval(pollInterval)
         } else if (job.status === 'failed') {
           setNiprRunning(false)
@@ -361,6 +416,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
             success: false,
             message: job.errorMessage || 'NIPR verification failed. Please try again.'
           })
+          // Clear localStorage since job failed
+          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
           clearInterval(pollInterval)
         }
       } catch (error) {
@@ -397,7 +454,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         const matches = findMatchingCarriers(
           carriersToMatch,
           activeCarriers,
-          0.8 // 80% threshold
+          0.6 // 60% threshold - more lenient for carrier name variations
         )
 
         console.log('[ONBOARDING] Matched carriers:', matches.length, 'out of', carriersToMatch.length, 'NIPR carriers')
@@ -861,6 +918,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       if (response.status === 409) {
         // Already has a pending job - start polling it
         if (result.jobId) {
+          localStorage.setItem(NIPR_JOB_STORAGE_KEY, result.jobId)
           setNiprJobId(result.jobId)
           setNiprProgressMessage(result.status === 'processing' ? 'Verification in progress...' : 'Waiting in queue...')
         }
@@ -879,6 +937,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
       // If job was queued (waiting for another job to finish), start polling
       if (result.queued && result.jobId) {
+        localStorage.setItem(NIPR_JOB_STORAGE_KEY, result.jobId)
         setNiprJobId(result.jobId)
         setNiprQueuePosition(result.position || null)
         setNiprProgressMessage(`Waiting in queue (position ${result.position || '?'})...`)
@@ -888,6 +947,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
       // If job started processing, start polling for progress
       if (result.processing && result.jobId) {
+        localStorage.setItem(NIPR_JOB_STORAGE_KEY, result.jobId)
         setNiprJobId(result.jobId)
         setNiprProgressMessage('Starting verification...')
         // The useEffect will handle polling
@@ -929,6 +989,75 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     }
   }
 
+  // NIPR document upload handler (faster alternative to automation)
+  const uploadNiprDocument = async () => {
+    if (!niprUploadFile) {
+      setErrors(['Please select a PDF file to upload'])
+      return
+    }
+
+    setErrors([])
+    setNiprUploading(true)
+    setNiprResult(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', niprUploadFile)
+
+      const response = await fetch('/api/nipr/upload', {
+        method: 'POST',
+        body: formData
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        setNiprResult({
+          success: false,
+          message: result.error || 'Failed to process NIPR document'
+        })
+        setNiprUploading(false)
+        return
+      }
+
+      // Store carriers in database if analysis was successful
+      if (result.analysis?.carriers && userData.id) {
+        if (Array.isArray(result.analysis.carriers) && result.analysis.carriers.length > 0) {
+          console.log('[ONBOARDING] NIPR upload found', result.analysis.carriers.length, 'carriers')
+          await storeCarriersInDatabase(result.analysis.carriers, userData.id)
+        }
+      }
+
+      setNiprResult({
+        success: true,
+        message: `Successfully extracted ${result.analysis?.carriers?.length || 0} carriers from your NIPR document`,
+        analysis: {
+          success: true,
+          carriers: result.analysis?.carriers || [],
+          unique_carriers: result.analysis?.carriers || [],
+          licensedStates: result.analysis?.licensedStates || { resident: [], nonResident: [] },
+          analyzedAt: result.analysis?.analyzedAt || new Date().toISOString()
+        }
+      })
+      setNiprUploading(false)
+      setNiprUploadFile(null)
+
+      // Auto-advance to next step after success
+      setTimeout(() => {
+        setCurrentStep(userData.is_admin ? 2 : 3)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }, 2000)
+
+    } catch (error) {
+      console.error('NIPR upload error:', error)
+      setNiprUploading(false)
+      setNiprResult({
+        success: false,
+        message: 'Failed to upload NIPR document. Please try again.'
+      })
+    }
+  }
+
   const goToStep = (step: number) => {
     setErrors([])
     setCurrentStep(step)
@@ -951,6 +1080,74 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     handleComplete()
   }
 
+  // Save carrier login credentials
+  const saveCarrierLogin = async () => {
+    const currentCarrier = matchedCarriers[currentCarrierIndex]
+    if (!currentCarrier || !carrierLoginUsername || !carrierLoginPassword) {
+      setErrors(['Please enter both username and password'])
+      return
+    }
+
+    setSavingCarrierLogin(true)
+    setErrors([])
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setErrors(['Authentication required'])
+        return
+      }
+
+      const response = await fetch('/api/carrier-logins', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          carrier_name: currentCarrier.name,
+          login: carrierLoginUsername,
+          password: carrierLoginPassword
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to save carrier login')
+      }
+
+      // Mark this carrier as saved
+      setSavedCarrierLogins(prev => new Set(prev).add(currentCarrier.id))
+
+      // Clear form and move to next carrier
+      setCarrierLoginUsername('')
+      setCarrierLoginPassword('')
+
+      if (currentCarrierIndex < matchedCarriers.length - 1) {
+        setCurrentCarrierIndex(i => i + 1)
+      } else {
+        goToStep(3)
+      }
+    } catch (error) {
+      console.error('Failed to save carrier login:', error)
+      setErrors([error instanceof Error ? error.message : 'Failed to save carrier login'])
+    } finally {
+      setSavingCarrierLogin(false)
+    }
+  }
+
+  // Skip current carrier and move to next
+  const skipCarrierLogin = () => {
+    setCarrierLoginUsername('')
+    setCarrierLoginPassword('')
+
+    if (currentCarrierIndex < matchedCarriers.length - 1) {
+      setCurrentCarrierIndex(i => i + 1)
+    } else {
+      goToStep(3)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto space-y-8">
@@ -960,7 +1157,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
             Complete Your Setup
           </h1>
           <p className="text-muted-foreground">
-            Verify your credentials, upload policy reports, and invite your team to get started
+            Verify your credentials, add carrier logins, and invite your team to get started
           </p>
         </div>
 
@@ -987,82 +1184,236 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                   <div>
                     <h2 className="text-2xl font-bold text-foreground">NIPR Verification</h2>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Enter your National Insurance Producer Registry information to verify your credentials
+                      Verify your credentials using your NIPR PDB report
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-foreground">
-                    Last Name <span className="text-destructive">*</span>
-                  </label>
-                  <Input
-                    type="text"
-                    value={niprForm.lastName}
-                    onChange={(e) => setNiprForm({ ...niprForm, lastName: e.target.value })}
-                    className="h-10"
-                    placeholder="Enter your last name"
-                    disabled={niprRunning}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-foreground">
-                    NPN (National Producer Number) <span className="text-destructive">*</span>
-                  </label>
-                  <Input
-                    type="text"
-                    value={niprForm.npn}
-                    onChange={(e) => setNiprForm({ ...niprForm, npn: e.target.value.replace(/\D/g, '') })}
-                    className="h-10"
-                    placeholder="e.g., 12345678"
-                    disabled={niprRunning}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-foreground">
-                    Last 4 digits of SSN <span className="text-destructive">*</span>
-                  </label>
-                  <Input
-                    type="password"
-                    value={niprForm.ssn}
-                    onChange={(e) => setNiprForm({ ...niprForm, ssn: e.target.value.replace(/\D/g, '').slice(0, 4) })}
-                    className="h-10"
-                    placeholder="XXXX"
-                    maxLength={4}
-                    disabled={niprRunning}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-foreground">
-                    Date of Birth <span className="text-destructive">*</span>
-                  </label>
-                  <Input
-                    type="text"
-                    value={niprForm.dob}
-                    onChange={(e) => {
-                      let value = e.target.value.replace(/[^\d/]/g, '')
-                      // Auto-format as MM/DD/YYYY
-                      if (value.length === 2 && !value.includes('/')) {
-                        value = value + '/'
-                      } else if (value.length === 5 && value.charAt(2) === '/' && !value.slice(3).includes('/')) {
-                        value = value + '/'
-                      }
-                      setNiprForm({ ...niprForm, dob: value.slice(0, 10) })
-                    }}
-                    className="h-10"
-                    placeholder="MM/DD/YYYY"
-                    maxLength={10}
-                    disabled={niprRunning}
-                  />
-                </div>
+              {/* Mode Toggle */}
+              <div className="flex gap-2 p-1 bg-muted rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setNiprMode('upload')}
+                  disabled={niprRunning || niprUploading}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-md text-sm font-medium transition-all ${
+                    niprMode === 'upload'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload Document
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNiprMode('automation')}
+                  disabled={niprRunning || niprUploading}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-md text-sm font-medium transition-all ${
+                    niprMode === 'automation'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Shield className="h-4 w-4" />
+                  Auto-Retrieve
+                </button>
               </div>
 
-              {/* NIPR Progress Bar */}
+              {/* Upload Mode */}
+              {niprMode === 'upload' && !niprRunning && !niprUploading && !niprResult?.success && (
+                <div className="space-y-4">
+                  <div className="text-center py-2">
+                    <p className="text-sm text-muted-foreground">
+                      Upload your NIPR PDB Detail Report PDF for instant verification
+                    </p>
+                  </div>
+
+                  <div className="max-w-lg mx-auto">
+                    <div
+                      className={`border-2 border-dashed rounded-lg p-8 transition-colors ${
+                        niprUploadFile
+                          ? 'border-primary bg-primary/5'
+                          : niprDragging
+                            ? 'border-primary bg-primary/10'
+                            : 'border-gray-300 hover:border-primary'
+                      }`}
+                      onDragOver={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setNiprDragging(true)
+                      }}
+                      onDragEnter={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setNiprDragging(true)
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setNiprDragging(false)
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setNiprDragging(false)
+
+                        const files = e.dataTransfer.files
+                        if (files && files.length > 0) {
+                          const file = files[0]
+                          if (file.name.toLowerCase().endsWith('.pdf')) {
+                            setNiprUploadFile(file)
+                          } else {
+                            setErrors(['Please upload a PDF file'])
+                          }
+                        }
+                      }}
+                    >
+                      {niprUploadFile ? (
+                        <div className="text-center">
+                          <FileText className="h-16 w-16 text-primary mx-auto mb-4" />
+                          <p className="text-sm font-medium text-foreground mb-1">
+                            {niprUploadFile.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground mb-4">
+                            {(niprUploadFile.size / 1024).toFixed(2)} KB
+                          </p>
+                          <Button
+                            onClick={() => setNiprUploadFile(null)}
+                            variant="outline"
+                            size="sm"
+                          >
+                            <X className="h-4 w-4 mr-1" />
+                            Remove
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="text-center">
+                          <Upload className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-lg font-medium text-foreground mb-2">
+                            Drop your NIPR PDF here or click to upload
+                          </p>
+                          <p className="text-sm text-muted-foreground mb-4">
+                            PDF file only (max 50MB)
+                          </p>
+                          <input
+                            type="file"
+                            accept=".pdf"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (file) {
+                                setNiprUploadFile(file)
+                              }
+                            }}
+                            className="hidden"
+                            id="nipr-upload"
+                          />
+                          <label
+                            htmlFor="nipr-upload"
+                            className="cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-3 rounded-lg text-sm font-medium inline-block"
+                          >
+                            Choose File
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <Alert className="bg-blue-50 border-blue-200">
+                    <AlertDescription className="text-blue-800">
+                      <strong>How to get your NIPR PDB Report:</strong> Log in to{' '}
+                      <a href="https://pdb.nipr.com" target="_blank" rel="noopener noreferrer" className="underline">
+                        pdb.nipr.com
+                      </a>
+                      , navigate to "PDB Detail Report", and download the PDF.
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              )}
+
+              {/* Automation Mode */}
+              {niprMode === 'automation' && !niprUploading && !niprResult?.success && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-foreground">
+                        Last Name <span className="text-destructive">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={niprForm.lastName}
+                        onChange={(e) => setNiprForm({ ...niprForm, lastName: e.target.value })}
+                        className="h-10"
+                        placeholder="Enter your last name"
+                        disabled={niprRunning}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-foreground">
+                        NPN (National Producer Number) <span className="text-destructive">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={niprForm.npn}
+                        onChange={(e) => setNiprForm({ ...niprForm, npn: e.target.value.replace(/\D/g, '') })}
+                        className="h-10"
+                        placeholder="e.g., 12345678"
+                        disabled={niprRunning}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-foreground">
+                        Last 4 digits of SSN <span className="text-destructive">*</span>
+                      </label>
+                      <Input
+                        type="password"
+                        value={niprForm.ssn}
+                        onChange={(e) => setNiprForm({ ...niprForm, ssn: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                        className="h-10"
+                        placeholder="XXXX"
+                        maxLength={4}
+                        disabled={niprRunning}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-foreground">
+                        Date of Birth <span className="text-destructive">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={niprForm.dob}
+                        onChange={(e) => {
+                          let value = e.target.value.replace(/[^\d/]/g, '')
+                          // Auto-format as MM/DD/YYYY
+                          if (value.length === 2 && !value.includes('/')) {
+                            value = value + '/'
+                          } else if (value.length === 5 && value.charAt(2) === '/' && !value.slice(3).includes('/')) {
+                            value = value + '/'
+                          }
+                          setNiprForm({ ...niprForm, dob: value.slice(0, 10) })
+                        }}
+                        className="h-10"
+                        placeholder="MM/DD/YYYY"
+                        maxLength={10}
+                        disabled={niprRunning}
+                      />
+                    </div>
+                  </div>
+
+                  {!niprRunning && (
+                    <Alert className="bg-amber-50 border-amber-200">
+                      <AlertDescription className="text-amber-800">
+                        <strong>Note:</strong> Auto-retrieval takes 3-5 minutes. We will automatically fetch your NIPR PDB report using your credentials.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </>
+              )}
+
+              {/* NIPR Progress Bar (Automation) */}
               {niprRunning && (
                 <div className="space-y-4 p-6 bg-muted/50 rounded-lg border border-border">
                   <div className="flex items-center gap-3">
@@ -1092,8 +1443,23 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                 </div>
               )}
 
+              {/* Upload Progress */}
+              {niprUploading && (
+                <div className="space-y-4 p-6 bg-muted/50 rounded-lg border border-border">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    <div className="flex-1">
+                      <span className="font-medium text-foreground">Analyzing your NIPR document...</span>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Our AI is extracting carrier and license information from your document.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* NIPR Result */}
-              {niprResult && !niprRunning && (
+              {niprResult && !niprRunning && !niprUploading && (
                 <Alert className={niprResult.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}>
                   <AlertDescription className={niprResult.success ? "text-green-800" : "text-red-800"}>
                     <div className="flex items-center gap-2">
@@ -1108,14 +1474,6 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                 </Alert>
               )}
 
-              {!niprRunning && (
-                <Alert className="bg-amber-50 border-amber-200">
-                  <AlertDescription className="text-amber-800">
-                    <strong>Note:</strong> This verification process takes 3-5 minutes to complete. You can skip this step and complete it later.
-                  </AlertDescription>
-                </Alert>
-              )}
-
               {/* Navigation */}
               <div className="flex justify-between items-center pt-6 mt-8 border-t border-border">
                 <div></div>
@@ -1124,35 +1482,56 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                     type="button"
                     variant="outline"
                     onClick={() => goToStep(userData.is_admin ? 2 : 3)}
-                    disabled={niprRunning}
+                    disabled={niprRunning || niprUploading}
                     className="h-12 px-6"
                   >
                     Skip for Now
                   </Button>
-                  <Button
-                    type="button"
-                    onClick={runNiprAutomation}
-                    disabled={niprRunning}
-                    className="h-12 px-6 bg-black hover:bg-black/90 text-white"
-                  >
-                    {niprRunning ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Running Verification...
-                      </>
-                    ) : (
-                      <>
-                        <Shield className="mr-2 h-4 w-4" />
-                        Run Verification
-                      </>
-                    )}
-                  </Button>
+                  {niprMode === 'upload' ? (
+                    <Button
+                      type="button"
+                      onClick={uploadNiprDocument}
+                      disabled={niprUploading || !niprUploadFile}
+                      className="h-12 px-6 bg-black hover:bg-black/90 text-white"
+                    >
+                      {niprUploading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Analyzing...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="mr-2 h-4 w-4" />
+                          Upload & Verify
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={runNiprAutomation}
+                      disabled={niprRunning}
+                      className="h-12 px-6 bg-black hover:bg-black/90 text-white"
+                    >
+                      {niprRunning ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Running...
+                        </>
+                      ) : (
+                        <>
+                          <Shield className="mr-2 h-4 w-4" />
+                          Run Auto-Retrieve
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* Step 2: Upload Policy Reports - Step by Step */}
+          {/* Step 2: Carrier Login Collection - Step by Step */}
           {currentStep === 2 && (
             <div className="space-y-6">
               {/* Loading state while matching carriers */}
@@ -1178,11 +1557,11 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                     </p>
                   </div>
 
-                  {/* Current Carrier Upload */}
+                  {/* Current Carrier Login */}
                   <div className="text-center space-y-6 py-8">
                     <div>
                       <h2 className="text-2xl font-bold text-foreground">
-                        Upload Document for:
+                        Enter Login Credentials for:
                       </h2>
                       <p className="text-3xl font-bold text-primary mt-2">
                         {matchedCarriers[currentCarrierIndex]?.display_name}
@@ -1190,62 +1569,48 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                       <p className="text-sm text-muted-foreground mt-1">
                         Matched from: {matchedCarriers[currentCarrierIndex]?.matchedWith}
                       </p>
+                      {savedCarrierLogins.has(matchedCarriers[currentCarrierIndex]?.id) && (
+                        <div className="inline-flex items-center gap-1 mt-2 text-green-600 text-sm">
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span>Credentials saved</span>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="max-w-md mx-auto">
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 hover:border-primary transition-colors">
-                        {carrierUploads[matchedCarriers[currentCarrierIndex]?.id] ? (
-                          <div className="text-center">
-                            <FileText className="h-16 w-16 text-primary mx-auto mb-4" />
-                            <p className="text-sm font-medium text-foreground mb-1">
-                              {carrierUploads[matchedCarriers[currentCarrierIndex]?.id]?.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground mb-4">
-                              {((carrierUploads[matchedCarriers[currentCarrierIndex]?.id]?.size || 0) / 1024).toFixed(2)} KB
-                            </p>
-                            <Button
-                              onClick={() => {
-                                const carrierId = matchedCarriers[currentCarrierIndex]?.id
-                                setCarrierUploads(prev => ({ ...prev, [carrierId]: null }))
-                              }}
-                              variant="outline"
-                              size="sm"
-                            >
-                              <X className="h-4 w-4 mr-1" />
-                              Remove
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="text-center">
-                            <Upload className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                            <p className="text-lg font-medium text-foreground mb-2">
-                              Drop file here or click to upload
-                            </p>
-                            <p className="text-sm text-muted-foreground mb-4">
-                              CSV or Excel file
-                            </p>
-                            <input
-                              type="file"
-                              accept=".csv,.xlsx,.xls"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0]
-                                if (file) {
-                                  const carrierId = matchedCarriers[currentCarrierIndex]?.id
-                                  setCarrierUploads(prev => ({ ...prev, [carrierId]: file }))
-                                }
-                              }}
-                              className="hidden"
-                              id="carrier-upload"
-                            />
-                            <label
-                              htmlFor="carrier-upload"
-                              className="cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-3 rounded-lg text-sm font-medium inline-block"
-                            >
-                              Choose File
-                            </label>
-                          </div>
-                        )}
+                    <div className="max-w-md mx-auto space-y-4">
+                      <div className="space-y-2">
+                        <label htmlFor="carrier-username" className="block text-sm font-medium text-left text-foreground">
+                          Username / Email
+                        </label>
+                        <Input
+                          id="carrier-username"
+                          type="text"
+                          placeholder="Enter your username or email"
+                          value={carrierLoginUsername}
+                          onChange={(e) => setCarrierLoginUsername(e.target.value)}
+                          disabled={savingCarrierLogin}
+                          className="h-12"
+                        />
                       </div>
+
+                      <div className="space-y-2">
+                        <label htmlFor="carrier-password" className="block text-sm font-medium text-left text-foreground">
+                          Password
+                        </label>
+                        <Input
+                          id="carrier-password"
+                          type="password"
+                          placeholder="Enter your password"
+                          value={carrierLoginPassword}
+                          onChange={(e) => setCarrierLoginPassword(e.target.value)}
+                          disabled={savingCarrierLogin}
+                          className="h-12"
+                        />
+                      </div>
+
+                      <p className="text-xs text-muted-foreground text-left">
+                        Your credentials are securely stored and used to automatically retrieve your policy data.
+                      </p>
                     </div>
                   </div>
 
@@ -1256,7 +1621,12 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() => setCurrentCarrierIndex(i => i - 1)}
+                          onClick={() => {
+                            setCarrierLoginUsername('')
+                            setCarrierLoginPassword('')
+                            setCurrentCarrierIndex(i => i - 1)
+                          }}
+                          disabled={savingCarrierLogin}
                           className="h-12 px-6"
                         >
                           Previous Carrier
@@ -1267,32 +1637,28 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => {
-                          // Skip this carrier
-                          if (currentCarrierIndex < matchedCarriers.length - 1) {
-                            setCurrentCarrierIndex(i => i + 1)
-                          } else {
-                            goToStep(3)
-                          }
-                        }}
+                        onClick={skipCarrierLogin}
+                        disabled={savingCarrierLogin}
                         className="h-12 px-6"
                       >
                         Skip
                       </Button>
                       <Button
                         type="button"
-                        onClick={() => {
-                          if (currentCarrierIndex < matchedCarriers.length - 1) {
-                            setCurrentCarrierIndex(i => i + 1)
-                          } else {
-                            goToStep(3)
-                          }
-                        }}
+                        onClick={saveCarrierLogin}
+                        disabled={savingCarrierLogin || (!carrierLoginUsername && !carrierLoginPassword)}
                         className="h-12 px-6 bg-black hover:bg-black/90 text-white"
                       >
-                        {currentCarrierIndex === matchedCarriers.length - 1
-                          ? "Next: Invite Team"
-                          : "Next Carrier →"}
+                        {savingCarrierLogin ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Saving...
+                          </>
+                        ) : currentCarrierIndex === matchedCarriers.length - 1 ? (
+                          "Save & Continue to Team"
+                        ) : (
+                          "Save & Next Carrier →"
+                        )}
                       </Button>
                     </div>
                   </div>
@@ -1301,14 +1667,14 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                 /* Fallback: No matching carriers found - show skip option */
                 <div className="text-center py-12 space-y-6">
                   <div className="text-muted-foreground">
-                    <FileText className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                    <Shield className="h-16 w-16 mx-auto mb-4 opacity-50" />
                     <h2 className="text-xl font-semibold text-foreground mb-2">No Matching Carriers Found</h2>
                     <p>
                       {(niprResult?.analysis?.unique_carriers?.length || storedCarriers.length) > 0
                         ? "None of your NIPR carriers match our active carrier list."
                         : "No carrier information was found from the NIPR verification."}
                       <br />
-                      You can upload policy reports later from the Configuration page.
+                      You can add carrier logins later from the Configuration page.
                     </p>
                   </div>
                   <Button

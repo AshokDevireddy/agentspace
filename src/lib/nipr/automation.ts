@@ -271,71 +271,94 @@ export async function executeNIPRAutomation(job: NIPRJobData): Promise<NIPRResul
     await submitButton4.waitFor({ state: 'visible' })
     await submitButton4.click()
 
-    // Step 16: Click submit and pay button
+    // Step 16: Click submit and pay button (triggers redirect to payments.app.nipr.com)
     await updateProgress(job.job_id, 'CONFIRMING_DETAILS')
     console.log('[NIPR] Initiating payment...')
     const submitPayButton = page.locator("//li[contains(@class, 'next')]/button[contains(@class, 'btn-default')]")
     await submitPayButton.waitFor({ state: 'visible' })
     await submitPayButton.click()
 
-    // Step 17: Select payment method
+    // Wait for cross-domain redirect to payments site
+    console.log('[NIPR] Waiting for payment page to load...')
+    await page.waitForURL('**/payments.app.nipr.com/**', { timeout: 30000 })
+
+    // Step 17: Select payment method (click the radio input directly)
     console.log('[NIPR] Selecting payment method...')
-    const paymentRadio = page.locator("//label[contains(@class, 'payment')]")
+    const paymentRadio = page.locator("input[name='paymentType'][value='CREDIT_CARD']")
     await paymentRadio.waitFor({ state: 'visible' })
-    await paymentRadio.click()
+    await paymentRadio.check()
 
-    // Step 18: Fill billing details (from config)
+    // Step 18: Fill billing details (from config) - using CSS ID selectors for stability
     console.log('[NIPR] Filling billing details...')
-    await page.locator("//input[@id='firstName']").fill(config.billing.firstName)
-    await page.locator("//input[@id='lastName']").fill(config.billing.lastName)
-    await page.locator("//input[@id='viewAddress.addressLine1']").fill(config.billing.address)
-    await page.locator("//input[@id='viewAddress.city']").fill(config.billing.city)
-    await page.locator("//select[@id='state']").selectOption(config.billing.state)
-    await page.locator("//input[@id='viewAddress.zip']").fill(config.billing.zip)
+    await page.locator('#firstName').fill(config.billing.firstName)
+    await page.locator('#lastName').fill(config.billing.lastName)
+    await page.locator('#viewAddress\\.addressLine1').fill(config.billing.address)
+    await page.locator('#viewAddress\\.city').fill(config.billing.city)
+    await page.locator('#state').selectOption(config.billing.state)
+    await page.locator('#viewAddress\\.zip').fill(config.billing.zip)
 
-    // Phone fields
+    // Phone fields - using CSS ID selectors
     const phone = config.billing.phone.replace(/\D/g, '')
-    await page.locator("//input[@id='phone_areaCode']").fill(phone.slice(0, 3))
-    await page.locator("//input[@id='phone_prefix']").fill(phone.slice(3, 6))
-    await page.locator("//input[@id='phone_number']").fill(phone.slice(6, 10))
+    await page.locator('#phone_areaCode').fill(phone.slice(0, 3))
+    await page.locator('#phone_prefix').fill(phone.slice(3, 6))
+    await page.locator('#phone_number').fill(phone.slice(6, 10))
 
-    // Step 19: Click submit (fifth time)
+    // Step 19: Click Next button on billing page
     console.log('[NIPR] Submitting billing...')
-    const submitButton5 = page.locator("//button[@id='bNext']")
+    const submitButton5 = page.locator('#bNext')
     await submitButton5.waitFor({ state: 'visible' })
     await submitButton5.click()
 
-    // Step 20: Check userAgreement checkbox
+    // Wait for Stripe payment page to load
+    console.log('[NIPR] Waiting for Stripe payment page...')
+    await page.waitForURL('**/stripeDetails**', { timeout: 30000 })
+
+    // Step 20: Check userAgreement checkbox FIRST - this reveals the Stripe form
     console.log('[NIPR] Accepting payment agreement...')
-    const userAgreementCheckbox = page.locator("//input[@id='userAgreement']")
+    const userAgreementCheckbox = page.locator('#userAgreement')
     await userAgreementCheckbox.waitFor({ state: 'visible' })
     await userAgreementCheckbox.check()
 
     // Step 21: Fill Stripe payment details (from config)
     console.log('[NIPR] Filling payment details...')
 
+    // Wait for Stripe iframes to load - they load async via JS after checkbox is checked
+    console.log('[NIPR] Waiting for Stripe iframes to load...')
+    await page.waitForSelector('#card-number-element iframe', { state: 'attached', timeout: 30000 })
+    await page.waitForSelector('#card-expiry-element iframe', { state: 'attached', timeout: 30000 })
+    await page.waitForSelector('#card-cvc-element iframe', { state: 'attached', timeout: 30000 })
+
+    // Extra wait for Stripe JS to fully initialize
+    await page.waitForTimeout(3000)
+
     // Card Number (in iframe)
-    const cardNumberFrame = page.frameLocator("iframe[title='Secure card number input frame']")
-    await cardNumberFrame.locator("input[name='cardnumber']").fill(config.payment.cardNumber)
+    const cardNumberFrame = page.frameLocator('#card-number-element iframe').first()
+    await cardNumberFrame.locator('input[name="cardnumber"]').waitFor({ state: 'visible', timeout: 10000 })
+    await cardNumberFrame.locator('input[name="cardnumber"]').fill(config.payment.cardNumber)
+    console.log('[NIPR] Card number filled')
 
     // Expiry (in iframe)
-    const cardExpiryFrame = page.frameLocator("iframe[title='Secure expiration date input frame']")
-    await cardExpiryFrame.locator("input[name='exp-date']").fill(config.payment.expiry)
+    const cardExpiryFrame = page.frameLocator('#card-expiry-element iframe').first()
+    await cardExpiryFrame.locator('input[name="exp-date"]').waitFor({ state: 'visible', timeout: 10000 })
+    await cardExpiryFrame.locator('input[name="exp-date"]').fill(config.payment.expiry)
+    console.log('[NIPR] Expiry date filled')
 
     // CVC (in iframe)
-    const cardCvcFrame = page.frameLocator("iframe[title='Secure CVC input frame']")
-    await cardCvcFrame.locator("input[name='cvc']").fill(config.payment.cvc)
+    const cardCvcFrame = page.frameLocator('#card-cvc-element iframe').first()
+    await cardCvcFrame.locator('input[name="cvc"]').waitFor({ state: 'visible', timeout: 10000 })
+    await cardCvcFrame.locator('input[name="cvc"]').fill(config.payment.cvc)
+    console.log('[NIPR] CVC filled')
 
     // Step 22: Click payment submit
     await updateProgress(job.job_id, 'FINALIZING_REQUEST')
     console.log('[NIPR] Submitting payment...')
-    const paymentSubmitButton = page.locator("//button[@id='next']")
+    const paymentSubmitButton = page.locator('#next')
     await paymentSubmitButton.waitFor({ state: 'visible' })
     await paymentSubmitButton.click()
 
     // Wait for payment to process
     console.log('[NIPR] Processing payment...')
-    await page.waitForTimeout(3000)
+    await page.waitForTimeout(5000)
 
     // Step 23: Download Detail Report
     await updateProgress(job.job_id, 'DOWNLOADING_REPORT')

@@ -35,7 +35,7 @@ const navigationItems = [
   { name: "Analytics", href: "/analytics", icon: TrendingUp },
   { name: "Expected Payouts", href: "/expected-payouts", icon: DollarSign },
   { name: "Insurance Toolkits", href: "/insurance-toolkits", icon: ExternalLink },
-  { name: "Resources", href: "/resources", icon: FolderOpen },
+  // { name: "Resources", href: "/resources", icon: FolderOpen },
 ]
 
 const adminNavigationItems = [

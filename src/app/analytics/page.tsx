@@ -15,6 +15,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select"
+import { Info } from "lucide-react"
 
 // analytics_test_value: static data for the test analytics page
 const analytics_test_value = {
@@ -509,6 +510,8 @@ export default function AnalyticsTestPage() {
 	const [hoverPersistencyInfo, setHoverPersistencyInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
 	const [hoverPlacementInfo, setHoverPlacementInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
 	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; placement?: number; avgPremium?: number }>(null)
+	const [showPersistencyTooltip, setShowPersistencyTooltip] = React.useState(false)
+	const [showPlacementTooltip, setShowPlacementTooltip] = React.useState(false)
 	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
@@ -1593,13 +1596,41 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 				<div className="grid w-full max-w-4xl grid-cols-4 gap-3">
 					<Card className="rounded-md">
 						<CardContent className="p-4">
-							<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
+							<div className="flex items-center gap-2">
+								<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
+								<div className="relative">
+									<Info 
+										className="h-3.5 w-3.5 text-muted-foreground cursor-help" 
+										onMouseEnter={() => setShowPersistencyTooltip(true)}
+										onMouseLeave={() => setShowPersistencyTooltip(false)}
+									/>
+									{showPersistencyTooltip && (
+										<div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-2 bg-popover border border-border rounded-md shadow-lg text-xs text-popover-foreground z-50 pointer-events-none">
+											The percentage of policies that the carrier has accepted that are still active
+										</div>
+									)}
+								</div>
+							</div>
 							<div className="text-2xl font-bold mt-2">{(topStats.persistency * 100).toFixed(2)}%</div>
 						</CardContent>
 					</Card>
 					<Card className="rounded-md">
 						<CardContent className="p-4">
-							<div className="text-xs text-muted-foreground uppercase font-medium">Placement</div>
+							<div className="flex items-center gap-2">
+								<div className="text-xs text-muted-foreground uppercase font-medium">Placement</div>
+								<div className="relative">
+									<Info 
+										className="h-3.5 w-3.5 text-muted-foreground cursor-help" 
+										onMouseEnter={() => setShowPlacementTooltip(true)}
+										onMouseLeave={() => setShowPlacementTooltip(false)}
+									/>
+									{showPlacementTooltip && (
+										<div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-2 bg-popover border border-border rounded-md shadow-lg text-xs text-popover-foreground z-50 pointer-events-none">
+											The percentage of policies that made it past the application phase and became active for any time
+										</div>
+									)}
+								</div>
+							</div>
 							<div className="text-2xl font-bold mt-2">{(topStats.placement * 100).toFixed(2)}%</div>
 						</CardContent>
 					</Card>

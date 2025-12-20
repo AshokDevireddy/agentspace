@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../Downloads/compulife-api-samples"
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "compulife-api-samples"
+	}
+}

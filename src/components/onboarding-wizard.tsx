@@ -63,6 +63,7 @@ const carriers = [
   'Reagan CRM Data',
   'Ethos',
   'Mutual of Omaha',
+  'Americo',
 ]
 
 const permissionLevels = [

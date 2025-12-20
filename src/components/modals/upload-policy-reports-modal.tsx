@@ -26,6 +26,7 @@ const carriers = [
   'Reagan CRM Data',
   'Ethos',
   'Mutual of Omaha',
+  'Americo',
 ]
 
 export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {

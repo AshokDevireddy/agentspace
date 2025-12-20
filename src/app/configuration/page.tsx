@@ -384,6 +384,7 @@ export default function ConfigurationPage() {
     { carrier: 'Reagan CRM Data', file: null },
     { carrier: 'Ethos', file: null },
     { carrier: 'Mutual of Omaha', file: null },
+    { carrier: 'Americo', file: null },
   ])
   const [uploadingReports, setUploadingReports] = useState(false)
   const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])

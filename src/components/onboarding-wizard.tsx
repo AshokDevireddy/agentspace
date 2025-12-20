@@ -60,7 +60,10 @@ const carriers = [
   'Liberty Bankers Life',
   'Transamerica',
   'Foresters',
-  'Reagan CRM Data'
+  'Reagan CRM Data',
+  'Ethos',
+  'Mutual of Omaha',
+  'Americo',
 ]
 
 const permissionLevels = [

@@ -90,3 +90,4 @@ export interface NIPRConfig {
   /** Anthropic API key for AI analysis */
   anthropicApiKey?: string
 }
+

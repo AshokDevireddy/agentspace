@@ -139,7 +139,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   const [niprQueuePosition, setNiprQueuePosition] = useState<number | null>(null)
 
   // NIPR upload mode state (alternative to automation)
-  const [niprMode, setNiprMode] = useState<'upload' | 'automation'>('upload')
+  const [niprMode, setNiprMode] = useState<'upload' | 'automation'>('automation')
   const [niprUploadFile, setNiprUploadFile] = useState<File | null>(null)
   const [niprUploading, setNiprUploading] = useState(false)
   const [niprDragging, setNiprDragging] = useState(false)
@@ -1470,6 +1470,48 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                       )}
                       <span>{niprResult.message}</span>
                     </div>
+                    {/* Retry options on failure */}
+                    {!niprResult.success && (
+                      <div className="flex flex-wrap gap-2 mt-4">
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          onClick={() => {
+                            setNiprResult(null)
+                            setNiprJobId(null)
+                            setNiprProgress(0)
+                            setNiprProgressMessage('')
+                            // Trigger the automation again
+                            setTimeout(() => runNiprAutomation(), 100)
+                          }}
+                          className="bg-black hover:bg-black/90 text-white"
+                        >
+                          <Shield className="mr-2 h-4 w-4" />
+                          Retry Automation
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setNiprResult(null)
+                            setNiprMode('upload')
+                          }}
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          Upload PDF Instead
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => goToStep(userData.is_admin ? 2 : 3)}
+                        >
+                          Skip for Now
+                        </Button>
+                      </div>
+                    )}
                   </AlertDescription>
                 </Alert>
               )}

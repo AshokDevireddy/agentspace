@@ -9,13 +9,15 @@
     "lint": "next lint",
     "setup:browsers": "npx playwright install",
     "test:browsers": "npx playwright --version && echo 'Browsers check: OK'",
-    "fix:browsers": "npx playwright install --force"
+    "fix:browsers": "npx playwright install --force",
+    "test:nipr:hyperagent": "npx tsx --env-file=.env scripts/test-nipr-hyperagent.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
     "@aws-sdk/client-lambda": "^3.926.0",
     "@aws-sdk/client-s3": "^3.925.0",
     "@aws-sdk/s3-request-presigner": "^3.925.0",
+    "@hyperbrowser/agent": "^1.1.0",
     "@langchain/anthropic": "^1.2.3",
     "@langchain/core": "^1.1.4",
     "@radix-ui/react-dialog": "^1.1.14",
@@ -32,6 +34,7 @@
     "@supabase/supabase-js": "^2.77.0",
     "@types/papaparse": "^5.3.16",
     "@types/xlsx": "^0.0.35",
+    "adm-zip": "^0.5.16",
     "class-variance-authority": "^0.7.1",
     "client-lambda": "github:aws-sdk/client-lambda",
     "clsx": "^2.1.1",
@@ -62,6 +65,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/typography": "^0.5.19",
+    "@types/adm-zip": "^0.5.7",
     "@types/node": "^20",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",

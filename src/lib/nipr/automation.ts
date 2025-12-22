@@ -2,21 +2,23 @@
  * NIPR Automation Service
  * Browser automation for retrieving PDB Detail Reports from nipr.com
  *
- * Uses Supabase database queue for concurrency control on serverless (Vercel)
+ * Uses HyperAgent for AI-powered local browser automation
  */
 
-import { chromium, Browser } from 'playwright'
+import { HyperAgent } from '@hyperbrowser/agent'
+import { createAnthropicClient } from '@hyperbrowser/agent/llm/providers'
 import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
 import type { NIPRInput, NIPRResult, NIPRConfig, NIPRAnalysisResult } from './types'
 import { analyzePDFReport } from './pdf-analyzer'
 import { createAdminClient } from '@/lib/supabase/server'
+import { getBrowserQueueManager } from './browser-queue-manager'
 
 // Progress steps with percentages and messages
 const PROGRESS_STEPS = {
   STARTING: { progress: 0, message: 'Starting verification...' },
-  BROWSER_LAUNCH: { progress: 5, message: 'Launching secure browser...' },
+  BROWSER_LAUNCH: { progress: 5, message: 'Launching browser...' },
   NAVIGATING: { progress: 10, message: 'Connecting to NIPR...' },
   ENTERING_INFO: { progress: 20, message: 'Entering your information...' },
   VERIFYING_IDENTITY: { progress: 30, message: 'Verifying your identity...' },
@@ -59,8 +61,193 @@ async function updateProgress(jobId: string, step: keyof typeof PROGRESS_STEPS):
   }
 }
 
+
+/**
+ * Mark job as failed with error message
+ */
+async function markJobFailed(jobId: string, errorMessage: string): Promise<void> {
+  if (!jobId || jobId.startsWith('legacy-')) {
+    return
+  }
+
+  try {
+    const supabase = createAdminClient()
+    await supabase
+      .from('nipr_jobs')
+      .update({
+        status: 'failed',
+        error_message: errorMessage,
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId)
+  } catch (error) {
+    console.error('[NIPR] Failed to mark job as failed:', error)
+  }
+}
+
+/**
+ * Wait for URL to match a pattern (replacement for Playwright's waitForURL)
+ * @param page - The page object
+ * @param pattern - URL pattern to match (supports ** wildcards)
+ * @param options - Timeout options
+ */
+async function waitForURLPattern(
+  page: { url: () => string },
+  pattern: string,
+  options: { timeout?: number } = {}
+): Promise<void> {
+  const timeout = options.timeout || 30000
+  const startTime = Date.now()
+
+  // Convert glob pattern to regex
+  const regexPattern = pattern
+    .replace(/\*\*/g, '.*')
+    .replace(/\*/g, '[^/]*')
+  const regex = new RegExp(regexPattern)
+
+  while (Date.now() - startTime < timeout) {
+    const currentUrl = page.url()
+    if (regex.test(currentUrl)) {
+      return
+    }
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+
+  throw new Error(`Timeout waiting for URL pattern: ${pattern}`)
+}
+
+/**
+ * Simple delay function
+ */
+async function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+
+/**
+ * Wait for a regular locator element to be visible
+ * Uses polling for reliability
+ */
+async function waitForLocatorVisible(
+  page: { locator: (selector: string) => any },
+  selector: string,
+  options: { timeout?: number; pollInterval?: number } = {}
+): Promise<void> {
+  const timeout = options.timeout || 30000
+  const pollInterval = options.pollInterval || 500
+  const startTime = Date.now()
+
+  while (Date.now() - startTime < timeout) {
+    try {
+      const element = page.locator(selector)
+      if (await element.isVisible()) {
+        return
+      }
+    } catch (e) {
+      // Element not found yet, continue polling
+    }
+    await delay(pollInterval)
+  }
+
+  throw new Error(`Timeout waiting for locator element: ${selector}`)
+}
+
+/**
+ * Check for NIPR error messages on the page
+ * Uses multiple detection strategies: CSS selectors, ARIA roles, and text patterns
+ * Returns the error text if found, null otherwise
+ */
+async function checkForPageError(page: { locator: (selector: string) => any, content?: () => Promise<string> }): Promise<string | null> {
+  try {
+    // Strategy 1: Common error CSS selectors
+    const errorSelectors = [
+      '.alert-danger',
+      '.alert-error',
+      '.error-message',
+      '.error',
+      '[class*="error"]',
+      '.alert.alert-warning',
+      '.validation-error',
+      '.form-error',
+      '.field-error',
+      // NIPR-specific selectors
+      '.nipr-error',
+      '.lookup-error',
+      '[role="alert"]',
+      '.toast-error',
+      '.notification-error'
+    ]
+
+    for (const selector of errorSelectors) {
+      try {
+        const element = page.locator(selector).first()
+        if (await element.isVisible({ timeout: 500 })) {
+          const text = await element.textContent()
+          if (text && text.trim().length > 5) { // Min length to avoid empty/icon-only elements
+            const cleanText = text.trim()
+            // Filter out non-error text
+            if (!cleanText.toLowerCase().includes('loading') &&
+                !cleanText.toLowerCase().includes('please wait')) {
+              return cleanText
+            }
+          }
+        }
+      } catch {
+        continue
+      }
+    }
+
+    // Strategy 2: Look for error text patterns in page content
+    try {
+      // Check for common error message patterns using text locators
+      const errorPatterns = [
+        'not found',
+        'invalid',
+        'does not match',
+        'unable to verify',
+        'could not be found',
+        'no record',
+        'no matching',
+        'verification failed',
+        'error occurred',
+        'please try again',
+        'incorrect'
+      ]
+
+      for (const pattern of errorPatterns) {
+        try {
+          const textElement = page.locator(`text=/${pattern}/i`).first()
+          if (await textElement.isVisible({ timeout: 300 })) {
+            // Get the parent element's text for context
+            const parentText = await textElement.evaluate((el: Element) => {
+              const parent = el.closest('div, p, span, li') || el
+              return parent.textContent
+            })
+            if (parentText && parentText.trim().length > 0) {
+              return parentText.trim()
+            }
+          }
+        } catch {
+          continue
+        }
+      }
+    } catch {
+      // Text pattern search failed, continue
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
 // Validate and load NIPR configuration from environment variables
 export const getDefaultConfig = (): NIPRConfig => {
+  // Required environment variables for HyperAgent
+  const requiredVars = [
+    'ANTHROPIC_API_KEY'
+  ]
+
   // Required billing environment variables
   const requiredBillingVars = [
     'NIPR_BILLING_FIRST_NAME',
@@ -80,12 +267,12 @@ export const getDefaultConfig = (): NIPRConfig => {
   ]
 
   // Check for missing environment variables
-  const missingVars = [...requiredBillingVars, ...requiredPaymentVars].filter(
+  const missingVars = [...requiredVars, ...requiredBillingVars, ...requiredPaymentVars].filter(
     varName => !process.env[varName]
   )
 
   if (missingVars.length > 0) {
-    throw new Error(`Missing required NIPR environment variables: ${missingVars.join(', ')}`)
+    throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`)
   }
 
   return {
@@ -121,12 +308,13 @@ export interface NIPRJobData {
 }
 
 /**
- * Execute the NIPR automation for a specific job
- * This is called by the job processor, not directly by users
+ * Execute the NIPR automation using HyperAgent
+ * AI-powered browser automation with local execution
  */
-export async function executeNIPRAutomation(job: NIPRJobData): Promise<NIPRResult> {
+export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise<NIPRResult> {
   const config = getDefaultConfig()
   const requestId = generateRequestId()
+  const queueManager = getBrowserQueueManager()
 
   // Create downloads folder
   const downloadsFolder = path.join(process.cwd(), 'public', 'nipr-downloads')
@@ -134,7 +322,7 @@ export async function executeNIPRAutomation(job: NIPRJobData): Promise<NIPRResul
     fs.mkdirSync(downloadsFolder, { recursive: true })
   }
 
-  let browser: Browser | null = null
+  let agent: HyperAgent | null = null
 
   const input: NIPRInput = {
     lastName: job.job_last_name,
@@ -144,270 +332,238 @@ export async function executeNIPRAutomation(job: NIPRJobData): Promise<NIPRResul
   }
 
   try {
-    console.log(`[NIPR] Starting automation (job: ${job.job_id}, request: ${requestId})...`)
+    console.log(`[NIPR-HA] Starting HyperAgent automation (job: ${job.job_id}, request: ${requestId})...`)
     await updateProgress(job.job_id, 'STARTING')
 
-    // Launch browser in headless mode
+    // Initialize HyperAgent with Anthropic Claude
     await updateProgress(job.job_id, 'BROWSER_LAUNCH')
-    try {
-      browser = await chromium.launch({ headless: true })
-      console.log('[NIPR] Browser launched successfully')
-    } catch (error: any) {
-      console.error('[NIPR] Browser launch failed:', error.message)
+    console.log('[NIPR-HA] Initializing HyperAgent with Claude Sonnet 4...')
+    console.log('[NIPR-HA] ANTHROPIC_API_KEY present:', !!process.env.ANTHROPIC_API_KEY)
 
-      // Provide specific error messages for common browser issues
-      if (error.message.includes("Executable doesn't exist")) {
-        throw new Error(
-          'Playwright browsers not installed. Please run: npx playwright install'
-        )
-      }
+    const llm = createAnthropicClient({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      model: 'claude-sonnet-4-20250514',
+    })
+    agent = new HyperAgent({ llm })
 
-      if (error.message.includes('Permission denied')) {
-        throw new Error(
-          'Browser executable permission denied. Please check file permissions.'
-        )
-      }
+    // Create browser page
+    const page = await agent.newPage()
 
-      // Re-throw the original error for other cases
-      throw error
-    }
-    const page = await browser.newPage()
+    // Register with queue manager
+    queueManager.registerJob(job.job_id, agent, job.job_user_id)
 
     // Navigate to NIPR
     await updateProgress(job.job_id, 'NAVIGATING')
-    console.log('[NIPR] Navigating to NIPR...')
+    console.log('[NIPR-HA] Navigating to NIPR...')
     await page.goto('https://pdb.nipr.com/my-nipr/frontend/user-menu')
+    await delay(2000)
 
-    // Step 1: Click first btn-link button
-    console.log('[NIPR] Clicking initial button...')
-    const button = page.locator("//button[contains(@class, 'btn-link')]").first()
-    await button.waitFor({ state: 'visible' })
-    await button.click()
+    // NIPR Website Steps - Using AI-powered page.perform() for single actions
+    await updateProgress(job.job_id, 'ENTERING_INFO')
+
+    // Step 1: Click first button to begin
+    console.log('[NIPR-HA] Clicking initial button...')
+    await page.perform('Click the first button to begin')
 
     // Step 2: Select NPN radio button
-    await updateProgress(job.job_id, 'ENTERING_INFO')
-    console.log('[NIPR] Selecting NPN radio...')
-    const radioButton = page.locator("//input[@type='radio' and @value='NPN']")
-    await radioButton.waitFor({ state: 'visible' })
-    await radioButton.check()
+    console.log('[NIPR-HA] Selecting NPN radio...')
+    await page.perform('Click the NPN radio button')
 
     // Step 3: Check use agreement checkbox
-    console.log('[NIPR] Checking agreement...')
-    const checkbox = page.locator("//input[@name='useAgreementAccepted']")
-    await checkbox.waitFor({ state: 'visible' })
-    await checkbox.check()
+    console.log('[NIPR-HA] Checking agreement...')
+    await page.perform('Check the use agreement checkbox')
 
-    // Step 4: Fill in lastName field (from user input)
-    console.log('[NIPR] Filling lastName...')
-    const lastNameInput = page.locator("//input[@name='lastName']")
-    await lastNameInput.waitFor({ state: 'visible' })
-    await lastNameInput.fill(input.lastName)
+    // Step 4: Fill in lastName field
+    console.log('[NIPR-HA] Filling lastName...')
+    await page.perform(`Type "${input.lastName}" into the Last Name field`)
 
-    // Step 5: Fill in NPN field (from user input)
-    console.log('[NIPR] Filling NPN...')
-    const npnInput = page.locator("//input[@name='npn']")
-    await npnInput.waitFor({ state: 'visible' })
-    await npnInput.fill(input.npn)
+    // Step 5: Fill in NPN field
+    console.log('[NIPR-HA] Filling NPN...')
+    await page.perform(`Type "${input.npn}" into the NPN field`)
 
     // Step 6: Click submit button
-    console.log('[NIPR] Submitting lookup form...')
-    const submitButton = page.locator("//li/button[@type='submit']")
-    await submitButton.waitFor({ state: 'visible' })
-    await submitButton.click()
+    console.log('[NIPR-HA] Submitting lookup form...')
+    await page.perform('Click the Submit button')
 
-    // Step 7: Fill in SSN field (from user input - last 4 digits)
+    // Check for NPN/lookup errors before proceeding
+    await delay(2000)
+    const lookupError = await checkForPageError(page)
+    if (lookupError) {
+      throw new Error(`NIPR lookup failed: ${lookupError}`)
+    }
+
+    // Step 7-8: Fill SSN and DOB
     await updateProgress(job.job_id, 'VERIFYING_IDENTITY')
-    console.log('[NIPR] Filling SSN...')
-    const ssnInput = page.locator("//input[@name='ssn']")
-    await ssnInput.waitFor({ state: 'visible' })
-    await ssnInput.fill(input.ssn)
+    console.log('[NIPR-HA] Filling SSN...')
+    await page.perform(`Type "${input.ssn}" into the SSN field`)
 
-    // Step 8: Fill in DOB field (from user input)
-    console.log('[NIPR] Filling DOB...')
-    const dobInput = page.locator("//input[@name='dob']")
-    await dobInput.waitFor({ state: 'visible' })
-    await dobInput.fill(input.dob)
+    console.log('[NIPR-HA] Filling DOB...')
+    await page.perform(`Type "${input.dob}" into the Date of Birth field`)
 
     // Step 9: Click submit again
-    console.log('[NIPR] Submitting verification...')
-    const submitButton2 = page.locator("//li/button[@type='submit']")
-    await submitButton2.waitFor({ state: 'visible' })
-    await submitButton2.click()
+    console.log('[NIPR-HA] Submitting verification...')
+    await page.perform('Click the Submit button')
+
+    // Check for verification errors before proceeding
+    await delay(2000)
+    const verificationError = await checkForPageError(page)
+    if (verificationError) {
+      throw new Error(`Identity verification failed: ${verificationError}`)
+    }
 
     // Step 10: Click start-flow button
     await updateProgress(job.job_id, 'SELECTING_REPORT')
-    console.log('[NIPR] Starting flow...')
-    const startFlowButton = page.locator("//button[@to='/start-flow']")
-    await startFlowButton.waitFor({ state: 'visible' })
-    await startFlowButton.click()
+    console.log('[NIPR-HA] Starting flow...')
+    await page.perform('Click the Start Flow button')
 
     // Step 11: Select PDB Detail Report
-    console.log('[NIPR] Selecting PDB Detail Report...')
-    const pdbRadioLabel = page.locator("//label[text()='PDB Detail Report']")
-    await pdbRadioLabel.waitFor({ state: 'visible' })
-    await pdbRadioLabel.click()
+    console.log('[NIPR-HA] Selecting PDB Detail Report...')
+    await page.perform('Click the PDB Detail Report radio button or label')
 
     // Step 12: Click submit (third time)
-    console.log('[NIPR] Submitting report selection...')
-    const submitButton3 = page.locator("//li/button[@type='submit']")
-    await submitButton3.waitFor({ state: 'visible' })
-    await submitButton3.click()
+    console.log('[NIPR-HA] Submitting report selection...')
+    await page.perform('Click the Next button')
 
-    // Step 13: Click btn-primary button
+    // Step 13: Click primary button
     await updateProgress(job.job_id, 'PROCESSING_REQUEST')
-    console.log('[NIPR] Proceeding to payment...')
-    const primaryButton = page.locator("//button[contains(@class, 'btn-primary')]")
-    await primaryButton.waitFor({ state: 'visible' })
-    await primaryButton.click()
+    console.log('[NIPR-HA] Proceeding to payment...')
+    await page.perform('Click the Submit Request button')
 
     // Step 14: Check userAccepted checkbox
-    console.log('[NIPR] Accepting terms...')
-    const userAcceptedCheckbox = page.locator("//input[contains(@name, 'userAccepted')]")
-    await userAcceptedCheckbox.waitFor({ state: 'visible' })
-    await userAcceptedCheckbox.check()
+    console.log('[NIPR-HA] Accepting terms...')
+    await page.perform('Check the user acceptance checkbox')
 
     // Step 15: Click submit (fourth time)
-    const submitButton4 = page.locator("//li/button[@type='submit']")
-    await submitButton4.waitFor({ state: 'visible' })
-    await submitButton4.click()
+    await page.perform('Click the Submit button')
 
-    // Step 16: Click submit and pay button (triggers redirect to payments.app.nipr.com)
+    // Step 16: Click submit and pay button
     await updateProgress(job.job_id, 'CONFIRMING_DETAILS')
-    console.log('[NIPR] Initiating payment...')
-    const submitPayButton = page.locator("//li[contains(@class, 'next')]/button[contains(@class, 'btn-default')]")
-    await submitPayButton.waitFor({ state: 'visible' })
-    await submitPayButton.click()
+    console.log('[NIPR-HA] Initiating payment...')
+    await page.perform('Click the Submit and Pay button')
 
-    // Wait for cross-domain redirect to payments site
-    console.log('[NIPR] Waiting for payment page to load...')
-    await page.waitForURL('**/payments.app.nipr.com/**', { timeout: 30000 })
+    // Wait for billing details page
+    console.log('[NIPR-HA] Waiting for billing details page to load...')
+    await waitForURLPattern(page, '**/billingDetails**', { timeout: 60000 })
+    console.log('[NIPR-HA] On billing details page')
 
-    // Step 17: Select payment method (click the radio input directly)
-    console.log('[NIPR] Selecting payment method...')
-    const paymentRadio = page.locator("input[name='paymentType'][value='CREDIT_CARD']")
-    await paymentRadio.waitFor({ state: 'visible' })
-    await paymentRadio.check()
+    // Payment Page Steps - Using AI for form filling
+    console.log('[NIPR-HA] Selecting payment method...')
+    await page.perform('Click the Credit Card radio button')
 
-    // Step 18: Fill billing details (from config) - using CSS ID selectors for stability
-    console.log('[NIPR] Filling billing details...')
-    await page.locator('#firstName').fill(config.billing.firstName)
-    await page.locator('#lastName').fill(config.billing.lastName)
-    await page.locator('#viewAddress\\.addressLine1').fill(config.billing.address)
-    await page.locator('#viewAddress\\.city').fill(config.billing.city)
+    // Fill billing details using config values from environment variables
+    console.log('[NIPR-HA] Filling billing details...')
+    await page.perform(`Type "${config.billing.firstName}" into the First Name field`)
+    await page.perform(`Type "${config.billing.lastName}" into the Last Name field`)
+    await page.perform(`Type "${config.billing.address}" into the Address field`)
+    await page.perform(`Type "${config.billing.city}" into the City field`)
+
+    // Use direct Playwright for native <select> dropdown
+    console.log('[NIPR-HA] Selecting state...')
     await page.locator('#state').selectOption(config.billing.state)
-    await page.locator('#viewAddress\\.zip').fill(config.billing.zip)
 
-    // Phone fields - using CSS ID selectors
-    const phone = config.billing.phone.replace(/\D/g, '')
-    await page.locator('#phone_areaCode').fill(phone.slice(0, 3))
-    await page.locator('#phone_prefix').fill(phone.slice(3, 6))
-    await page.locator('#phone_number').fill(phone.slice(6, 10))
+    await page.perform(`Type "${config.billing.zip}" into the ZIP field`)
 
-    // Step 19: Click Next button on billing page
-    console.log('[NIPR] Submitting billing...')
-    const submitButton5 = page.locator('#bNext')
-    await submitButton5.waitFor({ state: 'visible' })
-    await submitButton5.click()
+    // Phone number fields - use direct Playwright locators (AI can't distinguish between similar fields)
+    const phoneDigits = config.billing.phone.replace(/\D/g, '')
+    const areaCode = phoneDigits.substring(0, 3)
+    const prefix = phoneDigits.substring(3, 6)
+    const lineNumber = phoneDigits.substring(6, 10)
+    console.log('[NIPR-HA] Filling phone fields...')
+    await page.locator('#phone_areaCode').fill(areaCode)
+    await page.locator('#phone_prefix').fill(prefix)
+    await page.locator('#phone_number').fill(lineNumber)
 
-    // Wait for Stripe payment page to load
-    console.log('[NIPR] Waiting for Stripe payment page...')
-    await page.waitForURL('**/stripeDetails**', { timeout: 30000 })
+    // Click Next button
+    console.log('[NIPR-HA] Submitting billing...')
+    await page.perform('Click the Next button')
+    await delay(3000)
 
-    // Step 20: Check userAgreement checkbox FIRST - this reveals the Stripe form
-    console.log('[NIPR] Accepting payment agreement...')
-    const userAgreementCheckbox = page.locator('#userAgreement')
-    await userAgreementCheckbox.waitFor({ state: 'visible' })
-    await userAgreementCheckbox.check()
+    // Wait for Stripe page
+    console.log('[NIPR-HA] Waiting for Stripe payment page...')
+    await waitForURLPattern(page, '**/stripeDetails**', { timeout: 60000 })
+    console.log('[NIPR-HA] On Stripe page')
 
-    // Step 21: Fill Stripe payment details (from config)
-    console.log('[NIPR] Filling payment details...')
+    // Check userAgreement checkbox - this reveals the Stripe form
+    console.log('[NIPR-HA] Accepting payment agreement...')
+    await page.perform('Check the I agree checkbox')
+    await delay(3000) // Wait for Stripe iframes to load
 
-    // Wait for Stripe iframes to load - they load async via JS after checkbox is checked
-    console.log('[NIPR] Waiting for Stripe iframes to load...')
-    await page.waitForSelector('#card-number-element iframe', { state: 'attached', timeout: 30000 })
-    await page.waitForSelector('#card-expiry-element iframe', { state: 'attached', timeout: 30000 })
-    await page.waitForSelector('#card-cvc-element iframe', { state: 'attached', timeout: 30000 })
+    // Fill Stripe payment details using page.perform()
+    console.log('[NIPR-HA] Filling payment details...')
+    await delay(3000) // Wait for Stripe to fully load
 
-    // Extra wait for Stripe JS to fully initialize
-    await page.waitForTimeout(3000)
+    // Card Number
+    await page.perform(`Type "${config.payment.cardNumber}" into the card number field`)
+    console.log('[NIPR-HA] Card number filled')
 
-    // Card Number (in iframe)
-    const cardNumberFrame = page.frameLocator('#card-number-element iframe').first()
-    await cardNumberFrame.locator('input[name="cardnumber"]').waitFor({ state: 'visible', timeout: 10000 })
-    await cardNumberFrame.locator('input[name="cardnumber"]').fill(config.payment.cardNumber)
-    console.log('[NIPR] Card number filled')
+    // Expiry
+    await page.perform(`Type "${config.payment.expiry}" into the expiry field`)
+    console.log('[NIPR-HA] Expiry date filled')
 
-    // Expiry (in iframe)
-    const cardExpiryFrame = page.frameLocator('#card-expiry-element iframe').first()
-    await cardExpiryFrame.locator('input[name="exp-date"]').waitFor({ state: 'visible', timeout: 10000 })
-    await cardExpiryFrame.locator('input[name="exp-date"]').fill(config.payment.expiry)
-    console.log('[NIPR] Expiry date filled')
+    // CVC
+    await page.perform(`Type "${config.payment.cvc}" into the CVC field`)
+    console.log('[NIPR-HA] CVC filled')
 
-    // CVC (in iframe)
-    const cardCvcFrame = page.frameLocator('#card-cvc-element iframe').first()
-    await cardCvcFrame.locator('input[name="cvc"]').waitFor({ state: 'visible', timeout: 10000 })
-    await cardCvcFrame.locator('input[name="cvc"]').fill(config.payment.cvc)
-    console.log('[NIPR] CVC filled')
-
-    // Step 22: Click payment submit
+    // Click payment submit
     await updateProgress(job.job_id, 'FINALIZING_REQUEST')
-    console.log('[NIPR] Submitting payment...')
-    const paymentSubmitButton = page.locator('#next')
-    await paymentSubmitButton.waitFor({ state: 'visible' })
-    await paymentSubmitButton.click()
+    console.log('[NIPR-HA] Submitting payment...')
+    await page.perform('Click the Submit button')
 
     // Wait for payment to process
-    console.log('[NIPR] Processing payment...')
-    await page.waitForTimeout(5000)
+    console.log('[NIPR-HA] Processing payment...')
+    await delay(5000)
 
-    // Step 23: Download Detail Report
+    // Download Detail Report
     await updateProgress(job.job_id, 'DOWNLOADING_REPORT')
-    console.log('[NIPR] Downloading report...')
-    const detailButton = page.locator("//span[text()='View Detail']/ancestor::button")
-    await detailButton.waitFor({ state: 'visible' })
+    console.log('[NIPR-HA] Downloading report...')
 
-    const [reportDownload] = await Promise.all([
+    // Wait for the report page to be ready
+    await delay(3000)
+
+    // Download report using Playwright's download event
+    const [download] = await Promise.all([
       page.waitForEvent('download'),
-      detailButton.click()
+      page.perform('Click the View Detail button')
     ])
 
-    // Use unique requestId to prevent file collisions between concurrent users
     const reportPath = path.join(downloadsFolder, `report_${requestId}.pdf`)
-    await reportDownload.saveAs(reportPath)
-    console.log(`[NIPR] Report saved: ${reportPath}`)
-
-    // Close browser
-    await browser.close()
-    browser = null
+    await download.saveAs(reportPath)
+    console.log(`[NIPR-HA] Report saved: ${reportPath}`)
 
     const files = [
       `/nipr-downloads/report_${requestId}.pdf`
     ]
 
-    console.log('[NIPR] PDFs downloaded successfully!')
+    console.log('[NIPR-HA] PDFs downloaded successfully!')
 
     // Run AI analysis if enabled
     let analysis: NIPRAnalysisResult | undefined
 
     if (config.analyzeWithAI && config.anthropicApiKey) {
       await updateProgress(job.job_id, 'ANALYZING_REPORT')
-      console.log('[NIPR] Running AI analysis on report...')
+      console.log('[NIPR-HA] Running AI analysis on report...')
       try {
         analysis = await analyzePDFReport(reportPath)
         if (analysis.success) {
-          console.log(`[NIPR] AI analysis complete. Found ${analysis.unique_carriers.length} carriers.`)
+          console.log(`[NIPR-HA] AI analysis complete. Found ${analysis.unique_carriers.length} carriers.`)
         } else {
-          console.log('[NIPR] AI analysis returned no results.')
+          console.log('[NIPR-HA] AI analysis returned no results.')
         }
       } catch (error) {
-        console.error('[NIPR] AI analysis error:', error)
+        console.error('[NIPR-HA] AI analysis error:', error)
       }
     } else {
-      console.log('[NIPR] AI analysis skipped (not configured).')
+      console.log('[NIPR-HA] AI analysis skipped (not configured).')
     }
 
+    // Unregister from queue manager before closing
+    queueManager.unregisterJob(job.job_id)
+
+    // Close agent
+    await agent.closeAgent()
+
     await updateProgress(job.job_id, 'COMPLETE')
-    console.log('[NIPR] Automation completed successfully!')
+    console.log('[NIPR-HA] HyperAgent automation completed successfully!')
 
     return {
       success: true,
@@ -417,10 +573,21 @@ export async function executeNIPRAutomation(job: NIPRJobData): Promise<NIPRResul
     }
 
   } catch (error) {
-    console.error('[NIPR] Automation error:', error)
+    console.error('[NIPR-HA] HyperAgent automation error:', error)
 
-    if (browser) {
-      await browser.close()
+    // Mark job as failed
+    await markJobFailed(job.job_id, error instanceof Error ? error.message : String(error))
+
+    // Unregister from queue manager
+    queueManager.unregisterJob(job.job_id)
+
+    // Clean up HyperAgent
+    if (agent) {
+      try {
+        await agent.closeAgent()
+      } catch (closeError) {
+        console.error('[NIPR-HA] Error closing HyperAgent:', closeError)
+      }
     }
 
     return {
@@ -430,6 +597,14 @@ export async function executeNIPRAutomation(job: NIPRJobData): Promise<NIPRResul
       error: error instanceof Error ? error.message : String(error),
     }
   }
+}
+
+/**
+ * Execute the NIPR automation for a specific job
+ * This is the main entry point - uses HyperAgent for local browser automation
+ */
+export async function executeNIPRAutomation(job: NIPRJobData): Promise<NIPRResult> {
+  return executeNIPRAutomationHyperAgent(job)
 }
 
 /**

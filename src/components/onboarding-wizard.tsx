@@ -1406,7 +1406,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                   {!niprRunning && (
                     <Alert className="bg-amber-50 border-amber-200">
                       <AlertDescription className="text-amber-800">
-                        <strong>Note:</strong> Auto-retrieval takes 3-5 minutes. We will automatically fetch your NIPR PDB report using your credentials.
+                        <strong>Note:</strong> Auto-retrieval takes 4-6 minutes. We will automatically fetch your NIPR PDB report using your credentials.
                       </AlertDescription>
                     </Alert>
                   )}
@@ -1438,7 +1438,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Please do not close this page. This process typically takes 3-5 minutes.
+                    Please do not close this page. This process typically takes 4-6 minutes.
                   </p>
                 </div>
               )}

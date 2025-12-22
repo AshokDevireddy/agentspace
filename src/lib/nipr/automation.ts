@@ -7,6 +7,9 @@
 
 import { HyperAgent } from '@hyperbrowser/agent'
 import { createAnthropicClient } from '@hyperbrowser/agent/llm/providers'
+import { Hyperbrowser } from '@hyperbrowser/sdk'
+import type { SessionDetail } from '@hyperbrowser/sdk/types'
+import AdmZip from 'adm-zip'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -242,11 +245,58 @@ async function checkForPageError(page: { locator: (selector: string) => any, con
   }
 }
 
+/**
+ * Wait for download zip to be ready on Hyperbrowser cloud
+ * @param sessionId - The Hyperbrowser session ID
+ * @param timeout - Maximum time to wait in milliseconds
+ * @returns The download URL
+ */
+async function waitForDownloadZip(sessionId: string, timeout = 30000): Promise<string> {
+  const hbClient = new Hyperbrowser({ apiKey: process.env.HYPERBROWSER_API_KEY! })
+  const maxRetries = Math.ceil(timeout / 2000)
+  let retries = 0
+
+  while (retries < maxRetries) {
+    console.log(`[NIPR-HA] Waiting for download zip... (${retries + 1}/${maxRetries})`)
+    const response = await hbClient.sessions.getDownloadsURL(sessionId)
+
+    if (response.status === 'completed' && response.downloadsUrl) {
+      return response.downloadsUrl
+    }
+    if (response.status === 'failed') {
+      throw new Error(`Download zip failed: ${response.error}`)
+    }
+
+    await delay(2000)
+    retries++
+  }
+  throw new Error(`Download zip not ready after ${timeout}ms`)
+}
+
+/**
+ * Extract PDF from download zip and save to local file
+ * @param zipUrl - URL to the downloads zip file
+ * @param outputPath - Local path to save the extracted PDF
+ */
+async function extractPdfFromZip(zipUrl: string, outputPath: string): Promise<void> {
+  const response = await fetch(zipUrl)
+  const zipBuffer = Buffer.from(await response.arrayBuffer())
+  const zip = new AdmZip(zipBuffer)
+  const pdfEntry = zip.getEntries().find(e => e.entryName.endsWith('.pdf'))
+
+  if (!pdfEntry) {
+    throw new Error('No PDF found in downloads zip')
+  }
+
+  fs.writeFileSync(outputPath, pdfEntry.getData())
+}
+
 // Validate and load NIPR configuration from environment variables
 export const getDefaultConfig = (): NIPRConfig => {
   // Required environment variables for HyperAgent
   const requiredVars = [
-    'ANTHROPIC_API_KEY'
+    'ANTHROPIC_API_KEY',
+    'HYPERBROWSER_API_KEY'
   ]
 
   // Required billing environment variables
@@ -345,10 +395,30 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
       apiKey: process.env.ANTHROPIC_API_KEY,
       model: 'claude-sonnet-4-20250514',
     })
-    agent = new HyperAgent({ llm })
+    // Use Hyperbrowser cloud browser (local Playwright doesn't work on Vercel)
+    agent = new HyperAgent({
+      llm,
+      browserProvider: 'Hyperbrowser',
+      hyperbrowserConfig: {
+        sessionConfig: {
+          saveDownloads: true,
+          enableAlwaysOpenPdfExternally: true
+        }
+      }
+    })
 
     // Create browser page
     const page = await agent.newPage()
+
+    // Configure CDP download behavior for cloud browser
+    const browser = await agent.initBrowser()
+    const cdp = await browser.newBrowserCDPSession()
+    await cdp.send('Browser.setDownloadBehavior', {
+      behavior: 'allow',
+      downloadPath: '/tmp/downloads',
+      eventsEnabled: true,
+    })
+    console.log('[NIPR-HA] CDP download behavior configured')
 
     // Register with queue manager
     queueManager.registerJob(job.job_id, agent, job.job_user_id)
@@ -521,15 +591,40 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
     // Wait for the report page to be ready
     await delay(3000)
 
-    // Download report using Playwright's download event
-    const [download] = await Promise.all([
-      page.waitForEvent('download'),
-      page.perform('Click the View Detail button')
-    ])
+    // Trigger download and wait for it to complete on cloud
+    // Note: With Hyperbrowser cloud, download.saveAs() doesn't work - files download to cloud's /tmp
+    const downloadPromise = page.waitForEvent('download')
+    await page.perform('Click the View Detail button')
+    const download = await downloadPromise
 
+    // Wait for download to complete on cloud (NOT saveAs - that doesn't work remotely)
+    await download.path()
+    console.log(`[NIPR-HA] Download triggered: ${download.suggestedFilename()}`)
+
+    // Get session ID before closing agent
+    const session = agent.getSession() as SessionDetail
+    const sessionId = session?.id
+    if (!sessionId) {
+      throw new Error('Could not get Hyperbrowser session ID')
+    }
+    console.log(`[NIPR-HA] Session ID: ${sessionId}`)
+
+    // Unregister from queue manager before closing
+    queueManager.unregisterJob(job.job_id)
+
+    // Close agent (this stops the session)
+    await agent.closeAgent()
+    console.log('[NIPR-HA] Agent closed, waiting for downloads zip...')
+
+    // Wait for downloads zip to be ready on Hyperbrowser cloud
+    await delay(3000)
+    const zipUrl = await waitForDownloadZip(sessionId)
+    console.log(`[NIPR-HA] Downloads zip ready: ${zipUrl}`)
+
+    // Extract PDF from zip
     const reportPath = path.join(downloadsFolder, `report_${requestId}.pdf`)
-    await download.saveAs(reportPath)
-    console.log(`[NIPR-HA] Report saved: ${reportPath}`)
+    await extractPdfFromZip(zipUrl, reportPath)
+    console.log(`[NIPR-HA] Report extracted: ${reportPath}`)
 
     // Files are in temp directory (not publicly accessible, but analyzed immediately)
     const files = [reportPath]
@@ -565,12 +660,6 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
     } catch (cleanupError) {
       console.warn('[NIPR-HA] Failed to clean up temp file:', cleanupError)
     }
-
-    // Unregister from queue manager before closing
-    queueManager.unregisterJob(job.job_id)
-
-    // Close agent
-    await agent.closeAgent()
 
     await updateProgress(job.job_id, 'COMPLETE')
     console.log('[NIPR-HA] HyperAgent automation completed successfully!')

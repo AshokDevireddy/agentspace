@@ -9,6 +9,7 @@ import { HyperAgent } from '@hyperbrowser/agent'
 import { createAnthropicClient } from '@hyperbrowser/agent/llm/providers'
 import path from 'path'
 import fs from 'fs'
+import os from 'os'
 import crypto from 'crypto'
 import type { NIPRInput, NIPRResult, NIPRConfig, NIPRAnalysisResult } from './types'
 import { analyzePDFReport } from './pdf-analyzer'
@@ -316,8 +317,8 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
   const requestId = generateRequestId()
   const queueManager = getBrowserQueueManager()
 
-  // Create downloads folder
-  const downloadsFolder = path.join(process.cwd(), 'public', 'nipr-downloads')
+  // Create downloads folder in temp directory (Vercel filesystem is read-only except /tmp)
+  const downloadsFolder = path.join(os.tmpdir(), 'nipr-downloads')
   if (!fs.existsSync(downloadsFolder)) {
     fs.mkdirSync(downloadsFolder, { recursive: true })
   }
@@ -530,9 +531,8 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
     await download.saveAs(reportPath)
     console.log(`[NIPR-HA] Report saved: ${reportPath}`)
 
-    const files = [
-      `/nipr-downloads/report_${requestId}.pdf`
-    ]
+    // Files are in temp directory (not publicly accessible, but analyzed immediately)
+    const files = [reportPath]
 
     console.log('[NIPR-HA] PDFs downloaded successfully!')
 
@@ -554,6 +554,16 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
       }
     } else {
       console.log('[NIPR-HA] AI analysis skipped (not configured).')
+    }
+
+    // Clean up temp file after analysis
+    try {
+      if (fs.existsSync(reportPath)) {
+        fs.unlinkSync(reportPath)
+        console.log(`[NIPR-HA] Cleaned up temp file: ${reportPath}`)
+      }
+    } catch (cleanupError) {
+      console.warn('[NIPR-HA] Failed to clean up temp file:', cleanupError)
     }
 
     // Unregister from queue manager before closing

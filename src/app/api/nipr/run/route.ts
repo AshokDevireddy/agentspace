@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import type { NIPRInput } from '@/lib/nipr'
 import { updateUserCarriers } from '@/lib/supabase-helpers'
 import { createAdminClient, createServerClient } from '@/lib/supabase/server'
@@ -132,10 +133,10 @@ export async function POST(request: NextRequest) {
         job_dob: dob
       }
 
-      // Run automation in background (fire and forget)
+      // Run automation in background with waitUntil to keep function alive
       // This allows the frontend to poll for progress updates
       const userId = currentUser.id
-      executeNIPRAutomation(jobData).then(async (result) => {
+      const automationPromise = executeNIPRAutomation(jobData).then(async (result) => {
         const adminClient = createAdminClient()
 
         // Update job with results
@@ -172,6 +173,9 @@ export async function POST(request: NextRequest) {
           console.error('[API/NIPR] Failed to mark job as failed:', rpcError)
         }
       })
+
+      // Keep serverless function alive until automation completes
+      waitUntil(automationPromise)
 
       // Return immediately with job ID so frontend can poll for progress
       return NextResponse.json({

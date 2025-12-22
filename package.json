@@ -34,6 +34,7 @@
     "@supabase/supabase-js": "^2.77.0",
     "@types/papaparse": "^5.3.16",
     "@types/xlsx": "^0.0.35",
+    "@vercel/functions": "^3.3.4",
     "adm-zip": "^0.5.16",
     "class-variance-authority": "^0.7.1",
     "client-lambda": "github:aws-sdk/client-lambda",

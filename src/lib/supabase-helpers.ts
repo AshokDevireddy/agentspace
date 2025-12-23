@@ -220,3 +220,24 @@ export async function updateUserCarriers(userId: string, carriers: string[]) {
   if (error) throw error
   return data
 }
+
+// Update user unique carriers and states from NIPR analysis (atomic update)
+// Requires admin client to bypass RLS
+export async function updateUserNIPRData(
+  supabaseClient: { from: (table: string) => any },
+  userId: string,
+  carriers: string[],
+  states: string[]
+) {
+  const { data, error } = await supabaseClient
+    .from('users')
+    .update({
+      unique_carriers: carriers,
+      unique_states: states
+    })
+    .eq('id', userId)
+    .select()
+
+  if (error) throw error
+  return data
+}

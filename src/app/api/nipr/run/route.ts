@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import type { NIPRInput } from '@/lib/nipr'
-import { updateUserCarriers } from '@/lib/supabase-helpers'
+import { updateUserNIPRData } from '@/lib/supabase-helpers'
 import { createAdminClient, createServerClient } from '@/lib/supabase/server'
 import { executeNIPRAutomation, type NIPRJobData } from '@/lib/nipr/automation'
 
@@ -164,11 +164,12 @@ export async function POST(request: NextRequest) {
             p_error: result.error || null
           })
 
-          // Save carriers to user if successful
+          // Save carriers and states to user if successful
           if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0) {
             try {
-              await updateUserCarriers(job.job_user_id, result.analysis.unique_carriers)
-              console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers to user ${job.job_user_id}`)
+              const states = result.analysis.unique_states || []
+              await updateUserNIPRData(adminClient, job.job_user_id, result.analysis.unique_carriers, states)
+              console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers and ${states.length} states to user ${job.job_user_id}`)
             } catch (dbError) {
               console.error('[API/NIPR] Database persistence failed:', dbError)
             }
@@ -225,11 +226,12 @@ export async function POST(request: NextRequest) {
 
       const result = await executeNIPRAutomation(jobData)
 
-      // Save carriers if successful and user is authenticated
+      // Save carriers and states if successful and user is authenticated
       if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && currentUser?.id) {
         try {
-          await updateUserCarriers(currentUser.id, result.analysis.unique_carriers)
-          console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers to user ${currentUser.id}`)
+          const states = result.analysis.unique_states || []
+          await updateUserNIPRData(supabaseAdmin, currentUser.id, result.analysis.unique_carriers, states)
+          console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers and ${states.length} states to user ${currentUser.id}`)
           result.analysis.savedToDatabase = true
           result.analysis.userId = currentUser.id
         } catch (dbError) {

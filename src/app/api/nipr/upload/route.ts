@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, createAdminClient } from '@/lib/supabase/server'
+import { updateUserNIPRData } from '@/lib/supabase-helpers'
 import { analyzePDFReport } from '@/lib/nipr/pdf-analyzer'
-import { updateUserCarriers } from '@/lib/supabase-helpers'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -98,13 +98,15 @@ export async function POST(request: NextRequest) {
       }, { status: 422 })
     }
 
-    // Save carriers to user profile
+    // Save carriers and states to user profile
     if (analysisResult.unique_carriers && analysisResult.unique_carriers.length > 0) {
       try {
-        await updateUserCarriers(user.id, analysisResult.unique_carriers)
-        console.log(`[API/NIPR/UPLOAD] Saved ${analysisResult.unique_carriers.length} carriers to user ${user.id}`)
+        const states = analysisResult.unique_states || []
+        const adminClient = createAdminClient()
+        await updateUserNIPRData(adminClient, user.id, analysisResult.unique_carriers, states)
+        console.log(`[API/NIPR/UPLOAD] Saved ${analysisResult.unique_carriers.length} carriers and ${states.length} states to user ${user.id}`)
       } catch (dbError) {
-        console.error('[API/NIPR/UPLOAD] Failed to save carriers:', dbError)
+        console.error('[API/NIPR/UPLOAD] Failed to save NIPR data:', dbError)
         // Don't fail the request, just log the error
       }
     }

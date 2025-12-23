@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 
 export interface TourStep {
@@ -161,6 +161,30 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
     })
   }, [userRole])
 
+  // Use refs to avoid dependency issues in callbacks and effects
+  const tourStepsRef = useRef(tourSteps)
+  useEffect(() => {
+    tourStepsRef.current = tourSteps
+  }, [tourSteps])
+
+  // Ref to track current step index for callbacks (avoids stale closures)
+  const currentStepIndexRef = useRef(currentStepIndex)
+  useEffect(() => {
+    currentStepIndexRef.current = currentStepIndex
+  }, [currentStepIndex])
+
+  // Ref for pending navigation - allows navigation after state update
+  const pendingNavigationRef = useRef<string | null>(null)
+
+  // Handle navigation after state updates (avoids "Cannot update during render" error)
+  useEffect(() => {
+    if (pendingNavigationRef.current) {
+      const path = pendingNavigationRef.current
+      pendingNavigationRef.current = null
+      router.push(path)
+    }
+  }, [currentStepIndex, router])
+
   const currentStep = tourSteps[currentStepIndex] || null
   const isLastStep = currentStepIndex === tourSteps.length - 1
   const isFirstStep = currentStepIndex === 0
@@ -169,34 +193,13 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsTourActive(true)
     setCurrentStepIndex(0)
     // Navigate to first step
-    if (tourSteps[0]) {
-      router.push(tourSteps[0].targetPath)
-    }
-  }, [router, tourSteps])
-
-  const skipTour = useCallback(async (userId?: string) => {
-    setIsTourActive(false)
-    setCurrentStepIndex(0)
-
-    // Mark tour as completed
-    if (userId && typeof window !== 'undefined') {
-      localStorage.setItem(`tour_completed_${userId}`, 'true')
-    }
-
-    // Update user status to active
-    try {
-      await fetch('/api/user/complete-onboarding', {
-        method: 'POST',
-      })
-
-      // Navigate to dashboard
-      router.push('/')
-    } catch (error) {
-      console.error('Error completing onboarding:', error)
+    const steps = tourStepsRef.current
+    if (steps[0]) {
+      router.push(steps[0].targetPath)
     }
   }, [router])
 
-  const endTour = useCallback(async (userId?: string) => {
+  const skipTour = useCallback((userId?: string) => {
     setIsTourActive(false)
     setCurrentStepIndex(0)
 
@@ -205,56 +208,84 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem(`tour_completed_${userId}`, 'true')
     }
 
-    // Update user status to active
-    try {
-      await fetch('/api/user/complete-onboarding', {
-        method: 'POST',
-      })
+    // Navigate to dashboard immediately
+    router.push('/')
 
-      // Navigate to dashboard
-      router.push('/')
-    } catch (error) {
+    // Fire API call in background (don't await)
+    fetch('/api/user/complete-onboarding', {
+      method: 'POST',
+    }).catch(error => {
       console.error('Error completing onboarding:', error)
+    })
+  }, [router])
+
+  const endTour = useCallback((userId?: string) => {
+    setIsTourActive(false)
+    setCurrentStepIndex(0)
+
+    // Mark tour as completed
+    if (userId && typeof window !== 'undefined') {
+      localStorage.setItem(`tour_completed_${userId}`, 'true')
     }
+
+    // Navigate to dashboard immediately
+    router.push('/')
+
+    // Fire API call in background (don't await)
+    fetch('/api/user/complete-onboarding', {
+      method: 'POST',
+    }).catch(error => {
+      console.error('Error completing onboarding:', error)
+    })
   }, [router])
 
   const nextStep = useCallback((userId?: string) => {
-    if (currentStepIndex < tourSteps.length - 1) {
-      const nextIndex = currentStepIndex + 1
-      setCurrentStepIndex(nextIndex)
-      // Navigate to the next step's page only if it's different
-      const currentPath = tourSteps[currentStepIndex]?.targetPath
-      const nextPath = tourSteps[nextIndex]?.targetPath
+    const steps = tourStepsRef.current
+    const currentIndex = currentStepIndexRef.current
+
+    if (currentIndex < steps.length - 1) {
+      const nextIndex = currentIndex + 1
+      // Set pending navigation if path changes (will be handled by useEffect)
+      const currentPath = steps[currentIndex]?.targetPath
+      const nextPath = steps[nextIndex]?.targetPath
       if (currentPath !== nextPath) {
-        router.push(nextPath)
+        pendingNavigationRef.current = nextPath
       }
+      setCurrentStepIndex(nextIndex)
     } else {
       endTour(userId)
     }
-  }, [currentStepIndex, tourSteps, router, endTour])
+  }, [endTour])
 
   const previousStep = useCallback(() => {
-    if (currentStepIndex > 0) {
-      const prevIndex = currentStepIndex - 1
-      setCurrentStepIndex(prevIndex)
-      // Navigate to the previous step's page
-      router.push(tourSteps[prevIndex].targetPath)
+    const currentIndex = currentStepIndexRef.current
+    if (currentIndex > 0) {
+      const newIndex = currentIndex - 1
+      const steps = tourStepsRef.current
+      // Set pending navigation (will be handled by useEffect)
+      pendingNavigationRef.current = steps[newIndex].targetPath
+      setCurrentStepIndex(newIndex)
     }
-  }, [currentStepIndex, tourSteps, router])
+  }, [])
 
   // Auto-adjust step when path changes externally (but not when multiple steps share the same path)
+  // Use refs to avoid unnecessary effect triggers
   useEffect(() => {
     if (isTourActive && pathname) {
-      const currentPath = tourSteps[currentStepIndex]?.targetPath
-      // Only adjust if we navigated to a different path externally
-      if (currentPath && currentPath !== pathname) {
-        const stepIndex = tourSteps.findIndex(step => step.targetPath === pathname)
-        if (stepIndex !== -1) {
-          setCurrentStepIndex(stepIndex)
+      const steps = tourStepsRef.current
+      setCurrentStepIndex(prevIndex => {
+        const currentPath = steps[prevIndex]?.targetPath
+        // Only adjust if we navigated to a different path externally
+        if (currentPath && currentPath !== pathname) {
+          const stepIndex = steps.findIndex(step => step.targetPath === pathname)
+          if (stepIndex !== -1) {
+            return stepIndex
+          }
         }
-      }
+        return prevIndex
+      })
     }
-  }, [pathname, isTourActive, tourSteps, currentStepIndex])
+  }, [pathname, isTourActive])
 
   const value: TourContextType = {
     isTourActive,

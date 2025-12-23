@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { createAdminClient } from '@/lib/supabase/server'
 import { executeNIPRAutomation, type NIPRJobData } from '@/lib/nipr/automation'
-import { updateUserCarriers } from '@/lib/supabase-helpers'
+import { updateUserNIPRData } from '@/lib/supabase-helpers'
 
 export const maxDuration = 300 // 5 minutes timeout
 
@@ -91,13 +91,14 @@ export async function POST(request: NextRequest) {
           p_error: result.error || null
         })
 
-        // Save carriers to user if successful
+        // Save carriers and states to user if successful
         if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && jobUserId) {
           try {
-            await updateUserCarriers(jobUserId, result.analysis.unique_carriers)
-            console.log(`[API/NIPR/PROCESS] Saved ${result.analysis.unique_carriers.length} carriers to user ${jobUserId}`)
+            const states = result.analysis.licensed_states || []
+            await updateUserNIPRData(adminClient, jobUserId, result.analysis.unique_carriers, states)
+            console.log(`[API/NIPR/PROCESS] Saved ${result.analysis.unique_carriers.length} carriers and ${states.length} states to user ${jobUserId}`)
           } catch (dbError) {
-            console.error('[API/NIPR/PROCESS] Failed to save carriers:', dbError)
+            console.error('[API/NIPR/PROCESS] Failed to save NIPR data:', dbError)
           }
         }
 

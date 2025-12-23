@@ -31,6 +31,8 @@ export interface NIPRAnalysisResult {
   success: boolean
   /** List of unique carrier/company names */
   unique_carriers: string[]
+  /** List of licensed state abbreviations (e.g., ['CA', 'TX']) */
+  licensed_states: string[]
   /** Licensed states information */
   licensedStates: {
     resident: string[]

@@ -54,7 +54,7 @@ export default function Scoreboard() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ScoreboardData | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [timeframe, setTimeframe] = useState<TimeframeOption>('ytd')
+  const [timeframe, setTimeframe] = useState<TimeframeOption>('past_90_days')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)

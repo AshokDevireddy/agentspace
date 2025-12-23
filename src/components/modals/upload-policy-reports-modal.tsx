@@ -22,7 +22,8 @@ const carriers = [
   'Royal Neighbors',
   'Liberty Bankers Life',
   'Transamerica',
-  'Foresters'
+  'Foresters',
+  'Reagan CRM Data'
 ]
 
 export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {

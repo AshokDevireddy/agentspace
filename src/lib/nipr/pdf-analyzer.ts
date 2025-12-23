@@ -134,6 +134,30 @@ function validateAnalysisResult(result: any): { unique_carriers: string[]; licen
 }
 
 /**
+ * Extract state abbreviations from "State Name (XX)" format
+ * Combines resident and non-resident states into a deduplicated array
+ *
+ * @param licensedStates - Object containing resident and nonResident state arrays
+ * @returns Array of unique state abbreviations (e.g., ['CA', 'TX'])
+ */
+export function extractStateAbbreviations(
+  licensedStates: { resident: string[]; nonResident: string[] }
+): string[] {
+  const allStates = [...licensedStates.resident, ...licensedStates.nonResident]
+
+  const abbreviations = allStates
+    .map(state => {
+      // Extract abbreviation from "State Name (XX)" format
+      const match = state.match(/\(([A-Z]{2})\)$/)
+      return match ? match[1] : null
+    })
+    .filter((abbr): abbr is string => abbr !== null)
+
+  // Return deduplicated array
+  return [...new Set(abbreviations)]
+}
+
+/**
  * Analyze a PDF report using text extraction with LangChain (for PDFs <= 100 pages)
  * Note: LangChain ChatAnthropic doesn't support document API, so we extract text first
  */
@@ -151,6 +175,7 @@ async function analyzeWithDocumentAPI(
     return {
       success: false,
       unique_carriers: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -177,6 +202,7 @@ async function analyzeWithDocumentAPI(
     return {
       success: true,
       unique_carriers: validated.unique_carriers,
+      licensed_states: extractStateAbbreviations(validated.licensedStates),
       licensedStates: validated.licensedStates,
       analyzedAt: new Date().toISOString()
       // Note: LangChain doesn't expose token usage in the same way
@@ -186,6 +212,7 @@ async function analyzeWithDocumentAPI(
     return {
       success: false,
       unique_carriers: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -207,6 +234,7 @@ async function analyzeWithTextExtraction(
     return {
       success: false,
       unique_carriers: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -230,6 +258,7 @@ async function analyzeWithTextExtraction(
     return {
       success: true,
       unique_carriers: validated.unique_carriers,
+      licensed_states: extractStateAbbreviations(validated.licensedStates),
       licensedStates: validated.licensedStates,
       analyzedAt: new Date().toISOString()
       // Note: LangChain doesn't expose token usage in the same way
@@ -239,6 +268,7 @@ async function analyzeWithTextExtraction(
     return {
       success: false,
       unique_carriers: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -261,6 +291,7 @@ export async function analyzePDFReport(pdfPath: string): Promise<NIPRAnalysisRes
     return {
       success: false,
       unique_carriers: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -271,6 +302,7 @@ export async function analyzePDFReport(pdfPath: string): Promise<NIPRAnalysisRes
     return {
       success: false,
       unique_carriers: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -308,6 +340,7 @@ export async function analyzePDFReport(pdfPath: string): Promise<NIPRAnalysisRes
     return {
       success: false,
       unique_carriers: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }

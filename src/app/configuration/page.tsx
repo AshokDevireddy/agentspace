@@ -4,10 +4,11 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor } from "lucide-react"
+import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn, getContrastTextColor } from "@/lib/utils"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 import { HexColorPicker } from 'react-colorful'
@@ -72,7 +73,7 @@ interface Commission {
   commission_percentage: number
 }
 
-type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord"
+type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord" | "carrier-logins"
 
 // Default primary color schemes for light and dark mode
 const DEFAULT_PRIMARY_COLOR_LIGHT = "0 0% 0%" // Black for light mode
@@ -359,6 +360,16 @@ export default function ConfigurationPage() {
   const [discordWebhookValue, setDiscordWebhookValue] = useState("")
   const [savingDiscordWebhook, setSavingDiscordWebhook] = useState(false)
 
+  // Carrier Logins state
+  const [carrierNames, setCarrierNames] = useState<string[]>([])
+  const [selectedCarrierLogin, setSelectedCarrierLogin] = useState<string>("")
+  const [carrierLoginUsername, setCarrierLoginUsername] = useState<string>("")
+  const [carrierLoginPassword, setCarrierLoginPassword] = useState<string>("")
+  const [loadingCarrierNames, setLoadingCarrierNames] = useState(false)
+  const [savingCarrierLogin, setSavingCarrierLogin] = useState(false)
+  const [carrierDropdownOpen, setCarrierDropdownOpen] = useState(false)
+  const carrierDropdownRef = useRef<HTMLDivElement | null>(null)
+
   // Policy Reports state
   const [uploads, setUploads] = useState<Array<{carrier: string, file: File | null}>>([
     { carrier: 'Aetna', file: null },
@@ -369,7 +380,8 @@ export default function ConfigurationPage() {
     { carrier: 'Royal Neighbors', file: null },
     { carrier: 'Liberty Bankers Life', file: null },
     { carrier: 'Transamerica', file: null },
-    { carrier: 'Foresters', file: null }
+    { carrier: 'Foresters', file: null },
+    { carrier: 'Reagan CRM Data', file: null }
   ])
   const [uploadingReports, setUploadingReports] = useState(false)
   const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
@@ -462,6 +474,49 @@ export default function ConfigurationPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, selectedCommissionCarrier])
+
+  // Fetch carrier names when carrier-logins tab is opened
+  useEffect(() => {
+    if (activeTab === 'carrier-logins' && carrierNames.length === 0 && !loadingCarrierNames) {
+      const fetchCarrierNames = async () => {
+        try {
+          setLoadingCarrierNames(true)
+          const response = await fetch('/api/carriers/names')
+          if (!response.ok) {
+            throw new Error('Failed to fetch carrier names')
+          }
+          const names = await response.json()
+          setCarrierNames(names)
+        } catch (error) {
+          console.error('Error fetching carrier names:', error)
+          showError('Failed to load carrier names')
+        } finally {
+          setLoadingCarrierNames(false)
+        }
+      }
+      fetchCarrierNames()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
+
+  // Close carrier dropdown when clicking outside
+  useEffect(() => {
+    if (!carrierDropdownOpen) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        carrierDropdownRef.current &&
+        !carrierDropdownRef.current.contains(event.target as Node)
+      ) {
+        setCarrierDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [carrierDropdownOpen])
 
   // Filter products when carrier is selected
   useEffect(() => {
@@ -2056,6 +2111,7 @@ export default function ConfigurationPage() {
     { id: "lead-sources" as TabType, label: "Lead Sources", icon: Users },
     { id: "messaging" as TabType, label: "Messaging", icon: MessageSquare },
     { id: "policy-reports" as TabType, label: "Policy Reports", icon: BarChart3 },
+    { id: "carrier-logins" as TabType, label: "Carrier Logins", icon: Lock },
     { id: "discord" as TabType, label: "Discord Notifications", icon: Bell },
   ]
 
@@ -3783,6 +3839,213 @@ export default function ConfigurationPage() {
                         <h3 className="text-lg font-semibold text-amber-900 mb-2">⚠️ No Webhook Configured</h3>
                         <p className="text-sm text-amber-800">
                           You won't receive Discord notifications until you configure a webhook URL above.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Carrier Logins Tab */}
+              {activeTab === "carrier-logins" && (
+                <div>
+                  <div className="mb-6">
+                    <h2 className="text-xl font-semibold text-foreground mb-1">Carrier Logins</h2>
+                    <p className="text-sm text-muted-foreground">Manage your carrier platform credentials</p>
+                  </div>
+
+                  <div className="space-y-6">
+                    {/* Carrier Selection Dropdown */}
+                    <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                      <label className="text-sm font-medium text-foreground mb-2 block">
+                        Select Carrier
+                      </label>
+                      <div className="relative" ref={carrierDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setCarrierDropdownOpen((open) => !open)}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm",
+                            "hover:bg-accent/60 focus:outline-none focus:ring-2 focus:ring-ring"
+                          )}
+                        >
+                          <span className={cn("truncate", !selectedCarrierLogin && "text-muted-foreground")}>
+                            {selectedCarrierLogin || "Select a carrier..."}
+                          </span>
+                          <span className="ml-2 text-xs text-muted-foreground">▼</span>
+                        </button>
+                        {carrierDropdownOpen && (
+                          <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md">
+                            {loadingCarrierNames ? (
+                              <div className="p-2 text-sm text-muted-foreground">Loading carriers...</div>
+                            ) : carrierNames.length === 0 ? (
+                              <div className="p-2 text-sm text-muted-foreground">No carriers available</div>
+                            ) : (
+                              carrierNames.map((name) => (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCarrierLogin(name)
+                                    setCarrierLoginUsername("")
+                                    setCarrierLoginPassword("")
+                                    setCarrierDropdownOpen(false)
+                                  }}
+                                  className={cn(
+                                    "flex w-full items-center px-3 py-2 text-sm text-left hover:bg-accent",
+                                    selectedCarrierLogin === name && "bg-accent"
+                                  )}
+                                >
+                                  {name}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Login Interface */}
+                    {selectedCarrierLogin && (
+                      <div className="bg-card rounded-lg shadow-sm border border-border p-8 max-w-md mx-auto">
+                        {/* Header with back arrow, logo, and close */}
+                        <div className="flex items-center justify-between mb-8">
+                          <button
+                            onClick={() => {
+                              setSelectedCarrierLogin("")
+                              setCarrierLoginUsername("")
+                              setCarrierLoginPassword("")
+                            }}
+                            className="text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <ArrowLeft className="h-5 w-5" />
+                          </button>
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center">
+                              <Lock className="h-4 w-4 text-white" />
+                            </div>
+                            <span className="text-sm font-semibold">AgentSpace</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSelectedCarrierLogin("")
+                              setCarrierLoginUsername("")
+                              setCarrierLoginPassword("")
+                            }}
+                            className="text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <X className="h-5 w-5" />
+                          </button>
+                        </div>
+
+                        {/* Instructions */}
+                        <div className="mb-8 text-center">
+                          <h3 className="text-2xl font-bold text-foreground mb-3">Enter your credentials</h3>
+                          <p className="text-sm text-muted-foreground">
+                            By providing your {selectedCarrierLogin} credentials to AgentSpace, you're enabling AgentSpace to retrieve your financial data.
+                          </p>
+                        </div>
+
+                        {/* Username Field */}
+                        <div className="mb-4">
+                          <label className="text-sm font-medium text-foreground mb-2 block">
+                            Username
+                          </label>
+                          <div className="relative">
+                            <Input
+                              type="text"
+                              value={carrierLoginUsername}
+                              onChange={(e) => setCarrierLoginUsername(e.target.value)}
+                              placeholder="Enter username"
+                              className="pr-10"
+                            />
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                              <Lock className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Password Field */}
+                        <div className="mb-6">
+                          <label className="text-sm font-medium text-foreground mb-2 block">
+                            Password
+                          </label>
+                          <div className="relative">
+                            <Input
+                              type="password"
+                              value={carrierLoginPassword}
+                              onChange={(e) => setCarrierLoginPassword(e.target.value)}
+                              placeholder="Enter password"
+                              className="pr-10"
+                            />
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                              <Lock className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Submit Button */}
+                        <Button
+                          className="w-full bg-gray-600 hover:bg-gray-700 text-white"
+                          disabled={!carrierLoginUsername || !carrierLoginPassword || savingCarrierLogin}
+                          onClick={async () => {
+                            if (!selectedCarrierLogin || !carrierLoginUsername || !carrierLoginPassword) return
+
+                            try {
+                              setSavingCarrierLogin(true)
+                              const supabase = createClient()
+                              const { data: { session } } = await supabase.auth.getSession()
+                              const accessToken = session?.access_token
+
+                              if (!accessToken) {
+                                showError('You must be logged in to save carrier logins.')
+                                return
+                              }
+
+                              const response = await fetch('/api/carrier-logins', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'Authorization': `Bearer ${accessToken}`
+                                },
+                                body: JSON.stringify({
+                                  carrier_name: selectedCarrierLogin,
+                                  login: carrierLoginUsername,
+                                  password: carrierLoginPassword
+                                })
+                              })
+
+                              const data = await response.json().catch(() => null)
+
+                              if (!response.ok) {
+                                const detail = data?.detail || data?.error || 'Failed to save carrier login.'
+                                showError(detail)
+                                return
+                              }
+
+                              showSuccess('Carrier login saved successfully.')
+                              // Clear credentials so user can enter another or switch carriers without reload
+                              setCarrierLoginUsername("")
+                              setCarrierLoginPassword("")
+                            } catch (error) {
+                              console.error('Error saving carrier login:', error)
+                              showError('An unexpected error occurred while saving carrier login.')
+                            } finally {
+                              setSavingCarrierLogin(false)
+                            }
+                          }}
+                        >
+                          {savingCarrierLogin ? 'Saving...' : 'Submit'}
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Empty State */}
+                    {!selectedCarrierLogin && (
+                      <div className="bg-accent/30 rounded-lg p-12 border border-border text-center">
+                        <Lock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <p className="text-muted-foreground">
+                          Select a carrier from the dropdown above to add your login credentials.
                         </p>
                       </div>
                     )}

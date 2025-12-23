@@ -61,6 +61,9 @@ export async function POST(request: Request) {
 
     console.log("Permission Level:", permissionLevel, permissionLevel?.trim().toLowerCase() === 'admin');
 
+    const userRole = permissionLevel?.trim().toLowerCase()
+    const themeMode = (userRole === 'admin' || userRole === 'agent') ? 'system' : 'light'
+
     // Insert user data into users table with status='invited'
     const { error: insertError } = await admin
       .from('users')
@@ -81,6 +84,7 @@ export async function POST(request: Request) {
         created_at: new Date().toISOString(),
         status: 'pending',
         is_admin: (permissionLevel?.trim().toLowerCase() === 'admin'),
+        theme_mode: themeMode,
       }])
 
     if (insertError) {

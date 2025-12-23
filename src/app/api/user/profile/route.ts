@@ -184,6 +184,8 @@ export async function GET(request: Request) {
       // Include scheduled tier change information
       scheduled_tier_change: userData.scheduled_tier_change || null,
       scheduled_tier_change_date: userData.scheduled_tier_change_date || null,
+      // Include theme preference
+      theme_mode: userData.theme_mode || null,
     }
 
     return NextResponse.json({

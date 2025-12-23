@@ -7,6 +7,10 @@ import { PricingTierCard } from "@/components/pricing-tier-card";
 import { SubscriptionManager } from "@/components/subscription-manager";
 import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";
 import { useNotification } from '@/contexts/notification-context'
+import { useTheme } from "next-themes"
+import { updateUserTheme, ThemeMode } from "@/lib/theme"
+import { Sun, Moon, Monitor, Check, Loader2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface ProfileData {
   id: string;
@@ -55,13 +59,15 @@ const formatRenewalDate = (dateString: string | null | undefined): string => {
 };
 
 export default function ProfilePage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, userData, refreshUserData, loading: authLoading } = useAuth();
   const { showSuccess, showError } = useNotification()
+  const { setTheme } = useTheme()
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [positions, setPositions] = useState<Position[]>([]);
   const [selectedPositionId, setSelectedPositionId] = useState<string>("");
   const [updatingPosition, setUpdatingPosition] = useState(false);
+  const [savingTheme, setSavingTheme] = useState(false);
 
 
   // Fetch user profile data from API
@@ -178,6 +184,17 @@ export default function ProfilePage() {
     }
   };
 
+  const handleThemeChange = async (newTheme: ThemeMode) => {
+    setSavingTheme(true)
+    setTheme(newTheme)
+    const result = await updateUserTheme(newTheme)
+    if (result.success) {
+      await refreshUserData()
+    } else {
+      showError('Failed to update theme preference')
+    }
+    setSavingTheme(false)
+  }
 
   // Show loading screen until data is ready
   if (authLoading || loading || !profileData) {
@@ -248,6 +265,133 @@ export default function ProfilePage() {
               {updatingPosition ? 'Updating...' : 'Update Position'}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Theme Preference (Non-admin agents only - Admins use Settings page) */}
+      {!profileData.is_admin && userData?.role === 'agent' && (
+        <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
+          <h2 className="text-xl font-bold text-foreground mb-2">
+            <Moon className="h-5 w-5 inline mr-2" />
+            Theme Preference
+          </h2>
+          <p className="text-sm text-muted-foreground mb-6">
+            Choose your personal theme preference. This setting only affects your account.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Light Theme Option */}
+            <button
+              onClick={() => handleThemeChange('light')}
+              disabled={savingTheme}
+              className={cn(
+                "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
+                (userData?.theme_mode || 'system') === 'light'
+                  ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
+                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
+              )}
+            >
+              <div className="flex flex-col items-center gap-3">
+                <Sun className={cn(
+                  "h-10 w-10",
+                  (userData?.theme_mode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                )} />
+                <div className="text-center">
+                  <p className={cn(
+                    "font-semibold text-lg",
+                    (userData?.theme_mode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                  )}>
+                    Light
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Bright, clean interface
+                  </p>
+                </div>
+                {(userData?.theme_mode || 'system') === 'light' && (
+                  <div className="absolute top-3 right-3">
+                    <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                )}
+              </div>
+            </button>
+
+            {/* Dark Theme Option */}
+            <button
+              onClick={() => handleThemeChange('dark')}
+              disabled={savingTheme}
+              className={cn(
+                "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
+                (userData?.theme_mode || 'system') === 'dark'
+                  ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
+                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
+              )}
+            >
+              <div className="flex flex-col items-center gap-3">
+                <Moon className={cn(
+                  "h-10 w-10",
+                  (userData?.theme_mode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                )} />
+                <div className="text-center">
+                  <p className={cn(
+                    "font-semibold text-lg",
+                    (userData?.theme_mode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                  )}>
+                    Dark
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Easy on the eyes
+                  </p>
+                </div>
+                {(userData?.theme_mode || 'system') === 'dark' && (
+                  <div className="absolute top-3 right-3">
+                    <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                )}
+              </div>
+            </button>
+
+            {/* System Theme Option */}
+            <button
+              onClick={() => handleThemeChange('system')}
+              disabled={savingTheme}
+              className={cn(
+                "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
+                (userData?.theme_mode || 'system') === 'system'
+                  ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
+                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
+              )}
+            >
+              <div className="flex flex-col items-center gap-3">
+                <Monitor className={cn(
+                  "h-10 w-10",
+                  (userData?.theme_mode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                )} />
+                <div className="text-center">
+                  <p className={cn(
+                    "font-semibold text-lg",
+                    (userData?.theme_mode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                  )}>
+                    System
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Follow device settings
+                  </p>
+                </div>
+                {(userData?.theme_mode || 'system') === 'system' && (
+                  <div className="absolute top-3 right-3">
+                    <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                )}
+              </div>
+            </button>
+          </div>
+
+          {savingTheme && (
+            <div className="mt-4 flex items-center justify-center text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Saving theme preference...
+            </div>
+          )}
         </div>
       )}
 

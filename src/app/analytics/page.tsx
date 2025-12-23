@@ -5,7 +5,7 @@ import UploadPolicyReportsModal from "@/components/modals/upload-policy-reports-
 import DownlineProductionChart, { DownlineProductionChartHandle } from "@/components/downline-production-chart"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import {
@@ -15,6 +15,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select"
+import { Info } from "lucide-react"
 
 // analytics_test_value: static data for the test analytics page
 const analytics_test_value = {
@@ -509,6 +510,8 @@ export default function AnalyticsTestPage() {
 	const [hoverPersistencyInfo, setHoverPersistencyInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
 	const [hoverPlacementInfo, setHoverPlacementInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
 	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; placement?: number; avgPremium?: number }>(null)
+	const [showPersistencyTooltip, setShowPersistencyTooltip] = React.useState(false)
+	const [showPlacementTooltip, setShowPlacementTooltip] = React.useState(false)
 	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
@@ -521,8 +524,21 @@ export default function AnalyticsTestPage() {
 	const [selectedAgentId, setSelectedAgentId] = React.useState<string>("")
 	const [originalUserId, setOriginalUserId] = React.useState<string | null>(null)
 	const [userRole, setUserRole] = React.useState<string | null>(null)
+	const [viewMode, setViewMode] = React.useState<'just_me' | 'downlines'>(() => {
+		if (typeof window !== 'undefined') {
+			return (localStorage.getItem('analytics_view_mode') as 'just_me' | 'downlines') || 'just_me'
+		}
+		return 'just_me'
+	})
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
+	const [_analyticsFullData, setAnalyticsFullData] = React.useState<{your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null} | null>(null)
+
+	// Save view mode to localStorage
+	React.useEffect(() => {
+		localStorage.setItem('analytics_view_mode', viewMode)
+	}, [viewMode])
+
 	React.	useEffect(() => {
 		let isMounted = true
 		;(async () => {
@@ -544,7 +560,7 @@ export default function AnalyticsTestPage() {
 				console.log("🏢 Current User Agency ID:", userRow.agency_id)
 
 				const { data: rpcData, error: rpcError } = await supabase
-					.rpc("get_analytics_from_deals_for_agent", { p_user_id: userRow.id })
+					.rpc("get_analytics_split_view", { p_user_id: userRow.id })
 
 				if (rpcError || !rpcData) return
 
@@ -554,7 +570,8 @@ export default function AnalyticsTestPage() {
                 console.log("user_id", userRow.id)
 
 				if (isMounted) {
-					setAnalyticsData(rpcData as AnalyticsTestValue)
+					setAnalyticsFullData(rpcData)
+					setAnalyticsData(rpcData.your_deals as AnalyticsTestValue)
 					setUserId(userRow.id)
 					setOriginalUserId(userRow.id)
 					setSubscriptionTier(userRow.subscription_tier || 'free')
@@ -585,7 +602,11 @@ export default function AnalyticsTestPage() {
 					throw new Error('Failed to fetch agents')
 				}
 				const data = await response.json()
-				if (data.allAgents) {
+				if (data.allAgents && originalUserId) {
+					// Filter out the current user from the agents list
+					const filteredAgents = data.allAgents.filter((agent: { id: string }) => agent.id !== originalUserId)
+					setAllAgents(filteredAgents)
+				} else if (data.allAgents) {
 					setAllAgents(data.allAgents)
 				}
 			} catch (err) {
@@ -593,8 +614,10 @@ export default function AnalyticsTestPage() {
 			}
 		}
 
-		fetchAgents()
-	}, [])
+		if (originalUserId) {
+			fetchAgents()
+		}
+	}, [originalUserId])
 
 	// Fetch analytics when selected agent changes
 	React.useEffect(() => {
@@ -606,10 +629,11 @@ export default function AnalyticsTestPage() {
 				if (originalUserId) {
 					const supabase = createClient()
 					const { data: rpcData, error: rpcError } = await supabase
-						.rpc("get_analytics_from_deals_for_agent", { p_user_id: originalUserId })
-					
+						.rpc("get_analytics_split_view", { p_user_id: originalUserId })
+
 					if (!rpcError && rpcData && isMounted) {
-						setAnalyticsData(rpcData as AnalyticsTestValue)
+						setAnalyticsFullData(rpcData)
+						setAnalyticsData(rpcData.your_deals as AnalyticsTestValue)
 						setUserId(originalUserId)
 					}
 				}
@@ -625,7 +649,7 @@ export default function AnalyticsTestPage() {
 				const supabase = createClient()
 				console.log('[Analytics] Fetching analytics for agent ID:', selectedAgentId)
 				const { data: rpcData, error: rpcError } = await supabase
-					.rpc("get_analytics_from_deals_for_agent", { p_user_id: selectedAgentId })
+					.rpc("get_analytics_split_view", { p_user_id: selectedAgentId })
 
 				if (rpcError) {
 					console.error('[Analytics] RPC Error:', rpcError)
@@ -639,7 +663,8 @@ export default function AnalyticsTestPage() {
 
 				if (isMounted) {
 					console.log('[Analytics] Successfully fetched analytics for agent:', selectedAgentId)
-					setAnalyticsData(rpcData as AnalyticsTestValue)
+					setAnalyticsFullData(rpcData)
+					setAnalyticsData(rpcData.your_deals as AnalyticsTestValue)
 					setUserId(selectedAgentId)
 				}
 			} catch (err) {
@@ -651,6 +676,17 @@ export default function AnalyticsTestPage() {
 		
 		return () => { isMounted = false }
 	}, [selectedAgentId, originalUserId])
+
+	// Update analytics data when viewMode changes
+	React.useEffect(() => {
+		if (_analyticsFullData) {
+			if (viewMode === 'just_me') {
+				setAnalyticsData(_analyticsFullData.your_deals as AnalyticsTestValue)
+			} else {
+				setAnalyticsData(_analyticsFullData.downline_production as AnalyticsTestValue)
+			}
+		}
+	}, [viewMode, _analyticsFullData])
 
 	const isLoading = !_analyticsData
 	const analyticsData = _analyticsData as AnalyticsTestValue | null
@@ -1436,8 +1472,87 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 
 	return (
 		isLoading ? (
-			<div className="flex min-h-screen w-full items-center justify-center p-6">
-				<div className="text-sm text-muted-foreground">Loading analytics…</div>
+			<div className="flex w-full flex-col gap-6 p-6">
+				{/* Header Skeleton */}
+				<div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
+					<div className="h-10 bg-muted animate-pulse rounded w-64" />
+					<div className="flex items-center gap-2">
+						<div className="h-10 bg-muted animate-pulse rounded w-[208px]" />
+						<div className="h-10 bg-muted animate-pulse rounded w-[120px]" />
+						<div className="h-10 bg-muted animate-pulse rounded w-[160px]" />
+						<div className="h-10 bg-muted animate-pulse rounded w-[240px]" />
+					</div>
+				</div>
+
+				{/* Info Cards Skeleton */}
+				<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+					{Array.from({ length: 6 }).map((_, i) => (
+						<Card key={i} className="rounded-md">
+							<CardContent className="p-6">
+								<div className="h-4 bg-muted animate-pulse rounded w-24 mb-3" />
+								<div className="h-8 bg-muted animate-pulse rounded w-16" />
+							</CardContent>
+						</Card>
+					))}
+				</div>
+
+				{/* Charts Skeleton */}
+				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+					{/* Chart 1 */}
+					<Card className="rounded-md">
+						<CardHeader>
+							<div className="h-6 bg-muted animate-pulse rounded w-48" />
+						</CardHeader>
+						<CardContent>
+							<div className="h-[400px] bg-muted/30 animate-pulse rounded" />
+						</CardContent>
+					</Card>
+
+					{/* Chart 2 */}
+					<Card className="rounded-md">
+						<CardHeader>
+							<div className="h-6 bg-muted animate-pulse rounded w-48" />
+						</CardHeader>
+						<CardContent>
+							<div className="h-[400px] bg-muted/30 animate-pulse rounded" />
+						</CardContent>
+					</Card>
+				</div>
+
+				{/* Large Chart Skeleton */}
+				<Card className="rounded-md">
+					<CardHeader>
+						<div className="flex justify-between items-center">
+							<div className="h-6 bg-muted animate-pulse rounded w-64" />
+							<div className="h-8 bg-muted animate-pulse rounded w-32" />
+						</div>
+					</CardHeader>
+					<CardContent>
+						<div className="h-[500px] bg-muted/30 animate-pulse rounded" />
+					</CardContent>
+				</Card>
+
+				{/* Breakdowns Skeleton */}
+				<Tabs defaultValue="status" className="w-full">
+					<TabsList className="grid w-full grid-cols-3 rounded-md">
+						<TabsTrigger value="status" className="rounded-md">
+							<div className="h-4 bg-muted animate-pulse rounded w-16" />
+						</TabsTrigger>
+						<TabsTrigger value="state" className="rounded-md">
+							<div className="h-4 bg-muted animate-pulse rounded w-16" />
+						</TabsTrigger>
+						<TabsTrigger value="age_band" className="rounded-md">
+							<div className="h-4 bg-muted animate-pulse rounded w-16" />
+						</TabsTrigger>
+					</TabsList>
+					<TabsContent value="status">
+						<Card className="rounded-md">
+							<CardContent className="p-6">
+								<div className="h-[300px] bg-muted/30 animate-pulse rounded" />
+							</CardContent>
+						</Card>
+					</TabsContent>
+				</Tabs>
 			</div>
 		) : (
 			<div className="flex w-full flex-col gap-6 p-6 analytics-content" data-tour="analytics">
@@ -1447,6 +1562,40 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 					<h1 className="text-4xl font-bold text-foreground whitespace-nowrap leading-none flex-shrink-0">Agency Analytics</h1>
 
 					<div className="flex items-center gap-2 flex-wrap xl:hidden ml-auto">
+						{/* Just Me / Downlines Toggle */}
+						<div className="relative bg-muted/50 p-1 rounded-lg">
+							{/* Animated background slider */}
+							<div
+								className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out"
+								style={{
+									left: viewMode === 'just_me' ? '4px' : 'calc(50%)',
+									width: 'calc(50% - 4px)'
+								}}
+							/>
+							<div className="relative z-10 flex">
+								<button
+									onClick={() => setViewMode('just_me')}
+									className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${
+										viewMode === 'just_me'
+											? 'text-primary-foreground'
+											: 'text-muted-foreground hover:text-foreground'
+									}`}
+								>
+									Just Me
+								</button>
+								<button
+									onClick={() => setViewMode('downlines')}
+									className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${
+										viewMode === 'downlines'
+											? 'text-primary-foreground'
+											: 'text-muted-foreground hover:text-foreground'
+									}`}
+								>
+									Downlines
+								</button>
+							</div>
+						</div>
+
 						{/* Time window: 3,6,9,All Time */}
 						<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
 							<SelectTrigger className="w-[120px] rounded-md h-9 text-sm flex-shrink-0"><SelectValue placeholder="3 Months" /></SelectTrigger>
@@ -1494,6 +1643,40 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 
 				{/* Controls for xl screens - right aligned */}
 				<div className="hidden xl:flex items-center gap-2 flex-wrap">
+					{/* Just Me / Downlines Toggle */}
+					<div className="relative bg-muted/50 p-1 rounded-lg">
+						{/* Animated background slider */}
+						<div
+							className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out"
+							style={{
+								left: viewMode === 'just_me' ? '4px' : 'calc(50%)',
+								width: 'calc(50% - 4px)'
+							}}
+						/>
+						<div className="relative z-10 flex">
+							<button
+								onClick={() => setViewMode('just_me')}
+								className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${
+									viewMode === 'just_me'
+										? 'text-primary-foreground'
+										: 'text-muted-foreground hover:text-foreground'
+								}`}
+							>
+								Just Me
+							</button>
+							<button
+								onClick={() => setViewMode('downlines')}
+								className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${
+									viewMode === 'downlines'
+										? 'text-primary-foreground'
+										: 'text-muted-foreground hover:text-foreground'
+								}`}
+							>
+								Downlines
+							</button>
+						</div>
+					</div>
+
 					{/* Time window: 3,6,9,All Time */}
 					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
 						<SelectTrigger className="w-[120px] rounded-md h-9 text-sm flex-shrink-0"><SelectValue placeholder="3 Months" /></SelectTrigger>
@@ -1593,13 +1776,41 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 				<div className="grid w-full max-w-4xl grid-cols-4 gap-3">
 					<Card className="rounded-md">
 						<CardContent className="p-4">
-							<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
+							<div className="flex items-center gap-2">
+								<div className="text-xs text-muted-foreground uppercase font-medium">Persistency</div>
+								<div className="relative">
+									<Info 
+										className="h-3.5 w-3.5 text-muted-foreground cursor-help" 
+										onMouseEnter={() => setShowPersistencyTooltip(true)}
+										onMouseLeave={() => setShowPersistencyTooltip(false)}
+									/>
+									{showPersistencyTooltip && (
+										<div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-2 bg-popover border border-border rounded-md shadow-lg text-xs text-popover-foreground z-50 pointer-events-none">
+											The percentage of policies that the carrier has accepted that are still active
+										</div>
+									)}
+								</div>
+							</div>
 							<div className="text-2xl font-bold mt-2">{(topStats.persistency * 100).toFixed(2)}%</div>
 						</CardContent>
 					</Card>
 					<Card className="rounded-md">
 						<CardContent className="p-4">
-							<div className="text-xs text-muted-foreground uppercase font-medium">Placement</div>
+							<div className="flex items-center gap-2">
+								<div className="text-xs text-muted-foreground uppercase font-medium">Placement</div>
+								<div className="relative">
+									<Info 
+										className="h-3.5 w-3.5 text-muted-foreground cursor-help" 
+										onMouseEnter={() => setShowPlacementTooltip(true)}
+										onMouseLeave={() => setShowPlacementTooltip(false)}
+									/>
+									{showPlacementTooltip && (
+										<div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-2 bg-popover border border-border rounded-md shadow-lg text-xs text-popover-foreground z-50 pointer-events-none">
+											The percentage of policies that made it past the application phase and became active for any time
+										</div>
+									)}
+								</div>
+							</div>
 							<div className="text-2xl font-bold mt-2">{(topStats.placement * 100).toFixed(2)}%</div>
 						</CardContent>
 					</Card>

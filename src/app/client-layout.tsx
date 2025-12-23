@@ -1,7 +1,7 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import Navigation from '@/components/navigation'
 import OnboardingTour from '@/components/onboarding-tour'
 import { Building2 } from 'lucide-react'
@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useTheme } from 'next-themes'
 import { useAgencyBranding } from '@/contexts/AgencyBrandingContext'
 import { useAuth } from '@/providers/AuthProvider'
+import { useTour } from '@/contexts/onboarding-tour-context'
 
 // Pages that should not show the navigation sidebar
 const AUTH_PAGES = [
@@ -34,53 +35,14 @@ export default function ClientLayout({
   const { user } = useAuth()
   const { setTheme } = useTheme()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
+  const { isTourActive } = useTour()
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isClientPage = CLIENT_PAGES.some(page => pathname.startsWith(page))
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userStatus, setUserStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-
-  // Apply agency theme on authenticated pages (non-auth pages)
-  useEffect(() => {
-    const applyAgencyTheme = async () => {
-      // Skip if on auth pages - let auth pages handle their own theme
-      if (isAuthPage) return
-
-      // Skip if branding is still loading
-      if (brandingLoading) return
-
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (user) {
-        // Get user's agency ID
-        const { data: userData } = await supabase
-          .from('users')
-          .select('agency_id')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        if (userData?.agency_id) {
-          // Get agency theme preference
-          const { data: agencyInfo } = await supabase
-            .from('agencies')
-            .select('theme_mode')
-            .eq('id', userData.agency_id)
-            .single()
-
-          if (agencyInfo?.theme_mode) {
-            // Apply agency theme
-            setTheme(agencyInfo.theme_mode)
-          } else {
-            // Default to system if no theme preference set
-            setTheme('system')
-          }
-        }
-      }
-    }
-
-    applyAgencyTheme()
-  }, [isAuthPage, pathname, brandingLoading, setTheme])
+  // Track if we've already fetched user data to avoid refetching during tour
+  const hasInitializedRef = useRef(false)
 
   useEffect(() => {
     const checkUserRole = async () => {
@@ -98,14 +60,20 @@ export default function ClientLayout({
         setUserStatus(userData?.status || null)
       }
       setLoading(false)
+      hasInitializedRef.current = true
     }
 
     if (!isAuthPage) {
+      // Skip refetching if tour is active and we've already initialized
+      // This prevents unnecessary database queries during tour navigation
+      if (isTourActive && hasInitializedRef.current) {
+        return
+      }
       checkUserRole()
     } else {
       setLoading(false)
     }
-  }, [pathname, isAuthPage])
+  }, [pathname, isAuthPage, isTourActive])
 
   // On auth pages, show a simple layout with just the logo
   if (isAuthPage) {

@@ -155,15 +155,19 @@ export default function OnboardingTour() {
       setHighlightPosition(null)
     }
 
-    // Wait for DOM to be ready
-    const timer = setTimeout(updatePosition, 100)
+    // Update position immediately, then again after a brief delay for DOM settling
+    // Use requestAnimationFrame for smoother rendering
+    updatePosition()
+    const rafId = requestAnimationFrame(() => {
+      updatePosition()
+    })
 
     // Update on scroll and resize
     window.addEventListener('resize', updatePosition)
     window.addEventListener('scroll', updatePosition)
 
     return () => {
-      clearTimeout(timer)
+      cancelAnimationFrame(rafId)
       window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', updatePosition)
     }

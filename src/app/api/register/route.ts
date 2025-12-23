@@ -81,7 +81,8 @@ export async function POST(request: Request) {
         total_prod: 0,
         total_policies_sold: 0,
         start_date: new Date().toISOString().split('T')[0],
-        agency_id: agencyData.id
+        agency_id: agencyData.id,
+        theme_mode: 'system'
       }])
 
     if (dbError) {

@@ -5,38 +5,80 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
 
+export type UserData = {
+  role: 'admin' | 'agent' | 'client'
+  theme_mode: 'light' | 'dark' | 'system' | null
+}
+
 type AuthContextType = {
   user: User | null
+  userData: UserData | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  refreshUserData: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  userData: null,
   loading: true,
   signIn: async () => {},
   signOut: async () => {},
+  refreshUserData: async () => {},
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const [userData, setUserData] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
   const supabase = createClient()
 
+  // Fetch user data from the users table
+  const fetchUserData = async (authUserId: string): Promise<UserData | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('role, theme_mode')
+        .eq('auth_user_id', authUserId)
+        .single()
+
+      if (error || !data) {
+        console.error('[AuthProvider] Error fetching user data:', error)
+        return null
+      }
+
+      return {
+        role: data.role as 'admin' | 'agent' | 'client',
+        theme_mode: data.theme_mode as 'light' | 'dark' | 'system' | null
+      }
+    } catch (error) {
+      console.error('[AuthProvider] Unexpected error fetching user data:', error)
+      return null
+    }
+  }
+
+  // Refresh user data (called after theme updates)
+  const refreshUserData = async () => {
+    if (user?.id) {
+      const data = await fetchUserData(user.id)
+      setUserData(data)
+    }
+  }
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        console.log('=== AUTH PROVIDER: Auth State Change ===')
-        console.log('Auth event:', event)
-        console.log('Session object:', session)
-        console.log('User from session:', session?.user)
-        console.log('User ID:', session?.user?.id)
-        console.log('User email:', session?.user?.email)
-        console.log('User metadata:', session?.user?.user_metadata)
-
-        setUser(session?.user ?? null)
+      async (event, session) => {
+        if (session?.user) {
+          setUser(session.user)
+          // Fetch user data including theme_mode
+          const data = await fetchUserData(session.user.id)
+          setUserData(data)
+        } else {
+          setUser(null)
+          setUserData(null)
+        }
         setLoading(false)
       }
     )
@@ -53,28 +95,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
     if (error) throw error
 
-    // Get user profile to check role
-    const { data: userData, error: userError } = await supabase
+    // Get user profile to check role and theme
+    const { data: userProfile, error: userError } = await supabase
       .from('users')
-      .select('role, status')
+      .select('role, status, theme_mode')
       .eq('auth_user_id', data.user.id)
       .single()
 
     if (userError) throw new Error('User profile not found')
 
-    if (userData.status !== 'active') {
+    if (userProfile.status !== 'active') {
       await supabase.auth.signOut()
       throw new Error('Your account has been deactivated')
     }
 
     // Verify user is logging in with correct role if expectedRole is provided
-    if (expectedRole && userData.role !== expectedRole) {
+    if (expectedRole && userProfile.role !== expectedRole) {
       await supabase.auth.signOut()
-      throw new Error(`Please use the ${userData.role} login tab`)
+      throw new Error(`Please use the ${userProfile.role} login tab`)
     }
 
+    // Store user data including theme_mode
+    setUserData({
+      role: userProfile.role as 'admin' | 'agent' | 'client',
+      theme_mode: userProfile.theme_mode as 'light' | 'dark' | 'system' | null
+    })
+
     // Route based on role
-    if (userData.role === 'client') {
+    if (userProfile.role === 'client') {
       router.push('/client/dashboard')
     } else {
       router.push('/')
@@ -102,7 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, userData, loading, signIn, signOut, refreshUserData }}>
       {children}
     </AuthContext.Provider>
   )

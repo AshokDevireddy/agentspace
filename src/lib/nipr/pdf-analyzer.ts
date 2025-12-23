@@ -175,7 +175,7 @@ async function analyzeWithDocumentAPI(
     return {
       success: false,
       unique_carriers: [],
-      unique_states: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -202,7 +202,7 @@ async function analyzeWithDocumentAPI(
     return {
       success: true,
       unique_carriers: validated.unique_carriers,
-      unique_states: extractStateAbbreviations(validated.licensedStates),
+      licensed_states: extractStateAbbreviations(validated.licensedStates),
       licensedStates: validated.licensedStates,
       analyzedAt: new Date().toISOString()
       // Note: LangChain doesn't expose token usage in the same way
@@ -212,7 +212,7 @@ async function analyzeWithDocumentAPI(
     return {
       success: false,
       unique_carriers: [],
-      unique_states: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -234,7 +234,7 @@ async function analyzeWithTextExtraction(
     return {
       success: false,
       unique_carriers: [],
-      unique_states: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -258,7 +258,7 @@ async function analyzeWithTextExtraction(
     return {
       success: true,
       unique_carriers: validated.unique_carriers,
-      unique_states: extractStateAbbreviations(validated.licensedStates),
+      licensed_states: extractStateAbbreviations(validated.licensedStates),
       licensedStates: validated.licensedStates,
       analyzedAt: new Date().toISOString()
       // Note: LangChain doesn't expose token usage in the same way
@@ -268,7 +268,7 @@ async function analyzeWithTextExtraction(
     return {
       success: false,
       unique_carriers: [],
-      unique_states: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -291,7 +291,7 @@ export async function analyzePDFReport(pdfPath: string): Promise<NIPRAnalysisRes
     return {
       success: false,
       unique_carriers: [],
-      unique_states: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -302,7 +302,7 @@ export async function analyzePDFReport(pdfPath: string): Promise<NIPRAnalysisRes
     return {
       success: false,
       unique_carriers: [],
-      unique_states: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }
@@ -340,7 +340,7 @@ export async function analyzePDFReport(pdfPath: string): Promise<NIPRAnalysisRes
     return {
       success: false,
       unique_carriers: [],
-      unique_states: [],
+      licensed_states: [],
       licensedStates: { resident: [], nonResident: [] },
       analyzedAt: new Date().toISOString()
     }

@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
           // Save carriers and states to user if successful
           if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0) {
             try {
-              const states = result.analysis.unique_states || []
+              const states = result.analysis.licensed_states || []
               await updateUserNIPRData(adminClient, job.job_user_id, result.analysis.unique_carriers, states)
               console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers and ${states.length} states to user ${job.job_user_id}`)
             } catch (dbError) {
@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
       // Save carriers and states if successful and user is authenticated
       if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && currentUser?.id) {
         try {
-          const states = result.analysis.unique_states || []
+          const states = result.analysis.licensed_states || []
           await updateUserNIPRData(supabaseAdmin, currentUser.id, result.analysis.unique_carriers, states)
           console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers and ${states.length} states to user ${currentUser.id}`)
           result.analysis.savedToDatabase = true

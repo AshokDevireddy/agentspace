@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     // Save carriers and states to user profile
     if (analysisResult.unique_carriers && analysisResult.unique_carriers.length > 0) {
       try {
-        const states = analysisResult.unique_states || []
+        const states = analysisResult.licensed_states || []
         const adminClient = createAdminClient()
         await updateUserNIPRData(adminClient, user.id, analysisResult.unique_carriers, states)
         console.log(`[API/NIPR/UPLOAD] Saved ${analysisResult.unique_carriers.length} carriers and ${states.length} states to user ${user.id}`)

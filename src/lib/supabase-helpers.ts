@@ -233,7 +233,7 @@ export async function updateUserNIPRData(
     .from('users')
     .update({
       unique_carriers: carriers,
-      unique_states: states
+      licensed_states: states
     })
     .eq('id', userId)
     .select()

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createAdminClient } from '@/lib/supabase/server'
 import { executeNIPRAutomation, type NIPRJobData } from '@/lib/nipr/automation'
 import { updateUserCarriers } from '@/lib/supabase-helpers'
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
     acquiredJob = acquiredJobs[0]
     console.log(`[CRON/NIPR] Processing job: ${acquiredJob.job_id}`)
 
-    // Execute the automation
+    // Build job data for automation
     const jobData: NIPRJobData = {
       job_id: acquiredJob.job_id,
       job_user_id: acquiredJob.job_user_id,
@@ -74,40 +75,74 @@ export async function GET(request: NextRequest) {
       job_dob: acquiredJob.job_dob
     }
 
-    const result = await executeNIPRAutomation(jobData)
+    // Capture job info for the background task
+    const jobId = acquiredJob.job_id
+    const jobUserId = acquiredJob.job_user_id
 
-    // Update job with results
-    await supabaseAdmin.rpc('complete_nipr_job', {
-      p_job_id: acquiredJob.job_id,
-      p_success: result.success,
-      p_files: result.files || [],
-      p_carriers: result.analysis?.unique_carriers || [],
-      p_error: result.error || null
-    })
+    // Run automation in background with waitUntil to keep function alive
+    const automationPromise = (async () => {
+      const adminClient = createAdminClient()
 
-    // Save carriers to user if successful
-    if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && acquiredJob.job_user_id) {
       try {
-        await updateUserCarriers(acquiredJob.job_user_id, result.analysis.unique_carriers)
-        console.log(`[CRON/NIPR] Saved ${result.analysis.unique_carriers.length} carriers to user ${acquiredJob.job_user_id}`)
-      } catch (dbError) {
-        console.error('[CRON/NIPR] Failed to save carriers:', dbError)
+        const result = await executeNIPRAutomation(jobData)
+
+        // Update job with results
+        await adminClient.rpc('complete_nipr_job', {
+          p_job_id: jobId,
+          p_success: result.success,
+          p_files: result.files || [],
+          p_carriers: result.analysis?.unique_carriers || [],
+          p_error: result.error || null
+        })
+
+        // Save carriers to user if successful
+        if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && jobUserId) {
+          try {
+            await updateUserCarriers(jobUserId, result.analysis.unique_carriers)
+            console.log(`[CRON/NIPR] Saved ${result.analysis.unique_carriers.length} carriers to user ${jobUserId}`)
+          } catch (dbError) {
+            console.error('[CRON/NIPR] Failed to save carriers:', dbError)
+          }
+        }
+
+        // Check if there are more pending jobs and trigger next
+        const { data: pendingJobs } = await adminClient
+          .from('nipr_jobs')
+          .select('id')
+          .eq('status', 'pending')
+          .limit(1)
+
+        if (pendingJobs && pendingJobs.length > 0) {
+          triggerNextJobProcessing()
+        }
+      } catch (error) {
+        console.error('[CRON/NIPR] Background automation failed:', error)
+        // Mark job as failed
+        try {
+          await adminClient.rpc('complete_nipr_job', {
+            p_job_id: jobId,
+            p_success: false,
+            p_files: [],
+            p_carriers: [],
+            p_error: error instanceof Error ? error.message : String(error)
+          })
+          console.log(`[CRON/NIPR] Marked job ${jobId} as failed`)
+        } catch (rpcError) {
+          console.error('[CRON/NIPR] Failed to mark job as failed:', rpcError)
+        }
+        // Still try to trigger next job
+        triggerNextJobProcessing()
       }
-    }
+    })()
 
-    // Check for more pending jobs
-    const { data: pendingJobs } = await supabaseAdmin
-      .from('nipr_jobs')
-      .select('id')
-      .eq('status', 'pending')
-      .limit(1)
+    // Keep serverless function alive until automation completes
+    waitUntil(automationPromise)
 
+    // Return immediately - function stays alive via waitUntil
     return NextResponse.json({
       success: true,
-      message: `Processed job ${acquiredJob.job_id}`,
-      processed: 1,
-      jobSuccess: result.success,
-      hasMoreJobs: pendingJobs && pendingJobs.length > 0
+      message: `Processing job ${acquiredJob.job_id}`,
+      processed: 1
     })
 
   } catch (error) {
@@ -134,5 +169,34 @@ export async function GET(request: NextRequest) {
       error: 'Cron job failed',
       details: error instanceof Error ? error.message : String(error)
     }, { status: 500 })
+  }
+}
+
+/**
+ * Trigger processing of the next pending job in a new serverless function
+ * Fire-and-forget to ensure each job gets fresh timeout
+ */
+function triggerNextJobProcessing(): void {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+    if (!baseUrl) {
+      console.log('[CRON/NIPR] No base URL configured, cron will pick up next job')
+      return
+    }
+
+    const url = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`
+    console.log('[CRON/NIPR] Triggering next job processing...')
+
+    // Fire-and-forget: Don't await the response
+    fetch(`${url}/api/nipr/process`, {
+      method: 'POST',
+      headers: {
+        'x-internal-call': 'true'
+      }
+    }).catch(err => {
+      console.log('[CRON/NIPR] Failed to trigger next job, cron will pick it up:', err)
+    })
+  } catch (err) {
+    console.log('[CRON/NIPR] Failed to trigger next job, cron will pick it up:', err)
   }
 }

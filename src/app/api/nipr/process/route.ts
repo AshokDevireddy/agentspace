@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createAdminClient } from '@/lib/supabase/server'
 import { executeNIPRAutomation, type NIPRJobData } from '@/lib/nipr/automation'
 import { updateUserCarriers } from '@/lib/supabase-helpers'
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
     acquiredJob = acquiredJobs[0]
     console.log(`[API/NIPR/PROCESS] Processing job: ${acquiredJob.job_id}`)
 
-    // Execute the automation
+    // Build job data for automation
     const jobData: NIPRJobData = {
       job_id: acquiredJob.job_id,
       job_user_id: acquiredJob.job_user_id,
@@ -70,50 +71,74 @@ export async function POST(request: NextRequest) {
       job_dob: acquiredJob.job_dob
     }
 
-    const result = await executeNIPRAutomation(jobData)
+    // Capture job info for the background task
+    const jobId = acquiredJob.job_id
+    const jobUserId = acquiredJob.job_user_id
 
-    // Update job with results
-    await supabaseAdmin.rpc('complete_nipr_job', {
-      p_job_id: acquiredJob.job_id,
-      p_success: result.success,
-      p_files: result.files || [],
-      p_carriers: result.analysis?.unique_carriers || [],
-      p_error: result.error || null
-    })
+    // Run automation in background with waitUntil to keep function alive
+    const automationPromise = (async () => {
+      const adminClient = createAdminClient()
 
-    // Save carriers to user if successful
-    if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && acquiredJob.job_user_id) {
       try {
-        await updateUserCarriers(acquiredJob.job_user_id, result.analysis.unique_carriers)
-        console.log(`[API/NIPR/PROCESS] Saved ${result.analysis.unique_carriers.length} carriers to user ${acquiredJob.job_user_id}`)
-      } catch (dbError) {
-        console.error('[API/NIPR/PROCESS] Failed to save carriers:', dbError)
+        const result = await executeNIPRAutomation(jobData)
+
+        // Update job with results
+        await adminClient.rpc('complete_nipr_job', {
+          p_job_id: jobId,
+          p_success: result.success,
+          p_files: result.files || [],
+          p_carriers: result.analysis?.unique_carriers || [],
+          p_error: result.error || null
+        })
+
+        // Save carriers to user if successful
+        if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && jobUserId) {
+          try {
+            await updateUserCarriers(jobUserId, result.analysis.unique_carriers)
+            console.log(`[API/NIPR/PROCESS] Saved ${result.analysis.unique_carriers.length} carriers to user ${jobUserId}`)
+          } catch (dbError) {
+            console.error('[API/NIPR/PROCESS] Failed to save carriers:', dbError)
+          }
+        }
+
+        // Check if there are more pending jobs and trigger next
+        const { data: pendingJobs } = await adminClient
+          .from('nipr_jobs')
+          .select('id')
+          .eq('status', 'pending')
+          .limit(1)
+
+        if (pendingJobs && pendingJobs.length > 0) {
+          triggerNextJobProcessing()
+        }
+      } catch (error) {
+        console.error('[API/NIPR/PROCESS] Background automation failed:', error)
+        // Mark job as failed
+        try {
+          await adminClient.rpc('complete_nipr_job', {
+            p_job_id: jobId,
+            p_success: false,
+            p_files: [],
+            p_carriers: [],
+            p_error: error instanceof Error ? error.message : String(error)
+          })
+          console.log(`[API/NIPR/PROCESS] Marked job ${jobId} as failed`)
+        } catch (rpcError) {
+          console.error('[API/NIPR/PROCESS] Failed to mark job as failed:', rpcError)
+        }
+        // Still try to trigger next job
+        triggerNextJobProcessing()
       }
-    }
+    })()
 
-    // Check if there are more pending jobs
-    const { data: pendingJobs } = await supabaseAdmin
-      .from('nipr_jobs')
-      .select('id')
-      .eq('status', 'pending')
-      .limit(1)
+    // Keep serverless function alive until automation completes
+    waitUntil(automationPromise)
 
-    const hasMoreJobs = pendingJobs && pendingJobs.length > 0
-
-    // Trigger next job in a new serverless function (fire-and-forget)
-    if (hasMoreJobs) {
-      triggerNextJobProcessing()
-    }
-
+    // Return immediately - function stays alive via waitUntil
     return NextResponse.json({
       success: true,
-      message: `Processed job ${acquiredJob.job_id}`,
-      processed: 1,
-      jobResult: {
-        success: result.success,
-        error: result.error
-      },
-      hasMoreJobs
+      message: `Processing job ${acquiredJob.job_id}`,
+      processed: 1
     })
 
   } catch (error) {

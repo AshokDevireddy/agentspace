@@ -15,7 +15,8 @@ interface ActiveJob {
 }
 
 // Default max concurrent browsers (can be overridden by env var)
-const DEFAULT_MAX_CONCURRENT = 2
+// Set to 1 since we only have one HyperBrowser session available
+const DEFAULT_MAX_CONCURRENT = 1
 
 // Job timeout in milliseconds (10 minutes)
 const JOB_TIMEOUT_MS = 10 * 60 * 1000

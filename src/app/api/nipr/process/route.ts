@@ -13,6 +13,10 @@ export const maxDuration = 300 // 5 minutes timeout
  * 3. After a job completes to process the next one
  */
 export async function POST(request: NextRequest) {
+  // Declare at function scope for access in catch block
+  let acquiredJob: { job_id: string; job_user_id: string; job_last_name: string; job_npn: string; job_ssn_last4: string; job_dob: string } | null = null
+  const supabaseAdmin = createAdminClient()
+
   try {
     // Verify cron secret or admin authorization
     const authHeader = request.headers.get('authorization')
@@ -23,13 +27,9 @@ export async function POST(request: NextRequest) {
     const isInternal = request.headers.get('x-internal-call') === 'true'
 
     if (!isAuthorized && !isInternal) {
-      // Check if user is admin
-      const supabaseAdmin = createAdminClient()
       // For now, allow any call - in production you'd want stricter auth
       console.log('[API/NIPR/PROCESS] Processing without strict auth check')
     }
-
-    const supabaseAdmin = createAdminClient()
 
     // Release any stale locks first
     const { data: releasedCount } = await supabaseAdmin.rpc('release_stale_nipr_locks')
@@ -56,24 +56,25 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const job = acquiredJobs[0]
-    console.log(`[API/NIPR/PROCESS] Processing job: ${job.job_id}`)
+    // Assign to function-scoped variable for catch block access
+    acquiredJob = acquiredJobs[0]
+    console.log(`[API/NIPR/PROCESS] Processing job: ${acquiredJob.job_id}`)
 
     // Execute the automation
     const jobData: NIPRJobData = {
-      job_id: job.job_id,
-      job_user_id: job.job_user_id,
-      job_last_name: job.job_last_name,
-      job_npn: job.job_npn,
-      job_ssn_last4: job.job_ssn_last4,
-      job_dob: job.job_dob
+      job_id: acquiredJob.job_id,
+      job_user_id: acquiredJob.job_user_id,
+      job_last_name: acquiredJob.job_last_name,
+      job_npn: acquiredJob.job_npn,
+      job_ssn_last4: acquiredJob.job_ssn_last4,
+      job_dob: acquiredJob.job_dob
     }
 
     const result = await executeNIPRAutomation(jobData)
 
     // Update job with results
     await supabaseAdmin.rpc('complete_nipr_job', {
-      p_job_id: job.job_id,
+      p_job_id: acquiredJob.job_id,
       p_success: result.success,
       p_files: result.files || [],
       p_carriers: result.analysis?.unique_carriers || [],
@@ -81,10 +82,10 @@ export async function POST(request: NextRequest) {
     })
 
     // Save carriers to user if successful
-    if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && job.job_user_id) {
+    if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && acquiredJob.job_user_id) {
       try {
-        await updateUserCarriers(job.job_user_id, result.analysis.unique_carriers)
-        console.log(`[API/NIPR/PROCESS] Saved ${result.analysis.unique_carriers.length} carriers to user ${job.job_user_id}`)
+        await updateUserCarriers(acquiredJob.job_user_id, result.analysis.unique_carriers)
+        console.log(`[API/NIPR/PROCESS] Saved ${result.analysis.unique_carriers.length} carriers to user ${acquiredJob.job_user_id}`)
       } catch (dbError) {
         console.error('[API/NIPR/PROCESS] Failed to save carriers:', dbError)
       }
@@ -106,7 +107,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Processed job ${job.job_id}`,
+      message: `Processed job ${acquiredJob.job_id}`,
       processed: 1,
       jobResult: {
         success: result.success,
@@ -117,6 +118,22 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('[API/NIPR/PROCESS] Error:', error)
+
+    // If we acquired a job but failed, mark it as failed
+    if (acquiredJob) {
+      try {
+        await supabaseAdmin.rpc('complete_nipr_job', {
+          p_job_id: acquiredJob.job_id,
+          p_success: false,
+          p_files: [],
+          p_carriers: [],
+          p_error: error instanceof Error ? error.message : String(error)
+        })
+        console.log(`[API/NIPR/PROCESS] Marked job ${acquiredJob.job_id} as failed`)
+      } catch (rpcError) {
+        console.error('[API/NIPR/PROCESS] Failed to mark job as failed:', rpcError)
+      }
+    }
 
     // Still try to trigger next job so queue keeps moving
     triggerNextJobProcessing()

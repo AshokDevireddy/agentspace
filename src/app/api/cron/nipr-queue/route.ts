@@ -10,6 +10,10 @@ export const maxDuration = 300 // 5 minutes timeout
  * Runs every 5 minutes via Vercel Cron
  */
 export async function GET(request: NextRequest) {
+  // Declare at function scope for access in catch block
+  let acquiredJob: { job_id: string; job_user_id: string; job_last_name: string; job_npn: string; job_ssn_last4: string; job_dob: string } | null = null
+  const supabaseAdmin = createAdminClient()
+
   try {
     // Verify cron secret in production
     const authHeader = request.headers.get('authorization')
@@ -20,8 +24,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
     }
-
-    const supabaseAdmin = createAdminClient()
 
     // Release any stale locks first
     try {
@@ -58,24 +60,25 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const job = acquiredJobs[0]
-    console.log(`[CRON/NIPR] Processing job: ${job.job_id}`)
+    // Assign to function-scoped variable for catch block access
+    acquiredJob = acquiredJobs[0]
+    console.log(`[CRON/NIPR] Processing job: ${acquiredJob.job_id}`)
 
     // Execute the automation
     const jobData: NIPRJobData = {
-      job_id: job.job_id,
-      job_user_id: job.job_user_id,
-      job_last_name: job.job_last_name,
-      job_npn: job.job_npn,
-      job_ssn_last4: job.job_ssn_last4,
-      job_dob: job.job_dob
+      job_id: acquiredJob.job_id,
+      job_user_id: acquiredJob.job_user_id,
+      job_last_name: acquiredJob.job_last_name,
+      job_npn: acquiredJob.job_npn,
+      job_ssn_last4: acquiredJob.job_ssn_last4,
+      job_dob: acquiredJob.job_dob
     }
 
     const result = await executeNIPRAutomation(jobData)
 
     // Update job with results
     await supabaseAdmin.rpc('complete_nipr_job', {
-      p_job_id: job.job_id,
+      p_job_id: acquiredJob.job_id,
       p_success: result.success,
       p_files: result.files || [],
       p_carriers: result.analysis?.unique_carriers || [],
@@ -83,10 +86,10 @@ export async function GET(request: NextRequest) {
     })
 
     // Save carriers to user if successful
-    if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && job.job_user_id) {
+    if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && acquiredJob.job_user_id) {
       try {
-        await updateUserCarriers(job.job_user_id, result.analysis.unique_carriers)
-        console.log(`[CRON/NIPR] Saved ${result.analysis.unique_carriers.length} carriers to user ${job.job_user_id}`)
+        await updateUserCarriers(acquiredJob.job_user_id, result.analysis.unique_carriers)
+        console.log(`[CRON/NIPR] Saved ${result.analysis.unique_carriers.length} carriers to user ${acquiredJob.job_user_id}`)
       } catch (dbError) {
         console.error('[CRON/NIPR] Failed to save carriers:', dbError)
       }
@@ -101,7 +104,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Processed job ${job.job_id}`,
+      message: `Processed job ${acquiredJob.job_id}`,
       processed: 1,
       jobSuccess: result.success,
       hasMoreJobs: pendingJobs && pendingJobs.length > 0
@@ -109,6 +112,22 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('[CRON/NIPR] Error:', error)
+
+    // If we acquired a job but failed, mark it as failed
+    if (acquiredJob) {
+      try {
+        await supabaseAdmin.rpc('complete_nipr_job', {
+          p_job_id: acquiredJob.job_id,
+          p_success: false,
+          p_files: [],
+          p_carriers: [],
+          p_error: error instanceof Error ? error.message : String(error)
+        })
+        console.log(`[CRON/NIPR] Marked job ${acquiredJob.job_id} as failed`)
+      } catch (rpcError) {
+        console.error('[CRON/NIPR] Failed to mark job as failed:', rpcError)
+      }
+    }
 
     return NextResponse.json({
       success: false,

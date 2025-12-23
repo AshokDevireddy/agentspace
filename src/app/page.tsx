@@ -25,7 +25,17 @@ export default function Home() {
   const [loadingScoreboard, setLoadingScoreboard] = useState(true)
   const [dashboardData, setDashboardData] = useState<any>(null)
   const [loadingDashboard, setLoadingDashboard] = useState(true)
-  const [viewMode, setViewMode] = useState<'just_me' | 'downlines'>('just_me')
+  const [viewMode, setViewMode] = useState<'just_me' | 'downlines'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('dashboard_view_mode') as 'just_me' | 'downlines') || 'just_me'
+    }
+    return 'just_me'
+  })
+
+  // Save view mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('dashboard_view_mode', viewMode)
+  }, [viewMode])
 
   // Fetch user data from API
   useEffect(() => {
@@ -297,11 +307,16 @@ export default function Home() {
 
   // Get current data based on view mode
   const getCurrentData = () => {
-    if (viewMode === 'just_me') {
-      return dashboardData?.your_deals || null
-    } else {
-      return dashboardData?.downline_production || null
+    // Backward compatibility: if dashboardData has the new split structure, use it
+    if (dashboardData?.your_deals || dashboardData?.downline_production) {
+      if (viewMode === 'just_me') {
+        return dashboardData?.your_deals || null
+      } else {
+        return dashboardData?.downline_production || null
+      }
     }
+    // Otherwise, use old flat structure (before migration)
+    return dashboardData || null
   }
 
   // Format carriers data for pie chart (switches based on viewMode)
@@ -439,8 +454,6 @@ export default function Home() {
               <span className="inline-block h-10 w-64 bg-muted animate-pulse rounded" />
             </h1>
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-              <span>This Week</span>
-              <span>•</span>
               <span className="inline-block h-4 w-48 bg-muted animate-pulse rounded" />
             </div>
           </div>
@@ -452,22 +465,20 @@ export default function Home() {
               <span>Welcome, {firstName || 'User'}.</span>
             </h1>
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-              <span>This Week</span>
-              <span>•</span>
-              <span>{formatDateRange()}</span>
+              <span>This Week • {formatDateRange()}</span>
             </div>
           </div>
 
           {/* Right side controls */}
           <div className="flex items-center gap-4">
             {/* Pending Positions Error Indicator */}
-            {dashboardData?.totals?.pending_positions > 0 && (
+            {(dashboardData?.totals?.pending_positions || dashboardData?.pending_positions) && (dashboardData?.totals?.pending_positions > 0 || dashboardData?.pending_positions > 0) && (
               <Link
                 href="/agents?tab=pending-positions"
                 className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors cursor-pointer"
               >
                 <AlertCircle className="h-5 w-5" />
-                <span className="font-semibold">{dashboardData.totals.pending_positions} Pending Position{dashboardData.totals.pending_positions !== 1 ? 's' : ''}</span>
+                <span className="font-semibold">{(dashboardData?.totals?.pending_positions || dashboardData?.pending_positions || 0)} Pending Position{(dashboardData?.totals?.pending_positions || dashboardData?.pending_positions || 0) !== 1 ? 's' : ''}</span>
               </Link>
             )}
 

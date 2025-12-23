@@ -21,7 +21,8 @@ import {
   BookOpen,
   Sparkles,
   FolderOpen,
-  DollarSign
+  DollarSign,
+  ClipboardCheck
 } from "lucide-react"
 import { createClient } from '@/lib/supabase/client'
 
@@ -35,7 +36,11 @@ const navigationItems = [
   { name: "Analytics", href: "/analytics", icon: TrendingUp },
   { name: "Expected Payouts", href: "/expected-payouts", icon: DollarSign },
   { name: "Insurance Toolkits", href: "/insurance-toolkits", icon: ExternalLink },
-  { name: "Resources", href: "/resources", icon: FolderOpen },
+  // { name: "Resources", href: "/resources", icon: FolderOpen },
+]
+
+const proExpertNavigationItems = [
+  { name: "Underwriting", href: "/underwriting", icon: ClipboardCheck },
 ]
 
 const adminNavigationItems = [
@@ -71,6 +76,7 @@ export default function Navigation() {
   const [agencyColor, setAgencyColor] = useState<string>("217 91% 60%")
   const [agencyId, setAgencyId] = useState<string | null>(null)
   const [isLoadingAgency, setIsLoadingAgency] = useState(true)
+  const [subscriptionTier, setSubscriptionTier] = useState<string>('free')
   const previousResolvedThemeRef = useRef<string | null>(null)
 
   // Check if user is admin and fetch agency data
@@ -85,15 +91,17 @@ export default function Navigation() {
         const supabase = createClient()
         const { data: userData, error } = await supabase
           .from('users')
-          .select('is_admin, agency_id')
+          .select('is_admin, agency_id, subscription_tier')
           .eq('auth_user_id', user.id)
           .maybeSingle()
 
         if (error) {
           // Silently handle error - user may not exist in users table yet (e.g., during setup)
           setIsAdmin(false)
+          setSubscriptionTier('free')
         } else {
           setIsAdmin(userData?.is_admin || false)
+          setSubscriptionTier(userData?.subscription_tier || 'free')
 
           // Fetch agency data if user has an agency
           if (userData?.agency_id) {
@@ -254,7 +262,6 @@ export default function Navigation() {
     }
   }, [user?.id])
 
-  // Handle user logout
   const handleLogout = async () => {
     try {
       await signOut()
@@ -348,6 +355,24 @@ export default function Navigation() {
             </Link>
           </div>
         ))}
+
+        {/* Pro/Expert tier navigation items */}
+        {/* {(subscriptionTier === 'pro' || subscriptionTier === 'expert') && proExpertNavigationItems.map((item) => (
+          <div key={item.name} className="relative">
+            <Link
+              href={item.href}
+              className={cn(
+                "sidebar-nav-item w-full rounded-xl",
+                isActiveItem(item) && "active"
+              )}
+              title={isSidebarCollapsed ? item.name : undefined}
+              data-tour={`nav-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
+            >
+              {item.icon && <item.icon className="h-5 w-5 flex-shrink-0" />}
+              {!isSidebarCollapsed && <span className="flex-1 text-left">{item.name}</span>}
+            </Link>
+          </div>
+        ))} */}
 
         {/* Admin-only navigation items */}
         {isAdmin && adminNavigationItems.map((item) => (

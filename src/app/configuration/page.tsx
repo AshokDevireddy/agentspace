@@ -14,6 +14,8 @@ import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 import { HexColorPicker } from 'react-colorful'
 import { useTheme } from "next-themes"
 import { useNotification } from "@/contexts/notification-context"
+import { useAuth } from "@/providers/AuthProvider"
+import { updateUserTheme, ThemeMode } from "@/lib/theme"
 
 // Types for carrier data
 interface Carrier {
@@ -97,6 +99,7 @@ const isDefaultColorForMode = (color: string, mode: 'light' | 'dark' | 'system' 
 export default function ConfigurationPage() {
   const { showSuccess, showError, showWarning } = useNotification()
   const { theme, setTheme, resolvedTheme } = useTheme()
+  const { userData, refreshUserData } = useAuth()
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>("agency-profile")
@@ -317,9 +320,6 @@ export default function ConfigurationPage() {
     setDisplayName(agency.display_name || agency.name)
     setDisplayNameValue(agency.display_name || agency.name)
     
-    // Reset theme
-    setAgencyThemeMode(agency.theme_mode || 'system')
-    
     // Reset whitelabel domain
     setWhitelabelDomain(agency.whitelabel_domain || '')
     setWhitelabelDomainValue(agency.whitelabel_domain || '')
@@ -381,7 +381,10 @@ export default function ConfigurationPage() {
     { carrier: 'Liberty Bankers Life', file: null },
     { carrier: 'Transamerica', file: null },
     { carrier: 'Foresters', file: null },
-    { carrier: 'Reagan CRM Data', file: null }
+    { carrier: 'Reagan CRM Data', file: null },
+    { carrier: 'Ethos', file: null },
+    { carrier: 'Mutual of Omaha', file: null },
+    { carrier: 'Americo', file: null },
   ])
   const [uploadingReports, setUploadingReports] = useState(false)
   const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
@@ -443,6 +446,13 @@ export default function ConfigurationPage() {
     fetchAllData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Sync theme state when userData changes (e.g., after login or theme update)
+  useEffect(() => {
+    if (userData?.theme_mode) {
+      setAgencyThemeMode(userData.theme_mode)
+    }
+  }, [userData?.theme_mode])
 
   // Check for existing policy files when policy reports tab is opened (only if we haven't checked yet)
   useEffect(() => {
@@ -570,9 +580,6 @@ export default function ConfigurationPage() {
             setAgency(agencyInfo)
             setDisplayName(agencyInfo.display_name || agencyInfo.name)
             setPrimaryColor(agencyInfo.primary_color || "217 91% 60%")
-            const themeMode = (agencyInfo.theme_mode || 'system') as 'light' | 'dark' | 'system'
-            setAgencyThemeMode(themeMode)
-            setTheme(themeMode) // Apply the theme immediately
             setLeadSources(agencyInfo.lead_sources || [])
             setAgencyPhoneNumber(agencyInfo.phone_number || "")
             setMessagingEnabled(agencyInfo.messaging_enabled || false)
@@ -954,56 +961,45 @@ export default function ConfigurationPage() {
   }
 
 
-  // Theme Management Functions
-  const handleThemeChange = async (newTheme: 'light' | 'dark' | 'system') => {
+  const handleThemeChange = async (newTheme: ThemeMode) => {
     if (!agency) return
 
-    try {
-      setSavingTheme(true)
+    const previousTheme = agencyThemeMode
+    setAgencyThemeMode(newTheme)
+    setTheme(newTheme)
+
+    // Update primary color if switching between light/dark with default colors
+    const currentResolved = resolvedTheme || (previousTheme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : previousTheme)
+    const newResolved = newTheme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : newTheme
+
+    if (isDefaultColorForMode(primaryColor, currentResolved as 'light' | 'dark') && currentResolved !== newResolved) {
+      const newColor = getDefaultPrimaryColor(newResolved as 'light' | 'dark')
+      setPrimaryColor(newColor)
+      setPendingColor(null)
+      setAgency({ ...agency, primary_color: newColor })
+      document.documentElement.style.setProperty('--primary', newColor)
+      const textColor = getContrastTextColor(newColor)
+      document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
+
+      // Update agency color in background
       const supabase = createClient()
+      supabase.from('agencies').update({ primary_color: newColor }).eq('id', agency.id)
+    }
 
-      // Determine the current resolved theme (light or dark) before the change
-      const currentResolvedTheme = resolvedTheme || (agencyThemeMode === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : agencyThemeMode)
-      
-      // Determine the new resolved theme
-      const newResolvedTheme = newTheme === 'system' 
-        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-        : newTheme
+    setSavingTheme(true)
+    const result = await updateUserTheme(newTheme)
+    setSavingTheme(false)
 
-      // Check if we need to update the primary color
-      const currentColor = primaryColor
-      const isCurrentColorDefault = isDefaultColorForMode(currentColor, currentResolvedTheme as 'light' | 'dark')
-      
-      const updates: any = { theme_mode: newTheme }
-      
-      // If current color is the default for the current mode, switch to default for new mode
-      if (isCurrentColorDefault && currentResolvedTheme !== newResolvedTheme) {
-        const newDefaultColor = getDefaultPrimaryColor(newResolvedTheme as 'light' | 'dark')
-        updates.primary_color = newDefaultColor
-        setPrimaryColor(newDefaultColor)
-        setPendingColor(null) // Clear any pending color changes
-        
-        // Update CSS variable immediately
-        document.documentElement.style.setProperty('--primary', newDefaultColor)
-        const textColor = getContrastTextColor(newDefaultColor)
-        document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
-      }
-
-      const { error } = await supabase
-        .from('agencies')
-        .update(updates)
-        .eq('id', agency.id)
-
-      if (error) throw error
-
-      setAgencyThemeMode(newTheme)
-      setTheme(newTheme) // Apply the theme immediately
-      setAgency({ ...agency, ...updates })
-    } catch (error) {
-      console.error('Error updating theme:', error)
+    if (result.success) {
+      await refreshUserData()
+    } else {
       showError('Failed to update theme preference')
-    } finally {
-      setSavingTheme(false)
+      setAgencyThemeMode(previousTheme)
+      setTheme(previousTheme)
     }
   }
 
@@ -2569,7 +2565,7 @@ export default function ConfigurationPage() {
                         Theme Preference
                       </h3>
                       <p className="text-sm text-muted-foreground mb-6">
-                        Choose the theme mode for your agency. This will be applied automatically for all users in your agency.
+                        Choose your personal theme preference. This setting only affects your account and will override the agency default theme.
                       </p>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

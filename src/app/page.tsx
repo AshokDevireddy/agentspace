@@ -1,13 +1,14 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, BarChart3, FileText, Briefcase, UserCog } from "lucide-react"
+import { Users, BarChart3, FileText, Briefcase, AlertCircle } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { useState, useEffect } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import OnboardingWizard from "@/components/onboarding-wizard"
 import { useTour } from "@/contexts/onboarding-tour-context"
 import { createClient } from "@/lib/supabase/client"
+import Link from "next/link"
 
 export default function Home() {
   const { user, loading: authLoading } = useAuth()
@@ -24,6 +25,17 @@ export default function Home() {
   const [loadingScoreboard, setLoadingScoreboard] = useState(true)
   const [dashboardData, setDashboardData] = useState<any>(null)
   const [loadingDashboard, setLoadingDashboard] = useState(true)
+  const [viewMode, setViewMode] = useState<'just_me' | 'downlines'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('dashboard_view_mode') as 'just_me' | 'downlines') || 'just_me'
+    }
+    return 'just_me'
+  })
+
+  // Save view mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('dashboard_view_mode', viewMode)
+  }, [viewMode])
 
   // Fetch user data from API
   useEffect(() => {
@@ -293,11 +305,26 @@ export default function Home() {
   // Colors for pie chart
   const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347', '#d084d0', '#84d0d0', '#d0d084']
 
-  // Format carriers data for pie chart
-  const getPieChartData = () => {
-    if (!dashboardData?.carriers_active) return []
+  // Get current data based on view mode
+  const getCurrentData = () => {
+    // Backward compatibility: if dashboardData has the new split structure, use it
+    if (dashboardData?.your_deals || dashboardData?.downline_production) {
+      if (viewMode === 'just_me') {
+        return dashboardData?.your_deals || null
+      } else {
+        return dashboardData?.downline_production || null
+      }
+    }
+    // Otherwise, use old flat structure (before migration)
+    return dashboardData || null
+  }
 
-    const totalPolicies = dashboardData.carriers_active.reduce((sum: number, carrier: any) => sum + carrier.active_policies, 0)
+  // Format carriers data for pie chart (switches based on viewMode)
+  const getPieChartData = () => {
+    const currentData = getCurrentData()
+    if (!currentData?.carriers_active) return []
+
+    const totalPolicies = currentData.carriers_active.reduce((sum: number, carrier: any) => sum + carrier.active_policies, 0)
     const GROUP_THRESHOLD = 4 // Group slices below 4% into "Others"
     const LABEL_THRESHOLD = 5 // Threshold for label display (kept for reference, but all displayed slices show labels)
 
@@ -305,7 +332,7 @@ export default function Home() {
     const largeCarriers: any[] = []
     const smallCarriers: any[] = []
 
-    dashboardData.carriers_active.forEach((carrier: any, index: number) => {
+    currentData.carriers_active.forEach((carrier: any, index: number) => {
       const percentage = (carrier.active_policies / totalPolicies) * 100
       const carrierData = {
         name: carrier.carrier,
@@ -419,79 +446,88 @@ export default function Home() {
 
   return (
     <div className="space-y-4 dashboard-content" data-tour="dashboard">
-      {/* Header */}
+      {/* Header with Toggle and Pending Positions */}
       {isLoadingDashboardData ? (
-        <div>
-          <h1 className="text-4xl font-bold text-gradient mb-2">
-            <span className="inline-block h-10 w-64 bg-muted animate-pulse rounded" />
-          </h1>
-          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-            <span>This Week</span>
-            <span>•</span>
-            <span className="inline-block h-4 w-48 bg-muted animate-pulse rounded" />
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-4xl font-bold text-gradient mb-2">
+              <span className="inline-block h-10 w-64 bg-muted animate-pulse rounded" />
+            </h1>
+            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+              <span className="inline-block h-4 w-48 bg-muted animate-pulse rounded" />
+            </div>
           </div>
         </div>
       ) : (
-        <div>
-          <h1 className="text-4xl font-bold mb-2 text-foreground">
-            <span>Welcome, {firstName || 'User'}.</span>
-          </h1>
-          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-            <span>This Week</span>
-            <span>•</span>
-            <span>{formatDateRange()}</span>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-4xl font-bold mb-2 text-foreground">
+              <span>Welcome, {firstName || 'User'}.</span>
+            </h1>
+            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+              <span>This Week • {formatDateRange()}</span>
+            </div>
+          </div>
+
+          {/* Right side controls */}
+          <div className="flex items-center gap-4">
+            {/* Pending Positions Error Indicator */}
+            {(dashboardData?.totals?.pending_positions || dashboardData?.pending_positions) && (dashboardData?.totals?.pending_positions > 0 || dashboardData?.pending_positions > 0) && (
+              <Link
+                href="/agents?tab=pending-positions"
+                className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors cursor-pointer"
+              >
+                <AlertCircle className="h-5 w-5" />
+                <span className="font-semibold">{(dashboardData?.totals?.pending_positions || dashboardData?.pending_positions || 0)} Pending Position{(dashboardData?.totals?.pending_positions || dashboardData?.pending_positions || 0) !== 1 ? 's' : ''}</span>
+              </Link>
+            )}
+
+            {/* Just Me / Downlines Toggle */}
+            <div className="relative bg-muted/50 p-1 rounded-lg">
+              {/* Animated background slider */}
+              <div
+                className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out"
+                style={{
+                  left: viewMode === 'just_me' ? '4px' : 'calc(50%)',
+                  width: 'calc(50% - 4px)'
+                }}
+              />
+              <div className="relative z-10 flex">
+                <button
+                  onClick={() => setViewMode('just_me')}
+                  className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${
+                    viewMode === 'just_me'
+                      ? 'text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Just Me
+                </button>
+                <button
+                  onClick={() => setViewMode('downlines')}
+                  className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${
+                    viewMode === 'downlines'
+                      ? 'text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Downlines
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Dashboard Stats Cards */}
-      {isLoadingDashboardData ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="professional-card rounded-md">
-            <CardContent className="p-4">
-              <div className="animate-pulse">
-                <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
-                <div className="h-8 bg-gray-200 rounded w-1/2"></div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="professional-card rounded-md">
-            <CardContent className="p-4">
-              <div className="animate-pulse">
-                <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
-                <div className="h-8 bg-gray-200 rounded w-1/2"></div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="professional-card rounded-md">
-            <CardContent className="p-4">
-              <div className="animate-pulse">
-                <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
-                <div className="h-8 bg-gray-200 rounded w-1/2"></div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="professional-card rounded-md">
-            <CardContent className="p-4">
-              <div className="animate-pulse">
-                <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
-                <div className="h-8 bg-gray-200 rounded w-1/2"></div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="professional-card rounded-md">
-            <CardContent className="p-4">
-              <div className="animate-pulse">
-                <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
-                <div className="h-8 bg-gray-200 rounded w-1/2"></div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      ) : !isLoadingDashboardData && dashboardData ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4" data-tour="dashboard-stats">
+      {/* Dynamic Stats Section - switches based on viewMode */}
+      {!isLoadingDashboardData && dashboardData && (
+        <div
+          key={viewMode}
+          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500"
+          data-tour="dashboard-stats"
+        >
           {/* Active Policies */}
-          <Card className="professional-card rounded-md">
+          <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="w-full overflow-hidden min-w-0">
@@ -499,8 +535,8 @@ export default function Home() {
                     <BarChart3 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Active Policies</p>
                   </div>
-                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
-                    {(dashboardData.totals.active_policies ?? 0).toLocaleString()}
+                  <p className="font-bold text-foreground break-words leading-tight transition-all duration-300" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
+                    {(getCurrentData()?.active_policies ?? 0).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -508,24 +544,24 @@ export default function Home() {
           </Card>
 
           {/* New Policies */}
-          <Card className="professional-card rounded-md">
+          <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="w-full overflow-hidden min-w-0">
                   <div className="flex items-center gap-2 mb-3">
                     <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>New Policies</p>
+                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>New Policies (Last Week)</p>
                   </div>
-                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
-                    {(dashboardData.totals.new_policies_last_month ?? 0).toLocaleString()}
+                  <p className="font-bold text-foreground break-words leading-tight transition-all duration-300" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
+                    {(getCurrentData()?.new_policies ?? 0).toLocaleString()}
                   </p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Clients Count */}
-          <Card className="professional-card rounded-md">
+          {/* Total Clients */}
+          <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="w-full overflow-hidden min-w-0">
@@ -533,32 +569,34 @@ export default function Home() {
                     <Briefcase className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Total Clients</p>
                   </div>
-                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
-                    {(dashboardData.totals.clients_count ?? 0).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Pending Positions */}
-          <Card className="professional-card rounded-md">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden min-w-0">
-                  <div className="flex items-center gap-2 mb-3">
-                    <UserCog className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Pending Positions</p>
-                  </div>
-                  <p className="font-bold text-foreground break-words leading-tight" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
-                    {(dashboardData.totals.pending_positions ?? 0).toLocaleString()}
+                  <p className="font-bold text-foreground break-words leading-tight transition-all duration-300" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
+                    {(getCurrentData()?.total_clients ?? 0).toLocaleString()}
                   </p>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
-      ) : null}
+      )}
+
+      {/* Loading State */}
+      {isLoadingDashboardData && (
+        <div className="space-y-4">
+          <div className="h-8 bg-muted animate-pulse rounded w-48" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i} className="professional-card rounded-md">
+                <CardContent className="p-4">
+                  <div className="animate-pulse">
+                    <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
+                    <div className="h-8 bg-gray-200 rounded w-1/2"></div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Pie Chart and Scoreboard Side by Side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -577,8 +615,8 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
-        ) : !isLoadingDashboardData && dashboardData?.carriers_active ? (
-          <Card className="professional-card rounded-md">
+        ) : !isLoadingDashboardData && getCurrentData()?.carriers_active ? (
+          <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg" key={`pie-${viewMode}`}>
             <CardHeader>
               <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
                 <BarChart3 className="h-5 w-5 text-foreground" />
@@ -586,7 +624,7 @@ export default function Home() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
+              <div className="h-80 animate-in fade-in duration-500">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -598,7 +636,9 @@ export default function Home() {
                       outerRadius={100}
                       fill="#8884d8"
                       dataKey="value"
-                      isAnimationActive={false}
+                      isAnimationActive={true}
+                      animationDuration={800}
+                      animationBegin={0}
                     >
                       {getPieChartData().map((entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={entry.fill} />
@@ -678,7 +718,7 @@ export default function Home() {
         ) : null}
 
         {/* Top Producers */}
-        <Card className="professional-card rounded-md">
+        <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
           <CardHeader>
             <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
               <Users className="h-5 w-5 text-foreground" />

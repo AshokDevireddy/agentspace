@@ -3,9 +3,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar as CalendarIcon } from "lucide-react"
+import { Calendar as CalendarIcon, Info } from "lucide-react"
 import { useEffect, useState, useMemo } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
@@ -62,6 +63,9 @@ export default function Scoreboard() {
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth())
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear())
+  const [assumedMonthsTillLapse, setAssumedMonthsTillLapse] = useState<number>(5)
+  const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
+  const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
 
   // Calculate date range based on timeframe
   const getDateRange = (selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
@@ -179,10 +183,11 @@ export default function Scoreboard() {
 
         // Use Supabase RPC function
         const supabase = createClient()
-        const { data: rpcData, error: rpcError } = await supabase.rpc('get_scoreboard_data', {
+        const { data: rpcData, error: rpcError } = await supabase.rpc('get_scoreboard_data_updated_lapsed_deals', {
           p_user_id: user.id,
           p_start_date: dateRange.startDate,
-          p_end_date: dateRange.endDate
+          p_end_date: dateRange.endDate,
+          assumed_months_till_lapse: assumedMonthsTillLapse
         })
 
         if (rpcError) {
@@ -211,7 +216,7 @@ export default function Scoreboard() {
     }
 
     fetchScoreboardData()
-  }, [user, timeframe, dateRange.startDate, dateRange.endDate])
+  }, [user, timeframe, dateRange.startDate, dateRange.endDate, assumedMonthsTillLapse])
 
   // Calculate date range for display even when loading
   const displayDateRange = useMemo(() => {
@@ -346,15 +351,67 @@ export default function Scoreboard() {
     <div className="space-y-8 scoreboard-content" data-tour="scoreboard">
       {/* Header */}
       <div>
-        <h1 className="text-4xl font-bold text-foreground mb-2">Scoreboard</h1>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-            <span>{getTimeframeLabel()}</span>
-            <span>•</span>
-            <span>{formatDateRange(displayDateRange.startDate, displayDateRange.endDate)}</span>
-          </div>
-
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-1">
+          <h1 className="text-4xl font-bold text-foreground">Scoreboard</h1>
           <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min="1"
+                max="10"
+                step="1"
+                value={assumedMonthsInput}
+                onChange={(e) => {
+                  const inputValue = e.target.value
+                  // Update the input display value
+                  setAssumedMonthsInput(inputValue)
+                  
+                  // Parse and validate
+                  if (inputValue === '') {
+                    return // Allow empty while typing
+                  }
+                  
+                  const value = parseInt(inputValue, 10)
+                  // Only update the actual state if it's a valid whole number between 1-10
+                  if (!isNaN(value) && value >= 1 && value <= 10 && Number.isInteger(value)) {
+                    setAssumedMonthsTillLapse(value)
+                  }
+                }}
+                onBlur={(e) => {
+                  const inputValue = e.target.value.trim()
+                  if (inputValue === '') {
+                    // If empty on blur, reset to default
+                    setAssumedMonthsTillLapse(5)
+                    setAssumedMonthsInput('5')
+                    return
+                  }
+                  
+                  const value = parseInt(inputValue, 10)
+                  // Reset to default if invalid
+                  if (isNaN(value) || value < 1 || value > 10 || !Number.isInteger(value)) {
+                    setAssumedMonthsTillLapse(5)
+                    setAssumedMonthsInput('5')
+                  } else {
+                    // Ensure input display matches the validated value
+                    setAssumedMonthsInput(value.toString())
+                  }
+                }}
+                className="w-[60px] rounded-md h-9 text-sm"
+                placeholder="5"
+              />
+              <div className="relative">
+                <Info 
+                  className="h-3 w-3 text-muted-foreground cursor-help" 
+                  onMouseEnter={() => setShowAssumedMonthsTooltip(true)}
+                  onMouseLeave={() => setShowAssumedMonthsTooltip(false)}
+                />
+                {showAssumedMonthsTooltip && (
+                  <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 w-64 p-2 bg-popover border border-border rounded-md shadow-lg text-xs text-popover-foreground z-50 pointer-events-none whitespace-normal">
+                    Assumed Months Till Lapse: The assumed time how long policies remained active before lapsing (1-10 months)
+                  </div>
+                )}
+              </div>
+            </div>
             <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeOption)}>
               <SelectTrigger className="w-[160px] rounded-md h-9 text-sm">
                 <SelectValue placeholder="Select timeframe" />
@@ -485,6 +542,11 @@ export default function Scoreboard() {
               </PopoverContent>
             </Popover>
           </div>
+        </div>
+        <div className="flex items-center space-x-2 text-sm text-muted-foreground mt-1">
+          <span>{getTimeframeLabel()}</span>
+          <span>•</span>
+          <span>{formatDateRange(displayDateRange.startDate, displayDateRange.endDate)}</span>
         </div>
       </div>
 

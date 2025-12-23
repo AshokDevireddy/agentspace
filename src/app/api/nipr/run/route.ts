@@ -97,8 +97,7 @@ export async function POST(request: NextRequest) {
     const useQueue = await checkQueueTableExists(supabaseAdmin)
 
     if (useQueue && currentUser?.id) {
-      // Create job and start processing immediately
-      // HyperAgent queue manager limits concurrent local browser instances
+      // Create job as PENDING - database is source of truth for concurrency
       const { data: newJob, error: insertError } = await supabaseAdmin
         .from('nipr_jobs')
         .insert({
@@ -107,8 +106,7 @@ export async function POST(request: NextRequest) {
           npn: npn,
           ssn_last4: ssn,
           dob: dob,
-          status: 'processing',
-          started_at: new Date().toISOString()
+          status: 'pending'
         })
         .select('id')
         .single()
@@ -121,68 +119,95 @@ export async function POST(request: NextRequest) {
         }, { status: 500 })
       }
 
-      console.log('[API/NIPR] Starting HyperAgent automation for job:', newJob.id)
+      console.log('[API/NIPR] Created pending job:', newJob.id)
 
-      // Build job data for automation
-      const jobData: NIPRJobData = {
-        job_id: newJob.id,
-        job_user_id: currentUser.id,
-        job_last_name: lastName,
-        job_npn: npn,
-        job_ssn_last4: ssn,
-        job_dob: dob
+      // Try to acquire a job atomically - this prevents concurrent processing
+      // If another job is already processing, this returns empty
+      const { data: acquiredJobs, error: acquireError } = await supabaseAdmin.rpc('acquire_nipr_job')
+
+      if (acquireError) {
+        console.error('[API/NIPR] Failed to acquire job:', acquireError)
+        // Job stays pending, cron will pick it up
+        return NextResponse.json({
+          success: true,
+          processing: true,
+          jobId: newJob.id,
+          message: 'NIPR verification queued. You can track progress below.'
+        })
       }
 
-      // Run automation in background with waitUntil to keep function alive
-      // This allows the frontend to poll for progress updates
-      const userId = currentUser.id
-      const automationPromise = executeNIPRAutomation(jobData).then(async (result) => {
-        const adminClient = createAdminClient()
+      if (acquiredJobs && acquiredJobs.length > 0) {
+        // We acquired a job - process it
+        const job = acquiredJobs[0]
+        console.log('[API/NIPR] Acquired job for processing:', job.job_id)
 
-        // Update job with results
-        await adminClient.rpc('complete_nipr_job', {
-          p_job_id: newJob.id,
-          p_success: result.success,
-          p_files: result.files || [],
-          p_carriers: result.analysis?.unique_carriers || [],
-          p_error: result.error || null
+        // Build job data for automation
+        const jobData: NIPRJobData = {
+          job_id: job.job_id,
+          job_user_id: job.job_user_id,
+          job_last_name: job.job_last_name,
+          job_npn: job.job_npn,
+          job_ssn_last4: job.job_ssn_last4,
+          job_dob: job.job_dob
+        }
+
+        // Run automation in background with waitUntil to keep function alive
+        const automationPromise = executeNIPRAutomation(jobData).then(async (result) => {
+          const adminClient = createAdminClient()
+
+          // Update job with results
+          await adminClient.rpc('complete_nipr_job', {
+            p_job_id: job.job_id,
+            p_success: result.success,
+            p_files: result.files || [],
+            p_carriers: result.analysis?.unique_carriers || [],
+            p_error: result.error || null
+          })
+
+          // Save carriers to user if successful
+          if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0) {
+            try {
+              await updateUserCarriers(job.job_user_id, result.analysis.unique_carriers)
+              console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers to user ${job.job_user_id}`)
+            } catch (dbError) {
+              console.error('[API/NIPR] Database persistence failed:', dbError)
+            }
+          }
+
+          // Trigger processing of next pending job
+          await triggerNextJobProcessing()
+        }).catch(async (err) => {
+          console.error('[API/NIPR] Background automation failed:', err)
+          // Mark job as failed
+          try {
+            const adminClient = createAdminClient()
+            await adminClient.rpc('complete_nipr_job', {
+              p_job_id: job.job_id,
+              p_success: false,
+              p_files: [],
+              p_carriers: [],
+              p_error: err instanceof Error ? err.message : String(err)
+            })
+            // Still try to process next job
+            await triggerNextJobProcessing()
+          } catch (rpcError) {
+            console.error('[API/NIPR] Failed to mark job as failed:', rpcError)
+          }
         })
 
-        // Save carriers to user if successful
-        if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0) {
-          try {
-            await updateUserCarriers(userId, result.analysis.unique_carriers)
-            console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers to user ${userId}`)
-          } catch (dbError) {
-            console.error('[API/NIPR] Database persistence failed:', dbError)
-          }
-        }
-      }).catch(async (err) => {
-        console.error('[API/NIPR] Background automation failed:', err)
-        // Mark job as failed
-        try {
-          const adminClient = createAdminClient()
-          await adminClient.rpc('complete_nipr_job', {
-            p_job_id: newJob.id,
-            p_success: false,
-            p_files: [],
-            p_carriers: [],
-            p_error: err instanceof Error ? err.message : String(err)
-          })
-        } catch (rpcError) {
-          console.error('[API/NIPR] Failed to mark job as failed:', rpcError)
-        }
-      })
-
-      // Keep serverless function alive until automation completes
-      waitUntil(automationPromise)
+        // Keep serverless function alive until automation completes
+        waitUntil(automationPromise)
+      } else {
+        // No job acquired - another job is already processing
+        console.log('[API/NIPR] Job queued, another job is processing:', newJob.id)
+      }
 
       // Return immediately with job ID so frontend can poll for progress
       return NextResponse.json({
         success: true,
         processing: true,
         jobId: newJob.id,
-        message: 'NIPR verification started. You can track progress below.'
+        message: 'NIPR verification queued. You can track progress below.'
       })
 
     } else {
@@ -244,6 +269,36 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     )
+  }
+}
+
+/**
+ * Trigger processing of the next pending job
+ * Called after a job completes to immediately process the next one
+ */
+async function triggerNextJobProcessing(): Promise<void> {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+    if (!baseUrl) {
+      console.log('[API/NIPR] No base URL configured, cron will pick up next job')
+      return
+    }
+
+    const url = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`
+    console.log('[API/NIPR] Triggering next job processing...')
+
+    // Fire-and-forget: Don't await the response
+    // This ensures each job runs in its own serverless function with fresh timeout
+    fetch(`${url}/api/nipr/process`, {
+      method: 'POST',
+      headers: {
+        'x-internal-call': 'true'
+      }
+    }).catch(err => {
+      console.log('[API/NIPR] Failed to trigger next job, cron will pick it up:', err)
+    })
+  } catch (err) {
+    console.log('[API/NIPR] Failed to trigger next job, cron will pick it up:', err)
   }
 }
 

@@ -99,6 +99,11 @@ export async function POST(request: NextRequest) {
 
     const hasMoreJobs = pendingJobs && pendingJobs.length > 0
 
+    // Trigger next job in a new serverless function (fire-and-forget)
+    if (hasMoreJobs) {
+      triggerNextJobProcessing()
+    }
+
     return NextResponse.json({
       success: true,
       message: `Processed job ${job.job_id}`,
@@ -113,11 +118,43 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[API/NIPR/PROCESS] Error:', error)
 
+    // Still try to trigger next job so queue keeps moving
+    triggerNextJobProcessing()
+
     return NextResponse.json({
       success: false,
       error: 'Job processing failed',
       details: error instanceof Error ? error.message : String(error)
     }, { status: 500 })
+  }
+}
+
+/**
+ * Trigger processing of the next pending job in a new serverless function
+ * Fire-and-forget to ensure each job gets fresh timeout
+ */
+function triggerNextJobProcessing(): void {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+    if (!baseUrl) {
+      console.log('[API/NIPR/PROCESS] No base URL configured, cron will pick up next job')
+      return
+    }
+
+    const url = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`
+    console.log('[API/NIPR/PROCESS] Triggering next job processing...')
+
+    // Fire-and-forget: Don't await the response
+    fetch(`${url}/api/nipr/process`, {
+      method: 'POST',
+      headers: {
+        'x-internal-call': 'true'
+      }
+    }).catch(err => {
+      console.log('[API/NIPR/PROCESS] Failed to trigger next job, cron will pick it up:', err)
+    })
+  } catch (err) {
+    console.log('[API/NIPR/PROCESS] Failed to trigger next job, cron will pick it up:', err)
   }
 }
 

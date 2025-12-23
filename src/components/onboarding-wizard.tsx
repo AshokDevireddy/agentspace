@@ -354,7 +354,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
           // Auto-advance if on step 1
           // Admins go to policy upload (step 2), agents skip to invite team (step 3)
           if (currentStep === 1) {
-            setCurrentStep(userData.is_admin ? 2 : 3)
+            setCurrentStep(3)
           }
         }
       } catch (error) {
@@ -403,7 +403,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
           // Auto-advance to next step
           setTimeout(() => {
-            setCurrentStep(userData.is_admin ? 2 : 3)
+            setCurrentStep(3)
             window.scrollTo({ top: 0, behavior: 'smooth' })
           }, 2000)
 
@@ -975,7 +975,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         // Auto-advance to next step after success
         // Admins go to policy upload (step 2), agents skip to invite team (step 3)
         setTimeout(() => {
-          setCurrentStep(userData.is_admin ? 2 : 3)
+          setCurrentStep(3)
           window.scrollTo({ top: 0, behavior: 'smooth' })
         }, 2000)
       }
@@ -1044,7 +1044,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
       // Auto-advance to next step after success
       setTimeout(() => {
-        setCurrentStep(userData.is_admin ? 2 : 3)
+        setCurrentStep(3)
         window.scrollTo({ top: 0, behavior: 'smooth' })
       }, 2000)
 
@@ -1157,7 +1157,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
             Complete Your Setup
           </h1>
           <p className="text-muted-foreground">
-            Verify your credentials, add carrier logins, and invite your team to get started
+            Verify your credentials and invite your team to get started
           </p>
         </div>
 
@@ -1506,7 +1506,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                           type="button"
                           variant="ghost"
                           size="sm"
-                          onClick={() => goToStep(userData.is_admin ? 2 : 3)}
+                          onClick={() => goToStep(3)}
                         >
                           Skip for Now
                         </Button>
@@ -1523,7 +1523,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => goToStep(userData.is_admin ? 2 : 3)}
+                    onClick={() => goToStep(3)}
                     disabled={niprRunning || niprUploading}
                     className="h-12 px-6"
                   >
@@ -1573,166 +1573,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
             </div>
           )}
 
-          {/* Step 2: Carrier Login Collection - Step by Step */}
-          {currentStep === 2 && (
-            <div className="space-y-6">
-              {/* Loading state while matching carriers */}
-              {loadingMatches ? (
-                <div className="text-center py-12 space-y-4">
-                  <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
-                  <p className="text-muted-foreground">Matching carriers with your licenses...</p>
-                </div>
-              ) : matchedCarriers.length > 0 ? (
-                <>
-                  {/* Minimal Progress Bar */}
-                  <div className="space-y-2">
-                    <div className="w-full h-1 bg-gray-200 rounded-full">
-                      <div
-                        className="h-1 bg-primary rounded-full transition-all duration-300"
-                        style={{ width: `${((currentCarrierIndex + 1) / matchedCarriers.length) * 100}%` }}
-                      />
-                    </div>
-                    <p className="text-sm text-muted-foreground text-center">
-                      {Math.round(((currentCarrierIndex + 1) / matchedCarriers.length) * 100)}% complete
-                      <span className="mx-2">•</span>
-                      {currentCarrierIndex + 1} of {matchedCarriers.length} carriers
-                    </p>
-                  </div>
-
-                  {/* Current Carrier Login */}
-                  <div className="text-center space-y-6 py-8">
-                    <div>
-                      <h2 className="text-2xl font-bold text-foreground">
-                        Enter Login Credentials for:
-                      </h2>
-                      <p className="text-3xl font-bold text-primary mt-2">
-                        {matchedCarriers[currentCarrierIndex]?.display_name}
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Matched from: {matchedCarriers[currentCarrierIndex]?.matchedWith}
-                      </p>
-                      {savedCarrierLogins.has(matchedCarriers[currentCarrierIndex]?.id) && (
-                        <div className="inline-flex items-center gap-1 mt-2 text-green-600 text-sm">
-                          <CheckCircle2 className="h-4 w-4" />
-                          <span>Credentials saved</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="max-w-md mx-auto space-y-4">
-                      <div className="space-y-2">
-                        <label htmlFor="carrier-username" className="block text-sm font-medium text-left text-foreground">
-                          Username / Email
-                        </label>
-                        <Input
-                          id="carrier-username"
-                          type="text"
-                          placeholder="Enter your username or email"
-                          value={carrierLoginUsername}
-                          onChange={(e) => setCarrierLoginUsername(e.target.value)}
-                          disabled={savingCarrierLogin}
-                          className="h-12"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label htmlFor="carrier-password" className="block text-sm font-medium text-left text-foreground">
-                          Password
-                        </label>
-                        <Input
-                          id="carrier-password"
-                          type="password"
-                          placeholder="Enter your password"
-                          value={carrierLoginPassword}
-                          onChange={(e) => setCarrierLoginPassword(e.target.value)}
-                          disabled={savingCarrierLogin}
-                          className="h-12"
-                        />
-                      </div>
-
-                      <p className="text-xs text-muted-foreground text-left">
-                        Your credentials are securely stored and used to automatically retrieve your policy data.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Navigation */}
-                  <div className="flex justify-between items-center pt-6 border-t border-border">
-                    <div>
-                      {currentCarrierIndex > 0 && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setCarrierLoginUsername('')
-                            setCarrierLoginPassword('')
-                            setCurrentCarrierIndex(i => i - 1)
-                          }}
-                          disabled={savingCarrierLogin}
-                          className="h-12 px-6"
-                        >
-                          Previous Carrier
-                        </Button>
-                      )}
-                    </div>
-                    <div className="flex gap-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={skipCarrierLogin}
-                        disabled={savingCarrierLogin}
-                        className="h-12 px-6"
-                      >
-                        Skip
-                      </Button>
-                      <Button
-                        type="button"
-                        onClick={saveCarrierLogin}
-                        disabled={savingCarrierLogin || (!carrierLoginUsername && !carrierLoginPassword)}
-                        className="h-12 px-6 bg-black hover:bg-black/90 text-white"
-                      >
-                        {savingCarrierLogin ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Saving...
-                          </>
-                        ) : currentCarrierIndex === matchedCarriers.length - 1 ? (
-                          "Save & Continue to Team"
-                        ) : (
-                          "Save & Next Carrier →"
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                /* Fallback: No matching carriers found - show skip option */
-                <div className="text-center py-12 space-y-6">
-                  <div className="text-muted-foreground">
-                    <Shield className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                    <h2 className="text-xl font-semibold text-foreground mb-2">No Matching Carriers Found</h2>
-                    <p>
-                      {(niprResult?.analysis?.unique_carriers?.length || storedCarriers.length) > 0
-                        ? "None of your NIPR carriers match our active carrier list."
-                        : "No carrier information was found from the NIPR verification."}
-                      <br />
-                      You can add carrier logins later from the Configuration page.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    onClick={() => goToStep(3)}
-                    className="h-12 px-8 bg-black hover:bg-black/90 text-white"
-                  >
-                    <Users className="mr-2 h-4 w-4" />
-                    Next: Invite Team
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Step 3: Add Team Members */}
+          {/* Step 2: Add Team Members */}
           {currentStep === 3 && (
             <div className="space-y-6">
               <div className="border-b border-border pb-4">
@@ -2055,7 +1896,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => goToStep(userData.is_admin ? 2 : 1)}
+                  onClick={() => goToStep(1)}
                   className="h-12 px-6"
                 >
                   Previous

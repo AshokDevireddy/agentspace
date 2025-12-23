@@ -374,6 +374,17 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     checkNiprStatus()
   }, [userData.id])
 
+  // Auto-advance to step 3 when NIPR verification succeeds
+  useEffect(() => {
+    if (niprResult?.success && currentStep === 1 && !niprRunning && !niprUploading) {
+      const timer = setTimeout(() => {
+        setCurrentStep(3)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [niprResult?.success, currentStep, niprRunning, niprUploading])
+
   // Poll for NIPR job progress when we have a job ID
   useEffect(() => {
     if (!niprJobId || !niprRunning) return

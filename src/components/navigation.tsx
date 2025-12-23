@@ -262,7 +262,6 @@ export default function Navigation() {
     }
   }, [user?.id])
 
-  // Handle user logout
   const handleLogout = async () => {
     try {
       await signOut()

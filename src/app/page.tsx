@@ -57,12 +57,15 @@ export default function Home() {
 
   // Fetch user data from API
   useEffect(() => {
+    console.log('[Dashboard] fetchUserData effect triggered, user?.id:', user?.id)
     const fetchUserData = async () => {
       if (!user) {
+        console.log('[Dashboard] No user, skipping fetchUserData')
         setUserDataLoading(false)
         return
       }
 
+      console.log('[Dashboard] Fetching user profile for:', user.id)
       try {
         const response = await fetch(`/api/user/profile?user_id=${user.id}`)
 
@@ -72,7 +75,9 @@ export default function Home() {
 
         const result = await response.json()
 
+        console.log('[Dashboard] Profile response:', result.success ? 'success' : 'failed')
         if (result.success) {
+          console.log('[Dashboard] Setting firstName:', result.data.firstName)
           setFirstName(result.data.firstName || 'User')
           setUserData(result.data)
 

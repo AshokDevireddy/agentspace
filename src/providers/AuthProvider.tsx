@@ -1,9 +1,10 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type UserData = {
   role: 'admin' | 'agent' | 'client'
@@ -33,7 +34,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userData, setUserData] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
-  const supabase = createClient()
+  // Use ref to ensure supabase client is created only once
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
+  if (!supabaseRef.current) {
+    supabaseRef.current = createClient()
+  }
+  const supabase = supabaseRef.current
 
   // Fetch user data from the users table
   const fetchUserData = async (authUserId: string): Promise<UserData | null> => {
@@ -68,8 +74,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    console.log('[AuthProvider] Setting up auth state listener')
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('[AuthProvider] Auth state change:', event, 'session:', !!session)
         try {
           // Handle token refresh errors
           if (event === 'TOKEN_REFRESHED' && !session) {
@@ -119,7 +127,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [supabase.auth])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // supabase client is stable via ref
 
   const signIn = async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -163,6 +172,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
+    console.log('[AuthProvider] signOut called')
+
     // Clear all persisted user-specific data from localStorage before signing out
     if (typeof window !== 'undefined') {
       // Clear specific app keys
@@ -187,9 +198,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
-    router.push('/login')
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.error('[AuthProvider] signOut error:', error)
+      }
+    } catch (err) {
+      console.error('[AuthProvider] signOut exception:', err)
+    }
+
+    // Always redirect to login, even if signOut had errors
+    // Use window.location.href for a hard redirect to clear all state
+    console.log('[AuthProvider] Redirecting to login')
+    window.location.href = '/login'
   }
 
   // Memoize context value to prevent unnecessary re-renders

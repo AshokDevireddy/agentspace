@@ -15,6 +15,7 @@ type AuthContextType = {
   user: User | null
   userData: UserData | null
   loading: boolean
+  isHydrated: boolean
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   refreshUserData: () => Promise<void>
@@ -24,6 +25,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   userData: null,
   loading: true,
+  isHydrated: false,
   signIn: async () => {},
   signOut: async () => {},
   refreshUserData: async () => {},
@@ -33,8 +35,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [userData, setUserData] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isHydrated, setIsHydrated] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+
+  // Mark as hydrated after first client-side render
+  // This prevents hydration mismatch between server and client
+  useEffect(() => {
+    setIsHydrated(true)
+  }, [])
 
   // Fetch user data from the users table
   const fetchUserData = async (authUserId: string): Promise<UserData | null> => {
@@ -70,6 +79,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    // Wait for hydration before initializing auth
+    // This prevents hydration mismatch on Vercel where server/client timing differs
+    if (!isHydrated) return
+
     // Use getUser() to validate session with server (not cached getSession())
     // This ensures the session is valid and not stale from localStorage
     const initializeAuth = async () => {
@@ -112,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
+  }, [isHydrated])
 
   const signIn = async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -177,7 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, userData, loading, signIn, signOut, refreshUserData }}>
+    <AuthContext.Provider value={{ user, userData, loading, isHydrated, signIn, signOut, refreshUserData }}>
       {children}
     </AuthContext.Provider>
   )

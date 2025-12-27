@@ -7,6 +7,7 @@ import type { User } from '@supabase/supabase-js'
 
 export type UserData = {
   role: 'admin' | 'agent' | 'client'
+  status: 'active' | 'onboarding' | 'invited' | 'inactive'
   theme_mode: 'light' | 'dark' | 'system' | null
 }
 
@@ -14,6 +15,7 @@ type AuthContextType = {
   user: User | null
   userData: UserData | null
   loading: boolean
+  isHydrated: boolean
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   refreshUserData: () => Promise<void>
@@ -23,6 +25,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   userData: null,
   loading: true,
+  isHydrated: false,
   signIn: async () => {},
   signOut: async () => {},
   refreshUserData: async () => {},
@@ -32,15 +35,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [userData, setUserData] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isHydrated, setIsHydrated] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+
+  // Mark as hydrated after first client-side render
+  // This prevents hydration mismatch between server and client
+  useEffect(() => {
+    setIsHydrated(true)
+  }, [])
 
   // Fetch user data from the users table
   const fetchUserData = async (authUserId: string): Promise<UserData | null> => {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('role, theme_mode')
+        .select('role, status, theme_mode')
         .eq('auth_user_id', authUserId)
         .single()
 
@@ -51,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return {
         role: data.role as 'admin' | 'agent' | 'client',
+        status: data.status as 'active' | 'onboarding' | 'invited' | 'inactive',
         theme_mode: data.theme_mode as 'light' | 'dark' | 'system' | null
       }
     } catch (error) {
@@ -68,25 +79,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    // Wait for hydration before initializing auth
+    // This prevents hydration mismatch on Vercel where server/client timing differs
+    if (!isHydrated) return
+
+    // Use getUser() to validate session with server (not cached getSession())
+    // This ensures the session is valid and not stale from localStorage
+    const initializeAuth = async () => {
+      const { data: { user: authUser }, error } = await supabase.auth.getUser()
+
+      if (error || !authUser) {
+        // Session invalid or doesn't exist - clear state
+        setUser(null)
+        setUserData(null)
+        setLoading(false)
+        return
+      }
+
+      setUser(authUser)
+      const data = await fetchUserData(authUser.id)
+      setUserData(data)
+      setLoading(false)
+    }
+
+    initializeAuth()
+
+    // Listen for auth changes (login/logout/token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (session?.user) {
-          setUser(session.user)
-          // Fetch user data including theme_mode
-          const data = await fetchUserData(session.user.id)
-          setUserData(data)
-        } else {
+        // Handle specific auth events
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (session?.user) {
+            setUser(session.user)
+            const data = await fetchUserData(session.user.id)
+            setUserData(data)
+          }
+        } else if (event === 'SIGNED_OUT') {
           setUser(null)
           setUserData(null)
         }
-        setLoading(false)
+        // For INITIAL_SESSION event, we rely on initializeAuth() above
       }
     )
 
     return () => {
       subscription.unsubscribe()
     }
-  }, [supabase.auth])
+  }, [isHydrated])
 
   const signIn = async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -115,9 +154,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(`Please use the ${userProfile.role} login tab`)
     }
 
-    // Store user data including theme_mode
+    // Explicitly set user state (don't rely solely on onAuthStateChange)
+    setUser(data.user)
+
+    // Store user data including status and theme_mode
     setUserData({
       role: userProfile.role as 'admin' | 'agent' | 'client',
+      status: userProfile.status as 'active' | 'onboarding' | 'invited' | 'inactive',
       theme_mode: userProfile.theme_mode as 'light' | 'dark' | 'system' | null
     })
 
@@ -144,13 +187,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       keysToRemove.forEach(key => localStorage.removeItem(key))
     }
 
+    // Explicitly clear auth state before signing out (don't rely solely on onAuthStateChange)
+    setUser(null)
+    setUserData(null)
+
     const { error } = await supabase.auth.signOut()
     if (error) throw error
     router.push('/login')
   }
 
   return (
-    <AuthContext.Provider value={{ user, userData, loading, signIn, signOut, refreshUserData }}>
+    <AuthContext.Provider value={{ user, userData, loading, isHydrated, signIn, signOut, refreshUserData }}>
       {children}
     </AuthContext.Provider>
   )

@@ -66,7 +66,7 @@ export async function GET(
       completedAt: job.completed_at,
       resultFiles: job.result_files,
       resultCarriers: job.result_carriers,
-      errorMessage: job.error_message
+      errorMessage: job.error_message,
     })
 
   } catch (error) {

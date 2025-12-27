@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
@@ -192,8 +192,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push('/login')
   }
 
+  // Memoize context value to prevent unnecessary re-renders
+  const value = useMemo(() => ({
+    user,
+    userData,
+    loading,
+    signIn,
+    signOut,
+    refreshUserData,
+  }), [user, userData, loading])
+
   return (
-    <AuthContext.Provider value={{ user, userData, loading, signIn, signOut, refreshUserData }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

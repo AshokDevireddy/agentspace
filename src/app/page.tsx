@@ -103,7 +103,7 @@ export default function Home() {
     }
 
     fetchUserData()
-  }, [user])
+  }, [user?.id])
 
   // Fetch scoreboard data for this week
   useEffect(() => {
@@ -192,7 +192,7 @@ export default function Home() {
     }
 
     fetchScoreboardData()
-  }, [user])
+  }, [user?.id])
 
   // Fetch dashboard analytics data
   useEffect(() => {
@@ -261,7 +261,7 @@ export default function Home() {
     }
 
     fetchDashboardData()
-  }, [user])
+  }, [user?.id])
 
   // Auto-start tour for newly active users (who just completed the wizard)
   useEffect(() => {

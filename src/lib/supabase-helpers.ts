@@ -1,12 +1,16 @@
 import { createBrowserClient } from '@supabase/ssr'
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+// Create fresh client for each call - ensures proper auth state after logout/login
+function getSupabaseClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
 
 // Get current user with admin status
 export async function getCurrentUser() {
+  const supabase = getSupabaseClient()
   const { data: { user: authUser } } = await supabase.auth.getUser()
 
   if (!authUser) return null
@@ -22,6 +26,7 @@ export async function getCurrentUser() {
 
 // Get user's downline (all agents below them in hierarchy)
 export async function getUserDownline(userId: string) {
+  const supabase = getSupabaseClient()
   const { data, error } = await supabase.rpc('get_agent_downline', {
     agent_id: userId
   })
@@ -36,6 +41,7 @@ export async function getUserDownline(userId: string) {
 
 // Get filtered data based on user permissions
 export async function getVisibleAgents(currentUserId: string, isAdmin: boolean) {
+  const supabase = getSupabaseClient()
   if (isAdmin) {
     // Admins can see all users
     const { data, error } = await supabase
@@ -71,6 +77,7 @@ export async function getVisibleAgents(currentUserId: string, isAdmin: boolean) 
 
 // Get commission reports (admin only)
 export async function getCommissionReports() {
+  const supabase = getSupabaseClient()
   const { data, error } = await supabase
     .from('commission_reports')
     .select(`
@@ -85,6 +92,7 @@ export async function getCommissionReports() {
 
 // Get positions
 export async function getPositions(agencyId?: string) {
+  const supabase = getSupabaseClient()
   let query = supabase
     .from('positions')
     .select('*')
@@ -103,6 +111,7 @@ export async function getPositions(agencyId?: string) {
 
 // Get carriers
 export async function getCarriers() {
+  const supabase = getSupabaseClient()
   const { data, error } = await supabase
     .from('carriers')
     .select('*')
@@ -115,6 +124,7 @@ export async function getCarriers() {
 
 // Get products for a carrier
 export async function getProductsByCarrier(carrierId: string) {
+  const supabase = getSupabaseClient()
   const { data, error } = await supabase
     .from('products')
     .select('*')
@@ -128,6 +138,7 @@ export async function getProductsByCarrier(carrierId: string) {
 
 // Get commission structures for a product
 export async function getCommissionStructures(carrierId: string, productId?: string) {
+  const supabase = getSupabaseClient()
   let query = supabase
     .from('commission_structures')
     .select(`
@@ -158,6 +169,7 @@ export async function upsertCommissionStructure(structure: {
   commission_type?: string
   level?: number
 }) {
+  const supabase = getSupabaseClient()
   const { data, error } = await supabase
     .from('commission_structures')
     .upsert({
@@ -176,6 +188,7 @@ export async function createPosition(position: {
   name: string
   level: number
 }) {
+  const supabase = getSupabaseClient()
   const currentUser = await getCurrentUser()
 
   const { data, error } = await supabase
@@ -198,6 +211,7 @@ export async function createProduct(product: {
   name: string
   product_code?: string
 }) {
+  const supabase = getSupabaseClient()
   const { data, error } = await supabase
     .from('products')
     .insert(product)
@@ -210,6 +224,7 @@ export async function createProduct(product: {
 
 // Update user unique carriers from NIPR analysis
 export async function updateUserCarriers(userId: string, carriers: string[]) {
+  const supabase = getSupabaseClient()
   // Note: users.unique_carriers is text[], not JSONB object
   const { data, error } = await supabase
     .from('users')

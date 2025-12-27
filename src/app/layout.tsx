@@ -12,6 +12,10 @@ import { headers } from "next/headers";
 import { createServerClient } from "@/lib/supabase/server";
 import { isWhiteLabelDomain } from "@/lib/whitelabel";
 
+// Prevent Vercel/browser from caching authenticated pages
+// This ensures fresh auth state on every request
+export const dynamic = 'force-dynamic'
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],

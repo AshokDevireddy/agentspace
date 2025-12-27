@@ -154,6 +154,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(`Please use the ${userProfile.role} login tab`)
     }
 
+    // Explicitly set user state (don't rely solely on onAuthStateChange)
+    setUser(data.user)
+
     // Store user data including status and theme_mode
     setUserData({
       role: userProfile.role as 'admin' | 'agent' | 'client',
@@ -183,6 +186,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Remove all filter keys
       keysToRemove.forEach(key => localStorage.removeItem(key))
     }
+
+    // Explicitly clear auth state before signing out (don't rely solely on onAuthStateChange)
+    setUser(null)
+    setUserData(null)
 
     const { error } = await supabase.auth.signOut()
     if (error) throw error

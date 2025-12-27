@@ -95,7 +95,7 @@ interface DealDetails {
 }
 
 function SMSMessagingPageContent() {
-  const { showSuccess } = useNotification()
+  const { showSuccess, showError } = useNotification()
   const searchParams = useSearchParams()
   const conversationIdFromUrl = searchParams.get('conversation')
   const { user } = useAuth()
@@ -1465,7 +1465,7 @@ function SMSMessagingPageContent() {
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-semibold text-yellow-800">Needs More Info</h4>
-                      <p className="text-xs text-yellow-700 mt-1">Additional information required for this policy.</p>
+                      <p className="text-xs text-yellow-700 mt-1">Additional information required for this client.</p>
                     </div>
                     <Button
                       size="sm"

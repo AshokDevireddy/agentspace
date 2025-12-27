@@ -29,6 +29,11 @@ export async function middleware(req: NextRequest) {
 
   const res = NextResponse.next()
 
+  // Add CORS headers to all responses
+  res.headers.set('Access-Control-Allow-Origin', '*')
+  res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-info')
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

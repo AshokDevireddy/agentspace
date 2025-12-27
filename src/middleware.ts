@@ -2,6 +2,17 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
+// Helper to clear all Supabase auth cookies
+function clearAuthCookies(res: NextResponse, req: NextRequest) {
+  // Supabase auth cookies follow pattern: sb-{project-ref}-auth-token
+  const authCookies = req.cookies.getAll().filter(cookie =>
+    cookie.name.startsWith('sb-') && cookie.name.includes('-auth-')
+  )
+  authCookies.forEach(cookie => {
+    res.cookies.delete(cookie.name)
+  })
+}
+
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
 
@@ -23,10 +34,28 @@ export async function middleware(req: NextRequest) {
     }
   )
 
-  // Get user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // Get user with error handling for invalid/expired tokens
+  let user = null
+  try {
+    const { data, error } = await supabase.auth.getUser()
+    if (error) {
+      // Handle specific auth errors
+      const errorCode = (error as { code?: string }).code
+      if (errorCode === 'refresh_token_not_found' || errorCode === 'session_not_found') {
+        // Clear invalid auth cookies
+        clearAuthCookies(res, req)
+        console.log('[Middleware] Cleared invalid auth cookies:', errorCode)
+      }
+      // For auth errors, treat as unauthenticated (user = null)
+    } else {
+      user = data.user
+    }
+  } catch (err) {
+    // Handle network errors (AuthRetryableFetchError) gracefully
+    console.error('[Middleware] Auth fetch error:', err)
+    // Clear cookies on persistent errors to prevent retry loops
+    clearAuthCookies(res, req)
+  }
 
   // Public routes that don't require authentication
   const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/setup-account']

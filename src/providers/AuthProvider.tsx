@@ -70,18 +70,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (session?.user) {
-          setUser(session.user)
-          // Fetch user data including theme_mode
-          const data = await fetchUserData(session.user.id)
-          setUserData(data)
-        } else {
+        try {
+          // Handle token refresh errors
+          if (event === 'TOKEN_REFRESHED' && !session) {
+            console.log('[AuthProvider] Token refresh failed, clearing user state')
+            setUser(null)
+            setUserData(null)
+            setLoading(false)
+            return
+          }
+
+          if (session?.user) {
+            setUser(session.user)
+            // Fetch user data including theme_mode
+            const data = await fetchUserData(session.user.id)
+            setUserData(data)
+          } else {
+            setUser(null)
+            setUserData(null)
+          }
+          setLoading(false)
+        } catch (error) {
+          // Handle any errors during auth state change gracefully
+          console.error('[AuthProvider] Error in auth state change:', error)
           setUser(null)
           setUserData(null)
+          setLoading(false)
         }
-        setLoading(false)
       }
     )
+
+    // Also handle initial session check errors
+    const checkSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        if (error) {
+          console.error('[AuthProvider] Session check error:', error)
+          // Don't throw - just treat as no session
+        }
+        // onAuthStateChange will handle the actual state update
+      } catch (err) {
+        console.error('[AuthProvider] Failed to check session:', err)
+        setLoading(false)
+      }
+    }
+    checkSession()
 
     return () => {
       subscription.unsubscribe()

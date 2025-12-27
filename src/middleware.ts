@@ -2,6 +2,33 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
+// CORS headers configuration
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-client-info',
+}
+
+// Helper to add CORS headers to any response
+function withCors(response: NextResponse): NextResponse {
+  Object.entries(corsHeaders).forEach(([key, value]) => {
+    response.headers.set(key, value)
+  })
+  return response
+}
+
+// Helper to create JSON response with CORS headers
+function jsonWithCors(data: object, init?: { status?: number }): NextResponse {
+  const response = NextResponse.json(data, init)
+  return withCors(response)
+}
+
+// Helper to create redirect response with CORS headers
+function redirectWithCors(url: URL): NextResponse {
+  const response = NextResponse.redirect(url)
+  return withCors(response)
+}
+
 // Helper to clear all Supabase auth cookies
 function clearAuthCookies(res: NextResponse, req: NextRequest) {
   // Supabase auth cookies follow pattern: sb-{project-ref}-auth-token
@@ -87,12 +114,12 @@ export async function middleware(req: NextRequest) {
   if (!user && !isPublicRoute && !isPublicApi) {
     // For API routes, return 401 instead of redirecting
     if (req.nextUrl.pathname.startsWith('/api/')) {
-      return NextResponse.json(
+      return jsonWithCors(
         { error: 'Unauthorized', message: 'Authentication required' },
         { status: 401 }
-      );
+      )
     }
-    return NextResponse.redirect(new URL('/login', req.url))
+    return redirectWithCors(new URL('/login', req.url))
   }
 
   // If user is authenticated, check role-based access
@@ -119,7 +146,7 @@ export async function middleware(req: NextRequest) {
 
         if (!isAllowedPath) {
           // Redirect to dashboard where they can complete onboarding
-          return NextResponse.redirect(new URL('/', req.url))
+          return redirectWithCors(new URL('/', req.url))
         }
         // Allow access to allowed paths
         return res
@@ -128,27 +155,27 @@ export async function middleware(req: NextRequest) {
       // If user is invited (hasn't clicked invite link yet), redirect to login
       if (userProfile.status === 'invited') {
         await supabase.auth.signOut()
-        return NextResponse.redirect(new URL('/login?message=check-email', req.url))
+        return redirectWithCors(new URL('/login?message=check-email', req.url))
       }
 
       // If user is inactive, sign them out and redirect to login
       if (userProfile.status === 'inactive') {
         await supabase.auth.signOut()
-        return NextResponse.redirect(new URL('/login?message=account-deactivated', req.url))
+        return redirectWithCors(new URL('/login?message=account-deactivated', req.url))
       }
     }
 
     // Client-specific routes
     if (req.nextUrl.pathname.startsWith('/client/')) {
       if (!userProfile || userProfile.role !== 'client') {
-        return NextResponse.redirect(new URL('/unauthorized', req.url))
+        return redirectWithCors(new URL('/unauthorized', req.url))
       }
       return res
     }
 
     // If client tries to access non-client routes (except public routes and logout)
     if (userProfile && userProfile.role === 'client' && !isPublicRoute && !req.nextUrl.pathname.startsWith('/client/')) {
-      return NextResponse.redirect(new URL('/client/dashboard', req.url))
+      return redirectWithCors(new URL('/client/dashboard', req.url))
     }
   }
 
@@ -167,12 +194,12 @@ export async function middleware(req: NextRequest) {
     if (!adminCheckUser?.is_admin) {
       const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
       if (isApiRoute) {
-        return NextResponse.json(
+        return jsonWithCors(
           { error: 'Forbidden', message: 'Admin access required' },
           { status: 403 }
         )
       }
-      return NextResponse.redirect(new URL('/unauthorized', req.url))
+      return redirectWithCors(new URL('/unauthorized', req.url))
     }
   }
 
@@ -192,7 +219,7 @@ export async function middleware(req: NextRequest) {
     if (tier !== 'pro' && tier !== 'expert') {
       const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
       if (isApiRoute) {
-        return NextResponse.json(
+        return jsonWithCors(
           {
             error: 'Forbidden',
             message: 'Pro or Expert tier subscription required',
@@ -202,7 +229,7 @@ export async function middleware(req: NextRequest) {
           { status: 403 }
         )
       }
-      return NextResponse.redirect(new URL('/unauthorized', req.url))
+      return redirectWithCors(new URL('/unauthorized', req.url))
     }
   }
 

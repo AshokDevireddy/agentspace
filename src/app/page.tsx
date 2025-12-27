@@ -37,6 +37,24 @@ export default function Home() {
     localStorage.setItem('dashboard_view_mode', viewMode)
   }, [viewMode])
 
+  // Reset all dashboard state when user changes (handles logout/re-login)
+  useEffect(() => {
+    // Reset all dashboard data state
+    setDashboardData(null)
+    setTopProducers([])
+    setProductionData([])
+    setDateRange({ startDate: '', endDate: '' })
+    setFirstName('')
+    setUserData(null)
+    setShowOnboarding(false)
+    setShowWizard(false)
+    setHasStartedTour(false)
+    // Reset loading states to trigger fresh data fetch
+    setUserDataLoading(true)
+    setLoadingScoreboard(true)
+    setLoadingDashboard(true)
+  }, [user?.id])
+
   // Fetch user data from API
   useEffect(() => {
     const fetchUserData = async () => {

@@ -1,9 +1,7 @@
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient } from '@/lib/supabase/client'
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+// Use the singleton client to ensure consistent auth state
+const supabase = createClient()
 
 // Get current user with admin status
 export async function getCurrentUser() {

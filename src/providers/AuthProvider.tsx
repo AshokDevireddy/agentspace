@@ -70,14 +70,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    // Get initial session on mount (fixes refresh issue where onAuthStateChange doesn't fire)
+    // Use getUser() to validate session with server (not cached getSession())
+    // This ensures the session is valid and not stale from localStorage
     const initializeAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        setUser(session.user)
-        const data = await fetchUserData(session.user.id)
-        setUserData(data)
+      const { data: { user: authUser }, error } = await supabase.auth.getUser()
+
+      if (error || !authUser) {
+        // Session invalid or doesn't exist - clear state
+        setUser(null)
+        setUserData(null)
+        setLoading(false)
+        return
       }
+
+      setUser(authUser)
+      const data = await fetchUserData(authUser.id)
+      setUserData(data)
       setLoading(false)
     }
 
@@ -86,24 +94,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes (login/logout/token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (session?.user) {
-          setUser(session.user)
-          // Fetch user data including theme_mode
-          const data = await fetchUserData(session.user.id)
-          setUserData(data)
-        } else {
+        // Handle specific auth events
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (session?.user) {
+            setUser(session.user)
+            const data = await fetchUserData(session.user.id)
+            setUserData(data)
+          }
+        } else if (event === 'SIGNED_OUT') {
           setUser(null)
           setUserData(null)
         }
-        // Note: Don't set loading=false here as initializeAuth handles it
-        // and we don't want to flash loading state on token refresh
+        // For INITIAL_SESSION event, we rely on initializeAuth() above
       }
     )
 
     return () => {
       subscription.unsubscribe()
     }
-  }, [supabase.auth])
+  }, [])
 
   const signIn = async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
     const { data, error } = await supabase.auth.signInWithPassword({

@@ -60,12 +60,13 @@ function layer1HardBlock(messageText: string): boolean {
 function layer2FactQuestionShape(messageText: string): boolean {
   const text = messageText.toLowerCase().trim();
 
-  // Must start with interrogative words or contain question mark
-  const interrogativeStarters = /^(what|when|where|who|which|how much|how many)\b/;
+  // Question starters - interrogative words that begin fact-seeking questions
+  const interrogativeStarters = /^(what|when|where|who|which|how much|how many|is|are|do|does|can|will)\b/;
   const hasQuestionMark = text.includes('?');
-  const hasInterrogativeWord = /\b(what|when|where|who|which|is|are)\b/.test(text);
+  const hasInterrogativeWord = /\b(what|when|where|who|which|is|are|my|the)\b/.test(text);
 
   // Must be requesting information, not action
+  // Allow: questions starting with interrogative words OR questions with ? and interrogative content
   const isInformationRequest = interrogativeStarters.test(text) ||
     (hasQuestionMark && hasInterrogativeWord);
 
@@ -73,7 +74,9 @@ function layer2FactQuestionShape(messageText: string): boolean {
   const statementPatterns = [
     /\bi want to know\b/, // "I want to know..." = statement
     /\bcan you tell me how to\b/, // procedural request
-    /\bwould like to\b/ // action request
+    /\bwould like to\b/, // action request
+    /\bi need to\b/, // action request
+    /\bhelp me\b/ // action request
   ];
 
   const isStatement = statementPatterns.some(pattern => pattern.test(text));
@@ -98,22 +101,22 @@ function layer3DealEntityCheck(messageText: string, dealData: any): boolean {
   // Map question patterns to deal data fields
   const entityMappings = [
     {
-      patterns: [/policy number/, /policy #/],
+      patterns: [/policy number/, /policy #/, /policy.*number/],
       fields: ['policy_number'],
       required: true
     },
     {
-      patterns: [/premium/, /payment/, /cost/, /how much/],
+      patterns: [/premium/, /payment/, /cost/, /how much/, /pay.*month/, /monthly/],
       fields: ['monthly_premium', 'annual_premium'],
       required: true
     },
     {
-      patterns: [/effective date/, /start date/, /when.*start/],
+      patterns: [/effective date/, /start date/, /when.*start/, /policy.*start/, /begin/, /effective/],
       fields: ['policy_effective_date'],
       required: true
     },
     {
-      patterns: [/carrier/, /company/, /insurer/],
+      patterns: [/carrier/, /company/, /insurer/, /insurance company/, /policy with/, /who.*insur/, /which.*insurance/, /what.*insurance/],
       fields: ['carrier.name'],
       required: true
     },
@@ -123,18 +126,24 @@ function layer3DealEntityCheck(messageText: string, dealData: any): boolean {
       required: false
     },
     {
-      patterns: [/agent/, /who.*agent/],
+      patterns: [/agent/, /who.*agent/, /my agent/],
       fields: ['agent.first_name', 'agent.last_name'],
       required: true
     },
     {
-      patterns: [/status/, /active/, /is.*active/],
+      patterns: [/status/, /active/, /is.*active/, /policy.*active/, /still.*active/],
       fields: ['status', 'status_standardized'],
       required: true
     },
     {
-      patterns: [/billing cycle/, /billing/, /how often/],
+      patterns: [/billing cycle/, /billing/, /how often/, /when.*pay/, /payment.*schedule/],
       fields: ['billing_cycle'],
+      required: false
+    },
+    {
+      // General policy info questions - catch-all for "my policy" type questions
+      patterns: [/my policy/, /my insurance/, /policy info/, /policy details/, /tell me about my/],
+      fields: ['policy_number', 'carrier.name', 'status', 'monthly_premium'],
       required: false
     }
   ];
@@ -390,10 +399,10 @@ async function generateAIResponse(
 
 STRICT RULES:
 - ONLY answer direct questions about the policy information provided
-- You should NEVER receive questions about claims, changes, or advice (these are filtered out)
-- If you somehow receive a non-policy question, respond: "I cannot assist with that request"
-- Be professional and concise
-- Include brief disclaimer: "For policy changes, contact your agent"
+- NEVER mention contacting an agent, representative, or any human - you ARE the assistant helping them
+- NEVER say "contact your agent", "reach out to your agent", "speak with your agent", or similar phrases
+- Be professional, friendly, and concise
+- If information is not available, simply say it's not available in your records
 
 Policy Information:
 - Client: ${dealDetails.client_name}
@@ -426,7 +435,7 @@ Please provide a helpful response about their policy information. Keep it under 
 
   // Ensure response is SMS-friendly length
   if (aiResponse.length > 320) {
-    return aiResponse.substring(0, 310) + '...' + '\n\nContact your agent for more details.';
+    return aiResponse.substring(0, 317) + '...';
   }
 
   return aiResponse;

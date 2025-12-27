@@ -1,16 +1,12 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
-import { useEffect, useState, useRef } from 'react'
 import Navigation from '@/components/navigation'
 import OnboardingTour from '@/components/onboarding-tour'
 import { Building2 } from 'lucide-react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
-import { useTheme } from 'next-themes'
 import { useAgencyBranding } from '@/contexts/AgencyBrandingContext'
 import { useAuth } from '@/providers/AuthProvider'
-import { useTour } from '@/contexts/onboarding-tour-context'
 
 // Pages that should not show the navigation sidebar
 const AUTH_PAGES = [
@@ -32,48 +28,14 @@ export default function ClientLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
-  const { user } = useAuth()
-  const { setTheme } = useTheme()
+  const { userData, loading } = useAuth()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
-  const { isTourActive } = useTour()
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isClientPage = CLIENT_PAGES.some(page => pathname.startsWith(page))
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [userStatus, setUserStatus] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  // Track if we've already fetched user data to avoid refetching during tour
-  const hasInitializedRef = useRef(false)
 
-  useEffect(() => {
-    const checkUserRole = async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('role, status')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        setUserRole(userData?.role || null)
-        setUserStatus(userData?.status || null)
-      }
-      setLoading(false)
-      hasInitializedRef.current = true
-    }
-
-    if (!isAuthPage) {
-      // Skip refetching if tour is active and we've already initialized
-      // This prevents unnecessary database queries during tour navigation
-      if (isTourActive && hasInitializedRef.current) {
-        return
-      }
-      checkUserRole()
-    } else {
-      setLoading(false)
-    }
-  }, [pathname, isAuthPage, isTourActive])
+  // Get role and status from centralized auth state (no duplicate fetching)
+  const userRole = userData?.role || null
+  const userStatus = userData?.status || null
 
   // On auth pages, show a simple layout with just the logo
   if (isAuthPage) {

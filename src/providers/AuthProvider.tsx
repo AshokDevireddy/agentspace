@@ -7,6 +7,7 @@ import type { User } from '@supabase/supabase-js'
 
 export type UserData = {
   role: 'admin' | 'agent' | 'client'
+  status: 'active' | 'onboarding' | 'invited' | 'inactive'
   theme_mode: 'light' | 'dark' | 'system' | null
 }
 
@@ -40,7 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('role, theme_mode')
+        .select('role, status, theme_mode')
         .eq('auth_user_id', authUserId)
         .single()
 
@@ -51,6 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return {
         role: data.role as 'admin' | 'agent' | 'client',
+        status: data.status as 'active' | 'onboarding' | 'invited' | 'inactive',
         theme_mode: data.theme_mode as 'light' | 'dark' | 'system' | null
       }
     } catch (error) {
@@ -68,6 +70,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    // Get initial session on mount (fixes refresh issue where onAuthStateChange doesn't fire)
+    const initializeAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        setUser(session.user)
+        const data = await fetchUserData(session.user.id)
+        setUserData(data)
+      }
+      setLoading(false)
+    }
+
+    initializeAuth()
+
+    // Listen for auth changes (login/logout/token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (session?.user) {
@@ -79,7 +95,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null)
           setUserData(null)
         }
-        setLoading(false)
+        // Note: Don't set loading=false here as initializeAuth handles it
+        // and we don't want to flash loading state on token refresh
       }
     )
 
@@ -115,9 +132,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(`Please use the ${userProfile.role} login tab`)
     }
 
-    // Store user data including theme_mode
+    // Store user data including status and theme_mode
     setUserData({
       role: userProfile.role as 'admin' | 'agent' | 'client',
+      status: userProfile.status as 'active' | 'onboarding' | 'invited' | 'inactive',
       theme_mode: userProfile.theme_mode as 'light' | 'dark' | 'system' | null
     })
 

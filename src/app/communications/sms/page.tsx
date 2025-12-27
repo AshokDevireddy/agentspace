@@ -95,7 +95,7 @@ interface DealDetails {
 }
 
 function SMSMessagingPageContent() {
-  const { showSuccess } = useNotification()
+  const { showSuccess, showError } = useNotification()
   const searchParams = useSearchParams()
   const conversationIdFromUrl = searchParams.get('conversation')
   const { user } = useAuth()

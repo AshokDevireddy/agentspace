@@ -38,7 +38,7 @@ function layer1HardBlock(messageText: string): boolean {
     /\b(new policy|another policy|different policy|more coverage)\b/,
 
     // Advice and recommendations
-    /\b(should i|what insurance|recommend|advice|opinion|suggest|better|compare|shop around)\b/,
+    /\b(should i|recommend|advice|opinion|suggest|better|compare|shop around)\b/,
 
     // Legal and complaints
     /\b(lawyer|sue|complaint|dispute|refund|fraud|legal)\b/,
@@ -106,7 +106,7 @@ function layer3DealEntityCheck(messageText: string, dealData: any): boolean {
       required: true
     },
     {
-      patterns: [/premium/, /payment/, /cost/, /how much/, /pay.*month/, /monthly/],
+      patterns: [/premium/, /payment/, /cost/, /how much/, /pay.*month/, /monthly/, /annual/],
       fields: ['monthly_premium', 'annual_premium'],
       required: true
     },
@@ -121,7 +121,13 @@ function layer3DealEntityCheck(messageText: string, dealData: any): boolean {
       required: true
     },
     {
-      patterns: [/beneficiary/, /beneficiaries/],
+      // Product/coverage type questions
+      patterns: [/product/, /type of (policy|insurance|coverage)/, /kind of (policy|insurance|coverage)/, /coverage type/, /what (insurance|coverage|policy) do i have/, /what do i have/],
+      fields: ['carrier.name', 'policy_number'],
+      required: true
+    },
+    {
+      patterns: [/beneficiary/, /beneficiaries/, /who else.*on my policy/, /who.*on my policy/, /how many people/, /people on my policy/, /covered.*policy/],
       fields: ['beneficiary'], // Note: may not always be available
       required: false
     },
@@ -131,12 +137,18 @@ function layer3DealEntityCheck(messageText: string, dealData: any): boolean {
       required: true
     },
     {
+      // Agent contact info questions
+      patterns: [/agent.*(email|contact|phone|number)/, /email.*(agent|address)/, /contact.*agent/],
+      fields: ['agent.email', 'agent.phone_number'],
+      required: false
+    },
+    {
       patterns: [/status/, /active/, /is.*active/, /policy.*active/, /still.*active/],
       fields: ['status', 'status_standardized'],
       required: true
     },
     {
-      patterns: [/billing cycle/, /billing/, /how often/, /when.*pay/, /payment.*schedule/],
+      patterns: [/billing cycle/, /billing/, /how often/, /when.*pay/, /payment.*schedule/, /next payment/, /due date/],
       fields: ['billing_cycle'],
       required: false
     },

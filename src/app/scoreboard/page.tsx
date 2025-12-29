@@ -190,6 +190,8 @@ export default function Scoreboard() {
           assumed_months_till_lapse: assumedMonthsTillLapse
         })
 
+        console.log('Scoreboard RPC Response:', JSON.stringify(rpcData, null, 2))
+
         if (rpcError) {
           console.error('RPC Error:', rpcError)
           throw new Error(rpcError.message || 'Failed to fetch scoreboard data')

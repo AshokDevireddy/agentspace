@@ -1,9 +1,7 @@
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient } from '@/lib/supabase/client'
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+// Use the singleton client to ensure consistent auth state
+const supabase = createClient()
 
 // Get current user with admin status
 export async function getCurrentUser() {
@@ -214,6 +212,27 @@ export async function updateUserCarriers(userId: string, carriers: string[]) {
   const { data, error } = await supabase
     .from('users')
     .update({ unique_carriers: carriers })
+    .eq('id', userId)
+    .select()
+
+  if (error) throw error
+  return data
+}
+
+// Update user unique carriers and states from NIPR analysis (atomic update)
+// Requires admin client to bypass RLS
+export async function updateUserNIPRData(
+  supabaseClient: { from: (table: string) => any },
+  userId: string,
+  carriers: string[],
+  states: string[]
+) {
+  const { data, error } = await supabaseClient
+    .from('users')
+    .update({
+      unique_carriers: carriers,
+      licensed_states: states
+    })
     .eq('id', userId)
     .select()
 

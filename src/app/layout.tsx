@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { ThemeProvider } from "@/providers/ThemeProvider";
+import { ThemeCoordinator } from "@/contexts/ThemeCoordinatorContext";
 import { AgencyBrandingProvider } from "@/contexts/AgencyBrandingContext";
 import { NotificationProvider } from "@/contexts/notification-context";
 import { TourProvider } from "@/contexts/onboarding-tour-context";
@@ -10,6 +11,10 @@ import ClientLayout from "./client-layout";
 import { headers } from "next/headers";
 import { createServerClient } from "@/lib/supabase/server";
 import { isWhiteLabelDomain } from "@/lib/whitelabel";
+
+// Prevent Vercel/browser from caching authenticated pages
+// This ensures fresh auth state on every request
+export const dynamic = 'force-dynamic'
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -75,13 +80,15 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <AuthProvider>
-              <NotificationProvider>
-                <TourProvider>
-                  <ClientLayout>
-                    {children}
-                  </ClientLayout>
-                </TourProvider>
-              </NotificationProvider>
+              <ThemeCoordinator>
+                <NotificationProvider>
+                  <TourProvider>
+                    <ClientLayout>
+                      {children}
+                    </ClientLayout>
+                  </TourProvider>
+                </NotificationProvider>
+              </ThemeCoordinator>
             </AuthProvider>
           </ThemeProvider>
         </AgencyBrandingProvider>

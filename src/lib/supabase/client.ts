@@ -1,8 +1,13 @@
 import { createBrowserClient } from '@supabase/ssr'
 import type { Database } from './database.types.ts'
 
+// Singleton instance to ensure consistent auth state across components
+let browserClient: ReturnType<typeof createBrowserClient<Database>> | null = null
+
 export const createClient = () => {
-  return createBrowserClient<Database>(
+  if (browserClient) return browserClient
+
+  browserClient = createBrowserClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -23,4 +28,6 @@ export const createClient = () => {
       },
     }
   )
+
+  return browserClient
 }

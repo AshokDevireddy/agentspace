@@ -17,19 +17,6 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   const [isProcessingInvite, setIsProcessingInvite] = useState(false)
 
-  // Force light mode for non-white-labeled sites, use agency theme for white-labeled sites
-  useEffect(() => {
-    if (!brandingLoading) {
-      if (isWhiteLabel && branding?.theme_mode) {
-        // White-labeled site: use agency's theme preference
-        setTheme(branding.theme_mode)
-      } else {
-        // Default AgentSpace site: always use light mode
-        setTheme('light')
-      }
-    }
-  }, [isWhiteLabel, branding, brandingLoading, setTheme])
-
   // Handle invite tokens in URL hash
   useEffect(() => {
     const handleInviteToken = async () => {

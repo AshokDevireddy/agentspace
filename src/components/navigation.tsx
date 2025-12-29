@@ -79,6 +79,10 @@ export default function Navigation() {
   const [subscriptionTier, setSubscriptionTier] = useState<string>('free')
   const previousResolvedThemeRef = useRef<string | null>(null)
 
+  // Create stable supabase client instance for realtime subscriptions
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
+
   // Check if user is admin and fetch agency data
   useEffect(() => {
     const checkAdminAndFetchAgency = async () => {
@@ -190,7 +194,7 @@ export default function Navigation() {
     previousResolvedThemeRef.current = currentResolvedTheme
   }, [resolvedTheme, agencyId, agencyColor])
 
-  // Fetch unread message count
+  // Fetch unread message count with Supabase Realtime subscription
   useEffect(() => {
     if (!user?.id) {
       setUnreadCount(0)
@@ -222,47 +226,63 @@ export default function Navigation() {
     // Initial fetch
     fetchUnreadCount()
 
-    // Poll for updates every 30 seconds, but pause when tab is hidden
-    let interval: NodeJS.Timeout | null = null
+    // Subscribe to real-time message changes
+    const channelName = `nav-unread-${user.id}`
+    const channel = supabase
+      .channel(channelName, {
+        config: {
+          broadcast: { self: false },
+        },
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          // When a new inbound message arrives, refetch the count
+          const newMessage = payload.new as { direction?: string }
+          if (newMessage.direction === 'inbound') {
+            fetchUnreadCount()
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          // When a message is marked as read, refetch the count
+          const oldMessage = payload.old as { read_at?: string | null }
+          const newMessage = payload.new as { read_at?: string | null; direction?: string }
+          if (!oldMessage.read_at && newMessage.read_at && newMessage.direction === 'inbound') {
+            fetchUnreadCount()
+          }
+        }
+      )
+      .subscribe()
 
-    const startPolling = () => {
-      // Clear any existing interval
-      if (interval) clearInterval(interval)
-      interval = setInterval(fetchUnreadCount, 30000)
-    }
-
-    const stopPolling = () => {
-      if (interval) {
-        clearInterval(interval)
-        interval = null
-      }
-    }
-
-    // Start polling if page is visible
-    if (!document.hidden) {
-      startPolling()
-    }
-
-    // Handle visibility change - pause polling when tab is hidden
+    // Handle visibility change - refetch when tab becomes visible
     const handleVisibilityChange = () => {
-      if (document.hidden) {
-        stopPolling()
-      } else {
-        // Fetch immediately when tab becomes visible, then resume polling
+      if (!document.hidden) {
+        // Refetch count when tab becomes visible (catches any missed events)
         fetchUnreadCount()
-        startPolling()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
-      stopPolling()
+      supabase.removeChannel(channel)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [user?.id])
 
-  // Handle user logout
   const handleLogout = async () => {
     try {
       await signOut()

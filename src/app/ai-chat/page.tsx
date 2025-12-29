@@ -7,6 +7,7 @@ import { Sparkles, Send, Loader2, CheckCircle2, Circle, ChevronDown, ChevronUp }
 import { Button } from '@/components/ui/button';
 import CodeExecutor from '@/components/ai/CodeExecutor';
 import ThinkingProgress from '@/components/ai/ThinkingProgress';
+import { ConversationSidebar } from '@/components/ai/ConversationSidebar';
 import { createClient } from '@/lib/supabase/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -48,7 +49,8 @@ export default function AIChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [hasAccess, setHasAccess] = useState(false);
+  const [needsUpgrade, setNeedsUpgrade] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const [currentToolCalls, setCurrentToolCalls] = useState<ToolCall[]>([]);
@@ -56,9 +58,13 @@ export default function AIChat() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
 
-  // Check admin status
+  // Conversation management state
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Check Expert tier subscription (AI Mode is available to all Expert tier users)
   useEffect(() => {
-    const checkAdmin = async () => {
+    const checkAccess = async () => {
       if (loading) {
         return;
       }
@@ -72,22 +78,25 @@ export default function AIChat() {
         const supabase = createClient();
         const { data: userData, error } = await supabase
           .from('users')
-          .select('is_admin')
+          .select('subscription_tier')
           .eq('auth_user_id', user.id)
           .maybeSingle();
 
-        if (error || !userData || !userData.is_admin) {
+        if (error || !userData) {
           router.push('/unauthorized');
+        } else if (userData.subscription_tier !== 'expert') {
+          // Show upgrade prompt instead of redirecting
+          setNeedsUpgrade(true);
         } else {
-          setIsAdmin(true);
+          setHasAccess(true);
         }
       } catch (error) {
-        console.error('Error checking admin status:', error);
+        console.error('Error checking subscription:', error);
         router.push('/unauthorized');
       }
     };
 
-    checkAdmin();
+    checkAccess();
   }, [user, loading, router]);
 
   // Auto-scroll to bottom
@@ -106,6 +115,83 @@ export default function AIChat() {
       textarea.style.height = `${newHeight}px`;
     }
   }, [input]);
+
+  // Load conversation when selected
+  useEffect(() => {
+    const loadConversation = async () => {
+      if (!currentConversationId) {
+        setMessages([]);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/ai/conversations/${currentConversationId}`);
+        if (response.ok) {
+          const data = await response.json();
+          // Convert stored messages to Message format
+          const loadedMessages: Message[] = (data.messages || []).map((msg: any) => ({
+            role: msg.role,
+            content: msg.content,
+            toolCalls: msg.tool_calls || undefined,
+            chartCode: msg.chart_code || undefined,
+          }));
+          setMessages(loadedMessages);
+        }
+      } catch (error) {
+        console.error('Error loading conversation:', error);
+      }
+    };
+
+    loadConversation();
+  }, [currentConversationId]);
+
+  // Handle selecting a conversation
+  const handleSelectConversation = (conversationId: string | null) => {
+    setCurrentConversationId(conversationId);
+  };
+
+  // Handle creating a new conversation
+  const handleNewConversation = () => {
+    setCurrentConversationId(null);
+    setMessages([]);
+  };
+
+  // Save message to database
+  const saveMessage = async (conversationId: string, message: Message) => {
+    try {
+      await fetch(`/api/ai/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: message.role,
+          content: message.content,
+          tool_calls: message.toolCalls || null,
+          chart_code: message.chartCode || null,
+        }),
+      });
+    } catch (error) {
+      console.error('Error saving message:', error);
+    }
+  };
+
+  // Create a new conversation
+  const createConversation = async (): Promise<string | null> => {
+    try {
+      const response = await fetch('/api/ai/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'New Conversation' }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.conversation?.id || null;
+      }
+    } catch (error) {
+      console.error('Error creating conversation:', error);
+    }
+    return null;
+  };
 
   const toggleToolExpanded = (toolId: string) => {
     setExpandedTools(prev => {
@@ -294,6 +380,20 @@ export default function AIChat() {
     // Reset textarea height after sending
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
+    }
+
+    // Create conversation if this is the first message
+    let activeConversationId = currentConversationId;
+    if (!activeConversationId) {
+      activeConversationId = await createConversation();
+      if (activeConversationId) {
+        setCurrentConversationId(activeConversationId);
+      }
+    }
+
+    // Save user message to database
+    if (activeConversationId) {
+      await saveMessage(activeConversationId, userMessage);
     }
 
     try {
@@ -532,6 +632,11 @@ export default function AIChat() {
       setCurrentToolCalls([]);
       setThinkingSteps([]);
       setStreamingContent('');
+
+      // Save assistant message to database
+      if (activeConversationId) {
+        await saveMessage(activeConversationId, finalMessage);
+      }
     } catch (error) {
       console.error('Error sending message:', error);
       const errorMessage: Message = {
@@ -553,8 +658,52 @@ export default function AIChat() {
     }
   };
 
-  // Show loading spinner while auth is loading or admin check is in progress
-  if (loading || !isAdmin) {
+  // Show loading spinner while auth is loading
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  // Show upgrade prompt for non-Expert tier users
+  if (needsUpgrade) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50 dark:bg-gray-900">
+        <div className="max-w-md mx-auto text-center p-8">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-purple-500 via-purple-600 to-blue-600 shadow-2xl shadow-purple-500/40 mb-6">
+            <Sparkles className="h-10 w-10 text-white" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">
+            Expert Tier Required
+          </h2>
+          <p className="text-slate-600 dark:text-gray-400 mb-6">
+            AI Mode is an exclusive feature available only with the Expert tier subscription.
+            Upgrade your plan to unlock powerful AI-driven analytics and visualizations.
+          </p>
+          <div className="space-y-3">
+            <Button
+              onClick={() => router.push('/settings')}
+              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+            >
+              Upgrade to Expert
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.back()}
+              className="w-full"
+            >
+              Go Back
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while checking access
+  if (!hasAccess) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -563,9 +712,20 @@ export default function AIChat() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 dark:bg-gray-900 overflow-hidden ai-mode-content" data-tour="ai-mode">
-      {/* Header - Fixed at top */}
-      <div className="fixed top-0 left-0 right-0 z-10 backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 shadow-sm lg:left-64">
+    <div className="flex h-screen bg-slate-50 dark:bg-gray-900 overflow-hidden ai-mode-content" data-tour="ai-mode">
+      {/* Conversation Sidebar */}
+      <ConversationSidebar
+        currentConversationId={currentConversationId}
+        onSelectConversation={handleSelectConversation}
+        onNewConversation={handleNewConversation}
+        isCollapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
+
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header - Fixed at top */}
+        <div className="backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 shadow-sm border-b border-slate-200 dark:border-gray-700">
         <div className="max-w-4xl mx-auto px-4 py-3">
           <div className="flex items-center justify-center">
             <div className="flex items-center gap-3">
@@ -590,8 +750,8 @@ export default function AIChat() {
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto pt-20 pb-24">
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto pb-4">
         <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
           {messages.length === 0 && (
             <div className="text-center py-16">
@@ -753,47 +913,48 @@ export default function AIChat() {
         </div>
       </div>
 
-      {/* Input - Floating at bottom */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 pointer-events-none lg:left-64">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="relative pointer-events-auto flex items-end gap-3">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyPress}
-              placeholder="Ask me anything about your agency..."
-              disabled={isLoading}
-              rows={1}
-              className="flex-1 min-h-[56px] max-h-[200px] pl-5 pr-5 py-4 text-base rounded-3xl border-2 border-slate-200 dark:border-gray-700 focus:border-purple-400 dark:focus:border-purple-500 focus:ring-4 focus:ring-purple-100 dark:focus:ring-purple-900/30 shadow-2xl bg-white dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500 backdrop-blur-sm transition-all resize-none overflow-y-auto focus:outline-none"
-              style={{
-                scrollbarWidth: 'thin',
-                scrollbarColor: '#cbd5e1 transparent'
-              }}
-            />
-            <button
-              onClick={sendMessage}
-              disabled={isLoading || !input.trim()}
-              className="flex-shrink-0 h-11 w-11 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-slate-300 disabled:to-slate-300 shadow-lg shadow-purple-300 disabled:shadow-none transition-all flex items-center justify-center mb-[6px]"
-            >
-              {isLoading ? (
-                <Loader2 className="h-5 w-5 text-white animate-spin" />
-              ) : (
-                <svg
-                  className="h-5 w-5 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2.5}
-                    d="M5 10l7-7m0 0l7 7m-7-7v18"
-                  />
-                </svg>
-              )}
-            </button>
+        {/* Input - At bottom of chat area */}
+        <div className="border-t border-slate-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl">
+          <div className="max-w-4xl mx-auto px-4 py-4">
+            <div className="flex items-end gap-3">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyPress}
+                placeholder="Ask me anything about your agency..."
+                disabled={isLoading}
+                rows={1}
+                className="flex-1 min-h-[56px] max-h-[200px] pl-5 pr-5 py-4 text-base rounded-3xl border-2 border-slate-200 dark:border-gray-700 focus:border-purple-400 dark:focus:border-purple-500 focus:ring-4 focus:ring-purple-100 dark:focus:ring-purple-900/30 shadow-lg bg-white dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500 backdrop-blur-sm transition-all resize-none overflow-y-auto focus:outline-none"
+                style={{
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: '#cbd5e1 transparent'
+                }}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={isLoading || !input.trim()}
+                className="flex-shrink-0 h-11 w-11 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-slate-300 disabled:to-slate-300 shadow-lg shadow-purple-300 disabled:shadow-none transition-all flex items-center justify-center mb-[6px]"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-5 w-5 text-white animate-spin" />
+                ) : (
+                  <svg
+                    className="h-5 w-5 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.5}
+                      d="M5 10l7-7m0 0l7 7m-7-7v18"
+                    />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>

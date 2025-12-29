@@ -4,6 +4,17 @@ import { NextRequest } from 'next/server';
 import { executeToolCall } from '@/lib/ai-tools';
 import { getTierLimits } from '@/lib/subscription-tiers';
 import { reportAIUsage, getMeteredSubscriptionItems } from '@/lib/stripe-usage';
+import {
+  buildUserContext,
+  enforcePermissions,
+  isToolAvailable,
+  getAccessScopeDescription,
+  UserContext,
+} from '@/lib/ai-permissions';
+import {
+  sanitizeToolResult as sanitizeForPrivacy,
+  summarizeInputForAudit,
+} from '@/lib/ai-sanitizer';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -473,7 +484,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // AI Mode requires BOTH Expert tier AND admin status
+    // AI Mode requires Expert tier subscription (admin restriction removed)
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('id, is_admin, role, agency_id, subscription_tier, ai_requests_count, ai_requests_reset_date, stripe_subscription_id, billing_cycle_end')
@@ -487,17 +498,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Check if user is admin
+    // Check if user is admin (for permission scoping, not access control)
     const isAdmin = userData.role === 'admin' || userData.is_admin === true;
 
     // Check if user has Expert tier
     const hasExpertTier = userData.subscription_tier === 'expert';
 
-    // AI Mode requires BOTH conditions
+    // AI Mode requires Expert tier (admin restriction removed)
     if (!hasExpertTier) {
       return new Response(JSON.stringify({
         error: 'Expert tier required',
-        message: 'AI Mode is only available with Expert tier subscription.',
+        message: 'AI Mode is only available with Expert tier subscription. Please upgrade to access this feature.',
         tier_required: 'expert',
         current_tier: userData.subscription_tier
       }), {
@@ -506,17 +517,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (!isAdmin) {
-      return new Response(JSON.stringify({
-        error: 'Admin access required',
-        message: 'AI Mode is only available for admin users with Expert tier subscription.',
-        admin_required: true,
-        is_admin: isAdmin
-      }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    // Build user context for permission enforcement
+    const userContext: UserContext = await buildUserContext(
+      userData.id,
+      userData.agency_id,
+      isAdmin
+    );
+
+    // Log access scope for debugging
+    console.log(`AI Mode access: User ${userData.id}, Admin: ${isAdmin}, Downline count: ${userContext.downline_agent_ids.length}`);
 
     // AI usage limits: 50 requests per billing cycle included for Expert tier admins
     const AI_REQUEST_LIMIT = 50;
@@ -548,8 +557,21 @@ export async function POST(request: NextRequest) {
 
     const { messages } = await request.json();
 
-    // System prompt for better formatting
+    // Build dynamic system prompt based on user role
+    const accessScopeDescription = getAccessScopeDescription(userContext);
+
+    // System prompt for better formatting with user context
     const systemPrompt = `You are an AI assistant helping analyze insurance agency data. Your responses will be rendered with markdown support, so please format them professionally.
+
+## DATA ACCESS SCOPE - CRITICAL
+${accessScopeDescription}
+${!isAdmin ? `
+IMPORTANT: You are helping a non-admin user. You must respect these boundaries:
+- You can ONLY show data for this user and their downline agents
+- If asked about agency-wide data, explain they need admin access
+- Never attempt to access data outside their permitted scope
+- If a tool returns an error about permissions, explain it politely and offer alternatives
+` : ''}
 
 FORMATTING GUIDELINES:
 - Use clear headings (# for main title, ## for sections, ### for subsections)
@@ -837,7 +859,7 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
               }
 
               if (event.type === 'content_block_stop' && currentToolUse) {
-                // Tool use is complete, execute it
+                // Tool use is complete, execute it with permission checks
                 try {
                   // Parse tool input, handling empty/incomplete JSON
                   let toolInput = {};
@@ -851,13 +873,36 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
                     }
                   }
 
-                  const toolResult = await executeToolCall(
+                  // PERMISSION CHECK: Enforce data access controls
+                  const permissionResult = enforcePermissions(
                     currentToolUse.name,
                     toolInput,
-                    userData.agency_id
+                    userContext
                   );
 
-                  const sanitizedToolResult = sanitizeToolResult(currentToolUse.name, toolResult);
+                  let toolResult;
+                  if (!permissionResult.allowed) {
+                    // Permission denied - return error message
+                    toolResult = {
+                      error: permissionResult.error,
+                      permission_denied: true,
+                    };
+                    console.log(`Permission denied for tool ${currentToolUse.name}: ${permissionResult.error}`);
+                  } else {
+                    // Execute tool with filtered input
+                    toolResult = await executeToolCall(
+                      currentToolUse.name,
+                      permissionResult.filteredInput,
+                      userData.agency_id,
+                      userContext // Pass user context to tool
+                    );
+                  }
+
+                  // Apply privacy sanitization based on user role
+                  const privacySanitized = sanitizeForPrivacy(currentToolUse.name, toolResult, userContext);
+
+                  // Apply token-optimization sanitization
+                  const sanitizedToolResult = sanitizeToolResult(currentToolUse.name, privacySanitized);
 
                   // Store tool result
                   toolResultsMap.set(currentToolUse.id, {

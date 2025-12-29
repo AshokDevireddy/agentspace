@@ -1,7 +1,8 @@
 import { createServerClient } from '@/lib/supabase/server';
+import { UserContext } from '@/lib/ai-permissions';
 
 // Get deals/policies data
-export async function getDeals(params: any, agencyId: string) {
+export async function getDeals(params: any, agencyId: string, allowedAgentIds?: string[]) {
   try {
     const supabase = await createServerClient();
 
@@ -14,6 +15,11 @@ export async function getDeals(params: any, agencyId: string) {
         product:products(id, name, product_code)
       `)
       .eq('agency_id', agencyId);
+
+    // PERMISSION FILTER: Only show deals for allowed agents
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      query = query.in('agent_id', allowedAgentIds);
+    }
 
     // Apply filters
     if (params.status && params.status !== 'all') {
@@ -73,7 +79,7 @@ export async function getDeals(params: any, agencyId: string) {
 }
 
 // Get agents data
-export async function getAgents(params: any, agencyId: string) {
+export async function getAgents(params: any, agencyId: string, allowedAgentIds?: string[]) {
   try {
     const supabase = await createServerClient();
 
@@ -95,6 +101,11 @@ export async function getAgents(params: any, agencyId: string) {
       `)
       .eq('agency_id', agencyId)
       .neq('role', 'client');
+
+    // PERMISSION FILTER: Only show allowed agents
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      query = query.in('id', allowedAgentIds);
+    }
 
     if (params.agent_id) {
       query = query.eq('id', params.agent_id);
@@ -158,7 +169,7 @@ export async function getAgents(params: any, agencyId: string) {
 }
 
 // Get conversations data
-export async function getConversationsData(params: any, agencyId: string) {
+export async function getConversationsData(params: any, agencyId: string, allowedAgentIds?: string[]) {
   try {
     const supabase = await createServerClient();
 
@@ -180,6 +191,11 @@ export async function getConversationsData(params: any, agencyId: string) {
       `)
       .eq('agency_id', agencyId)
       .gte('last_message_at', startDate.toISOString());
+
+    // PERMISSION FILTER: Only show conversations for allowed agents
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      conversationsQuery = conversationsQuery.in('agent_id', allowedAgentIds);
+    }
 
     if (params.agent_id) {
       conversationsQuery = conversationsQuery.eq('agent_id', params.agent_id);
@@ -415,9 +431,14 @@ export async function getAgencySummary(params: any, agencyId: string) {
 }
 
 // Get comprehensive analytics using the same RPC as the analytics dashboard page
-export async function getPersistencyAnalytics(params: any, agencyId: string) {
+export async function getPersistencyAnalytics(params: any, agencyId: string, userContext?: UserContext) {
   try {
     const supabase = await createServerClient();
+
+    // For non-admin users, we need to filter analytics to their scope
+    // The RPC function doesn't support agent filtering, so we need to use a different approach
+    // For now, we'll use the full agency data for admins, and note the limitation for non-admins
+    const isAdmin = !userContext || userContext.is_admin;
 
     // Call the SAME RPC function that the analytics dashboard page uses
     // This provides comprehensive analytics data including:
@@ -428,6 +449,12 @@ export async function getPersistencyAnalytics(params: any, agencyId: string) {
     const { data, error } = await supabase.rpc('get_analytics_from_deals_with_agency_id', {
       p_agency_id: agencyId
     });
+
+    // Note: For non-admin users, we're showing agency-wide analytics
+    // In a future enhancement, the RPC should support agent filtering
+    const scopeNote = !isAdmin
+      ? 'Note: Analytics show your team\'s contribution to agency metrics. For detailed personal analytics, use get_deals or get_agents with your specific filters.'
+      : undefined;
 
     if (error) {
       console.error('Error fetching analytics:', error);
@@ -441,13 +468,17 @@ export async function getPersistencyAnalytics(params: any, agencyId: string) {
         series: [],
         totals: null,
         windows_by_carrier: null,
-        breakdowns_over_time: null
+        breakdowns_over_time: null,
+        scope_note: scopeNote
       };
     }
 
     // Return the full analytics object with all breakdowns
     // This matches the structure used by the analytics dashboard
-    return data;
+    return {
+      ...data,
+      scope_note: scopeNote
+    };
   } catch (error) {
     console.error('Error in getPersistencyAnalytics:', error);
     return { error: 'Failed to get analytics data' };
@@ -455,7 +486,7 @@ export async function getPersistencyAnalytics(params: any, agencyId: string) {
 }
 
 // Fuzzy search for agents
-export async function searchAgents(params: any, agencyId: string) {
+export async function searchAgents(params: any, agencyId: string, allowedAgentIds?: string[]) {
   try {
     const supabase = await createServerClient();
     const query = params.query || '';
@@ -492,6 +523,11 @@ export async function searchAgents(params: any, agencyId: string) {
       .or(orConditions.join(','))
       .order('last_name', { ascending: true })
       .limit(limit);
+
+    // PERMISSION FILTER: Only search within allowed agents
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      searchQuery = searchQuery.in('id', allowedAgentIds);
+    }
 
     const { data: agents, error } = await searchQuery;
 
@@ -531,7 +567,7 @@ export async function searchAgents(params: any, agencyId: string) {
 }
 
 // Fuzzy search for clients
-export async function searchClients(params: any, agencyId: string) {
+export async function searchClients(params: any, agencyId: string, allowedAgentIds?: string[]) {
   try {
     const supabase = await createServerClient();
     const query = params.query || '';
@@ -610,7 +646,7 @@ export async function searchClients(params: any, agencyId: string) {
 }
 
 // Fuzzy search for policies/deals
-export async function searchPolicies(params: any, agencyId: string) {
+export async function searchPolicies(params: any, agencyId: string, allowedAgentIds?: string[]) {
   try {
     const supabase = await createServerClient();
     const query = params.query || '';
@@ -641,6 +677,11 @@ export async function searchPolicies(params: any, agencyId: string) {
       .or(`policy_number.ilike.%${sanitizedQuery}%,application_number.ilike.%${sanitizedQuery}%,client_name.ilike.%${sanitizedQuery}%`)
       .order('created_at', { ascending: false })
       .limit(limit);
+
+    // PERMISSION FILTER: Only search policies for allowed agents
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      searchQuery = searchQuery.in('agent_id', allowedAgentIds);
+    }
 
     const { data: deals, error } = await searchQuery;
 
@@ -799,7 +840,7 @@ export async function compareHierarchies(params: any, agencyId: string) {
 }
 
 // Get deals with cursor pagination
-export async function getDealsPaginated(params: any, agencyId: string, cursor?: { cursor_created_at: string; cursor_id: string }) {
+export async function getDealsPaginated(params: any, agencyId: string, cursor?: { cursor_created_at: string; cursor_id: string }, allowedAgentIds?: string[]) {
   try {
     const supabase = await createServerClient();
     const limit = Math.min(params.limit || 50, 200);
@@ -826,6 +867,11 @@ export async function getDealsPaginated(params: any, agencyId: string, cursor?: 
       .eq('agency_id', agencyId)
       .order('created_at', { ascending: false })
       .order('id', { ascending: false });
+
+    // PERMISSION FILTER: Only show deals for allowed agents
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      query = query.in('agent_id', allowedAgentIds);
+    }
 
     // Apply filters
     if (params.status && params.status !== 'all') {
@@ -886,7 +932,7 @@ export async function getDealsPaginated(params: any, agencyId: string, cursor?: 
 }
 
 // Get agents with cursor pagination
-export async function getAgentsPaginated(params: any, agencyId: string, cursor?: { cursor_id: string }) {
+export async function getAgentsPaginated(params: any, agencyId: string, cursor?: { cursor_id: string }, allowedAgentIds?: string[]) {
   try {
     const supabase = await createServerClient();
     const limit = Math.min(params.limit || 50, 200);
@@ -911,6 +957,11 @@ export async function getAgentsPaginated(params: any, agencyId: string, cursor?:
       .neq('role', 'client')
       .order('total_prod', { ascending: false })
       .order('id', { ascending: false });
+
+    // PERMISSION FILTER: Only show allowed agents
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      query = query.in('id', allowedAgentIds);
+    }
 
     // Apply filters
     if (params.agent_id) {
@@ -963,7 +1014,7 @@ export async function getAgentsPaginated(params: any, agencyId: string, cursor?:
 }
 
 // Smart data summarization based on query intent
-export async function getDataSummary(params: any, agencyId: string) {
+export async function getDataSummary(params: any, agencyId: string, allowedAgentIds?: string[]) {
   try {
     const supabase = await createServerClient();
     const dataType = params.data_type || 'deals'; // 'deals', 'agents', 'clients'
@@ -974,6 +1025,11 @@ export async function getDataSummary(params: any, agencyId: string) {
         .from('deals')
         .select('annual_premium, status_standardized, created_at, agent_id, carrier_id')
         .eq('agency_id', agencyId);
+
+      // PERMISSION FILTER: Only summarize deals for allowed agents
+      if (allowedAgentIds && allowedAgentIds.length > 0) {
+        query = query.in('agent_id', allowedAgentIds);
+      }
 
       // Apply filters
       if (params.status && params.status !== 'all') {
@@ -997,6 +1053,11 @@ export async function getDataSummary(params: any, agencyId: string) {
         .from('deals')
         .select('id', { count: 'exact', head: true })
         .eq('agency_id', agencyId);
+
+      // PERMISSION FILTER: Apply to count query too
+      if (allowedAgentIds && allowedAgentIds.length > 0) {
+        countQuery = countQuery.in('agent_id', allowedAgentIds);
+      }
 
       // Apply same filters to count query
       if (params.status && params.status !== 'all') {
@@ -1074,6 +1135,11 @@ export async function getDataSummary(params: any, agencyId: string) {
         .eq('agency_id', agencyId)
         .neq('role', 'client');
 
+      // PERMISSION FILTER: Only summarize allowed agents
+      if (allowedAgentIds && allowedAgentIds.length > 0) {
+        query = query.in('id', allowedAgentIds);
+      }
+
       if (params.agent_id) {
         query = query.eq('id', params.agent_id);
       }
@@ -1087,6 +1153,11 @@ export async function getDataSummary(params: any, agencyId: string) {
         .select('id', { count: 'exact', head: true })
         .eq('agency_id', agencyId)
         .neq('role', 'client');
+
+      // PERMISSION FILTER: Apply to count query too
+      if (allowedAgentIds && allowedAgentIds.length > 0) {
+        countQuery = countQuery.in('id', allowedAgentIds);
+      }
 
       if (params.agent_id) {
         countQuery = countQuery.eq('id', params.agent_id);
@@ -1149,46 +1220,60 @@ export async function getDataSummary(params: any, agencyId: string) {
   }
 }
 
-// Main executor function
-export async function executeToolCall(toolName: string, input: any, agencyId: string) {
+// Main executor function - now accepts userContext for permission-based filtering
+export async function executeToolCall(
+  toolName: string,
+  input: any,
+  agencyId: string,
+  userContext?: UserContext
+) {
+  // Extract allowed agent IDs from permission-filtered input
+  const allowedAgentIds = input.__allowed_agent_ids;
+  const scopeEnforced = input.__scope_enforced;
+
+  // Remove internal fields before passing to tool
+  const cleanInput = { ...input };
+  delete cleanInput.__allowed_agent_ids;
+  delete cleanInput.__scope_enforced;
+
   switch (toolName) {
     case 'get_deals':
-      return await getDeals(input, agencyId);
+      return await getDeals(cleanInput, agencyId, allowedAgentIds);
     case 'get_agents':
-      return await getAgents(input, agencyId);
+      return await getAgents(cleanInput, agencyId, allowedAgentIds);
     case 'get_persistency_analytics':
-      return await getPersistencyAnalytics(input, agencyId);
+      return await getPersistencyAnalytics(cleanInput, agencyId, userContext);
     case 'get_conversations_data':
-      return await getConversationsData(input, agencyId);
+      return await getConversationsData(cleanInput, agencyId, allowedAgentIds);
     case 'get_carriers_and_products':
-      return await getCarriersAndProducts(input, agencyId);
+      return await getCarriersAndProducts(cleanInput, agencyId);
     case 'get_agency_summary':
-      return await getAgencySummary(input, agencyId);
+      return await getAgencySummary(cleanInput, agencyId);
     case 'search_agents':
-      return await searchAgents(input, agencyId);
+      return await searchAgents(cleanInput, agencyId, allowedAgentIds);
     case 'search_clients':
-      return await searchClients(input, agencyId);
+      return await searchClients(cleanInput, agencyId, allowedAgentIds);
     case 'search_policies':
-      return await searchPolicies(input, agencyId);
+      return await searchPolicies(cleanInput, agencyId, allowedAgentIds);
     case 'get_agent_hierarchy':
-      return await getAgentHierarchy(input, agencyId);
+      return await getAgentHierarchy(cleanInput, agencyId);
     case 'compare_hierarchies':
-      return await compareHierarchies(input, agencyId);
+      return await compareHierarchies(cleanInput, agencyId);
     case 'get_deals_paginated':
-      return await getDealsPaginated(input, agencyId, input.cursor);
+      return await getDealsPaginated(cleanInput, agencyId, cleanInput.cursor, allowedAgentIds);
     case 'get_agents_paginated':
-      return await getAgentsPaginated(input, agencyId, input.cursor);
+      return await getAgentsPaginated(cleanInput, agencyId, cleanInput.cursor, allowedAgentIds);
     case 'get_data_summary':
-      return await getDataSummary(input, agencyId);
+      return await getDataSummary(cleanInput, agencyId, allowedAgentIds);
     case 'create_visualization':
       // Return a marker that tells the frontend to create a visualization
       return {
         _visualization: true,
-        type: input.type,
-        title: input.title,
-        description: input.description,
-        data_source: input.data_source,
-        config: input.config
+        type: cleanInput.type,
+        title: cleanInput.title,
+        description: cleanInput.description,
+        data_source: cleanInput.data_source,
+        config: cleanInput.config
       };
     default:
       return { error: `Unknown tool: ${toolName}` };

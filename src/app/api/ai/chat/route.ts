@@ -321,6 +321,89 @@ const tools: Anthropic.Tool[] = [
       }
     }
   },
+  {
+    name: 'get_scoreboard',
+    description: 'Get production scoreboard/leaderboard with agent rankings. Shows total production, policies sold, daily breakdown, and top performers for a time period. Use this for questions about rankings, top producers, leaderboard, or production competitions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        time_range: {
+          type: 'string',
+          description: 'Time range for scoreboard',
+          enum: ['this_week', 'last_week', '7_days', '14_days', '30_days', '90_days', 'ytd', 'custom']
+        },
+        start_date: { type: 'string', description: 'Start date for custom range (YYYY-MM-DD)' },
+        end_date: { type: 'string', description: 'End date for custom range (YYYY-MM-DD)' }
+      }
+    }
+  },
+  {
+    name: 'get_clients',
+    description: 'Get client list with details. Shows client name, email, phone, status, supporting agent, and dates. Can filter by status and agent. Use this for questions about clients, client lists, or client management.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Filter by client status',
+          enum: ['pre-invite', 'invited', 'onboarding', 'active', 'inactive', 'all']
+        },
+        agent_id: { type: 'string', description: 'Filter by supporting agent ID' },
+        search: { type: 'string', description: 'Search by name or email' },
+        limit: { type: 'number', description: 'Max results (default 50)' }
+      }
+    }
+  },
+  {
+    name: 'get_at_risk_policies',
+    description: 'Get policies at risk of lapsing or requiring attention. Shows policies approaching payment due dates, recently lapsed, or flagged for follow-up. Use this for questions about at-risk policies, lapse prevention, billing issues, or policies needing attention.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        risk_type: {
+          type: 'string',
+          description: 'Type of risk to filter by',
+          enum: ['lapse_risk', 'billing_due', 'recently_lapsed', 'needs_attention', 'all']
+        },
+        days_ahead: { type: 'number', description: 'Days to look ahead for upcoming risks (default 30)' },
+        agent_id: { type: 'string', description: 'Filter by agent ID' }
+      }
+    }
+  },
+  {
+    name: 'get_commission_structure',
+    description: 'Get commission structure showing commission percentages by position and product. Explains how much each position earns per product type. Use this for questions about commission rates, payout percentages, or compensation structure.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        position_id: { type: 'string', description: 'Specific position ID to get commissions for' },
+        product_id: { type: 'string', description: 'Specific product ID to filter by' }
+      }
+    }
+  },
+  {
+    name: 'get_positions',
+    description: 'Get agency position hierarchy (e.g., Agent, Senior Agent, Manager, etc.) with their levels and descriptions. Use this for questions about position levels, career progression, or agency hierarchy.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'get_draft_messages',
+    description: 'Get pending SMS draft messages awaiting approval. Shows drafts created by you or your downline. Use this for questions about pending SMS drafts, messages needing approval, or draft message status.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Filter by draft status',
+          enum: ['pending', 'approved', 'rejected', 'all']
+        },
+        agent_id: { type: 'string', description: 'Filter by agent who created draft' }
+      }
+    }
+  },
 ];
 
 const MAX_ARRAY_SAMPLE_ITEMS = 15;
@@ -836,6 +919,18 @@ TOOL SELECTION DECISION TREE:
    → Use get_agents_paginated (check has_more to decide when to stop)
 6. User asks about persistency/active policies:
    → Use get_persistency_analytics (always)
+7. User asks about rankings, top producers, leaderboard:
+   → Use get_scoreboard
+8. User asks about clients, client list, client status:
+   → Use get_clients
+9. User asks about at-risk policies, lapse prevention, policies needing attention:
+   → Use get_at_risk_policies
+10. User asks about commission rates, payout percentages:
+   → Use get_commission_structure
+11. User asks about position levels, career hierarchy:
+   → Use get_positions
+12. User asks about pending SMS drafts, messages awaiting approval:
+   → Use get_draft_messages
 
 IMPORTANT CHART CODE RULES:
 - The 'data' variable contains the exact tool result - adapt to its structure
@@ -858,6 +953,12 @@ WHEN TO USE EACH TOOL:
 ✅ get_data_summary: "How many deals do we have?", "What's the total production?", "Count active agents"
 ✅ get_deals_paginated: "Show me all active deals" (if >1000), "List deals for agent X" (large dataset)
 ✅ create_visualization: "Visualize that", "Show me a chart", "Make a pie chart of..."
+✅ get_scoreboard: "Who are top producers?", "Show leaderboard", "Production rankings this week", "Top 5 agents"
+✅ get_clients: "List my clients", "How many active clients?", "Show client status", "Clients assigned to me"
+✅ get_at_risk_policies: "Policies at risk?", "What's about to lapse?", "Billing reminders needed", "At-risk policies"
+✅ get_commission_structure: "What's the commission rate?", "How much does a Manager earn?", "Commission percentages"
+✅ get_positions: "What positions exist?", "Agency hierarchy levels", "Position levels in agency"
+✅ get_draft_messages: "Pending SMS drafts", "Messages awaiting approval", "Draft message status"
 ❌ get_deals: "Show me the client names for Aflac policies", "What premium did client John Doe pay?" (small datasets only)
 
 DYNAMIC VISUALIZATION TOOL (create_visualization):

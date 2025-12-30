@@ -68,6 +68,14 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
     scope: 'self_and_downline',
     description: 'Leaderboard data filtered to user and downline'
   },
+  get_clients: {
+    scope: 'self_and_downline',
+    description: 'Client list filtered to user and downline agents'
+  },
+  get_positions: {
+    scope: 'agency',
+    description: 'Agency position hierarchy (safe reference data)'
+  },
   get_at_risk_policies: {
     scope: 'self_and_downline',
     description: 'At-risk policies for user and downline'

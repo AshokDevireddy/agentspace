@@ -1408,6 +1408,654 @@ export async function getExpectedPayouts(
   }
 }
 
+// Get scoreboard/leaderboard data
+export async function getScoreboard(
+  params: any,
+  agencyId: string,
+  allowedAgentIds?: string[],
+  userContext?: UserContext
+) {
+  try {
+    const supabase = await createServerClient();
+
+    // Calculate date range
+    let startDate: Date;
+    let endDate: Date = new Date();
+
+    switch (params.time_range) {
+      case 'this_week': {
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - startDate.getDay());
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      }
+      case 'last_week': {
+        endDate = new Date();
+        endDate.setDate(endDate.getDate() - endDate.getDay());
+        endDate.setHours(0, 0, 0, 0);
+        startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      }
+      case '7_days':
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case '14_days':
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 14);
+        break;
+      case '30_days':
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30);
+        break;
+      case '90_days':
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 90);
+        break;
+      case 'ytd':
+        startDate = new Date(new Date().getFullYear(), 0, 1);
+        break;
+      case 'custom':
+        startDate = params.start_date ? new Date(params.start_date) : new Date();
+        endDate = params.end_date ? new Date(params.end_date) : new Date();
+        break;
+      default:
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+    }
+
+    // Call the scoreboard RPC
+    const { data: scoreboardData, error } = await supabase
+      .rpc('get_scoreboard_data_updated_lapsed_deals', {
+        p_agency_id: agencyId,
+        p_start_date: startDate.toISOString().split('T')[0],
+        p_end_date: endDate.toISOString().split('T')[0]
+      });
+
+    if (error) {
+      console.error('Scoreboard RPC error:', error);
+      return { error: `Failed to fetch scoreboard: ${error.message}` };
+    }
+
+    // Filter by allowed agents if needed
+    let filteredData = scoreboardData || [];
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      filteredData = filteredData.filter((row: any) =>
+        allowedAgentIds.includes(row.user_id)
+      );
+    }
+
+    // Calculate rankings and totals
+    const rankedData = filteredData
+      .map((row: any, index: number) => ({
+        rank: index + 1,
+        agent_id: row.user_id,
+        agent_name: `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+        total_production: parseFloat(row.total_submitted_premium) || 0,
+        policies_sold: parseInt(row.deal_count) || 0,
+        active_policies: parseInt(row.active_count) || 0,
+        lapsed_policies: parseInt(row.lapsed_count) || 0
+      }))
+      .sort((a: any, b: any) => b.total_production - a.total_production)
+      .map((row: any, index: number) => ({ ...row, rank: index + 1 }));
+
+    // Calculate totals
+    const totalProduction = rankedData.reduce((sum: number, row: any) => sum + row.total_production, 0);
+    const totalPolicies = rankedData.reduce((sum: number, row: any) => sum + row.policies_sold, 0);
+
+    return {
+      time_range: params.time_range || '7_days',
+      start_date: startDate.toISOString().split('T')[0],
+      end_date: endDate.toISOString().split('T')[0],
+      rankings: rankedData.slice(0, 25), // Top 25 for token efficiency
+      summary: {
+        total_agents: rankedData.length,
+        total_production: totalProduction,
+        total_policies: totalPolicies,
+        top_producer: rankedData[0] || null
+      },
+      note: rankedData.length > 25 ? `Showing top 25 of ${rankedData.length} agents` : undefined
+    };
+  } catch (error) {
+    console.error('Get scoreboard error:', error);
+    return { error: 'Failed to get scoreboard data' };
+  }
+}
+
+// Get clients list
+export async function getClients(
+  params: any,
+  agencyId: string,
+  allowedAgentIds?: string[],
+  userContext?: UserContext
+) {
+  try {
+    const supabase = await createServerClient();
+    const limit = params.limit || 50;
+
+    let query = supabase
+      .from('clients')
+      .select(`
+        id,
+        first_name,
+        last_name,
+        email,
+        phone_number,
+        status,
+        created_at,
+        updated_at,
+        supporting_agent_id,
+        supporting_agent:users!clients_supporting_agent_id_fkey(id, first_name, last_name, email)
+      `)
+      .eq('agency_id', agencyId)
+      .order('created_at', { ascending: false });
+
+    // Permission filter: only show clients for allowed agents
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      query = query.in('supporting_agent_id', allowedAgentIds);
+    }
+
+    // Apply filters
+    if (params.status && params.status !== 'all') {
+      query = query.eq('status', params.status);
+    }
+
+    if (params.agent_id) {
+      query = query.eq('supporting_agent_id', params.agent_id);
+    }
+
+    if (params.search) {
+      const searchTerm = params.search.trim().replace(/[%_]/g, '\\$&');
+      query = query.or(`first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`);
+    }
+
+    const { data: clients, error, count } = await query.limit(limit);
+
+    if (error) {
+      console.error('Get clients error:', error);
+      return { error: 'Failed to fetch clients' };
+    }
+
+    // Calculate status breakdown
+    const statusCounts = (clients || []).reduce((acc: any, client: any) => {
+      const status = client.status || 'unknown';
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {});
+
+    return {
+      clients: (clients || []).map((c: any) => ({
+        id: c.id,
+        name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+        email: c.email,
+        phone: c.phone_number,
+        status: c.status,
+        supporting_agent: c.supporting_agent ?
+          `${c.supporting_agent.first_name || ''} ${c.supporting_agent.last_name || ''}`.trim() : null,
+        created_at: c.created_at
+      })),
+      count: clients?.length || 0,
+      summary: {
+        status_breakdown: statusCounts
+      },
+      filters: {
+        status: params.status,
+        agent_id: params.agent_id,
+        search: params.search
+      }
+    };
+  } catch (error) {
+    console.error('Get clients error:', error);
+    return { error: 'Failed to get clients' };
+  }
+}
+
+// Get at-risk policies
+export async function getAtRiskPolicies(
+  params: any,
+  agencyId: string,
+  allowedAgentIds?: string[],
+  userContext?: UserContext
+) {
+  try {
+    const supabase = await createServerClient();
+    const daysAhead = params.days_ahead || 30;
+    const riskType = params.risk_type || 'all';
+
+    // Try to use the lapse reminder RPC first
+    const { data: lapseData, error: lapseError } = await supabase
+      .rpc('get_lapse_reminder_deals', {
+        p_agency_id: agencyId
+      });
+
+    if (lapseError) {
+      console.error('Lapse reminder RPC error:', lapseError);
+      // Fall back to direct query
+    }
+
+    // Also query deals directly for at-risk statuses
+    let query = supabase
+      .from('deals')
+      .select(`
+        id,
+        policy_number,
+        client_name,
+        client_phone,
+        annual_premium,
+        status,
+        status_standardized,
+        policy_effective_date,
+        created_at,
+        agent:users!deals_agent_id_fkey(id, first_name, last_name),
+        carrier:carriers(id, display_name)
+      `)
+      .eq('agency_id', agencyId);
+
+    // Filter by agent permissions
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      query = query.in('agent_id', allowedAgentIds);
+    }
+
+    if (params.agent_id) {
+      query = query.eq('agent_id', params.agent_id);
+    }
+
+    // Filter by risk type
+    switch (riskType) {
+      case 'lapse_risk':
+        query = query.in('status_standardized', ['pending', 'at_risk']);
+        break;
+      case 'recently_lapsed':
+        query = query.eq('status_standardized', 'lapsed');
+        break;
+      case 'billing_due':
+        query = query.in('status_standardized', ['pending', 'billing_issue']);
+        break;
+      case 'needs_attention':
+        query = query.in('status_standardized', ['pending', 'at_risk', 'billing_issue']);
+        break;
+      case 'all':
+      default:
+        query = query.in('status_standardized', ['pending', 'at_risk', 'lapsed', 'billing_issue']);
+    }
+
+    query = query.order('created_at', { ascending: false }).limit(50);
+
+    const { data: atRiskDeals, error } = await query;
+
+    if (error) {
+      console.error('At-risk policies query error:', error);
+      return { error: 'Failed to fetch at-risk policies' };
+    }
+
+    // Combine with lapse reminder data if available
+    let combinedPolicies = (atRiskDeals || []).map((deal: any) => ({
+      id: deal.id,
+      policy_number: deal.policy_number,
+      client_name: deal.client_name,
+      client_phone: deal.client_phone,
+      annual_premium: deal.annual_premium,
+      status: deal.status_standardized || deal.status,
+      carrier: deal.carrier?.display_name,
+      agent_name: deal.agent ? `${deal.agent.first_name || ''} ${deal.agent.last_name || ''}`.trim() : null,
+      policy_effective_date: deal.policy_effective_date,
+      risk_reason: determineRiskReason(deal.status_standardized)
+    }));
+
+    // Add lapse reminder data if available
+    if (lapseData && !lapseError) {
+      const lapseFiltered = allowedAgentIds && allowedAgentIds.length > 0
+        ? lapseData.filter((d: any) => allowedAgentIds.includes(d.agent_id))
+        : lapseData;
+
+      // Merge unique entries
+      const existingIds = new Set(combinedPolicies.map((p: any) => p.id));
+      lapseFiltered.forEach((d: any) => {
+        if (!existingIds.has(d.deal_id)) {
+          combinedPolicies.push({
+            id: d.deal_id,
+            policy_number: d.policy_number,
+            client_name: d.client_name,
+            annual_premium: d.annual_premium,
+            status: d.status,
+            carrier: d.carrier_name,
+            agent_name: d.agent_name,
+            risk_reason: 'Flagged for lapse reminder'
+          });
+        }
+      });
+    }
+
+    // Calculate summary
+    const statusBreakdown = combinedPolicies.reduce((acc: any, p: any) => {
+      const status = p.status || 'unknown';
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {});
+
+    const totalAtRiskPremium = combinedPolicies.reduce((sum: number, p: any) =>
+      sum + (parseFloat(p.annual_premium) || 0), 0);
+
+    return {
+      policies: combinedPolicies.slice(0, 30), // Limit for token efficiency
+      count: combinedPolicies.length,
+      summary: {
+        total_at_risk: combinedPolicies.length,
+        total_at_risk_premium: totalAtRiskPremium,
+        status_breakdown: statusBreakdown
+      },
+      filters: {
+        risk_type: riskType,
+        days_ahead: daysAhead,
+        agent_id: params.agent_id
+      },
+      note: combinedPolicies.length > 30 ? `Showing 30 of ${combinedPolicies.length} at-risk policies` : undefined
+    };
+  } catch (error) {
+    console.error('Get at-risk policies error:', error);
+    return { error: 'Failed to get at-risk policies' };
+  }
+}
+
+function determineRiskReason(status: string): string {
+  switch (status) {
+    case 'pending': return 'Payment pending';
+    case 'at_risk': return 'Policy at risk of lapsing';
+    case 'lapsed': return 'Policy has lapsed';
+    case 'billing_issue': return 'Billing issue detected';
+    default: return 'Requires attention';
+  }
+}
+
+// Get commission structure
+export async function getCommissionStructure(
+  params: any,
+  agencyId: string
+) {
+  try {
+    const supabase = await createServerClient();
+
+    // Try RPC first
+    const { data: rpcData, error: rpcError } = await supabase
+      .rpc('get_position_product_commissions', {
+        p_agency_id: agencyId
+      });
+
+    if (!rpcError && rpcData) {
+      // Filter by position/product if specified
+      let filtered = rpcData;
+      if (params.position_id) {
+        filtered = filtered.filter((r: any) => r.position_id === params.position_id);
+      }
+      if (params.product_id) {
+        filtered = filtered.filter((r: any) => r.product_id === params.product_id);
+      }
+
+      // Group by position for better readability
+      const byPosition: Record<string, any[]> = {};
+      filtered.forEach((row: any) => {
+        const posName = row.position_name || 'Unknown';
+        if (!byPosition[posName]) {
+          byPosition[posName] = [];
+        }
+        byPosition[posName].push({
+          product: row.product_name,
+          carrier: row.carrier_name,
+          commission_percentage: row.commission_percentage,
+          override_percentage: row.override_percentage
+        });
+      });
+
+      return {
+        commissions: filtered.slice(0, 50), // Limit for token efficiency
+        by_position: byPosition,
+        count: filtered.length,
+        filters: {
+          position_id: params.position_id,
+          product_id: params.product_id
+        }
+      };
+    }
+
+    // Fallback: query tables directly
+    let query = supabase
+      .from('position_product_commissions')
+      .select(`
+        id,
+        commission_percentage,
+        override_percentage,
+        position:positions(id, name, level),
+        product:products(id, name, carrier:carriers(id, display_name))
+      `)
+      .eq('agency_id', agencyId);
+
+    if (params.position_id) {
+      query = query.eq('position_id', params.position_id);
+    }
+    if (params.product_id) {
+      query = query.eq('product_id', params.product_id);
+    }
+
+    const { data: commissions, error } = await query.limit(100);
+
+    if (error) {
+      console.error('Commission structure query error:', error);
+      return { error: 'Failed to fetch commission structure' };
+    }
+
+    // Format response
+    const formatted = (commissions || []).map((c: any) => ({
+      position: c.position?.name,
+      position_level: c.position?.level,
+      product: c.product?.name,
+      carrier: c.product?.carrier?.display_name,
+      commission_percentage: c.commission_percentage,
+      override_percentage: c.override_percentage
+    }));
+
+    // Group by position
+    const byPosition: Record<string, any[]> = {};
+    formatted.forEach((row: any) => {
+      const posName = row.position || 'Unknown';
+      if (!byPosition[posName]) {
+        byPosition[posName] = [];
+      }
+      byPosition[posName].push(row);
+    });
+
+    return {
+      commissions: formatted.slice(0, 50),
+      by_position: byPosition,
+      count: formatted.length,
+      filters: {
+        position_id: params.position_id,
+        product_id: params.product_id
+      }
+    };
+  } catch (error) {
+    console.error('Get commission structure error:', error);
+    return { error: 'Failed to get commission structure' };
+  }
+}
+
+// Get positions hierarchy
+export async function getPositions(
+  params: any,
+  agencyId: string
+) {
+  try {
+    const supabase = await createServerClient();
+
+    // Try RPC first
+    const { data: rpcData, error: rpcError } = await supabase
+      .rpc('get_positions_for_agency', {
+        p_agency_id: agencyId
+      });
+
+    if (!rpcError && rpcData) {
+      const positions = rpcData.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        level: p.level,
+        description: p.description
+      })).sort((a: any, b: any) => (a.level || 0) - (b.level || 0));
+
+      return {
+        positions: positions,
+        count: positions.length,
+        hierarchy: positions.map((p: any) => `Level ${p.level}: ${p.name}`).join(' → ')
+      };
+    }
+
+    // Fallback: query positions table directly
+    const { data: positions, error } = await supabase
+      .from('positions')
+      .select('id, name, level, description')
+      .eq('agency_id', agencyId)
+      .order('level', { ascending: true });
+
+    if (error) {
+      console.error('Positions query error:', error);
+      return { error: 'Failed to fetch positions' };
+    }
+
+    const formatted = (positions || []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      level: p.level,
+      description: p.description
+    }));
+
+    return {
+      positions: formatted,
+      count: formatted.length,
+      hierarchy: formatted.map((p: any) => `Level ${p.level}: ${p.name}`).join(' → ')
+    };
+  } catch (error) {
+    console.error('Get positions error:', error);
+    return { error: 'Failed to get positions' };
+  }
+}
+
+// Get draft messages
+export async function getDraftMessages(
+  params: any,
+  agencyId: string,
+  allowedAgentIds?: string[],
+  userContext?: UserContext
+) {
+  try {
+    const supabase = await createServerClient();
+    const status = params.status || 'pending';
+    const isAdmin = !userContext || userContext.is_admin;
+
+    // Use appropriate RPC based on user role
+    let drafts: any[] = [];
+    let rpcError = null;
+
+    if (isAdmin) {
+      // Admin can see all drafts
+      const { data, error } = await supabase
+        .rpc('get_draft_messages_all', {
+          p_agency_id: agencyId
+        });
+      drafts = data || [];
+      rpcError = error;
+    } else if (userContext && userContext.downline_agent_ids.length > 0) {
+      // User with downline can see their own + downline drafts
+      const { data, error } = await supabase
+        .rpc('get_draft_messages_downlines', {
+          p_user_id: userContext.user_id
+        });
+      drafts = data || [];
+      rpcError = error;
+    } else {
+      // Regular user can only see their own drafts
+      const { data, error } = await supabase
+        .rpc('get_draft_messages_self', {
+          p_user_id: userContext?.user_id
+        });
+      drafts = data || [];
+      rpcError = error;
+    }
+
+    if (rpcError) {
+      console.error('Draft messages RPC error:', rpcError);
+      // Fallback to direct query
+      let query = supabase
+        .from('draft_messages')
+        .select(`
+          id,
+          body,
+          status,
+          created_at,
+          updated_at,
+          created_by:users!draft_messages_created_by_fkey(id, first_name, last_name),
+          conversation:conversations(id, client_phone)
+        `)
+        .eq('agency_id', agencyId);
+
+      if (allowedAgentIds && allowedAgentIds.length > 0) {
+        query = query.in('created_by', allowedAgentIds);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false }).limit(50);
+      if (!error) {
+        drafts = data || [];
+      }
+    }
+
+    // Filter by status if specified
+    if (status && status !== 'all') {
+      drafts = drafts.filter((d: any) => d.status === status);
+    }
+
+    // Filter by agent if specified
+    if (params.agent_id) {
+      drafts = drafts.filter((d: any) =>
+        d.created_by_id === params.agent_id || d.created_by?.id === params.agent_id
+      );
+    }
+
+    // Format response
+    const formatted = drafts.map((d: any) => ({
+      id: d.id,
+      body: d.body?.substring(0, 200) + (d.body?.length > 200 ? '...' : ''), // Truncate for token efficiency
+      status: d.status,
+      created_at: d.created_at,
+      created_by: d.created_by ?
+        `${d.created_by.first_name || ''} ${d.created_by.last_name || ''}`.trim() :
+        d.agent_name,
+      client_phone: d.conversation?.client_phone || d.client_phone
+    }));
+
+    // Calculate status breakdown
+    const statusBreakdown = drafts.reduce((acc: any, d: any) => {
+      const s = d.status || 'unknown';
+      acc[s] = (acc[s] || 0) + 1;
+      return acc;
+    }, {});
+
+    return {
+      drafts: formatted.slice(0, 30),
+      count: formatted.length,
+      summary: {
+        status_breakdown: statusBreakdown,
+        pending_count: statusBreakdown['pending'] || 0
+      },
+      filters: {
+        status: status,
+        agent_id: params.agent_id
+      },
+      note: formatted.length > 30 ? `Showing 30 of ${formatted.length} draft messages` : undefined
+    };
+  } catch (error) {
+    console.error('Get draft messages error:', error);
+    return { error: 'Failed to get draft messages' };
+  }
+}
+
 // Main executor function - now accepts userContext for permission-based filtering
 export async function executeToolCall(
   toolName: string,
@@ -1471,6 +2119,18 @@ export async function executeToolCall(
       } catch (error: any) {
         return { error: error.message || 'Failed to generate visualization' };
       }
+    case 'get_scoreboard':
+      return await getScoreboard(cleanInput, agencyId, allowedAgentIds, userContext);
+    case 'get_clients':
+      return await getClients(cleanInput, agencyId, allowedAgentIds, userContext);
+    case 'get_at_risk_policies':
+      return await getAtRiskPolicies(cleanInput, agencyId, allowedAgentIds, userContext);
+    case 'get_commission_structure':
+      return await getCommissionStructure(cleanInput, agencyId);
+    case 'get_positions':
+      return await getPositions(cleanInput, agencyId);
+    case 'get_draft_messages':
+      return await getDraftMessages(cleanInput, agencyId, allowedAgentIds, userContext);
     default:
       return { error: `Unknown tool: ${toolName}` };
   }

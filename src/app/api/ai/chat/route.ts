@@ -307,6 +307,20 @@ const tools: Anthropic.Tool[] = [
       required: ['chart_type', 'title', 'data', 'x_axis_key', 'y_axis_keys']
     }
   },
+  {
+    name: 'get_expected_payouts',
+    description: 'Get expected payout/commission projections for agents. Shows expected earnings from active policies based on commission structure and hierarchy. Includes breakdown by carrier, your production vs downline production, and optionally debt from lapsed policies. Use this for questions about commissions, earnings, payouts, or what agents will earn.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        agent_id: { type: 'string', description: 'Specific agent ID to get payouts for (defaults to current user)' },
+        months_past: { type: 'number', description: 'Months to look back (default 12)' },
+        months_future: { type: 'number', description: 'Months to look forward (default 12)' },
+        carrier_id: { type: 'string', description: 'Optional carrier ID to filter by' },
+        include_debt: { type: 'boolean', description: 'Include debt from lapsed policies (default true)' }
+      }
+    }
+  },
 ];
 
 const MAX_ARRAY_SAMPLE_ITEMS = 15;
@@ -837,6 +851,7 @@ IMPORTANT CHART CODE RULES:
 
 WHEN TO USE EACH TOOL:
 ✅ get_persistency_analytics: "How many active policies?", "Show policies by carrier", "What's our lapse rate?"
+✅ get_expected_payouts: "What are expected payouts?", "Show commissions", "How much will agents earn?", "What's my payout?"
 ✅ search_agents: "Find agent John", "Show me agents named Smith", "Who is john@email.com?"
 ✅ get_agent_hierarchy: "Show me John's downline", "What's the production for John's hierarchy?"
 ✅ compare_hierarchies: "Which hierarchy has better production - John's or Jane's?"

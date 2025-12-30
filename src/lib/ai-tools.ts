@@ -1221,6 +1221,193 @@ export async function getDataSummary(params: any, agencyId: string, allowedAgent
   }
 }
 
+// Get expected payouts for an agent
+export async function getExpectedPayouts(
+  params: any,
+  agencyId: string,
+  allowedAgentIds?: string[],
+  userContext?: UserContext
+) {
+  try {
+    const supabase = await createServerClient();
+
+    // Determine which agent to query
+    let targetAgentId = params.agent_id;
+
+    // If no agent specified, use the current user
+    if (!targetAgentId && userContext) {
+      targetAgentId = userContext.user_id;
+    }
+
+    // Permission check: ensure target agent is in allowed list (for non-admins)
+    if (allowedAgentIds && allowedAgentIds.length > 0 && targetAgentId) {
+      if (!allowedAgentIds.includes(targetAgentId)) {
+        return {
+          error: 'You do not have permission to view payouts for this agent',
+          permission_denied: true
+        };
+      }
+    }
+
+    const monthsPast = params.months_past || 12;
+    const monthsFuture = params.months_future || 12;
+    const carrierId = params.carrier_id || null;
+    const includeDebt = params.include_debt !== false; // Default true
+
+    // Call the get_expected_payouts RPC
+    const { data: payouts, error: rpcError } = await supabase
+      .rpc('get_expected_payouts', {
+        p_user_id: userContext?.user_id || targetAgentId,
+        p_agent_id: targetAgentId,
+        p_months_past: monthsPast,
+        p_months_future: monthsFuture,
+        p_carrier_id: carrierId
+      });
+
+    if (rpcError) {
+      console.error('Expected payouts RPC error:', rpcError);
+      return { error: `Failed to fetch expected payouts: ${rpcError.message}` };
+    }
+
+    // Get deal info to determine writing agent for your vs downline split
+    const dealIds = (payouts || []).map((p: any) => p.deal_id);
+    let dealAgentMap: Record<string, string> = {};
+
+    if (dealIds.length > 0) {
+      const { data: deals } = await supabase
+        .from('deals')
+        .select('id, agent_id')
+        .in('id', dealIds);
+
+      if (deals) {
+        dealAgentMap = deals.reduce((acc: Record<string, string>, deal: any) => {
+          acc[deal.id] = deal.agent_id;
+          return acc;
+        }, {});
+      }
+    }
+
+    // Split into your production vs downline
+    const yourProduction: any[] = [];
+    const downlineProduction: any[] = [];
+
+    (payouts || []).forEach((payout: any) => {
+      const writingAgentId = dealAgentMap[payout.deal_id];
+      if (writingAgentId === targetAgentId) {
+        yourProduction.push(payout);
+      } else {
+        downlineProduction.push(payout);
+      }
+    });
+
+    // Calculate totals
+    const calculateTotal = (arr: any[]) =>
+      arr.reduce((sum, p) => sum + (parseFloat(p.expected_payout) || 0), 0);
+
+    const yourTotal = calculateTotal(yourProduction);
+    const downlineTotal = calculateTotal(downlineProduction);
+
+    // Aggregate by carrier
+    const carrierTotals: Record<string, { name: string; total: number; count: number }> = {};
+    (payouts || []).forEach((p: any) => {
+      const carrierId = p.carrier_id;
+      if (!carrierTotals[carrierId]) {
+        carrierTotals[carrierId] = { name: p.carrier_name, total: 0, count: 0 };
+      }
+      carrierTotals[carrierId].total += parseFloat(p.expected_payout) || 0;
+      carrierTotals[carrierId].count += 1;
+    });
+
+    // Aggregate by month for trends
+    const monthlyTotals: Record<string, number> = {};
+    (payouts || []).forEach((p: any) => {
+      const month = p.month?.substring(0, 7); // YYYY-MM
+      if (month) {
+        monthlyTotals[month] = (monthlyTotals[month] || 0) + (parseFloat(p.expected_payout) || 0);
+      }
+    });
+
+    // Optionally get debt
+    let debtInfo = null;
+    if (includeDebt && targetAgentId) {
+      const { data: debtData, error: debtError } = await supabase
+        .rpc('get_agent_debt', {
+          p_user_id: userContext?.user_id || targetAgentId,
+          p_agent_id: targetAgentId
+        });
+
+      if (!debtError && debtData?.[0]) {
+        debtInfo = {
+          total_debt: debtData[0].total_debt || 0,
+          lapsed_deals_count: debtData[0].lapsed_deals_count || 0
+        };
+      }
+    }
+
+    // Build summary result (limited for token efficiency)
+    const result: any = {
+      summary: {
+        total_expected_payout: yourTotal + downlineTotal,
+        your_production: {
+          total: yourTotal,
+          deal_count: yourProduction.length
+        },
+        downline_production: {
+          total: downlineTotal,
+          deal_count: downlineProduction.length
+        },
+        net_total: debtInfo
+          ? (yourTotal + downlineTotal) - (debtInfo.total_debt || 0)
+          : yourTotal + downlineTotal
+      },
+      by_carrier: Object.entries(carrierTotals)
+        .map(([id, data]) => ({
+          carrier_id: id,
+          carrier_name: data.name,
+          total: data.total,
+          deal_count: data.count
+        }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10), // Top 10 carriers
+      monthly_trend: Object.entries(monthlyTotals)
+        .map(([month, total]) => ({ month, total }))
+        .sort((a, b) => a.month.localeCompare(b.month))
+        .slice(-12), // Last 12 months
+      filters: {
+        agent_id: targetAgentId,
+        months_past: monthsPast,
+        months_future: monthsFuture,
+        carrier_id: carrierId
+      }
+    };
+
+    if (debtInfo) {
+      result.debt = debtInfo;
+    }
+
+    // Include sample of top payouts (limited to 15 for token efficiency)
+    if (payouts && payouts.length > 0) {
+      result.top_payouts = payouts
+        .sort((a: any, b: any) => (parseFloat(b.expected_payout) || 0) - (parseFloat(a.expected_payout) || 0))
+        .slice(0, 15)
+        .map((p: any) => ({
+          agent_name: p.agent_name,
+          carrier_name: p.carrier_name,
+          policy_number: p.policy_number,
+          annual_premium: p.annual_premium,
+          expected_payout: p.expected_payout,
+          month: p.month
+        }));
+      result.total_payout_records = payouts.length;
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Get expected payouts error:', error);
+    return { error: 'Failed to get expected payouts' };
+  }
+}
+
 // Main executor function - now accepts userContext for permission-based filtering
 export async function executeToolCall(
   toolName: string,
@@ -1266,6 +1453,8 @@ export async function executeToolCall(
       return await getAgentsPaginated(cleanInput, agencyId, cleanInput.cursor, allowedAgentIds);
     case 'get_data_summary':
       return await getDataSummary(cleanInput, agencyId, allowedAgentIds);
+    case 'get_expected_payouts':
+      return await getExpectedPayouts(cleanInput, agencyId, allowedAgentIds, userContext);
     case 'create_visualization':
       // Generate dynamic visualization with chartcode
       try {

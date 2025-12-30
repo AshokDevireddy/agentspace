@@ -239,6 +239,74 @@ const tools: Anthropic.Tool[] = [
       required: ['data_type']
     }
   },
+  {
+    name: 'create_visualization',
+    description: 'Create a dynamic chart/visualization from data. Use this tool to generate bar charts, line charts, pie charts, area charts, or stacked bar charts. The data parameter should contain the actual data to visualize (from a previous tool call result). Use this after retrieving data with other tools, or when user says "visualize that" to chart the most recent data.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        chart_type: {
+          type: 'string',
+          description: 'Type of chart to create',
+          enum: ['bar', 'line', 'pie', 'area', 'stacked_bar']
+        },
+        title: {
+          type: 'string',
+          description: 'Title for the chart'
+        },
+        description: {
+          type: 'string',
+          description: 'Optional description explaining what the chart shows'
+        },
+        data: {
+          type: 'array',
+          description: 'Array of data objects to visualize. Each object should have consistent keys.',
+          items: {
+            type: 'object'
+          }
+        },
+        x_axis_key: {
+          type: 'string',
+          description: 'The key/field name to use for the X-axis (category labels)'
+        },
+        y_axis_keys: {
+          type: 'array',
+          description: 'Array of key/field names to use for Y-axis values. Use multiple keys for grouped/stacked charts.',
+          items: {
+            type: 'string'
+          }
+        },
+        config: {
+          type: 'object',
+          description: 'Optional configuration for chart appearance',
+          properties: {
+            colors: {
+              type: 'array',
+              description: 'Custom colors for data series',
+              items: { type: 'string' }
+            },
+            show_legend: {
+              type: 'boolean',
+              description: 'Whether to show legend (default: true)'
+            },
+            show_grid: {
+              type: 'boolean',
+              description: 'Whether to show grid lines (default: true)'
+            },
+            y_axis_label: {
+              type: 'string',
+              description: 'Label for Y-axis'
+            },
+            x_axis_label: {
+              type: 'string',
+              description: 'Label for X-axis'
+            }
+          }
+        }
+      },
+      required: ['chart_type', 'title', 'data', 'x_axis_key', 'y_axis_keys']
+    }
+  },
 ];
 
 const MAX_ARRAY_SAMPLE_ITEMS = 15;
@@ -774,9 +842,48 @@ WHEN TO USE EACH TOOL:
 ✅ compare_hierarchies: "Which hierarchy has better production - John's or Jane's?"
 ✅ get_data_summary: "How many deals do we have?", "What's the total production?", "Count active agents"
 ✅ get_deals_paginated: "Show me all active deals" (if >1000), "List deals for agent X" (large dataset)
+✅ create_visualization: "Visualize that", "Show me a chart", "Make a pie chart of..."
 ❌ get_deals: "Show me the client names for Aflac policies", "What premium did client John Doe pay?" (small datasets only)
 
-Remember: Keep it clean, structured, and easy to scan. Only provide what was asked for - no extra visualizations or tables.`;
+DYNAMIC VISUALIZATION TOOL (create_visualization):
+Use the create_visualization tool to generate charts and graphs dynamically. This tool is PREFERRED over writing chartcode manually.
+
+When to use create_visualization:
+1. After retrieving data with another tool - automatically visualize the results
+2. When user says "visualize that", "show me a chart", "graph this"
+3. When data is numeric/comparative and would benefit from visualization
+4. For rankings, trends, breakdowns, or distributions
+
+How to use create_visualization:
+1. First, retrieve data using the appropriate tool (get_persistency_analytics, get_agents, etc.)
+2. Extract the relevant array from the tool result
+3. Call create_visualization with:
+   - chart_type: 'bar' | 'line' | 'pie' | 'area' | 'stacked_bar'
+   - title: Descriptive title
+   - data: The array of objects to visualize
+   - x_axis_key: The field to use for labels/categories
+   - y_axis_keys: Array of fields for the values
+
+Chart Type Selection:
+- bar: Comparisons, rankings (e.g., "top 5 agents by production")
+- line: Trends over time (e.g., "monthly sales")
+- pie: Part-to-whole relationships (e.g., "policy distribution by carrier")
+- area: Cumulative trends (e.g., "total premium over time")
+- stacked_bar: Multiple metrics per category (e.g., "active vs inactive by carrier")
+
+Example - After getting persistency data:
+1. Call get_persistency_analytics
+2. Extract carriers array from result
+3. Call create_visualization with:
+   - chart_type: 'stacked_bar'
+   - title: 'Active vs Inactive Policies by Carrier'
+   - data: carriers array
+   - x_axis_key: 'carrier'
+   - y_axis_keys: ['active', 'inactive']
+
+IMPORTANT: The create_visualization tool generates chartcode automatically. You do NOT need to write chartcode manually when using this tool.
+
+Remember: Keep it clean, structured, and easy to scan. When data is numeric or comparative, consider using create_visualization to make it more visual.`;
 
     // Increment AI request count
     await supabase

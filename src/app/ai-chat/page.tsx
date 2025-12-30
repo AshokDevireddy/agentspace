@@ -111,8 +111,11 @@ export default function AIChat() {
       // Reset height to auto to get the correct scrollHeight
       textarea.style.height = 'auto';
       // Set height to scrollHeight (content height) but cap at max-height
-      const newHeight = Math.min(textarea.scrollHeight, 200); // Max 200px
+      const maxHeight = 200;
+      const newHeight = Math.min(textarea.scrollHeight, maxHeight);
       textarea.style.height = `${newHeight}px`;
+      // Only show overflow scroll when content exceeds max height
+      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
     }
   }, [input]);
 
@@ -212,7 +215,8 @@ export default function AIChat() {
       'get_persistency_analytics': 'Loading comprehensive analytics',
       'get_conversations_data': 'Getting conversation data',
       'get_carriers_and_products': 'Loading carriers and products',
-      'get_agency_summary': 'Generating agency summary'
+      'get_agency_summary': 'Generating agency summary',
+      'create_visualization': 'Creating visualization'
     };
     return names[toolName] || toolName;
   };
@@ -339,6 +343,14 @@ export default function AIChat() {
         const count = formatNumber(result.total_count);
         const avg = formatCurrency(result.summary?.average_premium ?? result.summary?.average_production);
         return `Summary over ${count || '0'} records${avg ? ` • average ${avg}` : ''}`;
+      }
+      case 'create_visualization': {
+        if (result._visualization) {
+          const chartType = result.chart_type || 'chart';
+          const dataCount = formatNumber(result.data?.length);
+          return `Generated ${chartType} visualization${dataCount ? ` with ${dataCount} data points` : ''}`;
+        }
+        return 'Visualization created';
       }
       default: {
         const keys = Object.keys(result);
@@ -614,9 +626,21 @@ export default function AIChat() {
 
       // Get the most relevant data for chart rendering
       let chartData = null;
-      if (chartCode) {
-        // Try to find the most recent tool result
-        const lastToolResult = Array.from(toolResultsMap.values()).pop();
+      let finalChartCode = chartCode;
+
+      // Check if any tool result is a visualization (from create_visualization tool)
+      const toolResults = Array.from(toolResultsMap.values());
+      const visualizationResult = toolResults.find(
+        (result: any) => result?._visualization === true && result?.chartcode
+      );
+
+      if (visualizationResult) {
+        // Use chartcode and data from visualization tool result
+        finalChartCode = visualizationResult.chartcode;
+        chartData = visualizationResult.data;
+      } else if (chartCode) {
+        // Fall back to extracting from assistant message (legacy behavior)
+        const lastToolResult = toolResults.pop();
         chartData = lastToolResult;
       }
 
@@ -624,7 +648,7 @@ export default function AIChat() {
         role: 'assistant',
         content: cleanContent,
         toolCalls: Array.from(currentToolCallsMap.values()),
-        chartCode: chartCode || undefined,
+        chartCode: finalChartCode || undefined,
         chartData: chartData
       };
 
@@ -911,9 +935,9 @@ export default function AIChat() {
         </div>
       </div>
 
-        {/* Input - fixed height to align border with sidebar */}
-        <div className="border-t border-slate-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl h-[88px] flex items-center">
-          <div className="max-w-4xl mx-auto px-4 w-full">
+        {/* Input - expands upward, stays anchored at bottom */}
+        <div className="flex-shrink-0 border-t border-slate-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl">
+          <div className="max-w-4xl mx-auto px-4 py-4">
             <div className="flex items-end gap-3">
               <textarea
                 ref={textareaRef}
@@ -923,16 +947,12 @@ export default function AIChat() {
                 placeholder="Ask me anything about your agency..."
                 disabled={isLoading}
                 rows={1}
-                className="flex-1 min-h-[56px] max-h-[200px] pl-5 pr-5 py-4 text-base rounded-3xl border-2 border-slate-200 dark:border-gray-700 focus:border-purple-400 dark:focus:border-purple-500 focus:ring-4 focus:ring-purple-100 dark:focus:ring-purple-900/30 shadow-lg bg-white dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500 backdrop-blur-sm transition-all resize-none overflow-y-auto focus:outline-none"
-                style={{
-                  scrollbarWidth: 'thin',
-                  scrollbarColor: '#cbd5e1 transparent'
-                }}
+                className="flex-1 min-h-[48px] max-h-[200px] px-5 py-3 text-base rounded-3xl border-2 border-slate-200 dark:border-gray-700 focus:border-purple-400 dark:focus:border-purple-500 focus:ring-4 focus:ring-purple-100 dark:focus:ring-purple-900/30 shadow-lg bg-white dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500 backdrop-blur-sm transition-all resize-none focus:outline-none [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-thumb]:rounded-full dark:[&::-webkit-scrollbar-thumb]:bg-gray-600"
               />
               <button
                 onClick={sendMessage}
                 disabled={isLoading || !input.trim()}
-                className="flex-shrink-0 h-11 w-11 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-slate-300 disabled:to-slate-300 shadow-lg shadow-purple-300 disabled:shadow-none transition-all flex items-center justify-center mb-[6px]"
+                className="flex-shrink-0 h-12 w-12 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-slate-300 disabled:to-slate-300 shadow-lg shadow-purple-300 disabled:shadow-none transition-all flex items-center justify-center"
               >
                 {isLoading ? (
                   <Loader2 className="h-5 w-5 text-white animate-spin" />

@@ -208,8 +208,8 @@ export function ConversationSidebar({
         )}
       </div>
 
-      {/* New Conversation Button - fixed height to align border with main chat input */}
-      <div className="px-3 border-t flex items-center h-[88px]">
+      {/* New Conversation Button */}
+      <div className="px-3 py-4 border-t flex items-center">
         <Button
           variant="outline"
           className="w-full"

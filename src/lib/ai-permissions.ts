@@ -140,6 +140,12 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
     scope: 'agency',
     description: 'Commission structure information'
   },
+
+  // Visualization tools (no direct data access - uses already-retrieved data)
+  create_visualization: {
+    scope: 'agency',
+    description: 'Create charts from already-retrieved data (no new data access)'
+  },
 };
 
 // Result of permission check

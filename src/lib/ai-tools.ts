@@ -1,5 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { UserContext } from '@/lib/ai-permissions';
+import { generateVisualization, VisualizationInput } from '@/lib/ai-visualization-tool';
 
 // Get deals/policies data
 export async function getDeals(params: any, agencyId: string, allowedAgentIds?: string[]) {
@@ -1266,15 +1267,21 @@ export async function executeToolCall(
     case 'get_data_summary':
       return await getDataSummary(cleanInput, agencyId, allowedAgentIds);
     case 'create_visualization':
-      // Return a marker that tells the frontend to create a visualization
-      return {
-        _visualization: true,
-        type: cleanInput.type,
-        title: cleanInput.title,
-        description: cleanInput.description,
-        data_source: cleanInput.data_source,
-        config: cleanInput.config
-      };
+      // Generate dynamic visualization with chartcode
+      try {
+        const vizInput: VisualizationInput = {
+          chart_type: cleanInput.chart_type,
+          title: cleanInput.title,
+          description: cleanInput.description,
+          data: cleanInput.data,
+          x_axis_key: cleanInput.x_axis_key,
+          y_axis_keys: cleanInput.y_axis_keys,
+          config: cleanInput.config
+        };
+        return generateVisualization(vizInput);
+      } catch (error: any) {
+        return { error: error.message || 'Failed to generate visualization' };
+      }
     default:
       return { error: `Unknown tool: ${toolName}` };
   }

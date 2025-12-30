@@ -712,7 +712,7 @@ export default function AIChat() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-gray-900 overflow-hidden ai-mode-content" data-tour="ai-mode">
+    <div className="flex h-full bg-slate-50 dark:bg-gray-900 overflow-hidden ai-mode-content" data-tour="ai-mode">
       {/* Conversation Sidebar */}
       <ConversationSidebar
         currentConversationId={currentConversationId}
@@ -724,10 +724,9 @@ export default function AIChat() {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header - Fixed at top */}
-        <div className="backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 shadow-sm border-b border-slate-200 dark:border-gray-700">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-center">
+        {/* Header - fixed height to align border with sidebar */}
+        <div className="backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 shadow-sm border-b border-slate-200 dark:border-gray-700 h-16 flex items-center">
+          <div className="max-w-4xl mx-auto px-4 w-full">
             <div className="flex items-center gap-3">
               <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-500 via-purple-600 to-blue-600 shadow-lg shadow-purple-500/30">
                 <Sparkles className="h-5 w-5 text-white" />
@@ -741,18 +740,17 @@ export default function AIChat() {
                     BETA
                   </span>
                 </div>
-                <p className="text-xs text-slate-600">
+                <p className="text-xs text-slate-600 dark:text-slate-400">
                   * AI can make mistakes. Please verify important information.
                 </p>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto pb-4">
-        <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+          <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
           {messages.length === 0 && (
             <div className="text-center py-16">
               <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-purple-500 via-purple-600 to-blue-600 shadow-2xl shadow-purple-500/40 mb-6">
@@ -913,9 +911,9 @@ export default function AIChat() {
         </div>
       </div>
 
-        {/* Input - At bottom of chat area */}
-        <div className="border-t border-slate-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl">
-          <div className="max-w-4xl mx-auto px-4 py-4">
+        {/* Input - fixed height to align border with sidebar */}
+        <div className="border-t border-slate-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl h-[88px] flex items-center">
+          <div className="max-w-4xl mx-auto px-4 w-full">
             <div className="flex items-end gap-3">
               <textarea
                 ref={textareaRef}

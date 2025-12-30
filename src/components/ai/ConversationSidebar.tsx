@@ -128,8 +128,8 @@ export function ConversationSidebar({
 
   return (
     <div className="w-64 h-full bg-background border-r flex flex-col">
-      {/* Header */}
-      <div className="p-3 border-b flex items-center justify-between">
+      {/* Header - fixed height to align border with main chat header */}
+      <div className="px-3 border-b flex items-center justify-between h-16">
         <h3 className="font-semibold text-sm">Conversations</h3>
         <div className="flex items-center gap-1">
           <Button
@@ -208,8 +208,8 @@ export function ConversationSidebar({
         )}
       </div>
 
-      {/* New Conversation Button */}
-      <div className="p-3 border-t">
+      {/* New Conversation Button - fixed height to align border with main chat input */}
+      <div className="px-3 border-t flex items-center h-[88px]">
         <Button
           variant="outline"
           className="w-full"

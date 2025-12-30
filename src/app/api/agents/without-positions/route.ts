@@ -60,6 +60,14 @@ export async function GET(request: Request) {
       const { data: allAgents, error: allAgentsError } = await supabase
         .rpc("get_agents_without_positions", { p_user_id: userId });
 
+      console.log("get_agents_without_positions RPC response (with search):", {
+        userId,
+        dataLength: allAgents?.length || 0,
+        firstFewItems: allAgents?.slice(0, 3),
+        fullData: allAgents,
+        error: allAgentsError,
+      });
+
       if (allAgentsError) {
         return NextResponse.json({
           error: "Failed to fetch agents",
@@ -71,6 +79,7 @@ export async function GET(request: Request) {
         }, { status: 500 });
       }
 
+      // SEARCH_FOR_THIS: Also fetch agents with positions for search - THIS IS WHY AGENTS WITH POSITIONS SHOW UP
       // Also fetch agents with positions for search
       const { data: userDataFull } = await supabase
         .from("users")
@@ -105,6 +114,7 @@ export async function GET(request: Request) {
           upline:users!upline_id(first_name, last_name)
         `)
         .in("role", ["agent", "admin"]) // Include both agents and admins
+        .eq("is_active", true) // Only fetch active users
         .order("created_at", { ascending: false });
 
       // Apply visibility rules: admins see all in agency, agents see their downlines
@@ -173,6 +183,7 @@ export async function GET(request: Request) {
           ? currentUserData
           : null;
 
+      // SEARCH_FOR_THIS: Combine both lists and filter by search query - THIS IS WHERE AGENTS WITH POSITIONS GET ADDED TO THE LIST
       // Combine both lists and filter by search query
       const allAgentsList = [
         ...(allAgents || []).map((a: any) => {
@@ -246,6 +257,14 @@ export async function GET(request: Request) {
     // No search query - return only agents without positions (original behavior)
     const { data: agents, error: fetchError } = await supabase
       .rpc("get_agents_without_positions", { p_user_id: userId });
+
+    console.log("get_agents_without_positions RPC response (no search):", {
+      userId,
+      dataLength: agents?.length || 0,
+      firstFewItems: agents?.slice(0, 3),
+      fullData: agents,
+      error: fetchError,
+    });
 
     if (fetchError) {
       return NextResponse.json({

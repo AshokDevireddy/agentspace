@@ -1,6 +1,6 @@
 /**
  * AI Visualization Tool
- * Generates executable chartcode for dynamic visualizations
+ * Generates chart configuration for Chart.js visualizations
  */
 
 // Chart type definitions
@@ -31,10 +31,27 @@ export interface VisualizationResult {
   data: Record<string, any>[];
 }
 
-// Default color palette matching CodeExecutor
+// Default color palette for Chart.js (with alpha for backgrounds)
 const DEFAULT_COLORS = [
-  '#8884d8', '#82ca9d', '#ffc658', '#ff7300',
-  '#00C49F', '#FFBB28', '#FF8042', '#0088FE'
+  'rgba(139, 92, 246, 0.8)',   // purple-500
+  'rgba(59, 130, 246, 0.8)',   // blue-500
+  'rgba(16, 185, 129, 0.8)',   // green-500
+  'rgba(245, 158, 11, 0.8)',   // amber-500
+  'rgba(239, 68, 68, 0.8)',    // red-500
+  'rgba(236, 72, 153, 0.8)',   // pink-500
+  'rgba(6, 182, 212, 0.8)',    // cyan-500
+  'rgba(99, 102, 241, 0.8)',   // indigo-500
+];
+
+const DEFAULT_BORDER_COLORS = [
+  'rgb(139, 92, 246)',   // purple-500
+  'rgb(59, 130, 246)',   // blue-500
+  'rgb(16, 185, 129)',   // green-500
+  'rgb(245, 158, 11)',   // amber-500
+  'rgb(239, 68, 68)',    // red-500
+  'rgb(236, 72, 153)',   // pink-500
+  'rgb(6, 182, 212)',    // cyan-500
+  'rgb(99, 102, 241)',   // indigo-500
 ];
 
 /**
@@ -69,162 +86,133 @@ export function validateVisualizationInput(input: VisualizationInput): { valid: 
     return { valid: false, error: `None of the y_axis_keys found in data` };
   }
 
+  // Detect placeholder/hallucinated data patterns
+  // Common field names that shouldn't appear as actual data values
+  const commonFieldNames = ['month', 'payout', 'value', 'total', 'name', 'label', 'amount', 'count', 'date', 'carrier', 'agent', 'premium', 'production'];
+
+  // Check if x_axis values look like field names instead of actual data
+  const xValues = input.data.map(item => String(item[input.x_axis_key]).toLowerCase());
+  const suspiciousXValues = xValues.filter(v => commonFieldNames.includes(v));
+
+  // If most x-axis values are common field names, this is likely placeholder data
+  if (suspiciousXValues.length > 0 && suspiciousXValues.length >= xValues.length * 0.5) {
+    return {
+      valid: false,
+      error: `Data appears to contain placeholder field names instead of actual values. The x_axis values (${xValues.join(', ')}) look like field names. Please pass the actual data array from the tool result (e.g., monthly_trend, by_carrier, or top_payouts array).`
+    };
+  }
+
+  // Check if all y-axis values are 0 or undefined (likely placeholder)
+  const allYValuesZero = input.data.every(item => {
+    return input.y_axis_keys.every(key => {
+      const val = item[key];
+      return val === 0 || val === undefined || val === null || val === '';
+    });
+  });
+
+  if (allYValuesZero && input.data.length <= 5) {
+    return {
+      valid: false,
+      error: `All y-axis values are zero or empty. This may indicate placeholder data. Please ensure you're passing actual data from the tool result.`
+    };
+  }
+
   return { valid: true };
 }
 
 /**
- * Generates chartcode for bar chart
+ * Generates chartcode marker for bar chart (Chart.js will parse this)
  */
 function generateBarChartCode(input: VisualizationInput): string {
-  const { x_axis_key, y_axis_keys, config } = input;
-  const colors = config?.colors || DEFAULT_COLORS;
-  const showLegend = config?.show_legend !== false;
-  const showGrid = config?.show_grid !== false;
+  const { x_axis_key, y_axis_keys } = input;
 
-  const bars = y_axis_keys.map((key, index) =>
-    `React.createElement(Bar, { dataKey: "${key}", fill: "${colors[index % colors.length]}", name: "${key}" })`
-  ).join(',\n      ');
-
-  return `const chartData = data;
-
-function renderChart() {
-  return React.createElement(ResponsiveContainer, { width: "100%", height: 400 },
-    React.createElement(BarChart, { data: chartData, margin: { top: 20, right: 30, left: 20, bottom: 80 } },
-      ${showGrid ? 'React.createElement(CartesianGrid, { strokeDasharray: "3 3" }),' : ''}
-      React.createElement(XAxis, { dataKey: "${x_axis_key}", angle: -45, textAnchor: "end", height: 100, interval: 0 }),
-      React.createElement(YAxis${config?.y_axis_label ? `, { label: { value: "${config.y_axis_label}", angle: -90, position: "insideLeft" } }` : ', null'}),
-      React.createElement(Tooltip, null),
-      ${showLegend ? 'React.createElement(Legend, { verticalAlign: "top", height: 36 }),' : ''}
-      ${bars}
-    )
-  );
-}`;
+  return `// Chart.js Bar Chart
+// Type: BarChart
+// xKey: ${x_axis_key}
+// yKeys: ${y_axis_keys.join(', ')}
+const chartType = 'bar';
+const labels = data.map(item => item["${x_axis_key}"]);
+const datasets = [${y_axis_keys.map((key, i) => `{
+  label: "${key}",
+  data: data.map(item => item["${key}"])
+}`).join(', ')}];`;
 }
 
 /**
- * Generates chartcode for stacked bar chart
+ * Generates chartcode marker for stacked bar chart
  */
 function generateStackedBarChartCode(input: VisualizationInput): string {
-  const { x_axis_key, y_axis_keys, config } = input;
-  const colors = config?.colors || DEFAULT_COLORS;
-  const showLegend = config?.show_legend !== false;
-  const showGrid = config?.show_grid !== false;
+  const { x_axis_key, y_axis_keys } = input;
 
-  const bars = y_axis_keys.map((key, index) =>
-    `React.createElement(Bar, { dataKey: "${key}", stackId: "stack", fill: "${colors[index % colors.length]}", name: "${key}" })`
-  ).join(',\n      ');
-
-  return `const chartData = data;
-
-function renderChart() {
-  return React.createElement(ResponsiveContainer, { width: "100%", height: 400 },
-    React.createElement(BarChart, { data: chartData, margin: { top: 20, right: 30, left: 20, bottom: 80 } },
-      ${showGrid ? 'React.createElement(CartesianGrid, { strokeDasharray: "3 3" }),' : ''}
-      React.createElement(XAxis, { dataKey: "${x_axis_key}", angle: -45, textAnchor: "end", height: 100, interval: 0 }),
-      React.createElement(YAxis${config?.y_axis_label ? `, { label: { value: "${config.y_axis_label}", angle: -90, position: "insideLeft" } }` : ', null'}),
-      React.createElement(Tooltip, null),
-      ${showLegend ? 'React.createElement(Legend, { verticalAlign: "top", height: 36 }),' : ''}
-      ${bars}
-    )
-  );
-}`;
+  return `// Chart.js Stacked Bar Chart
+// Type: BarChart (stacked)
+// xKey: ${x_axis_key}
+// yKeys: ${y_axis_keys.join(', ')}
+const chartType = 'bar';
+const stacked = true;
+const labels = data.map(item => item["${x_axis_key}"]);
+const datasets = [${y_axis_keys.map((key, i) => `{
+  label: "${key}",
+  data: data.map(item => item["${key}"]),
+  stack: 'stack1'
+}`).join(', ')}];`;
 }
 
 /**
- * Generates chartcode for line chart
+ * Generates chartcode marker for line chart
  */
 function generateLineChartCode(input: VisualizationInput): string {
-  const { x_axis_key, y_axis_keys, config } = input;
-  const colors = config?.colors || DEFAULT_COLORS;
-  const showLegend = config?.show_legend !== false;
-  const showGrid = config?.show_grid !== false;
+  const { x_axis_key, y_axis_keys } = input;
 
-  const lines = y_axis_keys.map((key, index) =>
-    `React.createElement(Line, { type: "monotone", dataKey: "${key}", stroke: "${colors[index % colors.length]}", strokeWidth: 2, name: "${key}", dot: { r: 4 } })`
-  ).join(',\n      ');
-
-  return `const chartData = data;
-
-function renderChart() {
-  return React.createElement(ResponsiveContainer, { width: "100%", height: 400 },
-    React.createElement(LineChart, { data: chartData, margin: { top: 20, right: 30, left: 20, bottom: 80 } },
-      ${showGrid ? 'React.createElement(CartesianGrid, { strokeDasharray: "3 3" }),' : ''}
-      React.createElement(XAxis, { dataKey: "${x_axis_key}", angle: -45, textAnchor: "end", height: 100, interval: 0 }),
-      React.createElement(YAxis${config?.y_axis_label ? `, { label: { value: "${config.y_axis_label}", angle: -90, position: "insideLeft" } }` : ', null'}),
-      React.createElement(Tooltip, null),
-      ${showLegend ? 'React.createElement(Legend, { verticalAlign: "top", height: 36 }),' : ''}
-      ${lines}
-    )
-  );
-}`;
+  return `// Chart.js Line Chart
+// Type: LineChart
+// xKey: ${x_axis_key}
+// yKeys: ${y_axis_keys.join(', ')}
+const chartType = 'line';
+const labels = data.map(item => item["${x_axis_key}"]);
+const datasets = [${y_axis_keys.map((key, i) => `{
+  label: "${key}",
+  data: data.map(item => item["${key}"]),
+  tension: 0.4
+}`).join(', ')}];`;
 }
 
 /**
- * Generates chartcode for area chart
+ * Generates chartcode marker for area chart
  */
 function generateAreaChartCode(input: VisualizationInput): string {
-  const { x_axis_key, y_axis_keys, config } = input;
-  const colors = config?.colors || DEFAULT_COLORS;
-  const showLegend = config?.show_legend !== false;
-  const showGrid = config?.show_grid !== false;
+  const { x_axis_key, y_axis_keys } = input;
 
-  const areas = y_axis_keys.map((key, index) =>
-    `React.createElement(Area, { type: "monotone", dataKey: "${key}", stroke: "${colors[index % colors.length]}", fill: "${colors[index % colors.length]}", fillOpacity: 0.3, name: "${key}" })`
-  ).join(',\n      ');
-
-  return `const chartData = data;
-
-function renderChart() {
-  return React.createElement(ResponsiveContainer, { width: "100%", height: 400 },
-    React.createElement(AreaChart, { data: chartData, margin: { top: 20, right: 30, left: 20, bottom: 80 } },
-      ${showGrid ? 'React.createElement(CartesianGrid, { strokeDasharray: "3 3" }),' : ''}
-      React.createElement(XAxis, { dataKey: "${x_axis_key}", angle: -45, textAnchor: "end", height: 100, interval: 0 }),
-      React.createElement(YAxis${config?.y_axis_label ? `, { label: { value: "${config.y_axis_label}", angle: -90, position: "insideLeft" } }` : ', null'}),
-      React.createElement(Tooltip, null),
-      ${showLegend ? 'React.createElement(Legend, { verticalAlign: "top", height: 36 }),' : ''}
-      ${areas}
-    )
-  );
-}`;
+  return `// Chart.js Area Chart
+// Type: AreaChart
+// xKey: ${x_axis_key}
+// yKeys: ${y_axis_keys.join(', ')}
+const chartType = 'area';
+const labels = data.map(item => item["${x_axis_key}"]);
+const datasets = [${y_axis_keys.map((key, i) => `{
+  label: "${key}",
+  data: data.map(item => item["${key}"]),
+  fill: true,
+  tension: 0.4
+}`).join(', ')}];`;
 }
 
 /**
- * Generates chartcode for pie chart
+ * Generates chartcode marker for pie chart
  */
 function generatePieChartCode(input: VisualizationInput): string {
-  const { x_axis_key, y_axis_keys, config } = input;
-  const colors = config?.colors || DEFAULT_COLORS;
-  const showLegend = config?.show_legend !== false;
-
-  // Pie charts use the first y_axis_key as the value
+  const { x_axis_key, y_axis_keys } = input;
   const valueKey = y_axis_keys[0];
 
-  return `// Transform data for pie chart format
-const chartData = data.map(item => ({
-  name: item["${x_axis_key}"],
-  value: Number(item["${valueKey}"]) || 0
-})).filter(item => item.value > 0).slice(0, 10);
-
-function renderChart() {
-  return React.createElement(ResponsiveContainer, { width: "100%", height: 400 },
-    React.createElement(PieChart, null,
-      React.createElement(Pie, {
-        data: chartData,
-        dataKey: "value",
-        nameKey: "name",
-        cx: "50%",
-        cy: "50%",
-        outerRadius: 120,
-        label: function(entry) { return entry.name + ': ' + entry.value; }
-      },
-        chartData.map(function(entry, index) {
-          return React.createElement(Cell, { key: 'cell-' + index, fill: COLORS[index % COLORS.length] });
-        })
-      ),
-      React.createElement(Tooltip, null)${showLegend ? ',\n      React.createElement(Legend, null)' : ''}
-    )
-  );
-}`;
+  return `// Chart.js Pie Chart
+// Type: PieChart
+// nameKey: ${x_axis_key}
+// valueKey: ${valueKey}
+const chartType = 'pie';
+const labels = data.map(item => item["${x_axis_key}"]);
+const dataset = {
+  data: data.map(item => item["${valueKey}"])
+};`;
 }
 
 /**

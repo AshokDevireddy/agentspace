@@ -41,7 +41,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { role, content, tool_calls, chart_code, tokens_used } = body;
+    const { role, content, tool_calls, chart_code, chart_data, tokens_used } = body;
 
     if (!role || !['user', 'assistant'].includes(role)) {
       return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
@@ -60,6 +60,7 @@ export async function POST(
         content,
         tool_calls: tool_calls || null,
         chart_code: chart_code || null,
+        chart_data: chart_data || null,
         tokens_used: tokens_used || null
       })
       .select()

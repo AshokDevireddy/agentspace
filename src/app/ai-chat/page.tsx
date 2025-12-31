@@ -137,6 +137,7 @@ export default function AIChat() {
             content: msg.content,
             toolCalls: msg.tool_calls || undefined,
             chartCode: msg.chart_code || undefined,
+            chartData: msg.chart_data || undefined,
           }));
           setMessages(loadedMessages);
         }
@@ -170,6 +171,7 @@ export default function AIChat() {
           content: message.content,
           tool_calls: message.toolCalls || null,
           chart_code: message.chartCode || null,
+          chart_data: message.chartData || null,
         }),
       });
     } catch (error) {

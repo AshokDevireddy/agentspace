@@ -35,13 +35,14 @@ export async function POST(request: Request) {
       .eq('id', currentUser.agency_id)
       .single()
 
-    // Build redirect URL based on agency's white-label domain
+    // Build redirect URL - use /auth/confirm (client page) for implicit flow
+    // Supabase uses hash fragments which are only visible client-side
     const getRedirectUrl = () => {
       if (agencyData?.whitelabel_domain) {
         const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http'
-        return `${protocol}://${agencyData.whitelabel_domain}/login`
+        return `${protocol}://${agencyData.whitelabel_domain}/auth/confirm`
       }
-      return `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login`
+      return `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/confirm`
     }
 
     // Check if client already exists (including pre-invite and invited clients)

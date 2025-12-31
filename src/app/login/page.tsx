@@ -1,146 +1,76 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
-import { useTheme } from "next-themes"
+import { decodeAndValidateJwt } from "@/lib/auth/jwt"
+import { signInWithPassword, supabaseRestFetch } from "@/lib/supabase/api"
+import { TOKEN_STORAGE_KEYS, withTimeout } from "@/lib/auth/constants"
+
+interface UserProfile {
+  role: string
+  status: string
+  agency_id: string
+}
+
+interface AgencyInfo {
+  whitelabel_domain: string | null
+}
 
 export default function LoginPage() {
   const router = useRouter()
   const supabase = createClient()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
-  const { setTheme } = useTheme()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [isProcessingInvite, setIsProcessingInvite] = useState(false)
 
-  // Handle invite tokens in URL hash
+  const processedRef = useRef(false)
+
   useEffect(() => {
-    const handleInviteToken = async () => {
-      // Check if we have invite tokens in the URL hash
-      const hash = window.location.hash.substring(1)
-      if (!hash) return
+    if (processedRef.current) return
+    processedRef.current = true
 
+    const urlParams = new URLSearchParams(window.location.search)
+    const queryError = urlParams.get('error')
+    const message = urlParams.get('message')
+
+    if (queryError) {
+      setError(decodeURIComponent(queryError))
+      window.history.replaceState(null, '', window.location.pathname)
+      return
+    }
+
+    if (message === 'password-reset-success' || message === 'setup-complete') {
+      window.history.replaceState(null, '', window.location.pathname)
+      return
+    }
+
+    const hash = window.location.hash.substring(1)
+    if (hash) {
       const params = new URLSearchParams(hash)
-      const error = params.get('error')
+      const urlError = params.get('error')
       const errorDescription = params.get('error_description')
-      const type = params.get('type')
-      const accessToken = params.get('access_token')
-      const refreshToken = params.get('refresh_token')
 
-      // Handle errors from Supabase (expired links, etc.)
-      if (error) {
-        console.error('Auth error from URL:', error, errorDescription)
+      if (urlError) {
+        let errorMessage = 'An error occurred with your link.'
 
-        let errorMessage = 'An error occurred with your invite link.'
-
-        if (error === 'access_denied' && errorDescription?.includes('expired')) {
+        if (urlError === 'access_denied' && errorDescription?.includes('expired')) {
           errorMessage = 'Your invite link has expired. Please contact your administrator to resend the invitation.'
-        } else if (error === 'access_denied' && errorDescription?.includes('invalid')) {
+        } else if (urlError === 'access_denied' && errorDescription?.includes('invalid')) {
           errorMessage = 'Your invite link is invalid. Please contact your administrator to resend the invitation.'
         } else if (errorDescription) {
           errorMessage = decodeURIComponent(errorDescription.replace(/\+/g, ' '))
         }
 
         setError(errorMessage)
-        // Clear the hash
-        window.history.replaceState(null, '', window.location.pathname)
-        return
       }
 
-      // If this is an invite link
-      if (type === 'invite' && (accessToken || refreshToken)) {
-        setIsProcessingInvite(true)
-        console.log('Processing invite token from URL hash')
-
-        try {
-          // Manually set the session from the hash tokens
-          const { data: { session }, error: setSessionError } = await supabase.auth.setSession({
-            access_token: accessToken!,
-            refresh_token: refreshToken!
-          })
-
-          if (setSessionError || !session) {
-            console.error('Error setting session from invite tokens:', setSessionError)
-            setError('Failed to process invite. Please try clicking the link again.')
-            setIsProcessingInvite(false)
-            // Clear the hash
-            window.history.replaceState(null, '', window.location.pathname)
-            return
-          }
-
-          const user = session.user
-          console.log('Session established for user:', user.id)
-
-          // Get user profile to determine where to route them
-          const { data: userProfile, error: profileError } = await supabase
-            .from('users')
-            .select('id, role, status')
-            .eq('auth_user_id', user.id)
-            .maybeSingle()
-
-          if (profileError || !userProfile) {
-            console.error('User profile not found:', profileError)
-            setError('Account not found. Please contact support.')
-            setIsProcessingInvite(false)
-            window.history.replaceState(null, '', window.location.pathname)
-            return
-          }
-
-          // Handle user based on their status
-          if (userProfile.status === 'invited') {
-            // First time clicking invite link - transition to onboarding
-            console.log('Transitioning user from invited to onboarding')
-            const { error: updateError } = await supabase
-              .from('users')
-              .update({ status: 'onboarding', updated_at: new Date().toISOString() })
-              .eq('id', userProfile.id)
-
-            if (updateError) {
-              console.error('Error updating user status:', updateError)
-              // Continue anyway, they can still proceed to setup
-            }
-
-            window.location.href = '/setup-account'
-            return
-          }
-
-          if (userProfile.status === 'onboarding') {
-            // User clicked link again but hasn't finished onboarding
-            window.location.href = '/setup-account'
-            return
-          }
-
-          if (userProfile.status === 'active') {
-            // User already set up, route to appropriate dashboard
-            if (userProfile.role === 'client') {
-              window.location.href = '/client/dashboard'
-            } else {
-              window.location.href = '/'
-            }
-            return
-          }
-
-          // Handle inactive or other statuses
-          console.error('User has invalid status:', userProfile.status)
-          setError('Account is not accessible. Please contact support.')
-          setIsProcessingInvite(false)
-          window.history.replaceState(null, '', window.location.pathname)
-
-        } catch (err: any) {
-          console.error('Error processing invite:', err)
-          setError(err.message || 'Failed to process invite')
-          setIsProcessingInvite(false)
-          window.history.replaceState(null, '', window.location.pathname)
-        }
-      }
+      window.history.replaceState(null, '', window.location.pathname)
     }
-
-    handleInviteToken()
-  }, [supabase, router])
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -148,122 +78,109 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      // Sign in with Supabase
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      const { data: signInData, error: signInError } = await signInWithPassword(email, password)
 
-      if (signInError) throw signInError
+      if (signInError || !signInData) {
+        throw new Error(signInError || 'Invalid login credentials')
+      }
 
-      // Get user profile to check role and agency
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('role, status, agency_id')
-        .eq('auth_user_id', data.user.id)
-        .single()
+      const accessToken = signInData.access_token
+      const refreshToken = signInData.refresh_token
 
-      if (userError) throw new Error('User profile not found')
+      const payload = decodeAndValidateJwt(accessToken)
+      if (!payload) {
+        throw new Error('Invalid token received')
+      }
 
-      // Get the user's agency info to check if they have a white-label domain
-      const { data: userAgency, error: agencyError } = await supabase
-        .from('agencies')
-        .select('whitelabel_domain')
-        .eq('id', userData.agency_id)
-        .single()
+      const authUserId = payload.sub
 
-      if (agencyError) throw new Error('Agency not found')
+      const { data: users, error: userError } = await supabaseRestFetch<UserProfile[]>(
+        `/rest/v1/users?auth_user_id=eq.${authUserId}&select=role,status,agency_id`,
+        { accessToken }
+      )
 
-      // Check if we're on localhost (for testing purposes)
+      if (userError || !users?.[0]) {
+        throw new Error('User profile not found')
+      }
+
+      const userData = users[0]
+
+      const { data: agencies, error: agencyError } = await supabaseRestFetch<AgencyInfo[]>(
+        `/rest/v1/agencies?id=eq.${userData.agency_id}&select=whitelabel_domain`,
+        { accessToken }
+      )
+
+      if (agencyError || !agencies?.[0]) {
+        throw new Error('Agency not found')
+      }
+
+      const userAgency = agencies[0]
+
       const isLocalhost = typeof window !== 'undefined' &&
         (window.location.hostname === 'localhost' ||
          window.location.hostname === '127.0.0.1' ||
          window.location.hostname.includes('localhost'))
 
-      // Skip domain restrictions on localhost for testing
       if (!isLocalhost) {
-        // If this is a white-labeled domain, verify user belongs to this agency
         if (isWhiteLabel && branding) {
           if (userData.agency_id !== branding.id) {
-            await supabase.auth.signOut()
             throw new Error('No account found with these credentials')
           }
         }
 
-        // If this is the default domain (not white-labeled), block users from white-labeled agencies
         if (!isWhiteLabel && userAgency.whitelabel_domain) {
-          await supabase.auth.signOut()
           throw new Error('No account found with these credentials')
         }
       }
 
-      // Handle different user statuses
       if (userData.status === 'invited') {
-        await supabase.auth.signOut()
         throw new Error('Please check your email and click the invite link to complete account setup')
       }
 
+      if (userData.status === 'inactive') {
+        throw new Error('Your account has been deactivated')
+      }
+
+      if (userData.status !== 'active' && userData.status !== 'onboarding') {
+        throw new Error('Account status is invalid. Please contact support.')
+      }
+
+      try {
+        await withTimeout(
+          supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          })
+        )
+      } catch {
+        localStorage.setItem(TOKEN_STORAGE_KEYS.LOGIN_ACCESS, accessToken)
+        localStorage.setItem(TOKEN_STORAGE_KEYS.LOGIN_REFRESH, refreshToken)
+      }
+
       if (userData.status === 'onboarding') {
-        // User has set password but hasn't completed Phase 2 onboarding
-        // Redirect to dashboard where onboarding wizard will show
         if (userData.role === 'client') {
           window.location.href = '/client/dashboard'
         } else {
           window.location.href = '/'
         }
-        return
-      }
-
-      if (userData.status === 'inactive') {
-        await supabase.auth.signOut()
-        throw new Error('Your account has been deactivated')
-      }
-
-      if (userData.status !== 'active') {
-        await supabase.auth.signOut()
-        throw new Error('Account status is invalid. Please contact support.')
-      }
-
-      // Route based on role
-      // Use window.location.href to force a full page reload with the new auth state
-      // This ensures cookies are properly set before the redirect on Vercel
-      if (userData.role === 'client') {
+      } else if (userData.role === 'client') {
         window.location.href = '/client/dashboard'
       } else {
         window.location.href = '/'
       }
-    } catch (err: any) {
-      setError(err.message || "Login failed")
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Login failed'
+      setError(errorMessage)
     } finally {
       setSubmitting(false)
     }
   }
 
-  // Show loading state while processing invite
-  if (isProcessingInvite) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-foreground mx-auto mb-4"></div>
-          <p className="text-lg text-foreground">Processing your invitation...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Determine display name and logo based on white-label status
   const displayName = isWhiteLabel && branding ? branding.display_name : 'AgentSpace'
   const logoUrl = isWhiteLabel && branding ? branding.logo_url : null
 
-  // Debug logging for top-left display
-  console.log('[Login] isWhiteLabel:', isWhiteLabel)
-  console.log('[Login] branding:', branding)
-  console.log('[Login] displayName:', displayName)
-  console.log('[Login] logoUrl:', logoUrl)
-
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      {/* Top left logo/name - always show either agency or AgentSpace branding */}
       <div className="absolute top-6 left-6 flex items-center gap-2">
         {logoUrl ? (
           <img
@@ -285,96 +202,92 @@ export default function LoginPage() {
 
       <div className="flex items-center justify-center flex-1">
         <div className="flex w-full max-w-3xl rounded-md shadow-lg overflow-hidden border border-border">
-          {/* Left: Form */}
           <div className="w-3/5 bg-card p-10 flex flex-col justify-center">
             <h2 className="text-3xl font-bold mb-6 text-foreground">Log In</h2>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block font-semibold mb-1 text-foreground" htmlFor="email">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                className="w-full px-4 py-2 rounded-lg border border-input focus:outline-none focus:ring-2 focus:ring-ring text-foreground bg-background"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold mb-1 text-foreground" htmlFor="password">
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                className="w-full px-4 py-2 rounded-lg border border-input focus:outline-none focus:ring-2 focus:ring-ring text-foreground bg-background"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-              />
-            </div>
-            {error && (
-              <div className="text-destructive text-sm bg-destructive/10 p-3 rounded-lg border border-destructive/20">{error}</div>
-            )}
-            <button
-              type="submit"
-              className="w-full py-2 rounded-md bg-foreground text-background font-semibold text-lg hover:bg-foreground/90 transition disabled:opacity-60"
-              disabled={submitting}
-            >
-              {submitting ? 'Signing in...' : 'Sign In'}
-            </button>
-            <button
-              type="button"
-              className="w-full py-2 rounded-md border border-border text-foreground font-semibold hover:bg-accent transition"
-              onClick={() => router.push('/reset-password')}
-            >
-              Forgot Password?
-            </button>
-            <button
-              type="button"
-              className="w-full py-2 rounded-md bg-secondary text-secondary-foreground font-semibold hover:bg-secondary/80 transition"
-              onClick={() => router.push('/register')}
-            >
-              Create Admin Account
-            </button>
-          </form>
-        </div>
-        {/* Right: Logo/Brand */}
-        <div className="w-2/5 bg-foreground flex flex-col items-center justify-center p-6 relative">
-          {brandingLoading ? (
-            // Loading skeleton for right panel
-            <div className="flex flex-col items-center justify-center space-y-4">
-              <div className="w-48 h-48 bg-background/10 rounded-lg animate-pulse" />
-            </div>
-          ) : (
-            <>
-              {logoUrl ? (
-                <img
-                  src={logoUrl}
-                  alt={`${displayName} logo`}
-                  className="max-w-[200px] max-h-[200px] object-contain"
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block font-semibold mb-1 text-foreground" htmlFor="email">
+                  Email
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  className="w-full px-4 py-2 rounded-lg border border-input focus:outline-none focus:ring-2 focus:ring-ring text-foreground bg-background"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
                 />
-              ) : (
-                <span className="text-5xl font-extrabold text-background select-none text-center" style={{ fontFamily: 'Times New Roman, serif' }}>
-                  {displayName}
-                </span>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1 text-foreground" htmlFor="password">
+                  Password
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  className="w-full px-4 py-2 rounded-lg border border-input focus:outline-none focus:ring-2 focus:ring-ring text-foreground bg-background"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                />
+              </div>
+              {error && (
+                <div className="text-destructive text-sm bg-destructive/10 p-3 rounded-lg border border-destructive/20">{error}</div>
               )}
+              <button
+                type="submit"
+                className="w-full py-2 rounded-md bg-foreground text-background font-semibold text-lg hover:bg-foreground/90 transition disabled:opacity-60"
+                disabled={submitting}
+              >
+                {submitting ? 'Signing in...' : 'Sign In'}
+              </button>
+              <button
+                type="button"
+                className="w-full py-2 rounded-md border border-border text-foreground font-semibold hover:bg-accent transition"
+                onClick={() => router.push('/reset-password')}
+              >
+                Forgot Password?
+              </button>
+              <button
+                type="button"
+                className="w-full py-2 rounded-md bg-secondary text-secondary-foreground font-semibold hover:bg-secondary/80 transition"
+                onClick={() => router.push('/register')}
+              >
+                Create Admin Account
+              </button>
+            </form>
+          </div>
+          <div className="w-2/5 bg-foreground flex flex-col items-center justify-center p-6 relative">
+            {brandingLoading ? (
+              <div className="flex flex-col items-center justify-center space-y-4">
+                <div className="w-48 h-48 bg-background/10 rounded-lg animate-pulse" />
+              </div>
+            ) : (
+              <>
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt={`${displayName} logo`}
+                    className="max-w-[200px] max-h-[200px] object-contain"
+                  />
+                ) : (
+                  <span className="text-5xl font-extrabold text-background select-none text-center" style={{ fontFamily: 'Times New Roman, serif' }}>
+                    {displayName}
+                  </span>
+                )}
 
-              {/* Powered by AgentSpace for white-label domains */}
-              {isWhiteLabel && (
-                <div className="absolute bottom-4 left-0 right-0 text-center">
-                  <p className="text-xs text-background/60">
-                    Powered by <span className="font-semibold">AgentSpace</span>
-                  </p>
-                </div>
-              )}
-            </>
-          )}
+                {isWhiteLabel && (
+                  <div className="absolute bottom-4 left-0 right-0 text-center">
+                    <p className="text-xs text-background/60">
+                      Powered by <span className="font-semibold">AgentSpace</span>
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>

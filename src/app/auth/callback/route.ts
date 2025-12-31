@@ -10,11 +10,13 @@ export async function GET(request: NextRequest) {
   const code = requestUrl.searchParams.get('code')
   const error = requestUrl.searchParams.get('error')
   const errorDescription = requestUrl.searchParams.get('error_description')
+  const next = requestUrl.searchParams.get('next') // Custom redirect after auth
+  const agencyId = requestUrl.searchParams.get('agency_id') // For white-label redirect
 
   console.log('=== Auth Callback Debug ===')
   console.log('Full URL:', requestUrl.href)
   console.log('Search params:', requestUrl.searchParams.toString())
-  console.log('Parsed params:', { token: !!token, tokenHash: !!tokenHash, type, code: !!code, error })
+  console.log('Parsed params:', { token: !!token, tokenHash: !!tokenHash, type, code: !!code, error, next, agencyId })
   console.log('========================')
 
   // Handle error from Supabase
@@ -107,7 +109,7 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  // If we have a code, exchange it for a session (OAuth flow)
+  // If we have a code, exchange it for a session (OAuth/PKCE flow)
   if (code) {
     const supabase = await createServerClient()
 
@@ -126,6 +128,16 @@ export async function GET(request: NextRequest) {
     if (userError || !user) {
       console.error('Error getting user after exchange:', userError)
       return NextResponse.redirect(`${requestUrl.origin}/login`)
+    }
+
+    // If 'next' parameter is specified (e.g., for password recovery), redirect there
+    // Password recovery flow: session is established, now let user set new password
+    if (next === '/forgot-password') {
+      console.log('Password recovery flow - redirecting to forgot-password')
+      const redirectUrl = agencyId
+        ? `${requestUrl.origin}/forgot-password?agency_id=${agencyId}`
+        : `${requestUrl.origin}/forgot-password`
+      return NextResponse.redirect(redirectUrl)
     }
 
     // Get user profile to determine where to route them

@@ -273,6 +273,59 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // AI Processing - fail silently if errors occur
+      try {
+        // Import AI processing function
+        const { processAIMessage } = await import('@/lib/ai-sms-agent');
+        const { getConversationIfExists } = await import('@/lib/sms-helpers');
+
+        // Only process if conversation exists (conservative approach)
+        const existingConversation = await getConversationIfExists(
+          agent.id,
+          deal.id,
+          agent.agency_id,
+          normalizedClientPhone
+        );
+
+        if (existingConversation) {
+          // Fetch complete agent data for AI processing
+          const { createAdminClient } = await import('@/lib/supabase/server');
+          const supabase = createAdminClient();
+
+          const { data: fullAgent } = await supabase
+            .from('users')
+            .select('id, subscription_tier, agency_id, phone_number, first_name, last_name')
+            .eq('id', agent.id)
+            .single();
+
+          if (fullAgent) {
+            const result = await processAIMessage(
+              existingConversation,
+              messageText,
+              {
+                id: fullAgent.id,
+                subscription_tier: fullAgent.subscription_tier || 'free',
+                agency_id: fullAgent.agency_id,
+                phone_number: fullAgent.phone_number,
+                first_name: fullAgent.first_name,
+                last_name: fullAgent.last_name
+              },
+              deal
+            );
+
+            console.log('AI Processing result:', {
+              success: result.success,
+              action: result.action,
+              reason: result.reason,
+              processingTimeMs: result.processingTimeMs
+            });
+          }
+        }
+      } catch (error) {
+        console.error('AI processing failed silently:', error);
+        // Continue webhook processing normally - never let AI errors break the webhook
+      }
+
       return NextResponse.json({
         success: true,
         message: 'Message processed'

@@ -10,7 +10,7 @@
     "setup:browsers": "npx playwright install",
     "test:browsers": "npx playwright --version && echo 'Browsers check: OK'",
     "fix:browsers": "npx playwright install --force",
-    "test:nipr:hyperagent": "npx tsx --env-file=.env scripts/test-nipr-hyperagent.ts"
+    "test:sms-agent": "npx tsx scripts/test-sms-agent.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",

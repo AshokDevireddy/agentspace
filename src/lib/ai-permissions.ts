@@ -154,6 +154,32 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
     scope: 'agency',
     description: 'Create charts from already-retrieved data (no new data access)'
   },
+
+  // New tools added for feature parity with dashboard
+  get_carrier_resources: {
+    scope: 'agency',
+    description: 'Carrier contact info and resources (agency-wide reference data)'
+  },
+  get_user_profile: {
+    scope: 'self_only',
+    description: 'User profile and subscription info (own data only)'
+  },
+  get_lead_source_analytics: {
+    scope: 'self_and_downline',
+    description: 'Lead source analytics for user and downline'
+  },
+  get_production_trends: {
+    scope: 'self_and_downline',
+    description: 'Production trend data for user and downline'
+  },
+  get_carrier_distribution: {
+    scope: 'self_and_downline',
+    description: 'Carrier distribution for user and downline'
+  },
+  get_analytics_snapshot: {
+    scope: 'self_and_downline',
+    description: 'Analytics snapshot for user and downline'
+  },
 };
 
 // Result of permission check

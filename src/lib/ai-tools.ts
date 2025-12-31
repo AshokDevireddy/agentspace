@@ -2,6 +2,157 @@ import { createServerClient } from '@/lib/supabase/server';
 import { UserContext } from '@/lib/ai-permissions';
 import { generateVisualization, VisualizationInput } from '@/lib/ai-visualization-tool';
 
+// Levenshtein distance for client-side fuzzy matching (small datasets like carriers)
+function levenshteinDistance(str1: string, str2: string): number {
+  const m = str1.length;
+  const n = str2.length;
+  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (str1[i - 1] === str2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+  }
+  return dp[m][n];
+}
+
+// Calculate similarity score (0.0 to 1.0) based on Levenshtein distance
+function calculateSimilarity(str1: string, str2: string): number {
+  if (!str1 || !str2) return 0;
+  if (str1 === str2) return 1;
+
+  const longer = str1.length > str2.length ? str1 : str2;
+  const shorter = str1.length > str2.length ? str2 : str1;
+
+  if (longer.length === 0) return 1;
+
+  const distance = levenshteinDistance(longer, shorter);
+  return (longer.length - distance) / longer.length;
+}
+
+// Format fuzzy search suggestions for response
+function formatSuggestionMessage(query: string, suggestions: Array<{ name: string }>): string {
+  if (suggestions.length === 0) return '';
+  const names = suggestions.slice(0, 3).map(s => s.name).join(', ');
+  return `No exact match for "${query}". Did you mean: ${names}?`;
+}
+
+// Static carrier resources data (from resources page)
+const CARRIER_RESOURCES: Record<string, {
+  name: string;
+  phone?: string;
+  fax?: string;
+  email?: string;
+  support_hours?: string;
+  website_url?: string;
+  portal_url?: string;
+  address?: string;
+  notes?: string[];
+}> = {
+  'american-amicable': {
+    name: 'American Amicable Group',
+    phone: '(800) 736-7311',
+    fax: '(254) 297-2100',
+    support_hours: 'Mon-Fri | 8am-4pm CT',
+    website_url: 'https://www.americanamicable.com',
+    portal_url: 'https://www.americanamicable.com/agent-portal',
+    notes: ['Not available in NY']
+  },
+  'american-home-life': {
+    name: 'American Home Life Insurance Company',
+    phone: '(800) 756-1245',
+    support_hours: 'Mon-Fri | 8am-5pm CT',
+    portal_url: 'https://www.amhomelife.com/ahlcas/login',
+  },
+  'americo': {
+    name: 'Americo',
+    phone: '(800) 231-0801',
+    support_hours: 'Mon-Fri | 7am-6pm CT',
+    website_url: 'https://www.americo.com',
+    portal_url: 'https://agent.americo.com',
+  },
+  'foresters': {
+    name: 'Foresters Financial',
+    phone: '(800) 828-1540',
+    support_hours: 'Mon-Fri | 8am-8pm ET',
+    website_url: 'https://www.foresters.com',
+    portal_url: 'https://www.foresters.com/en-us/agents',
+  },
+  'legal-general': {
+    name: 'Legal & General',
+    phone: '(800) 555-5555',
+    website_url: 'https://www.lgamerica.com',
+    portal_url: 'https://www.lgamerica.com/agents',
+  },
+  'mutual-omaha': {
+    name: 'Mutual of Omaha',
+    phone: '(800) 775-6000',
+    support_hours: 'Mon-Fri | 7am-6pm CT',
+    website_url: 'https://www.mutualofomaha.com',
+    portal_url: 'https://producer.mutualofomaha.com',
+  },
+  'national-life': {
+    name: 'National Life Group',
+    phone: '(800) 732-8939',
+    support_hours: 'Mon-Fri | 8am-6pm ET',
+    website_url: 'https://www.nationallife.com',
+    portal_url: 'https://www.nationallife.com/producers',
+  },
+  'sbli': {
+    name: 'SBLI',
+    phone: '(888) 438-7254',
+    support_hours: 'Mon-Fri | 8am-5pm ET',
+    website_url: 'https://www.sbli.com',
+    portal_url: 'https://www.sbli.com/agents',
+  },
+  'transamerica': {
+    name: 'Transamerica',
+    phone: '(800) 851-7555',
+    support_hours: 'Mon-Fri | 8am-6pm CT',
+    website_url: 'https://www.transamerica.com',
+    portal_url: 'https://www.transamerica.com/agents',
+  },
+  'united-home-life': {
+    name: 'United Home Life Insurance Company',
+    phone: '(800) 234-2040',
+    support_hours: 'Mon-Fri | 8am-4:30pm ET',
+    website_url: 'https://www.unitedhomelife.com',
+    portal_url: 'https://www.unitedhomelife.com/agent-login',
+  },
+  'corebridge': {
+    name: 'Corebridge Financial',
+    phone: '(800) 448-2542',
+    website_url: 'https://www.corebridgefinancial.com',
+    portal_url: 'https://www.corebridgefinancial.com/producers',
+  },
+  'ethos': {
+    name: 'Ethos',
+    phone: '(415) 322-8642',
+    website_url: 'https://www.ethoslife.com',
+    portal_url: 'https://agents.ethoslife.com',
+  },
+  'fg-annuities': {
+    name: 'F&G Annuities & Life',
+    phone: '(888) 513-8797',
+    website_url: 'https://www.fglife.com',
+    portal_url: 'https://www.fglife.com/agents',
+  },
+  'liberty-bankers': {
+    name: 'Liberty Bankers Life',
+    phone: '(800) 543-0443',
+    support_hours: 'Mon-Fri | 8am-5pm CT',
+    website_url: 'https://www.libertybankers.com',
+    portal_url: 'https://www.libertybankers.com/agent-portal',
+  },
+};
+
 // Get deals/policies data
 export async function getDeals(params: any, agencyId: string, allowedAgentIds?: string[]) {
   try {
@@ -497,74 +648,107 @@ export async function searchAgents(params: any, agencyId: string, allowedAgentId
       return { error: 'Search query must be at least 2 characters long' };
     }
 
-    // Sanitize search query
-    const sanitizedQuery = query.trim().replace(/[%_]/g, '\\$&');
-    const searchWords = sanitizedQuery.split(/\s+/).filter((word: string) => word.length > 0);
-
-    // Build OR conditions
-    const orConditions = [];
-    orConditions.push(`first_name.ilike.%${sanitizedQuery}%`);
-    orConditions.push(`last_name.ilike.%${sanitizedQuery}%`);
-    orConditions.push(`email.ilike.%${sanitizedQuery}%`);
-
-    if (searchWords.length > 1) {
-      for (const word of searchWords) {
-        const sanitizedWord = word.replace(/[%_]/g, '\\$&');
-        orConditions.push(`first_name.ilike.%${sanitizedWord}%`);
-        orConditions.push(`last_name.ilike.%${sanitizedWord}%`);
-        orConditions.push(`email.ilike.%${sanitizedWord}%`);
-      }
-    }
-
-    let searchQuery = supabase
-      .from('users')
-      .select('id, first_name, last_name, email, status, total_prod, total_policies_sold')
-      .eq('agency_id', agencyId)
-      .neq('role', 'client')
-      .or(orConditions.join(','))
-      .order('last_name', { ascending: true })
-      .limit(limit);
-
-    // PERMISSION FILTER: Only search within allowed agents
-    if (allowedAgentIds && allowedAgentIds.length > 0) {
-      searchQuery = searchQuery.in('id', allowedAgentIds);
-    }
-
-    const { data: agents, error } = await searchQuery;
+    // Use fuzzy RPC function for similarity-based search
+    const { data, error } = await supabase.rpc('search_agents_fuzzy', {
+      p_query: query.trim(),
+      p_agency_id: agencyId,
+      p_allowed_agent_ids: allowedAgentIds?.length ? allowedAgentIds : null,
+      p_limit: limit,
+      p_similarity_threshold: 0.3
+    });
 
     if (error) {
-      console.error('Error searching agents:', error);
-      throw new Error('Failed to search agents');
+      console.error('Fuzzy search error:', error);
+      // Fallback to basic ILIKE search if RPC fails
+      return await searchAgentsFallback(params, agencyId, allowedAgentIds);
     }
 
-    // Filter multi-word searches client-side
-    let filteredAgents = agents || [];
-    if (searchWords.length > 1) {
-      filteredAgents = filteredAgents.filter(agent => {
-        const fullName = `${agent.first_name} ${agent.last_name}`.toLowerCase();
-        const email = agent.email ? agent.email.toLowerCase() : '';
-        const queryLower = sanitizedQuery.toLowerCase();
+    // Categorize results
+    const exactMatches = data?.filter((r: any) => r.match_type === 'exact' || r.match_type === 'fuzzy') || [];
+    const suggestions = data?.filter((r: any) => r.match_type === 'suggestion') || [];
 
-        if (fullName.includes(queryLower) || email.includes(queryLower)) {
-          return true;
-        }
+    // Format results
+    const agents = exactMatches.map((a: any) => ({
+      id: a.id,
+      name: `${a.first_name || ''} ${a.last_name || ''}`.trim(),
+      first_name: a.first_name,
+      last_name: a.last_name,
+      email: a.email,
+      total_production: a.total_prod || 0,
+      similarity_score: a.similarity_score
+    }));
 
-        return searchWords.every((word: string) => {
-          const wordLower = word.toLowerCase();
-          return fullName.includes(wordLower) || email.includes(wordLower);
-        });
-      });
-    }
-
-    return {
-      agents: filteredAgents.slice(0, limit),
-      count: filteredAgents.length,
-      query: query
+    // Build response with suggestions if no direct matches
+    const response: any = {
+      agents,
+      count: agents.length,
+      query: query.trim()
     };
+
+    if (agents.length === 0 && suggestions.length > 0) {
+      response.no_exact_match = true;
+      response.suggestions = suggestions.slice(0, 5).map((s: any) => ({
+        id: s.id,
+        name: `${s.first_name || ''} ${s.last_name || ''}`.trim(),
+        email: s.email,
+        similarity_score: s.similarity_score
+      }));
+      response.suggestion_message = formatSuggestionMessage(
+        query.trim(),
+        suggestions.slice(0, 3).map((s: any) => ({
+          name: `${s.first_name || ''} ${s.last_name || ''}`.trim()
+        }))
+      );
+    }
+
+    return response;
   } catch (error) {
     console.error('Search agents error:', error);
     return { error: 'Failed to search agents' };
   }
+}
+
+// Fallback to basic ILIKE search if RPC fails
+async function searchAgentsFallback(params: any, agencyId: string, allowedAgentIds?: string[]) {
+  const supabase = await createServerClient();
+  const query = params.query || '';
+  const limit = params.limit || 20;
+  const sanitizedQuery = query.trim().replace(/[%_]/g, '\\$&');
+
+  const orConditions = [
+    `first_name.ilike.%${sanitizedQuery}%`,
+    `last_name.ilike.%${sanitizedQuery}%`,
+    `email.ilike.%${sanitizedQuery}%`
+  ];
+
+  let searchQuery = supabase
+    .from('users')
+    .select('id, first_name, last_name, email, total_prod')
+    .eq('agency_id', agencyId)
+    .neq('role', 'client')
+    .or(orConditions.join(','))
+    .limit(limit);
+
+  if (allowedAgentIds && allowedAgentIds.length > 0) {
+    searchQuery = searchQuery.in('id', allowedAgentIds);
+  }
+
+  const { data: agents, error } = await searchQuery;
+
+  if (error) {
+    return { error: 'Failed to search agents' };
+  }
+
+  return {
+    agents: (agents || []).map((a: any) => ({
+      id: a.id,
+      name: `${a.first_name || ''} ${a.last_name || ''}`.trim(),
+      email: a.email,
+      total_production: a.total_prod || 0
+    })),
+    count: agents?.length || 0,
+    query: query.trim()
+  };
 }
 
 // Fuzzy search for clients
@@ -578,72 +762,107 @@ export async function searchClients(params: any, agencyId: string, allowedAgentI
       return { error: 'Search query must be at least 2 characters long' };
     }
 
-    // Sanitize search query
-    const sanitizedQuery = query.trim().replace(/[%_]/g, '\\$&');
-    const searchWords = sanitizedQuery.split(/\s+/).filter((word: string) => word.length > 0);
-
-    // Build OR conditions
-    const orConditions = [];
-    orConditions.push(`first_name.ilike.%${sanitizedQuery}%`);
-    orConditions.push(`last_name.ilike.%${sanitizedQuery}%`);
-    orConditions.push(`email.ilike.%${sanitizedQuery}%`);
-    orConditions.push(`phone_number.ilike.%${sanitizedQuery}%`);
-
-    if (searchWords.length > 1) {
-      for (const word of searchWords) {
-        const sanitizedWord = word.replace(/[%_]/g, '\\$&');
-        orConditions.push(`first_name.ilike.%${sanitizedWord}%`);
-        orConditions.push(`last_name.ilike.%${sanitizedWord}%`);
-        orConditions.push(`email.ilike.%${sanitizedWord}%`);
-        orConditions.push(`phone_number.ilike.%${sanitizedWord}%`);
-      }
-    }
-
-    let searchQuery = supabase
-      .from('users')
-      .select('id, first_name, last_name, email, phone_number, status')
-      .eq('agency_id', agencyId)
-      .eq('role', 'client')
-      .or(orConditions.join(','))
-      .order('last_name', { ascending: true })
-      .limit(limit);
-
-    const { data: clients, error } = await searchQuery;
+    // Use fuzzy RPC function for similarity-based search
+    const { data, error } = await supabase.rpc('search_clients_fuzzy', {
+      p_query: query.trim(),
+      p_agency_id: agencyId,
+      p_allowed_agent_ids: allowedAgentIds?.length ? allowedAgentIds : null,
+      p_limit: limit,
+      p_similarity_threshold: 0.3
+    });
 
     if (error) {
-      console.error('Error searching clients:', error);
-      throw new Error('Failed to search clients');
+      console.error('Fuzzy search error:', error);
+      // Fallback to basic ILIKE search if RPC fails
+      return await searchClientsFallback(params, agencyId, allowedAgentIds);
     }
 
-    // Filter multi-word searches client-side
-    let filteredClients = clients || [];
-    if (searchWords.length > 1) {
-      filteredClients = filteredClients.filter(client => {
-        const fullName = `${client.first_name} ${client.last_name}`.toLowerCase();
-        const email = client.email ? client.email.toLowerCase() : '';
-        const phone = client.phone_number ? client.phone_number.toLowerCase() : '';
-        const queryLower = sanitizedQuery.toLowerCase();
+    // Categorize results
+    const exactMatches = data?.filter((r: any) => r.match_type === 'exact' || r.match_type === 'fuzzy') || [];
+    const suggestions = data?.filter((r: any) => r.match_type === 'suggestion') || [];
 
-        if (fullName.includes(queryLower) || email.includes(queryLower) || phone.includes(queryLower)) {
-          return true;
-        }
+    // Format results
+    const clients = exactMatches.map((c: any) => ({
+      id: c.id,
+      name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+      first_name: c.first_name,
+      last_name: c.last_name,
+      email: c.email,
+      phone_number: c.phone_number,
+      similarity_score: c.similarity_score
+    }));
 
-        return searchWords.every((word: string) => {
-          const wordLower = word.toLowerCase();
-          return fullName.includes(wordLower) || email.includes(wordLower) || phone.includes(wordLower);
-        });
-      });
-    }
-
-    return {
-      clients: filteredClients.slice(0, limit),
-      count: filteredClients.length,
-      query: query
+    // Build response with suggestions if no direct matches
+    const response: any = {
+      clients,
+      count: clients.length,
+      query: query.trim()
     };
+
+    if (clients.length === 0 && suggestions.length > 0) {
+      response.no_exact_match = true;
+      response.suggestions = suggestions.slice(0, 5).map((s: any) => ({
+        id: s.id,
+        name: `${s.first_name || ''} ${s.last_name || ''}`.trim(),
+        email: s.email,
+        similarity_score: s.similarity_score
+      }));
+      response.suggestion_message = formatSuggestionMessage(
+        query.trim(),
+        suggestions.slice(0, 3).map((s: any) => ({
+          name: `${s.first_name || ''} ${s.last_name || ''}`.trim()
+        }))
+      );
+    }
+
+    return response;
   } catch (error) {
     console.error('Search clients error:', error);
     return { error: 'Failed to search clients' };
   }
+}
+
+// Fallback to basic ILIKE search if RPC fails
+async function searchClientsFallback(params: any, agencyId: string, allowedAgentIds?: string[]) {
+  const supabase = await createServerClient();
+  const query = params.query || '';
+  const limit = params.limit || 20;
+  const sanitizedQuery = query.trim().replace(/[%_]/g, '\\$&');
+
+  const orConditions = [
+    `first_name.ilike.%${sanitizedQuery}%`,
+    `last_name.ilike.%${sanitizedQuery}%`,
+    `email.ilike.%${sanitizedQuery}%`,
+    `phone_number.ilike.%${sanitizedQuery}%`
+  ];
+
+  let searchQuery = supabase
+    .from('clients')
+    .select('id, first_name, last_name, email, phone_number')
+    .eq('agency_id', agencyId)
+    .or(orConditions.join(','))
+    .limit(limit);
+
+  if (allowedAgentIds && allowedAgentIds.length > 0) {
+    searchQuery = searchQuery.in('supporting_agent_id', allowedAgentIds);
+  }
+
+  const { data: clients, error } = await searchQuery;
+
+  if (error) {
+    return { error: 'Failed to search clients' };
+  }
+
+  return {
+    clients: (clients || []).map((c: any) => ({
+      id: c.id,
+      name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+      email: c.email,
+      phone_number: c.phone_number
+    })),
+    count: clients?.length || 0,
+    query: query.trim()
+  };
 }
 
 // Fuzzy search for policies/deals
@@ -657,49 +876,128 @@ export async function searchPolicies(params: any, agencyId: string, allowedAgent
       return { error: 'Search query must be at least 2 characters long' };
     }
 
-    // Sanitize search query
-    const sanitizedQuery = query.trim().replace(/[%_]/g, '\\$&');
-
-    let searchQuery = supabase
-      .from('deals')
-      .select(`
-        id,
-        policy_number,
-        application_number,
-        client_name,
-        client_phone,
-        annual_premium,
-        status,
-        agent:users!deals_agent_id_fkey(id, first_name, last_name),
-        carrier:carriers(id, display_name),
-        product:products(id, name)
-      `)
-      .eq('agency_id', agencyId)
-      .or(`policy_number.ilike.%${sanitizedQuery}%,application_number.ilike.%${sanitizedQuery}%,client_name.ilike.%${sanitizedQuery}%`)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    // PERMISSION FILTER: Only search policies for allowed agents
-    if (allowedAgentIds && allowedAgentIds.length > 0) {
-      searchQuery = searchQuery.in('agent_id', allowedAgentIds);
-    }
-
-    const { data: deals, error } = await searchQuery;
+    // Use fuzzy RPC function for similarity-based search
+    const { data, error } = await supabase.rpc('search_policies_fuzzy', {
+      p_query: query.trim(),
+      p_agency_id: agencyId,
+      p_allowed_agent_ids: allowedAgentIds?.length ? allowedAgentIds : null,
+      p_limit: limit,
+      p_similarity_threshold: 0.3
+    });
 
     if (error) {
-      console.error('Error searching policies:', error);
-      throw new Error('Failed to search policies');
+      console.error('Fuzzy search error:', error);
+      // Fallback to basic ILIKE search if RPC fails
+      return await searchPoliciesFallback(params, agencyId, allowedAgentIds);
     }
 
-    return {
-      policies: deals || [],
-      count: deals?.length || 0,
-      query: query
+    // Categorize results
+    const exactMatches = data?.filter((r: any) => r.match_type === 'exact' || r.match_type === 'fuzzy') || [];
+    const suggestions = data?.filter((r: any) => r.match_type === 'suggestion') || [];
+
+    // Format results - need to fetch full details for matched policies
+    const policyIds = exactMatches.map((p: any) => p.id);
+    let policies: any[] = [];
+
+    if (policyIds.length > 0) {
+      const { data: fullPolicies, error: detailsError } = await supabase
+        .from('deals')
+        .select(`
+          id,
+          policy_number,
+          application_number,
+          client_name,
+          client_phone,
+          annual_premium,
+          status,
+          agent:users!deals_agent_id_fkey(id, first_name, last_name),
+          carrier:carriers(id, display_name),
+          product:products(id, name)
+        `)
+        .in('id', policyIds);
+
+      if (!detailsError && fullPolicies) {
+        policies = fullPolicies.map((p: any) => ({
+          ...p,
+          similarity_score: exactMatches.find((m: any) => m.id === p.id)?.similarity_score
+        }));
+      }
+    }
+
+    // Build response with suggestions if no direct matches
+    const response: any = {
+      policies,
+      count: policies.length,
+      query: query.trim()
     };
+
+    if (policies.length === 0 && suggestions.length > 0) {
+      response.no_exact_match = true;
+      response.suggestions = suggestions.slice(0, 5).map((s: any) => ({
+        id: s.id,
+        policy_number: s.policy_number,
+        application_number: s.application_number,
+        client_name: s.client_name,
+        similarity_score: s.similarity_score
+      }));
+      response.suggestion_message = formatSuggestionMessage(
+        query.trim(),
+        suggestions.slice(0, 3).map((s: any) => ({
+          name: s.client_name || s.policy_number || s.application_number
+        }))
+      );
+    }
+
+    return response;
   } catch (error) {
     console.error('Search policies error:', error);
     return { error: 'Failed to search policies' };
   }
+}
+
+// Fallback to basic ILIKE search if RPC fails
+async function searchPoliciesFallback(params: any, agencyId: string, allowedAgentIds?: string[]) {
+  const supabase = await createServerClient();
+  const query = params.query || '';
+  const limit = params.limit || 20;
+  const sanitizedQuery = query.trim().replace(/[%_]/g, '\\$&');
+
+  let searchQuery = supabase
+    .from('deals')
+    .select(`
+      id,
+      policy_number,
+      application_number,
+      client_name,
+      client_phone,
+      annual_premium,
+      status,
+      agent:users!deals_agent_id_fkey(id, first_name, last_name),
+      carrier:carriers(id, display_name),
+      product:products(id, name)
+    `)
+    .eq('agency_id', agencyId)
+    .or(`policy_number.ilike.%${sanitizedQuery}%,application_number.ilike.%${sanitizedQuery}%,client_name.ilike.%${sanitizedQuery}%`)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  // PERMISSION FILTER: Only search policies for allowed agents
+  if (allowedAgentIds && allowedAgentIds.length > 0) {
+    searchQuery = searchQuery.in('agent_id', allowedAgentIds);
+  }
+
+  const { data: deals, error } = await searchQuery;
+
+  if (error) {
+    console.error('Error searching policies:', error);
+    return { error: 'Failed to search policies' };
+  }
+
+  return {
+    policies: deals || [],
+    count: deals?.length || 0,
+    query: query.trim()
+  };
 }
 
 // Get agent hierarchy with production metrics
@@ -1533,7 +1831,86 @@ export async function getClients(
   try {
     const supabase = await createServerClient();
     const limit = params.limit || 50;
+    const searchTerm = params.search?.trim();
 
+    // If search term provided, use fuzzy search for better suggestions
+    if (searchTerm && searchTerm.length >= 2) {
+      // Try fuzzy RPC first
+      const { data: fuzzyData, error: fuzzyError } = await supabase.rpc('search_clients_fuzzy', {
+        p_query: searchTerm,
+        p_agency_id: agencyId,
+        p_allowed_agent_ids: allowedAgentIds?.length ? allowedAgentIds : null,
+        p_limit: limit,
+        p_similarity_threshold: 0.3
+      });
+
+      if (!fuzzyError && fuzzyData) {
+        const exactMatches = fuzzyData.filter((r: any) => r.match_type === 'exact' || r.match_type === 'fuzzy') || [];
+        const suggestions = fuzzyData.filter((r: any) => r.match_type === 'suggestion') || [];
+
+        // Get full client details for matches
+        let clients: any[] = [];
+        if (exactMatches.length > 0) {
+          const clientIds = exactMatches.map((c: any) => c.id);
+          const { data: fullClients } = await supabase
+            .from('clients')
+            .select(`
+              id,
+              first_name,
+              last_name,
+              email,
+              phone_number,
+              status,
+              created_at,
+              supporting_agent:users!clients_supporting_agent_id_fkey(id, first_name, last_name, email)
+            `)
+            .in('id', clientIds);
+
+          if (fullClients) {
+            clients = fullClients.map((c: any) => ({
+              id: c.id,
+              name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+              email: c.email,
+              phone: c.phone_number,
+              status: c.status,
+              supporting_agent: c.supporting_agent ?
+                `${c.supporting_agent.first_name || ''} ${c.supporting_agent.last_name || ''}`.trim() : null,
+              created_at: c.created_at,
+              similarity_score: exactMatches.find((m: any) => m.id === c.id)?.similarity_score
+            }));
+          }
+        }
+
+        // Build response with suggestions if no direct matches
+        const response: any = {
+          clients,
+          count: clients.length,
+          summary: { status_breakdown: {} },
+          filters: { search: searchTerm }
+        };
+
+        if (clients.length === 0 && suggestions.length > 0) {
+          response.no_exact_match = true;
+          response.suggestions = suggestions.slice(0, 5).map((s: any) => ({
+            id: s.id,
+            name: `${s.first_name || ''} ${s.last_name || ''}`.trim(),
+            email: s.email,
+            similarity_score: s.similarity_score
+          }));
+          response.suggestion_message = formatSuggestionMessage(
+            searchTerm,
+            suggestions.slice(0, 3).map((s: any) => ({
+              name: `${s.first_name || ''} ${s.last_name || ''}`.trim()
+            }))
+          );
+        }
+
+        return response;
+      }
+      // If fuzzy RPC fails, fall through to standard query
+    }
+
+    // Standard query (no search or fuzzy failed)
     let query = supabase
       .from('clients')
       .select(`
@@ -1565,9 +1942,9 @@ export async function getClients(
       query = query.eq('supporting_agent_id', params.agent_id);
     }
 
-    if (params.search) {
-      const searchTerm = params.search.trim().replace(/[%_]/g, '\\$&');
-      query = query.or(`first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`);
+    if (searchTerm) {
+      const sanitizedSearch = searchTerm.replace(/[%_]/g, '\\$&');
+      query = query.or(`first_name.ilike.%${sanitizedSearch}%,last_name.ilike.%${sanitizedSearch}%,email.ilike.%${sanitizedSearch}%`);
     }
 
     const { data: clients, error, count } = await query.limit(limit);
@@ -1765,6 +2142,740 @@ function determineRiskReason(status: string): string {
     case 'lapsed': return 'Policy has lapsed';
     case 'billing_issue': return 'Billing issue detected';
     default: return 'Requires attention';
+  }
+}
+
+// Get carrier resources (contact info, portal URLs, support hours)
+export async function getCarrierResources(params: any, agencyId: string) {
+  try {
+    const supabase = await createServerClient();
+    const carrierNameQuery = params.carrier_name?.trim();
+
+    // Get active carriers from database
+    let carriersQuery = supabase
+      .from('carriers')
+      .select('id, name, display_name, is_active')
+      .eq('is_active', true);
+
+    if (params.carrier_id) {
+      carriersQuery = carriersQuery.eq('id', params.carrier_id);
+    }
+
+    const { data: carriers, error } = await carriersQuery;
+
+    if (error) {
+      console.error('Error fetching carriers:', error);
+      return { error: 'Failed to fetch carriers' };
+    }
+
+    // Helper to map carrier to resources
+    const mapCarrierToResources = (carrier: any) => {
+      const carrierKey = carrier.name?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      const displayKey = carrier.display_name?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+      let resources = CARRIER_RESOURCES[carrierKey] || CARRIER_RESOURCES[displayKey];
+
+      if (!resources) {
+        for (const [key, value] of Object.entries(CARRIER_RESOURCES)) {
+          if (carrierKey?.includes(key) || key.includes(carrierKey) ||
+              displayKey?.includes(key) || key.includes(displayKey)) {
+            resources = value;
+            break;
+          }
+        }
+      }
+
+      return {
+        carrier_id: carrier.id,
+        carrier_name: carrier.display_name || carrier.name,
+        phone: resources?.phone || null,
+        fax: resources?.fax || null,
+        email: resources?.email || null,
+        support_hours: resources?.support_hours || null,
+        website_url: resources?.website_url || null,
+        portal_url: resources?.portal_url || null,
+        notes: resources?.notes || null,
+        has_resources: !!resources
+      };
+    };
+
+    // If carrier name query provided, use fuzzy matching
+    if (carrierNameQuery && carrierNameQuery.length >= 2) {
+      const queryLower = carrierNameQuery.toLowerCase();
+
+      // Calculate similarity for each carrier
+      const carriersWithSimilarity = (carriers || []).map((c: any) => {
+        const nameSim = calculateSimilarity(queryLower, (c.name || '').toLowerCase());
+        const displaySim = calculateSimilarity(queryLower, (c.display_name || '').toLowerCase());
+        return {
+          ...c,
+          similarity: Math.max(nameSim, displaySim)
+        };
+      }).filter((c: any) => c.similarity > 0.3)
+        .sort((a: any, b: any) => b.similarity - a.similarity);
+
+      // Check for exact/partial matches (ILIKE behavior)
+      const directMatches = carriersWithSimilarity.filter((c: any) =>
+        c.name?.toLowerCase().includes(queryLower) ||
+        c.display_name?.toLowerCase().includes(queryLower)
+      );
+
+      if (directMatches.length > 0) {
+        // Found direct matches
+        const carrierResources = directMatches.map(mapCarrierToResources);
+        return {
+          carriers: carrierResources,
+          count: carrierResources.length,
+          query: carrierNameQuery,
+          note: 'Contact information for matching carriers.'
+        };
+      } else if (carriersWithSimilarity.length > 0) {
+        // No direct matches, but have fuzzy suggestions
+        const suggestions = carriersWithSimilarity.slice(0, 5).map((c: any) => ({
+          carrier_id: c.id,
+          carrier_name: c.display_name || c.name,
+          similarity_score: c.similarity
+        }));
+
+        return {
+          carriers: [],
+          count: 0,
+          query: carrierNameQuery,
+          no_exact_match: true,
+          suggestions,
+          suggestion_message: formatSuggestionMessage(
+            carrierNameQuery,
+            suggestions.slice(0, 3).map(s => ({ name: s.carrier_name }))
+          ),
+          note: 'No exact carrier match found. See suggestions for similar carriers.'
+        };
+      } else {
+        // No matches at all
+        return {
+          carriers: [],
+          count: 0,
+          query: carrierNameQuery,
+          no_exact_match: true,
+          note: `No carriers found matching "${carrierNameQuery}".`
+        };
+      }
+    }
+
+    // Standard case: return all carriers with resources
+    const carrierResources = (carriers || []).map(mapCarrierToResources);
+
+    // If specific carrier requested, return single result
+    if (params.carrier_id && carrierResources.length === 1) {
+      return carrierResources[0];
+    }
+
+    return {
+      carriers: carrierResources,
+      count: carrierResources.length,
+      note: 'Contact information for active carriers. Some carriers may not have all fields available.'
+    };
+  } catch (error) {
+    console.error('Get carrier resources error:', error);
+    return { error: 'Failed to get carrier resources' };
+  }
+}
+
+// Get user profile and subscription info
+export async function getUserProfile(
+  params: any,
+  agencyId: string,
+  userContext?: UserContext
+) {
+  try {
+    const supabase = await createServerClient();
+
+    if (!userContext) {
+      return { error: 'User context required' };
+    }
+
+    // Get user data
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select(`
+        id,
+        first_name,
+        last_name,
+        email,
+        role,
+        is_admin,
+        total_prod,
+        total_policies_sold,
+        subscription_tier,
+        ai_requests_count,
+        messages_sent_count,
+        deals_created_count,
+        billing_cycle_start,
+        billing_cycle_end,
+        scheduled_tier_change,
+        scheduled_tier_change_date,
+        position:positions(id, name, level)
+      `)
+      .eq('id', userContext.user_id)
+      .single();
+
+    if (userError || !userData) {
+      console.error('Error fetching user profile:', userError);
+      return { error: 'Failed to fetch user profile' };
+    }
+
+    // Get tier limits
+    const tierLimits: Record<string, { ai_requests: number; messages: number; deals: number }> = {
+      free: { ai_requests: 0, messages: 0, deals: 10 },
+      starter: { ai_requests: 0, messages: 100, deals: 50 },
+      pro: { ai_requests: 0, messages: 500, deals: 200 },
+      expert: { ai_requests: 50, messages: 1000, deals: 500 }
+    };
+
+    const currentTier = userData.subscription_tier || 'free';
+    const limits = tierLimits[currentTier] || tierLimits.free;
+
+    // Calculate days until billing cycle reset
+    let daysUntilReset = null;
+    if (userData.billing_cycle_end) {
+      const endDate = new Date(userData.billing_cycle_end);
+      const now = new Date();
+      daysUntilReset = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    }
+
+    return {
+      profile: {
+        name: `${userData.first_name || ''} ${userData.last_name || ''}`.trim(),
+        email: userData.email,
+        role: userData.role,
+        is_admin: userData.is_admin,
+        position: userData.position ? {
+          name: (userData.position as any).name,
+          level: (userData.position as any).level
+        } : null
+      },
+      subscription: {
+        tier: currentTier,
+        billing_cycle_start: userData.billing_cycle_start,
+        billing_cycle_end: userData.billing_cycle_end,
+        days_until_reset: daysUntilReset,
+        scheduled_change: userData.scheduled_tier_change ? {
+          new_tier: userData.scheduled_tier_change,
+          change_date: userData.scheduled_tier_change_date
+        } : null
+      },
+      usage: {
+        ai_requests_used: userData.ai_requests_count || 0,
+        ai_requests_limit: limits.ai_requests,
+        ai_requests_remaining: Math.max(0, limits.ai_requests - (userData.ai_requests_count || 0)),
+        messages_sent: userData.messages_sent_count || 0,
+        messages_limit: limits.messages,
+        deals_created: userData.deals_created_count || 0,
+        deals_limit: limits.deals
+      },
+      production: {
+        total_production: userData.total_prod || 0,
+        total_policies_sold: userData.total_policies_sold || 0
+      }
+    };
+  } catch (error) {
+    console.error('Get user profile error:', error);
+    return { error: 'Failed to get user profile' };
+  }
+}
+
+// Get lead source analytics
+export async function getLeadSourceAnalytics(
+  params: any,
+  agencyId: string,
+  allowedAgentIds?: string[]
+) {
+  try {
+    const supabase = await createServerClient();
+
+    let query = supabase
+      .from('deals')
+      .select('id, lead_source, annual_premium, status_standardized, created_at')
+      .eq('agency_id', agencyId);
+
+    // Permission filter
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      query = query.in('agent_id', allowedAgentIds);
+    }
+
+    // Date range filter
+    if (params.start_date) {
+      query = query.gte('created_at', params.start_date);
+    }
+    if (params.end_date) {
+      query = query.lte('created_at', params.end_date);
+    }
+
+    // Agent filter
+    if (params.agent_id) {
+      query = query.eq('agent_id', params.agent_id);
+    }
+
+    const { data: deals, error } = await query;
+
+    if (error) {
+      console.error('Error fetching lead source data:', error);
+      return { error: 'Failed to fetch lead source analytics' };
+    }
+
+    // Aggregate by lead source
+    const leadSourceStats: Record<string, {
+      count: number;
+      active_count: number;
+      total_premium: number;
+    }> = {};
+
+    (deals || []).forEach((deal: any) => {
+      const source = deal.lead_source || 'unknown';
+      if (!leadSourceStats[source]) {
+        leadSourceStats[source] = { count: 0, active_count: 0, total_premium: 0 };
+      }
+      leadSourceStats[source].count++;
+      if (deal.status_standardized === 'active') {
+        leadSourceStats[source].active_count++;
+      }
+      leadSourceStats[source].total_premium += parseFloat(deal.annual_premium) || 0;
+    });
+
+    const totalDeals = deals?.length || 0;
+
+    // Format for response
+    const leadSources = Object.entries(leadSourceStats)
+      .map(([source, stats]) => ({
+        lead_source: source,
+        display_name: source.charAt(0).toUpperCase() + source.slice(1).replace(/-/g, ' '),
+        count: stats.count,
+        percentage: totalDeals > 0 ? ((stats.count / totalDeals) * 100).toFixed(1) : '0',
+        active_count: stats.active_count,
+        conversion_rate: stats.count > 0
+          ? ((stats.active_count / stats.count) * 100).toFixed(1)
+          : '0',
+        total_premium: stats.total_premium,
+        avg_premium: stats.count > 0 ? stats.total_premium / stats.count : 0
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    // Find top performer
+    const topSource = leadSources[0] || null;
+
+    return {
+      lead_sources: leadSources,
+      summary: {
+        total_deals: totalDeals,
+        total_sources: leadSources.length,
+        top_source: topSource ? topSource.lead_source : null,
+        top_source_percentage: topSource ? topSource.percentage : null
+      },
+      filters: {
+        start_date: params.start_date,
+        end_date: params.end_date,
+        agent_id: params.agent_id
+      }
+    };
+  } catch (error) {
+    console.error('Get lead source analytics error:', error);
+    return { error: 'Failed to get lead source analytics' };
+  }
+}
+
+// Get production trends over time
+export async function getProductionTrends(
+  params: any,
+  agencyId: string,
+  allowedAgentIds?: string[]
+) {
+  try {
+    const supabase = await createServerClient();
+
+    const timeRange = params.time_range || 'monthly'; // daily, weekly, monthly
+    const periods = params.periods || 12;
+
+    let query = supabase
+      .from('deals')
+      .select('id, annual_premium, created_at, status_standardized, agent_id')
+      .eq('agency_id', agencyId)
+      .order('created_at', { ascending: true });
+
+    // Permission filter
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      query = query.in('agent_id', allowedAgentIds);
+    }
+
+    // Agent filter
+    if (params.agent_id) {
+      query = query.eq('agent_id', params.agent_id);
+    }
+
+    // Calculate date range based on periods
+    const now = new Date();
+    let startDate: Date;
+
+    switch (timeRange) {
+      case 'daily':
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - periods);
+        break;
+      case 'weekly':
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - (periods * 7));
+        break;
+      case 'monthly':
+      default:
+        startDate = new Date(now);
+        startDate.setMonth(startDate.getMonth() - periods);
+        break;
+    }
+
+    query = query.gte('created_at', startDate.toISOString());
+
+    const { data: deals, error } = await query;
+
+    if (error) {
+      console.error('Error fetching production trends:', error);
+      return { error: 'Failed to fetch production trends' };
+    }
+
+    // Aggregate by time period
+    const trendData: Record<string, { production: number; policies_count: number; active_count: number }> = {};
+
+    (deals || []).forEach((deal: any) => {
+      const date = new Date(deal.created_at);
+      let periodKey: string;
+
+      switch (timeRange) {
+        case 'daily':
+          periodKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
+          break;
+        case 'weekly':
+          // Get ISO week
+          const startOfWeek = new Date(date);
+          startOfWeek.setDate(date.getDate() - date.getDay());
+          periodKey = startOfWeek.toISOString().split('T')[0];
+          break;
+        case 'monthly':
+        default:
+          periodKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
+          break;
+      }
+
+      if (!trendData[periodKey]) {
+        trendData[periodKey] = { production: 0, policies_count: 0, active_count: 0 };
+      }
+      trendData[periodKey].production += parseFloat(deal.annual_premium) || 0;
+      trendData[periodKey].policies_count++;
+      if (deal.status_standardized === 'active') {
+        trendData[periodKey].active_count++;
+      }
+    });
+
+    // Convert to array and sort
+    const trends = Object.entries(trendData)
+      .map(([period, data]) => ({
+        period,
+        production: data.production,
+        policies_count: data.policies_count,
+        active_count: data.active_count
+      }))
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .slice(-periods); // Limit to requested periods
+
+    // Calculate summary stats
+    const totalProduction = trends.reduce((sum, t) => sum + t.production, 0);
+    const totalPolicies = trends.reduce((sum, t) => sum + t.policies_count, 0);
+    const avgProduction = trends.length > 0 ? totalProduction / trends.length : 0;
+
+    // Calculate growth rate (compare first and last period)
+    let growthRate = null;
+    if (trends.length >= 2) {
+      const firstPeriod = trends[0].production;
+      const lastPeriod = trends[trends.length - 1].production;
+      if (firstPeriod > 0) {
+        growthRate = ((lastPeriod - firstPeriod) / firstPeriod * 100).toFixed(1);
+      }
+    }
+
+    // Find best period
+    const bestPeriod = trends.reduce((best, t) =>
+      t.production > (best?.production || 0) ? t : best,
+      trends[0]
+    );
+
+    return {
+      data: trends,
+      summary: {
+        total_production: totalProduction,
+        total_policies: totalPolicies,
+        average_production: avgProduction,
+        growth_rate: growthRate,
+        best_period: bestPeriod?.period,
+        best_period_production: bestPeriod?.production
+      },
+      filters: {
+        time_range: timeRange,
+        periods: periods,
+        agent_id: params.agent_id
+      }
+    };
+  } catch (error) {
+    console.error('Get production trends error:', error);
+    return { error: 'Failed to get production trends' };
+  }
+}
+
+// Get carrier distribution (policy count and premium by carrier)
+export async function getCarrierDistribution(
+  params: any,
+  agencyId: string,
+  allowedAgentIds?: string[]
+) {
+  try {
+    const supabase = await createServerClient();
+
+    let query = supabase
+      .from('deals')
+      .select(`
+        id,
+        annual_premium,
+        status_standardized,
+        carrier:carriers(id, name, display_name)
+      `)
+      .eq('agency_id', agencyId);
+
+    // Permission filter
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      query = query.in('agent_id', allowedAgentIds);
+    }
+
+    // Status filter
+    if (params.status && params.status !== 'all') {
+      query = query.eq('status_standardized', params.status);
+    }
+
+    // Agent filter
+    if (params.agent_id) {
+      query = query.eq('agent_id', params.agent_id);
+    }
+
+    const { data: deals, error } = await query;
+
+    if (error) {
+      console.error('Error fetching carrier distribution:', error);
+      return { error: 'Failed to fetch carrier distribution' };
+    }
+
+    // Aggregate by carrier
+    const carrierStats: Record<string, {
+      name: string;
+      count: number;
+      active_count: number;
+      total_premium: number;
+    }> = {};
+
+    (deals || []).forEach((deal: any) => {
+      const carrierId = deal.carrier?.id || 'unknown';
+      const carrierName = deal.carrier?.display_name || deal.carrier?.name || 'Unknown';
+
+      if (!carrierStats[carrierId]) {
+        carrierStats[carrierId] = { name: carrierName, count: 0, active_count: 0, total_premium: 0 };
+      }
+      carrierStats[carrierId].count++;
+      if (deal.status_standardized === 'active') {
+        carrierStats[carrierId].active_count++;
+      }
+      carrierStats[carrierId].total_premium += parseFloat(deal.annual_premium) || 0;
+    });
+
+    const totalPolicies = deals?.length || 0;
+    const totalPremium = Object.values(carrierStats).reduce((sum, s) => sum + s.total_premium, 0);
+
+    // Format distribution for visualization
+    const distribution = Object.entries(carrierStats)
+      .map(([id, stats]) => ({
+        carrier_id: id,
+        carrier_name: stats.name,
+        count: stats.count,
+        percentage: totalPolicies > 0 ? ((stats.count / totalPolicies) * 100).toFixed(1) : '0',
+        active_count: stats.active_count,
+        total_premium: stats.total_premium,
+        premium_percentage: totalPremium > 0 ? ((stats.total_premium / totalPremium) * 100).toFixed(1) : '0'
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      distribution: distribution,
+      summary: {
+        total_policies: totalPolicies,
+        total_premium: totalPremium,
+        carrier_count: distribution.length,
+        top_carrier: distribution[0]?.carrier_name || null,
+        top_carrier_percentage: distribution[0]?.percentage || null
+      },
+      filters: {
+        status: params.status,
+        agent_id: params.agent_id
+      }
+    };
+  } catch (error) {
+    console.error('Get carrier distribution error:', error);
+    return { error: 'Failed to get carrier distribution' };
+  }
+}
+
+// Get comprehensive analytics snapshot
+export async function getAnalyticsSnapshot(
+  params: any,
+  agencyId: string,
+  allowedAgentIds?: string[],
+  userContext?: UserContext
+) {
+  try {
+    const supabase = await createServerClient();
+
+    // Calculate date ranges
+    const now = new Date();
+    let currentStart: Date;
+    let previousStart: Date;
+    let previousEnd: Date;
+
+    switch (params.time_period) {
+      case 'current_month':
+        currentStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        previousStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        previousEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+        break;
+      case 'last_month':
+        currentStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        previousStart = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+        previousEnd = new Date(now.getFullYear(), now.getMonth() - 1, 0);
+        break;
+      case 'ytd':
+        currentStart = new Date(now.getFullYear(), 0, 1);
+        previousStart = new Date(now.getFullYear() - 1, 0, 1);
+        previousEnd = new Date(now.getFullYear() - 1, 11, 31);
+        break;
+      default: // 'all'
+        currentStart = new Date(0);
+        previousStart = new Date(0);
+        previousEnd = new Date(0);
+    }
+
+    // Get current period deals
+    let currentQuery = supabase
+      .from('deals')
+      .select('id, annual_premium, status_standardized, created_at')
+      .eq('agency_id', agencyId)
+      .gte('created_at', currentStart.toISOString());
+
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      currentQuery = currentQuery.in('agent_id', allowedAgentIds);
+    }
+
+    const { data: currentDeals, error: currentError } = await currentQuery;
+
+    if (currentError) {
+      console.error('Error fetching current deals:', currentError);
+      return { error: 'Failed to fetch analytics snapshot' };
+    }
+
+    // Get previous period deals for comparison
+    let previousQuery = supabase
+      .from('deals')
+      .select('id, annual_premium, status_standardized')
+      .eq('agency_id', agencyId)
+      .gte('created_at', previousStart.toISOString())
+      .lte('created_at', previousEnd.toISOString());
+
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      previousQuery = previousQuery.in('agent_id', allowedAgentIds);
+    }
+
+    const { data: previousDeals } = await previousQuery;
+
+    // Get agents count
+    let agentsQuery = supabase
+      .from('users')
+      .select('id, is_active, total_prod')
+      .eq('agency_id', agencyId)
+      .neq('role', 'client');
+
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      agentsQuery = agentsQuery.in('id', allowedAgentIds);
+    }
+
+    const { data: agents } = await agentsQuery;
+
+    // Get clients count
+    let clientsQuery = supabase
+      .from('clients')
+      .select('id, created_at')
+      .eq('agency_id', agencyId);
+
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      clientsQuery = clientsQuery.in('supporting_agent_id', allowedAgentIds);
+    }
+
+    const { data: clients } = await clientsQuery;
+
+    // Calculate metrics
+    const currentProduction = (currentDeals || []).reduce((sum, d: any) => sum + (parseFloat(d.annual_premium) || 0), 0);
+    const previousProduction = (previousDeals || []).reduce((sum, d: any) => sum + (parseFloat(d.annual_premium) || 0), 0);
+    const productionChange = previousProduction > 0
+      ? ((currentProduction - previousProduction) / previousProduction * 100).toFixed(1)
+      : null;
+
+    const activePolicies = (currentDeals || []).filter((d: any) => d.status_standardized === 'active').length;
+    const lapsedPolicies = (currentDeals || []).filter((d: any) => d.status_standardized === 'lapsed').length;
+    const newPolicies = currentDeals?.length || 0;
+
+    const totalAgents = agents?.length || 0;
+    const activeAgents = agents?.filter((a: any) => a.is_active).length || 0;
+    const topAgent = agents?.reduce((best: any, a: any) =>
+      (a.total_prod || 0) > (best?.total_prod || 0) ? a : best,
+      agents?.[0]
+    );
+
+    const totalClients = clients?.length || 0;
+    const newClients = (clients || []).filter((c: any) => {
+      const createdAt = new Date(c.created_at);
+      return createdAt >= currentStart;
+    }).length;
+
+    return {
+      production: {
+        total: currentProduction,
+        previous_period: previousProduction,
+        change_percent: productionChange,
+        trend: productionChange !== null ? (parseFloat(productionChange) >= 0 ? 'up' : 'down') : null
+      },
+      policies: {
+        total: newPolicies,
+        active: activePolicies,
+        lapsed: lapsedPolicies,
+        active_rate: newPolicies > 0 ? ((activePolicies / newPolicies) * 100).toFixed(1) : '0'
+      },
+      agents: {
+        total: totalAgents,
+        active: activeAgents,
+        top_performer: topAgent ? {
+          id: topAgent.id,
+          production: topAgent.total_prod || 0
+        } : null
+      },
+      clients: {
+        total: totalClients,
+        new: newClients
+      },
+      time_period: params.time_period || 'all',
+      period_start: currentStart.toISOString().split('T')[0],
+      period_end: now.toISOString().split('T')[0]
+    };
+  } catch (error) {
+    console.error('Get analytics snapshot error:', error);
+    return { error: 'Failed to get analytics snapshot' };
   }
 }
 
@@ -2131,6 +3242,18 @@ export async function executeToolCall(
       return await getPositions(cleanInput, agencyId);
     case 'get_draft_messages':
       return await getDraftMessages(cleanInput, agencyId, allowedAgentIds, userContext);
+    case 'get_carrier_resources':
+      return await getCarrierResources(cleanInput, agencyId);
+    case 'get_user_profile':
+      return await getUserProfile(cleanInput, agencyId, userContext);
+    case 'get_lead_source_analytics':
+      return await getLeadSourceAnalytics(cleanInput, agencyId, allowedAgentIds);
+    case 'get_production_trends':
+      return await getProductionTrends(cleanInput, agencyId, allowedAgentIds);
+    case 'get_carrier_distribution':
+      return await getCarrierDistribution(cleanInput, agencyId, allowedAgentIds);
+    case 'get_analytics_snapshot':
+      return await getAnalyticsSnapshot(cleanInput, agencyId, allowedAgentIds, userContext);
     default:
       return { error: `Unknown tool: ${toolName}` };
   }

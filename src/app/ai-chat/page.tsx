@@ -773,7 +773,7 @@ export default function AIChat() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto pb-4">
+        <div className="flex-1 min-h-0 overflow-y-auto pb-4">
           <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
           {messages.length === 0 && (
             <div className="text-center py-16">
@@ -936,8 +936,8 @@ export default function AIChat() {
       </div>
 
         {/* Input - expands upward, stays anchored at bottom */}
-        <div className="flex-shrink-0 border-t border-slate-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl">
-          <div className="max-w-4xl mx-auto px-4 py-4">
+        <div className="flex-shrink-0 min-h-20 border-t border-slate-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl flex items-center">
+          <div className="max-w-4xl mx-auto px-4 w-full">
             <div className="flex items-end gap-3">
               <textarea
                 ref={textareaRef}

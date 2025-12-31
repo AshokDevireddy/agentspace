@@ -404,6 +404,81 @@ const tools: Anthropic.Tool[] = [
       }
     }
   },
+  {
+    name: 'get_carrier_resources',
+    description: 'Get carrier contact information, phone numbers, portal URLs, and support hours. Use this when user asks "What\'s the phone number for X carrier?", "How do I contact Y?", or "Show me carrier resources".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        carrier_id: { type: 'string', description: 'Specific carrier ID to get resources for (optional, returns all if not specified)' }
+      }
+    }
+  },
+  {
+    name: 'get_user_profile',
+    description: 'Get current user\'s profile and subscription information including tier, usage limits, billing cycle dates, and remaining AI requests. Use this when user asks "How many AI requests do I have left?", "When does my billing cycle reset?", or "What\'s my subscription tier?".',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'get_lead_source_analytics',
+    description: 'Get lead source distribution and performance analytics. Shows which lead sources (referral, provided, purchased, no-lead) generate the most deals and their conversion rates. Use for questions about lead sources, lead performance, or "Where do my deals come from?".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        start_date: { type: 'string', description: 'Start date for filtering (YYYY-MM-DD)' },
+        end_date: { type: 'string', description: 'End date for filtering (YYYY-MM-DD)' },
+        agent_id: { type: 'string', description: 'Filter by specific agent ID' }
+      }
+    }
+  },
+  {
+    name: 'get_production_trends',
+    description: 'Get time-series production data showing trends over time. Use for questions like "Show me production trends", "How is my month-over-month growth?", "What\'s my production history?", or any trend analysis.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        time_range: {
+          type: 'string',
+          description: 'Time granularity for trends',
+          enum: ['daily', 'weekly', 'monthly']
+        },
+        periods: { type: 'number', description: 'Number of periods to return (default 12)' },
+        agent_id: { type: 'string', description: 'Filter by specific agent ID' }
+      }
+    }
+  },
+  {
+    name: 'get_carrier_distribution',
+    description: 'Get policy distribution by carrier, showing count and premium breakdown. Optimized for pie chart visualization. Use for "Show me policies by carrier", "What percentage of my book is with X carrier?", or carrier breakdown questions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Filter by policy status',
+          enum: ['active', 'all']
+        },
+        agent_id: { type: 'string', description: 'Filter by specific agent ID' }
+      }
+    }
+  },
+  {
+    name: 'get_analytics_snapshot',
+    description: 'Get comprehensive analytics overview with production, policies, agents, and clients metrics. Includes comparison with previous period. Use for "Give me an analytics snapshot", "How am I doing this month?", or comprehensive business overview.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        time_period: {
+          type: 'string',
+          description: 'Time period for analytics',
+          enum: ['current_month', 'last_month', 'ytd', 'all']
+        }
+      }
+    }
+  },
 ];
 
 const MAX_ARRAY_SAMPLE_ITEMS = 15;
@@ -885,12 +960,23 @@ DATA RETRIEVAL GUIDELINES - CRITICAL:
 - If a user asks "how many policies" or "show policies by carrier" → use get_persistency_analytics, NOT get_deals
 
 FUZZY SEARCH GUIDELINES:
+- All search tools now support typo-tolerant fuzzy matching with similarity scoring
 - When user asks about specific people (agents/clients) by name but doesn't provide exact IDs: FIRST use search_agents or search_clients
 - Use search_agents for finding agents by partial name/email (e.g., "find agent john" → search_agents with query "john")
 - Use search_clients for finding clients by partial name/email/phone
 - Use search_policies for finding policies by policy number, app number, or client name
+- Use get_carrier_resources with carrier_name param for carrier lookup with fuzzy matching
 - After getting search results, use the returned IDs for further queries (get_agent_hierarchy, get_deals, etc.)
 - For group analysis on agents/policies, you may not need fuzzy search - use get_agents or get_deals directly with filters
+
+HANDLING FUZZY SEARCH RESULTS - SUGGESTIONS:
+- If no exact match is found, tools return "suggestions" with similar names and similarity scores
+- Look for "no_exact_match: true" in the response - this indicates no direct match was found
+- When suggestions are returned, check "suggestion_message" field - use this to help the user
+- Example: User asks for "Jhon Smith" → tool returns suggestion for "John Smith"
+- Present suggestions to the user naturally: "I couldn't find 'Jhon Smith', but did you mean John Smith?"
+- Results include "similarity_score" (0.0 to 1.0) - higher scores indicate closer matches
+- If user confirms a suggestion, re-query with the correct ID from the suggestion
 
 HIERARCHY ANALYSIS GUIDELINES:
 - When user asks about hierarchy relationships, upline/downline performance, or "which hierarchy has better production": use get_agent_hierarchy
@@ -926,11 +1012,23 @@ TOOL SELECTION DECISION TREE:
 9. User asks about at-risk policies, lapse prevention, policies needing attention:
    → Use get_at_risk_policies
 10. User asks about commission rates, payout percentages:
-   → Use get_commission_structure
+    → Use get_commission_structure
 11. User asks about position levels, career hierarchy:
-   → Use get_positions
+    → Use get_positions
 12. User asks about pending SMS drafts, messages awaiting approval:
-   → Use get_draft_messages
+    → Use get_draft_messages
+13. User asks about carrier phone numbers, contact info, portal URLs:
+    → Use get_carrier_resources
+14. User asks about their subscription, AI requests remaining, billing cycle:
+    → Use get_user_profile
+15. User asks about lead sources, where deals come from, lead performance:
+    → Use get_lead_source_analytics
+16. User asks about production trends, month-over-month, growth over time:
+    → Use get_production_trends
+17. User asks about carrier distribution, policies by carrier (for charts):
+    → Use get_carrier_distribution
+18. User asks for overall analytics snapshot, "how am I doing":
+    → Use get_analytics_snapshot
 
 IMPORTANT CHART CODE RULES:
 - The 'data' variable contains the exact tool result - adapt to its structure
@@ -959,6 +1057,12 @@ WHEN TO USE EACH TOOL:
 ✅ get_commission_structure: "What's the commission rate?", "How much does a Manager earn?", "Commission percentages"
 ✅ get_positions: "What positions exist?", "Agency hierarchy levels", "Position levels in agency"
 ✅ get_draft_messages: "Pending SMS drafts", "Messages awaiting approval", "Draft message status"
+✅ get_carrier_resources: "Phone number for Transamerica?", "SBLI contact info?", "Carrier portal URL?"
+✅ get_user_profile: "How many AI requests left?", "When does billing reset?", "What's my subscription tier?"
+✅ get_lead_source_analytics: "Lead source breakdown?", "Where do my deals come from?", "Best performing lead source?"
+✅ get_production_trends: "Production trends?", "Month-over-month growth?", "Show my production history"
+✅ get_carrier_distribution: "Policies by carrier?", "What % is with SBLI?", "Carrier breakdown pie chart"
+✅ get_analytics_snapshot: "Analytics snapshot", "How am I doing this month?", "Overall performance summary"
 ❌ get_deals: "Show me the client names for Aflac policies", "What premium did client John Doe pay?" (small datasets only)
 
 DYNAMIC VISUALIZATION TOOL (create_visualization):

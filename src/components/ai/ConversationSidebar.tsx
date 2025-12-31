@@ -127,9 +127,9 @@ export function ConversationSidebar({
   }
 
   return (
-    <div className="w-64 h-full bg-background border-r flex flex-col">
+    <div className="w-64 h-full bg-background border-r flex flex-col overflow-hidden">
       {/* Header - fixed height to align border with main chat header */}
-      <div className="px-3 border-b flex items-center justify-between h-16">
+      <div className="px-4 border-b border-slate-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl flex items-center justify-between h-16">
         <h3 className="font-semibold text-sm">Conversations</h3>
         <div className="flex items-center gap-1">
           <Button
@@ -152,7 +152,7 @@ export function ConversationSidebar({
       </div>
 
       {/* Conversation List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center justify-center p-4">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -166,11 +166,19 @@ export function ConversationSidebar({
         ) : (
           <div className="p-2 space-y-1">
             {conversations.map((conversation) => (
-              <button
+              <div
                 key={conversation.id}
                 onClick={() => onSelectConversation(conversation.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectConversation(conversation.id);
+                  }
+                }}
                 className={cn(
-                  'w-full text-left p-2 rounded-md text-sm group relative',
+                  'w-full text-left p-2 rounded-md text-sm group relative cursor-pointer',
                   'hover:bg-accent transition-colors',
                   currentConversationId === conversation.id && 'bg-accent'
                 )}
@@ -202,22 +210,24 @@ export function ConversationSidebar({
                     <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                   )}
                 </Button>
-              </button>
+              </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* New Conversation Button - matches main input area height for border alignment */}
-      <div className="px-3 py-4 border-t flex items-end min-h-[80px]">
-        <Button
-          variant="outline"
-          className="w-full"
-          onClick={onNewConversation}
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New Conversation
-        </Button>
+      {/* New Conversation Button - matches main input area for border alignment */}
+      <div className="flex-shrink-0 h-20 border-t border-slate-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl flex items-center">
+        <div className="px-4 w-full">
+          <Button
+            variant="outline"
+            className="w-full h-12"
+            onClick={onNewConversation}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Conversation
+          </Button>
+        </div>
       </div>
     </div>
   );

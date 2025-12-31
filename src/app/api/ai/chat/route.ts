@@ -4,6 +4,17 @@ import { NextRequest } from 'next/server';
 import { executeToolCall } from '@/lib/ai-tools';
 import { getTierLimits } from '@/lib/subscription-tiers';
 import { reportAIUsage, getMeteredSubscriptionItems } from '@/lib/stripe-usage';
+import {
+  buildUserContext,
+  enforcePermissions,
+  isToolAvailable,
+  getAccessScopeDescription,
+  UserContext,
+} from '@/lib/ai-permissions';
+import {
+  sanitizeToolResult as sanitizeForPrivacy,
+  summarizeInputForAudit,
+} from '@/lib/ai-sanitizer';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -226,6 +237,171 @@ const tools: Anthropic.Tool[] = [
         end_date: { type: 'string', description: 'End date filter' }
       },
       required: ['data_type']
+    }
+  },
+  {
+    name: 'create_visualization',
+    description: 'Create a dynamic chart/visualization from data. Use this tool to generate bar charts, line charts, pie charts, area charts, or stacked bar charts. The data parameter should contain the actual data to visualize (from a previous tool call result). Use this after retrieving data with other tools, or when user says "visualize that" to chart the most recent data.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        chart_type: {
+          type: 'string',
+          description: 'Type of chart to create',
+          enum: ['bar', 'line', 'pie', 'area', 'stacked_bar']
+        },
+        title: {
+          type: 'string',
+          description: 'Title for the chart'
+        },
+        description: {
+          type: 'string',
+          description: 'Optional description explaining what the chart shows'
+        },
+        data: {
+          type: 'array',
+          description: 'Array of data objects to visualize. Each object should have consistent keys.',
+          items: {
+            type: 'object'
+          }
+        },
+        x_axis_key: {
+          type: 'string',
+          description: 'The key/field name to use for the X-axis (category labels)'
+        },
+        y_axis_keys: {
+          type: 'array',
+          description: 'Array of key/field names to use for Y-axis values. Use multiple keys for grouped/stacked charts.',
+          items: {
+            type: 'string'
+          }
+        },
+        config: {
+          type: 'object',
+          description: 'Optional configuration for chart appearance',
+          properties: {
+            colors: {
+              type: 'array',
+              description: 'Custom colors for data series',
+              items: { type: 'string' }
+            },
+            show_legend: {
+              type: 'boolean',
+              description: 'Whether to show legend (default: true)'
+            },
+            show_grid: {
+              type: 'boolean',
+              description: 'Whether to show grid lines (default: true)'
+            },
+            y_axis_label: {
+              type: 'string',
+              description: 'Label for Y-axis'
+            },
+            x_axis_label: {
+              type: 'string',
+              description: 'Label for X-axis'
+            }
+          }
+        }
+      },
+      required: ['chart_type', 'title', 'data', 'x_axis_key', 'y_axis_keys']
+    }
+  },
+  {
+    name: 'get_expected_payouts',
+    description: 'Get expected payout/commission projections for agents. Shows expected earnings from active policies based on commission structure and hierarchy. Includes breakdown by carrier, your production vs downline production, and optionally debt from lapsed policies. Use this for questions about commissions, earnings, payouts, or what agents will earn.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        agent_id: { type: 'string', description: 'Specific agent ID to get payouts for (defaults to current user)' },
+        months_past: { type: 'number', description: 'Months to look back (default 12)' },
+        months_future: { type: 'number', description: 'Months to look forward (default 12)' },
+        carrier_id: { type: 'string', description: 'Optional carrier ID to filter by' },
+        include_debt: { type: 'boolean', description: 'Include debt from lapsed policies (default true)' }
+      }
+    }
+  },
+  {
+    name: 'get_scoreboard',
+    description: 'Get production scoreboard/leaderboard with agent rankings. Shows total production, policies sold, daily breakdown, and top performers for a time period. Use this for questions about rankings, top producers, leaderboard, or production competitions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        time_range: {
+          type: 'string',
+          description: 'Time range for scoreboard',
+          enum: ['this_week', 'last_week', '7_days', '14_days', '30_days', '90_days', 'ytd', 'custom']
+        },
+        start_date: { type: 'string', description: 'Start date for custom range (YYYY-MM-DD)' },
+        end_date: { type: 'string', description: 'End date for custom range (YYYY-MM-DD)' }
+      }
+    }
+  },
+  {
+    name: 'get_clients',
+    description: 'Get client list with details. Shows client name, email, phone, status, supporting agent, and dates. Can filter by status and agent. Use this for questions about clients, client lists, or client management.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Filter by client status',
+          enum: ['pre-invite', 'invited', 'onboarding', 'active', 'inactive', 'all']
+        },
+        agent_id: { type: 'string', description: 'Filter by supporting agent ID' },
+        search: { type: 'string', description: 'Search by name or email' },
+        limit: { type: 'number', description: 'Max results (default 50)' }
+      }
+    }
+  },
+  {
+    name: 'get_at_risk_policies',
+    description: 'Get policies at risk of lapsing or requiring attention. Shows policies approaching payment due dates, recently lapsed, or flagged for follow-up. Use this for questions about at-risk policies, lapse prevention, billing issues, or policies needing attention.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        risk_type: {
+          type: 'string',
+          description: 'Type of risk to filter by',
+          enum: ['lapse_risk', 'billing_due', 'recently_lapsed', 'needs_attention', 'all']
+        },
+        days_ahead: { type: 'number', description: 'Days to look ahead for upcoming risks (default 30)' },
+        agent_id: { type: 'string', description: 'Filter by agent ID' }
+      }
+    }
+  },
+  {
+    name: 'get_commission_structure',
+    description: 'Get commission structure showing commission percentages by position and product. Explains how much each position earns per product type. Use this for questions about commission rates, payout percentages, or compensation structure.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        position_id: { type: 'string', description: 'Specific position ID to get commissions for' },
+        product_id: { type: 'string', description: 'Specific product ID to filter by' }
+      }
+    }
+  },
+  {
+    name: 'get_positions',
+    description: 'Get agency position hierarchy (e.g., Agent, Senior Agent, Manager, etc.) with their levels and descriptions. Use this for questions about position levels, career progression, or agency hierarchy.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'get_draft_messages',
+    description: 'Get pending SMS draft messages awaiting approval. Shows drafts created by you or your downline. Use this for questions about pending SMS drafts, messages needing approval, or draft message status.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Filter by draft status',
+          enum: ['pending', 'approved', 'rejected', 'all']
+        },
+        agent_id: { type: 'string', description: 'Filter by agent who created draft' }
+      }
     }
   },
 ];
@@ -473,7 +649,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // AI Mode requires BOTH Expert tier AND admin status
+    // AI Mode requires Expert tier subscription (admin restriction removed)
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('id, is_admin, role, agency_id, subscription_tier, ai_requests_count, ai_requests_reset_date, stripe_subscription_id, billing_cycle_end')
@@ -487,17 +663,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Check if user is admin
+    // Check if user is admin (for permission scoping, not access control)
     const isAdmin = userData.role === 'admin' || userData.is_admin === true;
 
     // Check if user has Expert tier
     const hasExpertTier = userData.subscription_tier === 'expert';
 
-    // AI Mode requires BOTH conditions
+    // AI Mode requires Expert tier (admin restriction removed)
     if (!hasExpertTier) {
       return new Response(JSON.stringify({
         error: 'Expert tier required',
-        message: 'AI Mode is only available with Expert tier subscription.',
+        message: 'AI Mode is only available with Expert tier subscription. Please upgrade to access this feature.',
         tier_required: 'expert',
         current_tier: userData.subscription_tier
       }), {
@@ -506,17 +682,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (!isAdmin) {
-      return new Response(JSON.stringify({
-        error: 'Admin access required',
-        message: 'AI Mode is only available for admin users with Expert tier subscription.',
-        admin_required: true,
-        is_admin: isAdmin
-      }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    // Build user context for permission enforcement
+    const userContext: UserContext = await buildUserContext(
+      userData.id,
+      userData.agency_id,
+      isAdmin
+    );
+
+    // Log access scope for debugging
+    console.log(`AI Mode access: User ${userData.id}, Admin: ${isAdmin}, Downline count: ${userContext.downline_agent_ids.length}`);
 
     // AI usage limits: 50 requests per billing cycle included for Expert tier admins
     const AI_REQUEST_LIMIT = 50;
@@ -548,8 +722,21 @@ export async function POST(request: NextRequest) {
 
     const { messages } = await request.json();
 
-    // System prompt for better formatting
+    // Build dynamic system prompt based on user role
+    const accessScopeDescription = getAccessScopeDescription(userContext);
+
+    // System prompt for better formatting with user context
     const systemPrompt = `You are an AI assistant helping analyze insurance agency data. Your responses will be rendered with markdown support, so please format them professionally.
+
+## DATA ACCESS SCOPE - CRITICAL
+${accessScopeDescription}
+${!isAdmin ? `
+IMPORTANT: You are helping a non-admin user. You must respect these boundaries:
+- You can ONLY show data for this user and their downline agents
+- If asked about agency-wide data, explain they need admin access
+- Never attempt to access data outside their permitted scope
+- If a tool returns an error about permissions, explain it politely and offer alternatives
+` : ''}
 
 FORMATTING GUIDELINES:
 - Use clear headings (# for main title, ## for sections, ### for subsections)
@@ -732,6 +919,18 @@ TOOL SELECTION DECISION TREE:
    → Use get_agents_paginated (check has_more to decide when to stop)
 6. User asks about persistency/active policies:
    → Use get_persistency_analytics (always)
+7. User asks about rankings, top producers, leaderboard:
+   → Use get_scoreboard
+8. User asks about clients, client list, client status:
+   → Use get_clients
+9. User asks about at-risk policies, lapse prevention, policies needing attention:
+   → Use get_at_risk_policies
+10. User asks about commission rates, payout percentages:
+   → Use get_commission_structure
+11. User asks about position levels, career hierarchy:
+   → Use get_positions
+12. User asks about pending SMS drafts, messages awaiting approval:
+   → Use get_draft_messages
 
 IMPORTANT CHART CODE RULES:
 - The 'data' variable contains the exact tool result - adapt to its structure
@@ -747,14 +946,60 @@ IMPORTANT CHART CODE RULES:
 
 WHEN TO USE EACH TOOL:
 ✅ get_persistency_analytics: "How many active policies?", "Show policies by carrier", "What's our lapse rate?"
+✅ get_expected_payouts: "What are expected payouts?", "Show commissions", "How much will agents earn?", "What's my payout?"
 ✅ search_agents: "Find agent John", "Show me agents named Smith", "Who is john@email.com?"
 ✅ get_agent_hierarchy: "Show me John's downline", "What's the production for John's hierarchy?"
 ✅ compare_hierarchies: "Which hierarchy has better production - John's or Jane's?"
 ✅ get_data_summary: "How many deals do we have?", "What's the total production?", "Count active agents"
 ✅ get_deals_paginated: "Show me all active deals" (if >1000), "List deals for agent X" (large dataset)
+✅ create_visualization: "Visualize that", "Show me a chart", "Make a pie chart of..."
+✅ get_scoreboard: "Who are top producers?", "Show leaderboard", "Production rankings this week", "Top 5 agents"
+✅ get_clients: "List my clients", "How many active clients?", "Show client status", "Clients assigned to me"
+✅ get_at_risk_policies: "Policies at risk?", "What's about to lapse?", "Billing reminders needed", "At-risk policies"
+✅ get_commission_structure: "What's the commission rate?", "How much does a Manager earn?", "Commission percentages"
+✅ get_positions: "What positions exist?", "Agency hierarchy levels", "Position levels in agency"
+✅ get_draft_messages: "Pending SMS drafts", "Messages awaiting approval", "Draft message status"
 ❌ get_deals: "Show me the client names for Aflac policies", "What premium did client John Doe pay?" (small datasets only)
 
-Remember: Keep it clean, structured, and easy to scan. Only provide what was asked for - no extra visualizations or tables.`;
+DYNAMIC VISUALIZATION TOOL (create_visualization):
+Use the create_visualization tool to generate charts and graphs dynamically. This tool is PREFERRED over writing chartcode manually.
+
+When to use create_visualization:
+1. After retrieving data with another tool - automatically visualize the results
+2. When user says "visualize that", "show me a chart", "graph this"
+3. When data is numeric/comparative and would benefit from visualization
+4. For rankings, trends, breakdowns, or distributions
+
+How to use create_visualization:
+1. First, retrieve data using the appropriate tool (get_persistency_analytics, get_agents, etc.)
+2. Extract the relevant array from the tool result
+3. Call create_visualization with:
+   - chart_type: 'bar' | 'line' | 'pie' | 'area' | 'stacked_bar'
+   - title: Descriptive title
+   - data: The array of objects to visualize
+   - x_axis_key: The field to use for labels/categories
+   - y_axis_keys: Array of fields for the values
+
+Chart Type Selection:
+- bar: Comparisons, rankings (e.g., "top 5 agents by production")
+- line: Trends over time (e.g., "monthly sales")
+- pie: Part-to-whole relationships (e.g., "policy distribution by carrier")
+- area: Cumulative trends (e.g., "total premium over time")
+- stacked_bar: Multiple metrics per category (e.g., "active vs inactive by carrier")
+
+Example - After getting persistency data:
+1. Call get_persistency_analytics
+2. Extract carriers array from result
+3. Call create_visualization with:
+   - chart_type: 'stacked_bar'
+   - title: 'Active vs Inactive Policies by Carrier'
+   - data: carriers array
+   - x_axis_key: 'carrier'
+   - y_axis_keys: ['active', 'inactive']
+
+IMPORTANT: The create_visualization tool generates chartcode automatically. You do NOT need to write chartcode manually when using this tool.
+
+Remember: Keep it clean, structured, and easy to scan. When data is numeric or comparative, consider using create_visualization to make it more visual.`;
 
     // Increment AI request count
     await supabase
@@ -837,7 +1082,7 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
               }
 
               if (event.type === 'content_block_stop' && currentToolUse) {
-                // Tool use is complete, execute it
+                // Tool use is complete, execute it with permission checks
                 try {
                   // Parse tool input, handling empty/incomplete JSON
                   let toolInput = {};
@@ -851,13 +1096,36 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
                     }
                   }
 
-                  const toolResult = await executeToolCall(
+                  // PERMISSION CHECK: Enforce data access controls
+                  const permissionResult = enforcePermissions(
                     currentToolUse.name,
                     toolInput,
-                    userData.agency_id
+                    userContext
                   );
 
-                  const sanitizedToolResult = sanitizeToolResult(currentToolUse.name, toolResult);
+                  let toolResult;
+                  if (!permissionResult.allowed) {
+                    // Permission denied - return error message
+                    toolResult = {
+                      error: permissionResult.error,
+                      permission_denied: true,
+                    };
+                    console.log(`Permission denied for tool ${currentToolUse.name}: ${permissionResult.error}`);
+                  } else {
+                    // Execute tool with filtered input
+                    toolResult = await executeToolCall(
+                      currentToolUse.name,
+                      permissionResult.filteredInput,
+                      userData.agency_id,
+                      userContext // Pass user context to tool
+                    );
+                  }
+
+                  // Apply privacy sanitization based on user role
+                  const privacySanitized = sanitizeForPrivacy(currentToolUse.name, toolResult, userContext);
+
+                  // Apply token-optimization sanitization
+                  const sanitizedToolResult = sanitizeToolResult(currentToolUse.name, privacySanitized);
 
                   // Store tool result
                   toolResultsMap.set(currentToolUse.id, {

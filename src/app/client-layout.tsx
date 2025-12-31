@@ -22,6 +22,9 @@ const AUTH_PAGES = [
 // Pages for client users (no navigation)
 const CLIENT_PAGES = ['/client/dashboard']
 
+// Pages that need full-bleed layout (no padding wrapper)
+const FULL_BLEED_PAGES = ['/ai-chat']
+
 export default function ClientLayout({
   children,
 }: {
@@ -32,6 +35,7 @@ export default function ClientLayout({
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isClientPage = CLIENT_PAGES.some(page => pathname.startsWith(page))
+  const isFullBleedPage = FULL_BLEED_PAGES.includes(pathname)
 
   // Get role and status from centralized auth state (no duplicate fetching)
   const userRole = userData?.role || null
@@ -105,11 +109,19 @@ export default function ClientLayout({
   return (
     <div className="min-h-screen bg-background lg:pl-64 overflow-x-hidden">
       <Navigation />
-      <main className="min-h-screen bg-background">
-        <div className="p-4 lg:p-6 space-y-6">
+      {isFullBleedPage ? (
+        // Full-bleed pages (like AI chat) - no padding wrapper, takes full height
+        <main className="h-[calc(100vh)] lg:h-screen bg-background overflow-hidden">
           {children}
-        </div>
-      </main>
+        </main>
+      ) : (
+        // Regular pages with padding
+        <main className="min-h-screen bg-background">
+          <div className="p-4 lg:p-6 space-y-6">
+            {children}
+          </div>
+        </main>
+      )}
       <OnboardingTour />
     </div>
   )

@@ -21,7 +21,8 @@ import {
   BookOpen,
   Sparkles,
   FolderOpen,
-  DollarSign
+  DollarSign,
+  ClipboardCheck
 } from "lucide-react"
 import { createClient } from '@/lib/supabase/client'
 
@@ -35,7 +36,11 @@ const navigationItems = [
   { name: "Analytics", href: "/analytics", icon: TrendingUp },
   { name: "Expected Payouts", href: "/expected-payouts", icon: DollarSign },
   { name: "Insurance Toolkits", href: "/insurance-toolkits", icon: ExternalLink },
-  { name: "Resources", href: "/resources", icon: FolderOpen },
+  // { name: "Resources", href: "/resources", icon: FolderOpen },
+]
+
+const proExpertNavigationItems = [
+  { name: "Underwriting", href: "/underwriting", icon: ClipboardCheck },
 ]
 
 const adminNavigationItems = [
@@ -71,7 +76,12 @@ export default function Navigation() {
   const [agencyColor, setAgencyColor] = useState<string>("217 91% 60%")
   const [agencyId, setAgencyId] = useState<string | null>(null)
   const [isLoadingAgency, setIsLoadingAgency] = useState(true)
+  const [subscriptionTier, setSubscriptionTier] = useState<string>('free')
   const previousResolvedThemeRef = useRef<string | null>(null)
+
+  // Create stable supabase client instance for realtime subscriptions
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
 
   // Check if user is admin and fetch agency data
   useEffect(() => {
@@ -85,15 +95,17 @@ export default function Navigation() {
         const supabase = createClient()
         const { data: userData, error } = await supabase
           .from('users')
-          .select('is_admin, agency_id')
+          .select('is_admin, agency_id, subscription_tier')
           .eq('auth_user_id', user.id)
           .maybeSingle()
 
         if (error) {
           // Silently handle error - user may not exist in users table yet (e.g., during setup)
           setIsAdmin(false)
+          setSubscriptionTier('free')
         } else {
           setIsAdmin(userData?.is_admin || false)
+          setSubscriptionTier(userData?.subscription_tier || 'free')
 
           // Fetch agency data if user has an agency
           if (userData?.agency_id) {
@@ -182,7 +194,7 @@ export default function Navigation() {
     previousResolvedThemeRef.current = currentResolvedTheme
   }, [resolvedTheme, agencyId, agencyColor])
 
-  // Fetch unread message count
+  // Fetch unread message count with Supabase Realtime subscription
   useEffect(() => {
     if (!user?.id) {
       setUnreadCount(0)
@@ -214,47 +226,63 @@ export default function Navigation() {
     // Initial fetch
     fetchUnreadCount()
 
-    // Poll for updates every 30 seconds, but pause when tab is hidden
-    let interval: NodeJS.Timeout | null = null
+    // Subscribe to real-time message changes
+    const channelName = `nav-unread-${user.id}`
+    const channel = supabase
+      .channel(channelName, {
+        config: {
+          broadcast: { self: false },
+        },
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          // When a new inbound message arrives, refetch the count
+          const newMessage = payload.new as { direction?: string }
+          if (newMessage.direction === 'inbound') {
+            fetchUnreadCount()
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          // When a message is marked as read, refetch the count
+          const oldMessage = payload.old as { read_at?: string | null }
+          const newMessage = payload.new as { read_at?: string | null; direction?: string }
+          if (!oldMessage.read_at && newMessage.read_at && newMessage.direction === 'inbound') {
+            fetchUnreadCount()
+          }
+        }
+      )
+      .subscribe()
 
-    const startPolling = () => {
-      // Clear any existing interval
-      if (interval) clearInterval(interval)
-      interval = setInterval(fetchUnreadCount, 30000)
-    }
-
-    const stopPolling = () => {
-      if (interval) {
-        clearInterval(interval)
-        interval = null
-      }
-    }
-
-    // Start polling if page is visible
-    if (!document.hidden) {
-      startPolling()
-    }
-
-    // Handle visibility change - pause polling when tab is hidden
+    // Handle visibility change - refetch when tab becomes visible
     const handleVisibilityChange = () => {
-      if (document.hidden) {
-        stopPolling()
-      } else {
-        // Fetch immediately when tab becomes visible, then resume polling
+      if (!document.hidden) {
+        // Refetch count when tab becomes visible (catches any missed events)
         fetchUnreadCount()
-        startPolling()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
-      stopPolling()
+      supabase.removeChannel(channel)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [user?.id])
 
-  // Handle user logout
   const handleLogout = async () => {
     try {
       await signOut()
@@ -348,6 +376,24 @@ export default function Navigation() {
             </Link>
           </div>
         ))}
+
+        {/* Pro/Expert tier navigation items */}
+        {/* {(subscriptionTier === 'pro' || subscriptionTier === 'expert') && proExpertNavigationItems.map((item) => (
+          <div key={item.name} className="relative">
+            <Link
+              href={item.href}
+              className={cn(
+                "sidebar-nav-item w-full rounded-xl",
+                isActiveItem(item) && "active"
+              )}
+              title={isSidebarCollapsed ? item.name : undefined}
+              data-tour={`nav-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
+            >
+              {item.icon && <item.icon className="h-5 w-5 flex-shrink-0" />}
+              {!isSidebarCollapsed && <span className="flex-1 text-left">{item.name}</span>}
+            </Link>
+          </div>
+        ))} */}
 
         {/* Admin-only navigation items */}
         {isAdmin && adminNavigationItems.map((item) => (

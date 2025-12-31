@@ -6,7 +6,7 @@ import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select
 import { MonthRangePicker } from "@/components/ui/month-range-picker"
 import { createClient } from "@/lib/supabase/client"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { DollarSign, TrendingUp, Calendar } from "lucide-react"
+import { DollarSign, TrendingUp, TrendingDown, Calendar } from "lucide-react"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { cn } from "@/lib/utils"
@@ -85,6 +85,23 @@ export default function ExpectedPayoutsPage() {
   const [error, setError] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [userTier, setUserTier] = useState<string>('free')
+
+  // Debt state
+  const [debtData, setDebtData] = useState<{
+    total: number;
+    lapsedDealsCount: number;
+    breakdown: Array<{
+      deal_id: string;
+      client_name: string;
+      policy_number: string;
+      original_commission: number;
+      debt_amount: number;
+      days_active: number;
+      months_active: number;
+      is_early_lapse: boolean;
+    }>;
+  } | null>(null)
+  const [debtLoading, setDebtLoading] = useState(true)
 
   // Options
   const [carrierOptions, setCarrierOptions] = useState<CarrierOption[]>([{ value: "all", label: "All Carriers" }])
@@ -254,6 +271,46 @@ export default function ExpectedPayoutsPage() {
     fetchPayouts()
   }, [appliedFilters, supabase.auth])
 
+  // Fetch debt data
+  useEffect(() => {
+    const fetchDebt = async () => {
+      if (!appliedFilters.agent) return
+
+      try {
+        setDebtLoading(true)
+
+        const { data: { session } } = await supabase.auth.getSession()
+        const accessToken = session?.access_token
+
+        if (!accessToken) return
+
+        const params = new URLSearchParams()
+        params.append('agent_id', appliedFilters.agent)
+
+        const response = await fetch(`/api/expected-payouts/debt?${params.toString()}`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setDebtData(data.debt)
+        } else {
+          // If debt fetch fails, set to zero so we still show the cards
+          setDebtData({ total: 0, lapsedDealsCount: 0, breakdown: [] })
+        }
+      } catch (err) {
+        console.error('Failed to fetch debt:', err)
+        setDebtData({ total: 0, lapsedDealsCount: 0, breakdown: [] })
+      } finally {
+        setDebtLoading(false)
+      }
+    }
+
+    fetchDebt()
+  }, [appliedFilters.agent, supabase.auth])
+
   // Apply filters handler
   const handleApplyFilters = () => {
     applyFilters()
@@ -389,9 +446,29 @@ export default function ExpectedPayoutsPage() {
         )}
 
         {/* Summary Cards */}
-        <div className={cn("grid grid-cols-1 md:grid-cols-3 gap-6", isViewingOtherAgent && "blur-sm pointer-events-none")}>
+        <div className={cn("grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6", isViewingOtherAgent && "blur-sm pointer-events-none")}>
         {loading ? (
           <>
+            <Card className="professional-card">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
+                <div className="h-3 w-24 bg-muted animate-pulse rounded" />
+              </CardContent>
+            </Card>
+            <Card className="professional-card">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
+                <div className="h-3 w-24 bg-muted animate-pulse rounded" />
+              </CardContent>
+            </Card>
             <Card className="professional-card">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <div className="h-4 w-32 bg-muted animate-pulse rounded" />
@@ -467,6 +544,59 @@ export default function ExpectedPayoutsPage() {
                 <p className="text-xs text-muted-foreground mt-1">
                   From {production?.downline.count || 0} downline deals
                 </p>
+              </CardContent>
+            </Card>
+
+            <Card className="professional-card">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Debt</CardTitle>
+                <TrendingDown className="h-4 w-4 text-destructive" />
+              </CardHeader>
+              <CardContent>
+                {debtLoading ? (
+                  <>
+                    <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
+                    <div className="h-3 w-24 bg-muted animate-pulse rounded" />
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-destructive">
+                      ${(debtData?.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      From {debtData?.lapsedDealsCount || 0} lapsed policies
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="professional-card">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Net Total</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {debtLoading ? (
+                  <>
+                    <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
+                    <div className="h-3 w-24 bg-muted animate-pulse rounded" />
+                  </>
+                ) : (
+                  <>
+                    <div className={cn(
+                      "text-2xl font-bold",
+                      ((production?.total || 0) - (debtData?.total || 0)) >= 0
+                        ? "text-green-600 dark:text-green-400"
+                        : "text-destructive"
+                    )}>
+                      ${((production?.total || 0) - (debtData?.total || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Expected Payout - Debt
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
           </>

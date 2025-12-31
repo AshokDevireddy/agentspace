@@ -129,6 +129,36 @@ export async function middleware(req: NextRequest) {
     }
   }
 
+  // Pro/Expert tier routes (Underwriting)
+  const proExpertRoutes = ['/underwriting', '/api/underwriting']
+  const isProExpertRoute = proExpertRoutes.some(route => req.nextUrl.pathname.startsWith(route))
+
+  if (isProExpertRoute && user) {
+    // Get user profile to check subscription tier
+    const { data: tierCheckUser } = await supabase
+      .from('users')
+      .select('subscription_tier')
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+
+    const tier = tierCheckUser?.subscription_tier || 'free'
+    if (tier !== 'pro' && tier !== 'expert') {
+      const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
+      if (isApiRoute) {
+        return NextResponse.json(
+          {
+            error: 'Forbidden',
+            message: 'Pro or Expert tier subscription required',
+            current_tier: tier,
+            required_tiers: ['pro', 'expert']
+          },
+          { status: 403 }
+        )
+      }
+      return NextResponse.redirect(new URL('/unauthorized', req.url))
+    }
+  }
+
   return res
 }
 

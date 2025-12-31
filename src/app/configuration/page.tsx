@@ -14,6 +14,8 @@ import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 import { HexColorPicker } from 'react-colorful'
 import { useTheme } from "next-themes"
 import { useNotification } from "@/contexts/notification-context"
+import { useAuth } from "@/providers/AuthProvider"
+import { updateUserTheme, ThemeMode } from "@/lib/theme"
 
 // Types for carrier data
 interface Carrier {
@@ -97,6 +99,7 @@ const isDefaultColorForMode = (color: string, mode: 'light' | 'dark' | 'system' 
 export default function ConfigurationPage() {
   const { showSuccess, showError, showWarning } = useNotification()
   const { theme, setTheme, resolvedTheme } = useTheme()
+  const { userData, refreshUserData } = useAuth()
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>("agency-profile")
@@ -317,9 +320,6 @@ export default function ConfigurationPage() {
     setDisplayName(agency.display_name || agency.name)
     setDisplayNameValue(agency.display_name || agency.name)
     
-    // Reset theme
-    setAgencyThemeMode(agency.theme_mode || 'system')
-    
     // Reset whitelabel domain
     setWhitelabelDomain(agency.whitelabel_domain || '')
     setWhitelabelDomainValue(agency.whitelabel_domain || '')
@@ -366,6 +366,9 @@ export default function ConfigurationPage() {
   const [carrierLoginUsername, setCarrierLoginUsername] = useState<string>("")
   const [carrierLoginPassword, setCarrierLoginPassword] = useState<string>("")
   const [loadingCarrierNames, setLoadingCarrierNames] = useState(false)
+  const [savingCarrierLogin, setSavingCarrierLogin] = useState(false)
+  const [carrierDropdownOpen, setCarrierDropdownOpen] = useState(false)
+  const carrierDropdownRef = useRef<HTMLDivElement | null>(null)
 
   // Policy Reports state
   const [uploads, setUploads] = useState<Array<{carrier: string, file: File | null}>>([
@@ -378,7 +381,10 @@ export default function ConfigurationPage() {
     { carrier: 'Liberty Bankers Life', file: null },
     { carrier: 'Transamerica', file: null },
     { carrier: 'Foresters', file: null },
-    { carrier: 'Reagan CRM Data', file: null }
+    { carrier: 'Reagan CRM Data', file: null },
+    { carrier: 'Ethos', file: null },
+    { carrier: 'Mutual of Omaha', file: null },
+    { carrier: 'Americo', file: null },
   ])
   const [uploadingReports, setUploadingReports] = useState(false)
   const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
@@ -441,6 +447,13 @@ export default function ConfigurationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Sync theme state when userData changes (e.g., after login or theme update)
+  useEffect(() => {
+    if (userData?.theme_mode) {
+      setAgencyThemeMode(userData.theme_mode)
+    }
+  }, [userData?.theme_mode])
+
   // Check for existing policy files when policy reports tab is opened (only if we haven't checked yet)
   useEffect(() => {
     if (activeTab === 'policy-reports' && uploadedFilesInfo.length === 0 && !checkingExistingFiles) {
@@ -496,6 +509,25 @@ export default function ConfigurationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
+  // Close carrier dropdown when clicking outside
+  useEffect(() => {
+    if (!carrierDropdownOpen) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        carrierDropdownRef.current &&
+        !carrierDropdownRef.current.contains(event.target as Node)
+      ) {
+        setCarrierDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [carrierDropdownOpen])
+
   // Filter products when carrier is selected
   useEffect(() => {
     if (selectedCarrier && allProducts.length > 0) {
@@ -548,9 +580,6 @@ export default function ConfigurationPage() {
             setAgency(agencyInfo)
             setDisplayName(agencyInfo.display_name || agencyInfo.name)
             setPrimaryColor(agencyInfo.primary_color || "217 91% 60%")
-            const themeMode = (agencyInfo.theme_mode || 'system') as 'light' | 'dark' | 'system'
-            setAgencyThemeMode(themeMode)
-            setTheme(themeMode) // Apply the theme immediately
             setLeadSources(agencyInfo.lead_sources || [])
             setAgencyPhoneNumber(agencyInfo.phone_number || "")
             setMessagingEnabled(agencyInfo.messaging_enabled || false)
@@ -932,56 +961,45 @@ export default function ConfigurationPage() {
   }
 
 
-  // Theme Management Functions
-  const handleThemeChange = async (newTheme: 'light' | 'dark' | 'system') => {
+  const handleThemeChange = async (newTheme: ThemeMode) => {
     if (!agency) return
 
-    try {
-      setSavingTheme(true)
+    const previousTheme = agencyThemeMode
+    setAgencyThemeMode(newTheme)
+    setTheme(newTheme)
+
+    // Update primary color if switching between light/dark with default colors
+    const currentResolved = resolvedTheme || (previousTheme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : previousTheme)
+    const newResolved = newTheme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : newTheme
+
+    if (isDefaultColorForMode(primaryColor, currentResolved as 'light' | 'dark') && currentResolved !== newResolved) {
+      const newColor = getDefaultPrimaryColor(newResolved as 'light' | 'dark')
+      setPrimaryColor(newColor)
+      setPendingColor(null)
+      setAgency({ ...agency, primary_color: newColor })
+      document.documentElement.style.setProperty('--primary', newColor)
+      const textColor = getContrastTextColor(newColor)
+      document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
+
+      // Update agency color in background
       const supabase = createClient()
+      supabase.from('agencies').update({ primary_color: newColor }).eq('id', agency.id)
+    }
 
-      // Determine the current resolved theme (light or dark) before the change
-      const currentResolvedTheme = resolvedTheme || (agencyThemeMode === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : agencyThemeMode)
-      
-      // Determine the new resolved theme
-      const newResolvedTheme = newTheme === 'system' 
-        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-        : newTheme
+    setSavingTheme(true)
+    const result = await updateUserTheme(newTheme)
+    setSavingTheme(false)
 
-      // Check if we need to update the primary color
-      const currentColor = primaryColor
-      const isCurrentColorDefault = isDefaultColorForMode(currentColor, currentResolvedTheme as 'light' | 'dark')
-      
-      const updates: any = { theme_mode: newTheme }
-      
-      // If current color is the default for the current mode, switch to default for new mode
-      if (isCurrentColorDefault && currentResolvedTheme !== newResolvedTheme) {
-        const newDefaultColor = getDefaultPrimaryColor(newResolvedTheme as 'light' | 'dark')
-        updates.primary_color = newDefaultColor
-        setPrimaryColor(newDefaultColor)
-        setPendingColor(null) // Clear any pending color changes
-        
-        // Update CSS variable immediately
-        document.documentElement.style.setProperty('--primary', newDefaultColor)
-        const textColor = getContrastTextColor(newDefaultColor)
-        document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
-      }
-
-      const { error } = await supabase
-        .from('agencies')
-        .update(updates)
-        .eq('id', agency.id)
-
-      if (error) throw error
-
-      setAgencyThemeMode(newTheme)
-      setTheme(newTheme) // Apply the theme immediately
-      setAgency({ ...agency, ...updates })
-    } catch (error) {
-      console.error('Error updating theme:', error)
+    if (result.success) {
+      await refreshUserData()
+    } else {
       showError('Failed to update theme preference')
-    } finally {
-      setSavingTheme(false)
+      setAgencyThemeMode(previousTheme)
+      setTheme(previousTheme)
     }
   }
 
@@ -2547,7 +2565,7 @@ export default function ConfigurationPage() {
                         Theme Preference
                       </h3>
                       <p className="text-sm text-muted-foreground mb-6">
-                        Choose the theme mode for your agency. This will be applied automatically for all users in your agency.
+                        Choose your personal theme preference. This setting only affects your account and will override the agency default theme.
                       </p>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3838,31 +3856,49 @@ export default function ConfigurationPage() {
                       <label className="text-sm font-medium text-foreground mb-2 block">
                         Select Carrier
                       </label>
-                      <Select
-                        value={selectedCarrierLogin}
-                        onValueChange={(value) => {
-                          setSelectedCarrierLogin(value)
-                          setCarrierLoginUsername("")
-                          setCarrierLoginPassword("")
-                        }}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select a carrier..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {loadingCarrierNames ? (
-                            <div className="p-2 text-sm text-muted-foreground">Loading carriers...</div>
-                          ) : carrierNames.length === 0 ? (
-                            <div className="p-2 text-sm text-muted-foreground">No carriers available</div>
-                          ) : (
-                            carrierNames.map((name) => (
-                              <SelectItem key={name} value={name}>
-                                {name}
-                              </SelectItem>
-                            ))
+                      <div className="relative" ref={carrierDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setCarrierDropdownOpen((open) => !open)}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm",
+                            "hover:bg-accent/60 focus:outline-none focus:ring-2 focus:ring-ring"
                           )}
-                        </SelectContent>
-                      </Select>
+                        >
+                          <span className={cn("truncate", !selectedCarrierLogin && "text-muted-foreground")}>
+                            {selectedCarrierLogin || "Select a carrier..."}
+                          </span>
+                          <span className="ml-2 text-xs text-muted-foreground">▼</span>
+                        </button>
+                        {carrierDropdownOpen && (
+                          <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md">
+                            {loadingCarrierNames ? (
+                              <div className="p-2 text-sm text-muted-foreground">Loading carriers...</div>
+                            ) : carrierNames.length === 0 ? (
+                              <div className="p-2 text-sm text-muted-foreground">No carriers available</div>
+                            ) : (
+                              carrierNames.map((name) => (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCarrierLogin(name)
+                                    setCarrierLoginUsername("")
+                                    setCarrierLoginPassword("")
+                                    setCarrierDropdownOpen(false)
+                                  }}
+                                  className={cn(
+                                    "flex w-full items-center px-3 py-2 text-sm text-left hover:bg-accent",
+                                    selectedCarrierLogin === name && "bg-accent"
+                                  )}
+                                >
+                                  {name}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Login Interface */}
@@ -3947,9 +3983,55 @@ export default function ConfigurationPage() {
                         {/* Submit Button */}
                         <Button
                           className="w-full bg-gray-600 hover:bg-gray-700 text-white"
-                          disabled={!carrierLoginUsername || !carrierLoginPassword}
+                          disabled={!carrierLoginUsername || !carrierLoginPassword || savingCarrierLogin}
+                          onClick={async () => {
+                            if (!selectedCarrierLogin || !carrierLoginUsername || !carrierLoginPassword) return
+
+                            try {
+                              setSavingCarrierLogin(true)
+                              const supabase = createClient()
+                              const { data: { session } } = await supabase.auth.getSession()
+                              const accessToken = session?.access_token
+
+                              if (!accessToken) {
+                                showError('You must be logged in to save carrier logins.')
+                                return
+                              }
+
+                              const response = await fetch('/api/carrier-logins', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'Authorization': `Bearer ${accessToken}`
+                                },
+                                body: JSON.stringify({
+                                  carrier_name: selectedCarrierLogin,
+                                  login: carrierLoginUsername,
+                                  password: carrierLoginPassword
+                                })
+                              })
+
+                              const data = await response.json().catch(() => null)
+
+                              if (!response.ok) {
+                                const detail = data?.detail || data?.error || 'Failed to save carrier login.'
+                                showError(detail)
+                                return
+                              }
+
+                              showSuccess('Carrier login saved successfully.')
+                              // Clear credentials so user can enter another or switch carriers without reload
+                              setCarrierLoginUsername("")
+                              setCarrierLoginPassword("")
+                            } catch (error) {
+                              console.error('Error saving carrier login:', error)
+                              showError('An unexpected error occurred while saving carrier login.')
+                            } finally {
+                              setSavingCarrierLogin(false)
+                            }
+                          }}
                         >
-                          Submit
+                          {savingCarrierLogin ? 'Saving...' : 'Submit'}
                         </Button>
                       </div>
                     )}

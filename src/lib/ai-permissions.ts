@@ -56,6 +56,10 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
     scope: 'self_and_downline',
     description: 'Expected payout calculations for user and downline'
   },
+  get_downline_payouts: {
+    scope: 'self_and_downline',
+    description: 'Expected payouts for each agent in user hierarchy'
+  },
   get_agent_debt: {
     scope: 'self_and_downline',
     description: 'Agent debt calculations for user and downline'

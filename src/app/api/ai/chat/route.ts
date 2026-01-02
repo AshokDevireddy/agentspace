@@ -309,15 +309,27 @@ const tools: Anthropic.Tool[] = [
   },
   {
     name: 'get_expected_payouts',
-    description: 'Get expected payout/commission projections for agents. Shows expected earnings from active policies based on commission structure and hierarchy. Includes breakdown by carrier, your production vs downline production, and optionally debt from lapsed policies. Use this for questions about commissions, earnings, payouts, or what agents will earn.',
+    description: 'Get expected payout/commission projections for a SINGLE agent. Shows their expected earnings breakdown by your production (deals you wrote) vs downline production (commission from hierarchy). For payouts of ALL agents/downlines, use get_downline_payouts instead. Use this for questions about a specific agent\'s commissions, earnings, or individual payouts. IMPORTANT: When asking about ANOTHER agent\'s payouts (not current user), you MUST provide their agent_id - otherwise it returns the current user\'s payouts!',
     input_schema: {
       type: 'object',
       properties: {
-        agent_id: { type: 'string', description: 'Specific agent ID to get payouts for (defaults to current user)' },
+        agent_id: { type: 'string', description: 'REQUIRED when querying for another agent. The agent ID to get payouts for. If omitted, returns current user\'s payouts. Get this ID from search_agents first.' },
         months_past: { type: 'number', description: 'Months to look back (default 12)' },
         months_future: { type: 'number', description: 'Months to look forward (default 12)' },
         carrier_id: { type: 'string', description: 'Optional carrier ID to filter by' },
         include_debt: { type: 'boolean', description: 'Include debt from lapsed policies (default true)' }
+      }
+    }
+  },
+  {
+    name: 'get_downline_payouts',
+    description: 'Get expected payouts FOR each agent in your downline/hierarchy (or all agents for admins). Shows what each individual agent expects to receive as their own payout. Use this when asked about payouts OF downlines, team payouts, what each agent will earn, or aggregate payout data across multiple agents.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        agent_id: { type: 'string', description: 'Root agent ID to start from (defaults to current user). For admins, returns all agency agents.' },
+        include_root: { type: 'boolean', description: 'Include the root agent in results (default true)' },
+        months_future: { type: 'number', description: 'Months to look forward (default 12)' }
       }
     }
   },
@@ -702,6 +714,12 @@ function sanitizeToolResult(toolName: string, result: any) {
     return result;
   }
 
+  // Skip sanitization for visualization results - we need the full data array
+  // to be preserved for chart rendering and persistence
+  if (result._visualization === true) {
+    return result;
+  }
+
   switch (toolName) {
     case 'get_persistency_analytics':
       return summarizePersistencyAnalytics(result);
@@ -969,6 +987,17 @@ FUZZY SEARCH GUIDELINES:
 - After getting search results, use the returned IDs for further queries (get_agent_hierarchy, get_deals, etc.)
 - For group analysis on agents/policies, you may not need fuzzy search - use get_agents or get_deals directly with filters
 
+CRITICAL - AGENT ID CHAINING:
+When querying data for a SPECIFIC agent found via search, you MUST pass their agent_id to subsequent tool calls:
+- get_expected_payouts: MUST pass agent_id parameter when asking about another agent's payouts
+- get_agent_hierarchy: MUST pass agent_id parameter
+- get_deals: Should pass agent_id to filter deals
+- get_scoreboard: Pass agent_id to see that agent's rankings
+Without passing agent_id, these tools default to the current logged-in user's data, NOT the searched agent!
+Example: User asks "what is Andrew's expected payout?"
+  1. First call search_agents with query "andrew" → get Andrew's ID (e.g., "abc-123")
+  2. Then call get_expected_payouts with agent_id: "abc-123" ← REQUIRED to get Andrew's data!
+
 HANDLING FUZZY SEARCH RESULTS - SUGGESTIONS:
 - If no exact match is found, tools return "suggestions" with similar names and similarity scores
 - Look for "no_exact_match: true" in the response - this indicates no direct match was found
@@ -1044,7 +1073,7 @@ IMPORTANT CHART CODE RULES:
 
 WHEN TO USE EACH TOOL:
 ✅ get_persistency_analytics: "How many active policies?", "Show policies by carrier", "What's our lapse rate?"
-✅ get_expected_payouts: "What are expected payouts?", "Show commissions", "How much will agents earn?", "What's my payout?"
+✅ get_expected_payouts: "What's my payout?" (no agent_id), "What is [Name]'s payout?" (search_agents FIRST, then pass agent_id!)
 ✅ search_agents: "Find agent John", "Show me agents named Smith", "Who is john@email.com?"
 ✅ get_agent_hierarchy: "Show me John's downline", "What's the production for John's hierarchy?"
 ✅ compare_hierarchies: "Which hierarchy has better production - John's or Jane's?"
@@ -1100,6 +1129,28 @@ Example - After getting persistency data:
    - data: carriers array
    - x_axis_key: 'carrier'
    - y_axis_keys: ['active', 'inactive']
+
+Example - After getting downline payouts (visualizing by agent):
+1. Call get_downline_payouts
+2. Extract the by_agent array from result (NOT the whole result object)
+3. Call create_visualization with:
+   - chart_type: 'bar'
+   - title: 'Expected Payouts by Agent'
+   - data: by_agent array (the array itself, not { by_agent: [...] })
+   - x_axis_key: 'agent_name'
+   - y_axis_keys: ['total_expected']
+
+Example - After getting downline payouts (visualizing by carrier):
+1. Call get_downline_payouts
+2. Extract the by_carrier array from result
+3. Call create_visualization with:
+   - chart_type: 'bar'
+   - title: 'Expected Payouts by Carrier'
+   - data: by_carrier array
+   - x_axis_key: 'carrier_name'
+   - y_axis_keys: ['total']
+
+CRITICAL: When using create_visualization, the 'data' parameter MUST be the actual array of objects to chart, NOT a wrapper object. For example, pass result.by_agent (the array) NOT result (the object containing by_agent).
 
 IMPORTANT: The create_visualization tool generates chartcode automatically. You do NOT need to write chartcode manually when using this tool.
 

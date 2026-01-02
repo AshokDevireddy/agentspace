@@ -710,6 +710,8 @@ export async function searchAgents(params: any, agencyId: string, allowedAgentId
 
 // Fallback to basic ILIKE search if RPC fails
 async function searchAgentsFallback(params: any, agencyId: string, allowedAgentIds?: string[]) {
+  console.log('[searchAgentsFallback] Using fallback ILIKE search for query:', params.query);
+
   const supabase = await createServerClient();
   const query = params.query || '';
   const limit = params.limit || 20;
@@ -727,6 +729,7 @@ async function searchAgentsFallback(params: any, agencyId: string, allowedAgentI
     .eq('agency_id', agencyId)
     .neq('role', 'client')
     .or(orConditions.join(','))
+    .order('total_prod', { ascending: false, nullsFirst: false }) // Prioritize agents with higher production
     .limit(limit);
 
   if (allowedAgentIds && allowedAgentIds.length > 0) {
@@ -736,10 +739,11 @@ async function searchAgentsFallback(params: any, agencyId: string, allowedAgentI
   const { data: agents, error } = await searchQuery;
 
   if (error) {
+    console.error('[searchAgentsFallback] Error:', error);
     return { error: 'Failed to search agents' };
   }
 
-  return {
+  const result = {
     agents: (agents || []).map((a: any) => ({
       id: a.id,
       name: `${a.first_name || ''} ${a.last_name || ''}`.trim(),
@@ -749,6 +753,10 @@ async function searchAgentsFallback(params: any, agencyId: string, allowedAgentI
     count: agents?.length || 0,
     query: query.trim()
   };
+
+  console.log('[searchAgentsFallback] Found agents:', JSON.stringify(result.agents.map((a: any) => ({ id: a.id, name: a.name }))));
+
+  return result;
 }
 
 // Fuzzy search for clients
@@ -1529,13 +1537,20 @@ export async function getExpectedPayouts(
   try {
     const supabase = await createServerClient();
 
+    // DEBUG: Log what params we received
+    console.log('[getExpectedPayouts] params received:', JSON.stringify(params));
+    console.log('[getExpectedPayouts] userContext.user_id:', userContext?.user_id);
+
     // Determine which agent to query
     let targetAgentId = params.agent_id;
 
     // If no agent specified, use the current user
     if (!targetAgentId && userContext) {
+      console.log('[getExpectedPayouts] No agent_id provided, defaulting to current user');
       targetAgentId = userContext.user_id;
     }
+
+    console.log('[getExpectedPayouts] Final targetAgentId:', targetAgentId);
 
     // Permission check: ensure target agent is in allowed list (for non-admins)
     if (allowedAgentIds && allowedAgentIds.length > 0 && targetAgentId) {
@@ -1703,6 +1718,229 @@ export async function getExpectedPayouts(
   } catch (error) {
     console.error('Get expected payouts error:', error);
     return { error: 'Failed to get expected payouts' };
+  }
+}
+
+// Get expected payouts FOR each agent in downline/hierarchy (or all agents for admins)
+export async function getDownlinePayouts(
+  params: any,
+  agencyId: string,
+  allowedAgentIds?: string[],
+  userContext?: UserContext
+) {
+  try {
+    const supabase = await createServerClient();
+
+    const includeRoot = params.include_root !== false; // Default true
+    const monthsFuture = params.months_future || 12;
+    const rootAgentId = params.agent_id || userContext?.user_id;
+
+    if (!rootAgentId) {
+      return { error: 'No agent ID provided and no user context available' };
+    }
+
+    // Determine which agents to query based on user role
+    let agentIds: string[] = [];
+    let agentInfoMap: Record<string, { name: string; email: string }> = {};
+
+    if (userContext?.is_admin) {
+      // Admin: get ALL agents in the agency
+      const { data: allAgents, error: agentsError } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email')
+        .eq('agency_id', agencyId)
+        .in('role', ['agent', 'admin']);
+
+      if (agentsError) {
+        console.error('Error fetching agency agents:', agentsError);
+        return { error: 'Failed to fetch agency agents' };
+      }
+
+      agentIds = (allAgents || []).map((a: any) => a.id);
+      agentInfoMap = (allAgents || []).reduce((acc: Record<string, any>, a: any) => {
+        acc[a.id] = {
+          name: `${a.first_name || ''} ${a.last_name || ''}`.trim() || a.email,
+          email: a.email
+        };
+        return acc;
+      }, {});
+    } else {
+      // Non-admin: get downline using RPC
+      const { data: downline, error: downlineError } = await supabase.rpc('get_agent_downline', {
+        agent_id: rootAgentId
+      });
+
+      if (downlineError) {
+        console.error('Error fetching downline:', downlineError);
+        return { error: 'Failed to fetch downline agents' };
+      }
+
+      // Include root agent if requested
+      if (includeRoot) {
+        agentIds.push(rootAgentId);
+      }
+
+      // Add downline agents
+      if (downline && Array.isArray(downline)) {
+        agentIds.push(...downline.map((d: any) => d.id));
+      }
+
+      // Permission check for non-admins
+      if (allowedAgentIds && allowedAgentIds.length > 0) {
+        agentIds = agentIds.filter(id => allowedAgentIds.includes(id));
+      }
+
+      // Get agent info for display
+      if (agentIds.length > 0) {
+        const { data: agentInfo } = await supabase
+          .from('users')
+          .select('id, first_name, last_name, email')
+          .in('id', agentIds);
+
+        if (agentInfo) {
+          agentInfoMap = agentInfo.reduce((acc: Record<string, any>, a: any) => {
+            acc[a.id] = {
+              name: `${a.first_name || ''} ${a.last_name || ''}`.trim() || a.email,
+              email: a.email
+            };
+            return acc;
+          }, {});
+        }
+      }
+    }
+
+    if (agentIds.length === 0) {
+      return {
+        summary: {
+          total_agents: 0,
+          total_expected_payout: 0,
+          total_deals: 0
+        },
+        by_agent: [],
+        by_carrier: [],
+        note: 'No agents found in hierarchy'
+      };
+    }
+
+    // Fetch expected payouts for each agent
+    const agentPayouts: Array<{
+      agent_id: string;
+      agent_name: string;
+      total_expected: number;
+      deal_count: number;
+      by_carrier: Array<{ carrier_name: string; total: number; count: number }>;
+    }> = [];
+
+    const carrierTotals: Record<string, { name: string; total: number; count: number }> = {};
+    let grandTotalPayout = 0;
+    let grandTotalDeals = 0;
+
+    // Process agents in parallel (batches of 5 to avoid overwhelming the DB)
+    const batchSize = 5;
+    for (let i = 0; i < agentIds.length; i += batchSize) {
+      const batch = agentIds.slice(i, i + batchSize);
+
+      const batchResults = await Promise.all(
+        batch.map(async (agentId) => {
+          const { data: payouts, error: rpcError } = await supabase
+            .rpc('get_expected_payouts', {
+              p_user_id: agentId,
+              p_agent_id: agentId,
+              p_months_past: 0, // Only future payouts
+              p_months_future: monthsFuture,
+              p_carrier_id: null
+            });
+
+          if (rpcError) {
+            console.error(`Error fetching payouts for agent ${agentId}:`, rpcError);
+            return null;
+          }
+
+          return { agentId, payouts: payouts || [] };
+        })
+      );
+
+      // Process batch results
+      for (const result of batchResults) {
+        if (!result) continue;
+
+        const { agentId, payouts } = result;
+        const agentName = agentInfoMap[agentId]?.name || 'Unknown Agent';
+
+        // Calculate agent's total
+        let agentTotal = 0;
+        const agentCarriers: Record<string, { name: string; total: number; count: number }> = {};
+
+        for (const payout of payouts) {
+          const amount = parseFloat(payout.expected_payout) || 0;
+          agentTotal += amount;
+
+          // Track carrier breakdown for this agent
+          const carrierId = payout.carrier_id;
+          if (!agentCarriers[carrierId]) {
+            agentCarriers[carrierId] = { name: payout.carrier_name, total: 0, count: 0 };
+          }
+          agentCarriers[carrierId].total += amount;
+          agentCarriers[carrierId].count += 1;
+
+          // Track overall carrier totals
+          if (!carrierTotals[carrierId]) {
+            carrierTotals[carrierId] = { name: payout.carrier_name, total: 0, count: 0 };
+          }
+          carrierTotals[carrierId].total += amount;
+          carrierTotals[carrierId].count += 1;
+        }
+
+        agentPayouts.push({
+          agent_id: agentId,
+          agent_name: agentName,
+          total_expected: Math.round(agentTotal * 100) / 100,
+          deal_count: payouts.length,
+          by_carrier: Object.values(agentCarriers)
+            .map(c => ({
+              carrier_name: c.name,
+              total: Math.round(c.total * 100) / 100,
+              count: c.count
+            }))
+            .sort((a, b) => b.total - a.total)
+        });
+
+        grandTotalPayout += agentTotal;
+        grandTotalDeals += payouts.length;
+      }
+    }
+
+    // Sort agents by total expected payout (descending)
+    agentPayouts.sort((a, b) => b.total_expected - a.total_expected);
+
+    return {
+      summary: {
+        total_agents: agentPayouts.length,
+        total_expected_payout: Math.round(grandTotalPayout * 100) / 100,
+        total_deals: grandTotalDeals,
+        average_per_agent: agentPayouts.length > 0
+          ? Math.round((grandTotalPayout / agentPayouts.length) * 100) / 100
+          : 0
+      },
+      by_agent: agentPayouts.slice(0, 50), // Limit to top 50 for token efficiency
+      by_carrier: Object.values(carrierTotals)
+        .map(c => ({
+          carrier_name: c.name,
+          total: Math.round(c.total * 100) / 100,
+          deal_count: c.count
+        }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10), // Top 10 carriers
+      filters: {
+        root_agent_id: rootAgentId,
+        include_root: includeRoot,
+        months_future: monthsFuture,
+        is_admin_view: userContext?.is_admin || false
+      }
+    };
+  } catch (error) {
+    console.error('Get downline payouts error:', error);
+    return { error: 'Failed to get downline payouts' };
   }
 }
 
@@ -3214,6 +3452,8 @@ export async function executeToolCall(
       return await getDataSummary(cleanInput, agencyId, allowedAgentIds);
     case 'get_expected_payouts':
       return await getExpectedPayouts(cleanInput, agencyId, allowedAgentIds, userContext);
+    case 'get_downline_payouts':
+      return await getDownlinePayouts(cleanInput, agencyId, allowedAgentIds, userContext);
     case 'create_visualization':
       // Generate dynamic visualization with chartcode
       try {

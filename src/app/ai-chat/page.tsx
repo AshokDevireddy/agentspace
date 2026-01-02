@@ -639,7 +639,33 @@ export default function AIChat() {
       if (visualizationResult) {
         // Use chartcode and data from visualization tool result
         finalChartCode = visualizationResult.chartcode;
-        chartData = visualizationResult.data;
+        // Include axis metadata for persistence - ensures labels are preserved after reload
+        // Handle both original array and sanitized { sample, ... } format (defensive)
+        let vizData = visualizationResult.data;
+
+        // If data was sanitized into { sample, total_items, truncated } format, extract from sample
+        if (vizData && typeof vizData === 'object' && !Array.isArray(vizData) && vizData.sample) {
+          vizData = vizData.sample;
+          console.log('📊 Extracted data from sanitized sample format');
+        }
+
+        if (Array.isArray(vizData) && vizData.length > 0) {
+          chartData = {
+            data: vizData,
+            x_axis_key: visualizationResult._axis_metadata?.x_axis_key,
+            y_axis_keys: visualizationResult._axis_metadata?.y_axis_keys
+          };
+          console.log('📊 Chart data with metadata:', {
+            dataLength: vizData.length,
+            x_axis_key: visualizationResult._axis_metadata?.x_axis_key,
+            y_axis_keys: visualizationResult._axis_metadata?.y_axis_keys,
+            sampleItem: vizData[0]
+          });
+        } else {
+          // Final fallback: log error if data is still not valid
+          console.error('❌ Visualization data is not a valid array:', vizData);
+          chartData = null;
+        }
       } else if (chartCode) {
         // Fall back to extracting from assistant message (legacy behavior)
         const lastToolResult = toolResults.pop();

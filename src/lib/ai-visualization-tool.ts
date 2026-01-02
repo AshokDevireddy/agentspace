@@ -29,6 +29,11 @@ export interface VisualizationResult {
   description?: string;
   chartcode: string;
   data: Record<string, any>[];
+  // Axis metadata for persistence - ensures labels are preserved after reload
+  _axis_metadata: {
+    x_axis_key: string;
+    y_axis_keys: string[];
+  };
 }
 
 // Default color palette for Chart.js (with alpha for backgrounds)
@@ -258,7 +263,12 @@ export function generateVisualization(input: VisualizationInput): VisualizationR
     title: input.title,
     description: input.description,
     chartcode,
-    data: limitedData
+    data: limitedData,
+    // Include axis metadata for persistence - ensures labels are preserved after reload
+    _axis_metadata: {
+      x_axis_key: input.x_axis_key,
+      y_axis_keys: input.y_axis_keys
+    }
   };
 }
 

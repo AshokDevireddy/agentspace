@@ -171,14 +171,18 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if user is admin
+    // Check if user is admin (check all admin indicators)
     const { data: currentUser } = await supabaseAdmin
       .from("users")
-      .select("role")
+      .select("is_admin, perm_level, role")
       .eq("auth_user_id", user.id)
       .single();
 
-    if (!currentUser || currentUser.role !== "admin") {
+    const isAdmin = currentUser?.is_admin || 
+                   currentUser?.perm_level === "admin" || 
+                   currentUser?.role === "admin";
+
+    if (!currentUser || !isAdmin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

@@ -160,11 +160,15 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
       if (user) {
         const { data: userData } = await supabase
           .from('users')
-          .select('role')
+          .select('is_admin, perm_level, role')
           .eq('auth_user_id', user.id)
           .single()
         
-        setIsAdmin(userData?.role === 'admin')
+        // Check all three admin indicators: is_admin, perm_level, and role
+        const isAdmin = userData?.is_admin || 
+                       userData?.perm_level === 'admin' || 
+                       userData?.role === 'admin'
+        setIsAdmin(isAdmin)
       }
     } catch (err) {
       console.error('Error checking admin status:', err)

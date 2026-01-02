@@ -1,12 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
+import { decodeAndValidateJwt } from '@/lib/auth/jwt'
+import { updatePassword } from '@/lib/supabase/api'
+import { storeRecoveryTokens, getRecoveryTokens, clearRecoveryTokens, captureHashTokens } from '@/lib/auth/constants'
 
 export default function ForgotPassword() {
   const supabase = createClient()
@@ -23,71 +26,44 @@ export default function ForgotPassword() {
   const [userEmail, setUserEmail] = useState<string>("")
   const [tokenValid, setTokenValid] = useState<boolean>(false)
 
+  const [initialHashTokens] = useState(() => captureHashTokens('recovery'))
+  const processingRef = useRef(false)
+
   useEffect(() => {
-    fetchUserData()
+    if (processingRef.current) return
+    processingRef.current = true
+
+    handleRecovery()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const fetchUserData = async () => {
-    try {
-      // Handle hash fragments from password reset link
-      const hash = window.location.hash.substring(1)
-      if (hash) {
-        const urlParams = new URLSearchParams(hash)
-        const accessToken = urlParams.get('access_token')
-        const refreshToken = urlParams.get('refresh_token')
-        const type = urlParams.get('type')
+  const handleRecovery = async () => {
+    if (initialHashTokens) {
+      const payload = decodeAndValidateJwt(initialHashTokens.accessToken)
 
-        if (type === 'recovery' && accessToken && refreshToken) {
-          // Set session from recovery tokens
-          const { data: { session }, error: setSessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          })
-
-          if (setSessionError) {
-            console.error('Error setting session:', setSessionError)
-            router.push('/login')
-            return
-          }
-
-          if (session?.user?.email) {
-            setUserEmail(session.user.email)
-            setTokenValid(true)
-            setLoading(false)
-            return
-          }
-        }
-      }
-
-      // Check if user is already authenticated
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-
-      if (userError || !user) {
-        router.push('/login')
+      if (!payload) {
+        setLoading(false)
+        router.push('/login?error=Your password reset link has expired. Please request a new one.')
         return
       }
 
-      if (user?.email) {
-        setUserEmail(user.email)
+      if (payload.email) {
+        storeRecoveryTokens(initialHashTokens.accessToken, initialHashTokens.refreshToken)
+        setUserEmail(payload.email)
         setTokenValid(true)
         setLoading(false)
-      } else {
-        router.push('/login')
+        return
       }
-    } catch (error) {
-      console.error('Error fetching user data:', error)
-      router.push('/login')
-    } finally {
-      setLoading(false)
     }
+
+    setLoading(false)
+    router.push('/login?error=Please use the password reset link from your email')
   }
 
   const validateForm = () => {
     const newErrors: string[] = []
     const newErrorFields: Record<string, string> = {}
 
-    // Check if passwords are filled out
     if (!formData.password.trim()) {
       newErrors.push("Password is required")
       newErrorFields.password = "Password is required"
@@ -98,13 +74,11 @@ export default function ForgotPassword() {
       newErrorFields.confirmPassword = "Confirm password is required"
     }
 
-    // Password validation
     if (formData.password.length < 6) {
       newErrors.push("Password must be at least 6 characters")
       newErrorFields.password = "Password too short"
     }
 
-    // Confirm password validation
     if (formData.password !== formData.confirmPassword) {
       newErrors.push("Passwords do not match")
       newErrorFields.confirmPassword = "Passwords do not match"
@@ -115,23 +89,25 @@ export default function ForgotPassword() {
     return newErrors.length === 0
   }
 
-  const updatePassword = async (new_password: string) => {
-    try {
-      const { data, error } = await supabase.auth.updateUser({
-        password: new_password
-      })
+  const handleUpdatePassword = async (newPassword: string) => {
+    const { accessToken } = getRecoveryTokens()
 
-      if (error) {
-        throw error
-      }
-
-      return { success: true }
-    } catch (error: any) {
-      console.error('Error updating password:', error)
+    if (!accessToken) {
       return {
         success: false,
-        message: error?.message || 'Failed to update password. Please try again.'
+        message: 'No recovery token found. Please use the password reset link again.'
       }
+    }
+
+    const result = await updatePassword(accessToken, newPassword)
+
+    if (result.success) {
+      clearRecoveryTokens()
+    }
+
+    return {
+      success: result.success,
+      message: result.error || undefined
     }
   }
 
@@ -146,9 +122,7 @@ export default function ForgotPassword() {
     setSubmitting(true)
 
     try {
-      // Update password securely through Supabase Auth
-      // User is already authenticated from PASSWORD_RECOVERY event
-      const result = await updatePassword(formData.password)
+      const result = await handleUpdatePassword(formData.password)
 
       if (!result.success) {
         setErrors([result.message || 'Failed to update password. Please try again.'])
@@ -156,18 +130,12 @@ export default function ForgotPassword() {
         return
       }
 
-      // Clear sensitive data from memory
-      setFormData({
-        password: "",
-        confirmPassword: ""
-      })
+      setFormData({ password: "", confirmPassword: "" })
 
-      // Check if user has a white-label domain to redirect to
       const urlParams = new URLSearchParams(window.location.search)
       const agencyId = urlParams.get('agency_id')
 
       if (agencyId) {
-        // Fetch agency's white-label domain
         const { data: agencyData } = await supabase
           .from('agencies')
           .select('whitelabel_domain')
@@ -175,17 +143,14 @@ export default function ForgotPassword() {
           .single()
 
         if (agencyData?.whitelabel_domain) {
-          // Redirect to white-label domain login page
           const protocol = window.location.protocol
           window.location.href = `${protocol}//${agencyData.whitelabel_domain}/login?message=password-reset-success`
           return
         }
       }
 
-      // Default: redirect to main domain login page
       router.push('/login?message=password-reset-success')
-    } catch (error) {
-      console.error('Error updating password:', error)
+    } catch {
       setErrors(['Failed to update password. Please try again.'])
     } finally {
       setSubmitting(false)
@@ -194,13 +159,11 @@ export default function ForgotPassword() {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData({ ...formData, [field]: value })
-    // Clear error for this field when user starts typing
     if (errorFields[field]) {
       setErrorFields({ ...errorFields, [field]: '' })
     }
   }
 
-  // Group errors by type for better display
   const passwordErrors = errors.filter(error => error.includes('Password') || error.includes('match'))
   const otherErrors = errors.filter(error => !error.includes('Password') && !error.includes('match'))
 
@@ -232,7 +195,6 @@ export default function ForgotPassword() {
             <p className="text-muted-foreground">Enter a new password for {userEmail}</p>
           </div>
 
-          {/* Password Errors */}
           {passwordErrors.length > 0 && (
             <Alert variant="destructive" className="mb-4">
               <AlertDescription>
@@ -243,7 +205,6 @@ export default function ForgotPassword() {
             </Alert>
           )}
 
-          {/* Other Errors */}
           {otherErrors.length > 0 && (
             <Alert variant="destructive" className="mb-6">
               <AlertDescription>
@@ -255,7 +216,6 @@ export default function ForgotPassword() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Email - Locked */}
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
                 Email
@@ -268,11 +228,9 @@ export default function ForgotPassword() {
               />
             </div>
 
-            {/* Password Setup Section */}
             <div className="pt-6 border-t border-border">
               <h3 className="text-lg font-medium text-foreground mb-4">Set New Password</h3>
 
-              {/* Password */}
               <div className="space-y-2 mb-4">
                 <label className="block text-sm font-medium text-foreground">
                   Password
@@ -290,7 +248,6 @@ export default function ForgotPassword() {
                 )}
               </div>
 
-              {/* Confirm Password */}
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-foreground">
                   Confirm Password
@@ -309,7 +266,6 @@ export default function ForgotPassword() {
               </div>
             </div>
 
-            {/* Submit Button */}
             <div className="pt-6">
               <Button
                 type="submit"
@@ -325,4 +281,3 @@ export default function ForgotPassword() {
     </div>
   )
 }
-

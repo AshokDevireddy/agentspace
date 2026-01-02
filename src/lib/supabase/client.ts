@@ -19,7 +19,7 @@ export const createClient = () => {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true,
+        detectSessionInUrl: false, // Disabled - we handle tokens manually in pages
       },
       global: {
         headers: {

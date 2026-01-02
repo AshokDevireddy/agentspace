@@ -9,6 +9,9 @@ import { Loader2 } from "lucide-react"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 import { useTheme } from "next-themes"
 import { useNotification } from '@/contexts/notification-context'
+import { decodeAndValidateJwt } from '@/lib/auth/jwt'
+import { supabaseRestFetch, updatePassword } from '@/lib/supabase/api'
+import { AUTH_TIMEOUT_MS, getInviteTokens, clearInviteTokens } from '@/lib/auth/constants'
 
 interface UserData {
   id: string
@@ -21,6 +24,11 @@ interface UserData {
   is_admin: boolean
   status: 'pre-invite' | 'invited' | 'onboarding' | 'active' | 'inactive'
   agency_id?: string
+}
+
+interface AgencyData {
+  display_name: string
+  name: string
 }
 
 export default function SetupAccount() {
@@ -46,7 +54,6 @@ export default function SetupAccount() {
   const [agencyName, setAgencyName] = useState<string>("AgentSpace")
   const errorRef = useRef<HTMLDivElement>(null)
 
-  // Force light mode for non-white-labeled sites, use agency theme for white-labeled sites
   useEffect(() => {
     if (!brandingLoading) {
       if (isWhiteLabel && branding?.theme_mode) {
@@ -59,6 +66,7 @@ export default function SetupAccount() {
 
   useEffect(() => {
     fetchUserData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -69,53 +77,99 @@ export default function SetupAccount() {
 
   const fetchUserData = async () => {
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      const { accessToken: storedAccessToken } = getInviteTokens()
+      let authUserId: string | null = null
 
-      if (userError || !user) {
+      // Check stored tokens first (avoids getUser() which can hang)
+      if (storedAccessToken) {
+        const payload = decodeAndValidateJwt(storedAccessToken)
+        if (!payload) {
+          clearInviteTokens()
+          router.push('/login?error=Your session has expired. Please use your invitation link again.')
+          return
+        }
+        authUserId = payload.sub
+      }
+
+      // Fallback to session check with timeout
+      if (!authUserId) {
+        try {
+          const getUserPromise = supabase.auth.getUser()
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), AUTH_TIMEOUT_MS)
+          )
+          const result = await Promise.race([getUserPromise, timeoutPromise])
+          if (result?.data?.user) {
+            authUserId = result.data.user.id
+          }
+        } catch {
+          // Timeout or error, continue to redirect
+        }
+      }
+
+      if (!authUserId) {
         router.push('/login')
         return
       }
 
-      console.log('User authenticated:', user.id)
+      // Fetch user data
+      let userRecord: UserData | null = null
 
-      // Try to find user in users table with status='onboarding' (Phase 1 - password setup)
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('auth_user_id', user.id)
-        .eq('status', 'onboarding')
-        .single()
+      if (storedAccessToken) {
+        const { data } = await supabaseRestFetch<UserData[]>(
+          `/rest/v1/users?auth_user_id=eq.${authUserId}&status=eq.onboarding&select=*`,
+          { accessToken: storedAccessToken }
+        )
+        userRecord = data?.[0] || null
+      } else {
+        const { data } = await supabase
+          .from('users')
+          .select('*')
+          .eq('auth_user_id', authUserId)
+          .eq('status', 'onboarding')
+          .single()
+        userRecord = data
+      }
 
-      if (error) {
-        console.error('Error fetching user data:', error)
+      if (!userRecord) {
         setErrors(['Failed to load user data. Your account setup may have already been completed.'])
         setLoading(false)
         return
       }
 
-      setUserData(data)
-      console.log('User data loaded for Phase 1 setup:', data.role, 'is_admin:', data.is_admin)
+      setUserData(userRecord)
       setFormData({
-        firstName: data.first_name || "",
-        lastName: data.last_name || "",
-        phoneNumber: data.phone_number || "",
+        firstName: userRecord.first_name || "",
+        lastName: userRecord.last_name || "",
+        phoneNumber: userRecord.phone_number || "",
         password: "",
         confirmPassword: ""
       })
 
-      // Fetch agency data if user has an agency
-      if (data.agency_id) {
-        const { data: agencyData } = await supabase
-          .from('agencies')
-          .select('display_name, name')
-          .eq('id', data.agency_id)
-          .maybeSingle()
+      // Fetch agency data
+      if (userRecord.agency_id) {
+        let agencyData: AgencyData | null = null
+
+        if (storedAccessToken) {
+          const { data } = await supabaseRestFetch<AgencyData[]>(
+            `/rest/v1/agencies?id=eq.${userRecord.agency_id}&select=display_name,name`,
+            { accessToken: storedAccessToken }
+          )
+          agencyData = data?.[0] || null
+        } else {
+          const { data } = await supabase
+            .from('agencies')
+            .select('display_name, name')
+            .eq('id', userRecord.agency_id)
+            .maybeSingle()
+          agencyData = data
+        }
+
         if (agencyData) {
           setAgencyName(agencyData.display_name || agencyData.name || "AgentSpace")
         }
       }
-    } catch (error) {
-      console.error('Error:', error)
+    } catch {
       setErrors(['Failed to load user data'])
     } finally {
       setLoading(false)
@@ -126,7 +180,6 @@ export default function SetupAccount() {
     const newErrors: string[] = []
     const newErrorFields: Record<string, string> = {}
 
-    // Phone validation (10 digits) - required
     if (!formData.phoneNumber || formData.phoneNumber.trim() === '') {
       newErrors.push("Phone number is required")
       newErrorFields.phoneNumber = "Required"
@@ -135,13 +188,11 @@ export default function SetupAccount() {
       newErrorFields.phoneNumber = "Invalid phone format"
     }
 
-    // Password validation
     if (formData.password.length < 6) {
       newErrors.push("Password must be at least 6 characters")
       newErrorFields.password = "Password too short"
     }
 
-    // Confirm password validation
     if (formData.password !== formData.confirmPassword) {
       newErrors.push("Passwords do not match")
       newErrorFields.confirmPassword = "Passwords do not match"
@@ -171,52 +222,48 @@ export default function SetupAccount() {
     setErrors([])
 
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      let accessToken = getInviteTokens().accessToken
 
-      if (userError || !user) {
+      if (!accessToken) {
+        const { data: { session } } = await supabase.auth.getSession()
+        accessToken = session?.access_token || null
+      }
+
+      if (!accessToken) {
         setErrors(['Authentication error. Please try logging in again.'])
         return
       }
 
-      // Update user password
-      const { error: passwordError } = await supabase.auth.updateUser({
-        password: formData.password
-      })
-
-      if (passwordError) {
-        console.error('Error updating password:', passwordError)
-        setErrors([passwordError.message || 'Failed to update password. Please try again.'])
+      // Update password
+      const passwordResult = await updatePassword(accessToken, formData.password)
+      if (!passwordResult.success) {
+        setErrors([passwordResult.error || 'Failed to update password. Please try again.'])
         window.scrollTo({ top: 0, behavior: 'smooth' })
         return
       }
 
-      // Update user profile with latest info
-      // For clients: set status to 'active' immediately after setup
-      // For admins/agents: status remains 'onboarding' for Phase 2 onboarding
-      const updateData: any = {
+      // Update profile
+      const updateData: Record<string, unknown> = {
         first_name: formData.firstName,
         last_name: formData.lastName,
         phone_number: formData.phoneNumber || null,
         updated_at: new Date().toISOString(),
       }
 
-      // Set status to 'active' for clients immediately after complete setup
       if (userData?.role === 'client') {
         updateData.status = 'active'
       }
 
-      const { error: updateError } = await supabase
-        .from('users')
-        .update(updateData)
-        .eq('id', userData?.id)
+      const { error: profileError } = await supabaseRestFetch(
+        `/rest/v1/users?id=eq.${userData?.id}`,
+        { accessToken, method: 'PATCH', body: updateData }
+      )
 
-      if (updateError) {
-        console.error('Error updating user data:', updateError)
+      if (profileError) {
         setErrors(['Failed to update profile. Please try again.'])
         return
       }
 
-      // Clear sensitive data
       setFormData({
         firstName: "",
         lastName: "",
@@ -225,18 +272,11 @@ export default function SetupAccount() {
         confirmPassword: ""
       })
 
-      // Success! Redirect to dashboard
-      if (userData?.role === 'client') {
-        showSuccess('Password set successfully! Redirecting to your dashboard...')
-        router.refresh()
-        router.push('/client/dashboard')
-      } else {
-        showSuccess('Password set successfully! Redirecting to complete your account setup...')
-        router.refresh()
-        router.push('/')
-      }
-    } catch (error) {
-      console.error('Error during setup:', error)
+      clearInviteTokens()
+
+      showSuccess('Account setup complete! Please log in with your new password.')
+      router.push('/login?message=setup-complete')
+    } catch {
       setErrors(['Failed to complete setup. Please try again.'])
     } finally {
       setSubmitting(false)
@@ -262,7 +302,6 @@ export default function SetupAccount() {
   return (
     <div className="min-h-screen bg-background py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto space-y-8">
-        {/* Header */}
         <div>
           <h1 className="text-4xl font-bold mb-2 text-foreground" style={{ fontFamily: 'Times New Roman, serif' }}>
             Welcome to {agencyName}
@@ -272,7 +311,6 @@ export default function SetupAccount() {
           </p>
         </div>
 
-        {/* Error Banner */}
         {errors.length > 0 && (
           <div
             ref={errorRef}
@@ -284,7 +322,6 @@ export default function SetupAccount() {
           </div>
         )}
 
-        {/* Content Card */}
         <div className="bg-card rounded-xl shadow-lg border border-border p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="border-b border-border pb-4">
@@ -390,7 +427,6 @@ export default function SetupAccount() {
               </div>
             </div>
 
-            {/* Submit Button */}
             <div className="pt-6">
               <Button
                 type="submit"

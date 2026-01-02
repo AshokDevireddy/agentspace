@@ -48,10 +48,11 @@ export async function POST(request: Request) {
     }
 
     // 3. Create auth user and send invite email
+    // Use /auth/callback for PKCE flow - it will handle the code exchange
     const { data: authData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       email,
       {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login`
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/confirm`
       }
     )
 

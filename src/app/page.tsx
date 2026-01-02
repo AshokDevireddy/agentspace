@@ -278,14 +278,20 @@ export default function Home() {
   const handleOnboardingComplete = async () => {
     // Wizard completed - update user status to active
     try {
-      await fetch('/api/user/complete-onboarding', {
+      const response = await fetch('/api/user/complete-onboarding', {
         method: 'POST',
       })
+
+      if (!response.ok) {
+        console.error('Complete onboarding API failed:', response.status)
+      }
 
       // Reload to get fresh user status
       window.location.reload()
     } catch (error) {
       console.error('Error completing onboarding:', error)
+      // Still reload - status might have been updated by wizard
+      window.location.reload()
     }
   }
 

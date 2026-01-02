@@ -10,6 +10,7 @@ import { Users, Loader2, X, Plus, CheckCircle2, Shield, AlertCircle, Clock, Uplo
 import { Progress } from "@/components/ui/progress"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
+import { withTimeout } from '@/lib/auth/constants'
 
 interface UserData {
   id: string
@@ -814,22 +815,26 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         // Continue anyway, just log the warning
       }
 
-      // Update user status to 'active'
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
-          status: 'active',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userData.id)
+      // Update user status to 'active' with timeout (Supabase client can hang)
+      try {
+        const { error: updateError } = await withTimeout(
+          supabase
+            .from('users')
+            .update({
+              status: 'active',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', userData.id)
+        )
 
-      if (updateError) {
-        console.error('Error updating user status:', updateError)
-        setErrors(['Failed to complete onboarding. Please try again.'])
-        return
+        if (updateError) {
+          console.error('Error updating user status:', updateError)
+        }
+      } catch {
+        // Timeout or error - continue to onComplete() which updates via server API
       }
 
-      // Success! Call onComplete callback
+      // Call onComplete callback (also updates status via server API as fallback)
       onComplete()
     } catch (error) {
       console.error('Error during onboarding completion:', error)

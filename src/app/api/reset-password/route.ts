@@ -28,12 +28,10 @@ export async function POST(request: Request) {
     // But only send the email if the user actually exists
     if (existingUser && existingUser.auth_user_id) {
       // WHITE-LABEL AUTH STRATEGY:
-      // All password reset links go to the main domain (app.useagentspace.com/forgot-password)
-      // After successful password reset, we redirect users to their white-label domain
-      // This is the industry-standard approach (used by Stripe, Shopify, etc.)
+      // Password reset uses hash fragments (implicit flow), not PKCE
+      // So we redirect directly to /forgot-password which handles hash tokens client-side
+      // Store agency_id to redirect back to white-label domain after password reset
 
-      // Store agency_id in the redirect URL as a query parameter
-      // This allows the forgot-password page to redirect back to the correct white-label domain
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
       const redirectUrl = existingUser.agency_id
         ? `${baseUrl}/forgot-password?agency_id=${existingUser.agency_id}`

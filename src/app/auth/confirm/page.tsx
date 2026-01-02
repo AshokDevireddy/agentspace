@@ -1,157 +1,162 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { decodeAndValidateJwt } from '@/lib/auth/jwt'
+import { supabaseRestFetch } from '@/lib/supabase/api'
+import { REDIRECT_DELAY_MS, storeInviteTokens, captureHashTokens, withTimeout, type HashTokens } from '@/lib/auth/constants'
+
+interface UserRecord {
+  id: string
+  role: string
+  status: string
+}
 
 export default function ConfirmSession() {
   const supabase = createClient()
   const router = useRouter()
   const [message, setMessage] = useState('Confirming your session...')
+  const [initialHashTokens] = useState<HashTokens | null>(captureHashTokens)
+  const processingRef = useRef(false)
 
   useEffect(() => {
-    const confirmSession = async () => {
-      try {
-        // Log the full URL to see what we're receiving
-        console.log('Confirm page URL:', window.location.href)
-        console.log('Search params:', window.location.search)
-        console.log('Hash params:', window.location.hash)
+    if (processingRef.current) return
+    processingRef.current = true
 
-        // First, check if we already have an authenticated user (user clicked link while logged in)
-        const { data: { user: existingUser } } = await supabase.auth.getUser()
+    confirmSession()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-        if (existingUser) {
-          console.log('Found existing authenticated user, routing user:', existingUser.id)
-          await routeUser(existingUser.id)
+  const confirmSession = async () => {
+    try {
+      // Try hash tokens first (from Supabase implicit flow)
+      if (initialHashTokens) {
+        const payload = decodeAndValidateJwt(initialHashTokens.accessToken)
+
+        if (!payload) {
+          setMessage('Your link has expired. Please request a new invitation.')
+          setTimeout(() => router.push('/login?error=Your invitation link has expired. Please contact your administrator.'), REDIRECT_DELAY_MS)
           return
         }
 
-        // 1) Handle modern OAuth-style callback with code hash fragment
-        console.log('Attempting to exchange code for session...')
-        const { data: { session }, error: exchangeError } = await supabase.auth.exchangeCodeForSession(window.location.href)
+        await routeUser(payload.sub, initialHashTokens.accessToken)
+        return
+      }
 
-        if (exchangeError) {
-          console.error('Exchange code error:', exchangeError)
-        }
+      // Fallback: check for existing session
+      const { data: { user: existingUser } } = await supabase.auth.getUser()
+      if (existingUser) {
+        await routeUser(existingUser.id)
+        return
+      }
 
-        if (!exchangeError && session?.user) {
-          console.log('Successfully exchanged code, routing user:', session.user.id)
+      // Try PKCE flow (code in query params)
+      const code = new URLSearchParams(window.location.search).get('code')
+      if (code) {
+        const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(window.location.href)
+        if (!error && session?.user) {
           await routeUser(session.user.id)
           return
         }
-
-        // 2) Fallback: legacy flow using refresh_token in hash
-        console.log('Trying legacy hash flow...')
-        const hash = window.location.hash.substring(1)
-        const urlParams = new URLSearchParams(hash)
-        const refreshToken = urlParams.get('refresh_token')
-        const accessToken = urlParams.get('access_token')
-
-        if (accessToken || refreshToken) {
-          console.log('Found tokens in hash, attempting to set session...')
-
-          if (refreshToken) {
-            const { error: refreshError } = await supabase.auth.refreshSession({ refresh_token: refreshToken })
-            if (!refreshError) {
-              const { data: { user } } = await supabase.auth.getUser()
-              if (user) {
-                console.log('Successfully refreshed session, routing user:', user.id)
-                await routeUser(user.id)
-                return
-              }
-            } else {
-              console.error('Refresh session error:', refreshError)
-            }
-          }
-        }
-
-        // 3) Check if user is already authenticated (after clicking magic link)
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          console.log('Found authenticated user, routing:', user.id)
-          await routeUser(user.id)
-          return
-        }
-
-        // 4) If nothing worked, send to login
-        console.error('All authentication methods failed')
-        setMessage('Session confirmation failed. Redirecting to login...')
-        setTimeout(() => router.push('/login'), 2000)
-
-      } catch (err) {
-        console.error('Unexpected error during session confirmation:', err)
-        setMessage('An error occurred. Redirecting to login...')
-        setTimeout(() => router.push('/login'), 2000)
       }
+
+      setMessage('Session confirmation failed. Redirecting to login...')
+      setTimeout(() => router.push('/login?error=Please use the invitation link from your email'), REDIRECT_DELAY_MS)
+    } catch {
+      setMessage('An error occurred. Redirecting to login...')
+      setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
+    }
+  }
+
+  const routeUser = async (authUserId: string, accessToken?: string) => {
+    try {
+      const user = await fetchUserRecord(authUserId, accessToken)
+
+      if (!user) {
+        setMessage('Account not found. Redirecting to login...')
+        setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
+        return
+      }
+
+      if (user.status === 'invited') {
+        await handleInvitedUser(user, accessToken)
+        return
+      }
+
+      if (user.status === 'onboarding') {
+        setMessage('Continue setting up your account...')
+        router.push('/setup-account')
+        return
+      }
+
+      if (user.status === 'active') {
+        setMessage('Welcome back! Redirecting...')
+        router.push(user.role === 'client' ? '/client/dashboard' : '/')
+        return
+      }
+
+      setMessage('Account is not accessible. Please contact support.')
+      setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
+    } catch {
+      setMessage('An error occurred. Redirecting to login...')
+      setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
+    }
+  }
+
+  const fetchUserRecord = async (authUserId: string, accessToken?: string): Promise<UserRecord | null> => {
+    if (accessToken) {
+      const { data } = await supabaseRestFetch<UserRecord[]>(
+        `/rest/v1/users?auth_user_id=eq.${authUserId}&select=id,role,status`,
+        { accessToken }
+      )
+      return data?.[0] || null
     }
 
-    const routeUser = async (authUserId: string) => {
+    const { data } = await supabase
+      .from('users')
+      .select('id, role, status')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle()
+
+    return data
+  }
+
+  const handleInvitedUser = async (user: UserRecord, accessToken?: string) => {
+    // Update status to onboarding
+    if (accessToken) {
+      await supabaseRestFetch(
+        `/rest/v1/users?id=eq.${user.id}`,
+        {
+          accessToken,
+          method: 'PATCH',
+          body: { status: 'onboarding', updated_at: new Date().toISOString() }
+        }
+      )
+    } else {
+      await supabase
+        .from('users')
+        .update({ status: 'onboarding', updated_at: new Date().toISOString() })
+        .eq('id', user.id)
+    }
+
+    // Try to establish session, store tokens as fallback
+    if (accessToken && initialHashTokens?.refreshToken) {
       try {
-        // Get user data
-        const { data: user, error: userError } = await supabase
-          .from('users')
-          .select('id, role, status')
-          .eq('auth_user_id', authUserId)
-          .maybeSingle()
-
-        if (userError || !user) {
-          console.error('User not found in users table:', userError)
-          setMessage('Account not found. Redirecting to login...')
-          setTimeout(() => router.push('/login'), 2000)
-          return
-        }
-
-        // Handle user based on their status
-        if (user.status === 'invited') {
-          // First time clicking invite link - transition to onboarding
-          console.log('Transitioning user from invited to onboarding')
-          const { error: updateError } = await supabase
-            .from('users')
-            .update({ status: 'onboarding', updated_at: new Date().toISOString() })
-            .eq('id', user.id)
-
-          if (updateError) {
-            console.error('Error updating user status:', updateError)
-            // Continue anyway, they can still proceed to setup
-          }
-
-          setMessage('Setting up your account...')
-          router.push('/setup-account')
-          return
-        }
-
-        if (user.status === 'onboarding') {
-          // User clicked link again but hasn't finished onboarding
-          setMessage('Continue setting up your account...')
-          router.push('/setup-account')
-          return
-        }
-
-        if (user.status === 'active') {
-          // User already set up, route to appropriate dashboard
-          setMessage('Welcome back! Redirecting...')
-          if (user.role === 'client') {
-            router.push('/client/dashboard')
-          } else {
-            router.push('/')
-          }
-          return
-        }
-
-        // Handle inactive or other statuses
-        console.error('User has invalid status:', user.status)
-        setMessage('Account is not accessible. Please contact support.')
-        setTimeout(() => router.push('/login'), 2000)
-
-      } catch (err) {
-        console.error('Error routing user:', err)
-        setMessage('An error occurred. Redirecting to login...')
-        setTimeout(() => router.push('/login'), 2000)
+        await withTimeout(
+          supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: initialHashTokens.refreshToken
+          })
+        )
+      } catch {
+        storeInviteTokens(accessToken, initialHashTokens.refreshToken)
       }
     }
 
-    confirmSession()
-  }, [router, supabase])
+    setMessage('Setting up your account...')
+    router.push('/setup-account')
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">

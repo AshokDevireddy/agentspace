@@ -583,14 +583,14 @@ export async function getAgencySummary(params: any, agencyId: string) {
 }
 
 // Get comprehensive analytics using the same RPC as the analytics dashboard page
-export async function getPersistencyAnalytics(params: any, agencyId: string, userContext?: UserContext) {
+export async function getPersistencyAnalytics(params: any, agencyId: string, allowedAgentIds?: string[], userContext?: UserContext) {
   try {
     const supabase = await createServerClient();
 
-    // For non-admin users, we need to filter analytics to their scope
-    // The RPC function doesn't support agent filtering, so we need to use a different approach
-    // For now, we'll use the full agency data for admins, and note the limitation for non-admins
+    // SECURITY: For non-admin users, this returns agency-wide aggregate data
+    // The RPC doesn't support agent filtering, so we add a clear warning
     const isAdmin = !userContext || userContext.is_admin;
+    const isNonAdminWithLimitedAccess = allowedAgentIds && allowedAgentIds.length > 0;
 
     // Call the SAME RPC function that the analytics dashboard page uses
     // This provides comprehensive analytics data including:
@@ -602,10 +602,11 @@ export async function getPersistencyAnalytics(params: any, agencyId: string, use
       p_agency_id: agencyId
     });
 
-    // Note: For non-admin users, we're showing agency-wide analytics
-    // In a future enhancement, the RPC should support agent filtering
-    const scopeNote = !isAdmin
-      ? 'Note: Analytics show your team\'s contribution to agency metrics. For detailed personal analytics, use get_deals or get_agents with your specific filters.'
+    // SECURITY NOTE: For non-admin users, analytics are agency-wide aggregates
+    // This is a known limitation - the RPC doesn't support agent filtering
+    // For more granular data, users should use get_deals with agent filters
+    const scopeNote = isNonAdminWithLimitedAccess
+      ? 'IMPORTANT: These analytics are agency-wide aggregates. For your personal or team-specific data, use get_deals or get_agents with agent_id filters.'
       : undefined;
 
     if (error) {
@@ -1009,7 +1010,7 @@ async function searchPoliciesFallback(params: any, agencyId: string, allowedAgen
 }
 
 // Get agent hierarchy with production metrics
-export async function getAgentHierarchy(params: any, agencyId: string) {
+export async function getAgentHierarchy(params: any, agencyId: string, allowedAgentIds?: string[]) {
   try {
     const supabase = await createServerClient();
     const agentId = params.agent_id;
@@ -1018,12 +1019,23 @@ export async function getAgentHierarchy(params: any, agencyId: string) {
       return { error: 'Agent ID is required' };
     }
 
-    // Get the root agent
+    // SECURITY: Permission check - ensure user can access this agent's hierarchy
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      if (!allowedAgentIds.includes(agentId)) {
+        return {
+          error: 'You do not have permission to view this agent\'s hierarchy',
+          permission_denied: true
+        };
+      }
+    }
+
+    // Get the root agent (only agent/admin roles, not clients)
     const { data: rootAgent, error: rootError } = await supabase
       .from('users')
       .select('id, first_name, last_name, email, total_prod, total_policies_sold, upline_id, status')
       .eq('id', agentId)
       .eq('agency_id', agencyId)
+      .in('role', ['agent', 'admin'])
       .single();
 
     if (rootError || !rootAgent) {
@@ -1047,7 +1059,8 @@ export async function getAgentHierarchy(params: any, agencyId: string) {
       .from('users')
       .select('id, first_name, last_name, email, total_prod, total_policies_sold, upline_id, status')
       .in('id', allAgentIds)
-      .eq('agency_id', agencyId);
+      .eq('agency_id', agencyId)
+      .in('role', ['agent', 'admin']);  // SECURITY: Only return agent/admin roles
 
     if (agentsError) {
       console.error('Error fetching agent details:', agentsError);
@@ -1091,7 +1104,7 @@ export async function getAgentHierarchy(params: any, agencyId: string) {
 }
 
 // Compare multiple agent hierarchies
-export async function compareHierarchies(params: any, agencyId: string) {
+export async function compareHierarchies(params: any, agencyId: string, allowedAgentIds?: string[]) {
   try {
     const supabase = await createServerClient();
     const agentIds = params.agent_ids || [];
@@ -1100,9 +1113,22 @@ export async function compareHierarchies(params: any, agencyId: string) {
       return { error: 'At least one agent ID is required' };
     }
 
+    // SECURITY: Validate ALL agent_ids before proceeding
+    if (allowedAgentIds && allowedAgentIds.length > 0) {
+      const unauthorizedIds = agentIds.filter((id: string) => !allowedAgentIds.includes(id));
+      if (unauthorizedIds.length > 0) {
+        return {
+          error: 'You do not have permission to compare some of these hierarchies',
+          permission_denied: true,
+          unauthorized_count: unauthorizedIds.length
+        };
+      }
+    }
+
     const comparisons = await Promise.all(
       agentIds.map(async (agentId: string) => {
-        const hierarchy = await getAgentHierarchy({ agent_id: agentId }, agencyId);
+        // Pass allowedAgentIds to getAgentHierarchy for consistent security
+        const hierarchy = await getAgentHierarchy({ agent_id: agentId }, agencyId, allowedAgentIds);
         if (hierarchy.error) {
           return { agent_id: agentId, error: hierarchy.error };
         }
@@ -3427,7 +3453,7 @@ export async function executeToolCall(
     case 'get_agents':
       return await getAgents(cleanInput, agencyId, allowedAgentIds);
     case 'get_persistency_analytics':
-      return await getPersistencyAnalytics(cleanInput, agencyId, userContext);
+      return await getPersistencyAnalytics(cleanInput, agencyId, allowedAgentIds, userContext);
     case 'get_conversations_data':
       return await getConversationsData(cleanInput, agencyId, allowedAgentIds);
     case 'get_carriers_and_products':
@@ -3441,9 +3467,9 @@ export async function executeToolCall(
     case 'search_policies':
       return await searchPolicies(cleanInput, agencyId, allowedAgentIds);
     case 'get_agent_hierarchy':
-      return await getAgentHierarchy(cleanInput, agencyId);
+      return await getAgentHierarchy(cleanInput, agencyId, allowedAgentIds);
     case 'compare_hierarchies':
-      return await compareHierarchies(cleanInput, agencyId);
+      return await compareHierarchies(cleanInput, agencyId, allowedAgentIds);
     case 'get_deals_paginated':
       return await getDealsPaginated(cleanInput, agencyId, cleanInput.cursor, allowedAgentIds);
     case 'get_agents_paginated':

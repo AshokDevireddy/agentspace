@@ -15,6 +15,7 @@ import {
   sanitizeToolResult as sanitizeForPrivacy,
   summarizeInputForAudit,
 } from '@/lib/ai-sanitizer';
+import { createTracer } from '@/lib/langfuse-wrapper';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -815,6 +816,18 @@ export async function POST(request: NextRequest) {
 
     const { messages } = await request.json();
 
+    // Initialize Langfuse tracer for observability (only for this chat route)
+    const tracer = createTracer(
+      {
+        userId: userData.id,
+        agencyId: userData.agency_id,
+        isAdmin,
+        subscriptionTier: userData.subscription_tier,
+      },
+      'claude-sonnet-4-5'
+    );
+    const requestStartedAt = new Date();
+
     // Build dynamic system prompt based on user role
     const accessScopeDescription = getAccessScopeDescription(userContext);
 
@@ -1178,11 +1191,19 @@ Remember: Keep it clean, structured, and easy to scan. When data is numeric or c
     const stream = new ReadableStream({
       async start(controller) {
         let isStreamActive = true;
+        let totalToolCalls = 0;
+        const toolsUsed: string[] = [];
+        let currentConversationId: string | undefined;
+        let iterationIndex = 0;
+
         try {
           let conversationMessages = [...messages];
           let shouldContinue = true;
 
           while (shouldContinue && isStreamActive) {
+            // Start a new generation span for this iteration
+            tracer.startGeneration(conversationMessages);
+
             const messageStream = await anthropic.messages.create({
               model: 'claude-sonnet-4-5',
               max_tokens: 4096,
@@ -1197,10 +1218,14 @@ Remember: Keep it clean, structured, and easy to scan. When data is numeric or c
             let assistantContent: any[] = [];
             let stopReason = '';
             const toolResultsMap = new Map<string, any>();
+            iterationIndex++;
 
             for await (const event of messageStream) {
               // Check if stream is still active before enqueueing
               if (!isStreamActive) break;
+
+              // Track token usage from streaming events
+              tracer.trackStreamEvent(event);
 
               // Send the event to the client
               const chunk = `data: ${JSON.stringify(event)}\n\n`;
@@ -1258,6 +1283,10 @@ Remember: Keep it clean, structured, and easy to scan. When data is numeric or c
                     userContext
                   );
 
+                  // Start tool span for tracing
+                  const toolSpan = tracer.startTool(currentToolUse.name, toolInput as Record<string, unknown>);
+                  const toolStartTime = Date.now();
+
                   let toolResult;
                   if (!permissionResult.allowed) {
                     // Permission denied - return error message
@@ -1266,6 +1295,7 @@ Remember: Keep it clean, structured, and easy to scan. When data is numeric or c
                       permission_denied: true,
                     };
                     console.log(`Permission denied for tool ${currentToolUse.name}: ${permissionResult.error}`);
+                    tracer.endTool(toolSpan, toolResult, Date.now() - toolStartTime, false, permissionResult.error);
                   } else {
                     // Execute tool with filtered input
                     toolResult = await executeToolCall(
@@ -1274,6 +1304,13 @@ Remember: Keep it clean, structured, and easy to scan. When data is numeric or c
                       userData.agency_id,
                       userContext // Pass user context to tool
                     );
+                    tracer.endTool(toolSpan, toolResult, Date.now() - toolStartTime, true);
+                  }
+
+                  // Track tool usage for logging
+                  totalToolCalls++;
+                  if (!toolsUsed.includes(currentToolUse.name)) {
+                    toolsUsed.push(currentToolUse.name);
                   }
 
                   // Apply privacy sanitization based on user role
@@ -1320,6 +1357,9 @@ Remember: Keep it clean, structured, and easy to scan. When data is numeric or c
               }
             }
 
+            // End this generation span and get cost breakdown
+            const costs = tracer.endGeneration(assistantContent);
+
             // If we used tools, continue the conversation with tool results
             if (stopReason === 'tool_use') {
               // Add assistant message with tool uses
@@ -1361,12 +1401,20 @@ Remember: Keep it clean, structured, and easy to scan. When data is numeric or c
 
           // Send done signal only if stream is still active
           if (isStreamActive) {
+            // Finalize Langfuse trace
+            tracer.endTrace(true);
+
             controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
             controller.close();
             isStreamActive = false;
           }
         } catch (error) {
           console.error('Streaming error:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+          // Finalize Langfuse trace with error
+          tracer.endTrace(false, errorMessage);
+
           if (isStreamActive) {
             try {
               controller.error(error);

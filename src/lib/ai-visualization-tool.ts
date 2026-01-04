@@ -3,14 +3,13 @@
  * Generates chart configuration for Chart.js visualizations
  */
 
-// Chart type definitions
 export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'stacked_bar';
 
 export interface VisualizationInput {
   chart_type: ChartType;
   title: string;
   description?: string;
-  data: Record<string, any>[];
+  data: Record<string, unknown>[];
   x_axis_key: string;
   y_axis_keys: string[];
   config?: {
@@ -28,36 +27,12 @@ export interface VisualizationResult {
   title: string;
   description?: string;
   chartcode: string;
-  data: Record<string, any>[];
-  // Axis metadata for persistence - ensures labels are preserved after reload
+  data: Record<string, unknown>[];
   _axis_metadata: {
     x_axis_key: string;
     y_axis_keys: string[];
   };
 }
-
-// Default color palette for Chart.js (with alpha for backgrounds)
-const DEFAULT_COLORS = [
-  'rgba(139, 92, 246, 0.8)',   // purple-500
-  'rgba(59, 130, 246, 0.8)',   // blue-500
-  'rgba(16, 185, 129, 0.8)',   // green-500
-  'rgba(245, 158, 11, 0.8)',   // amber-500
-  'rgba(239, 68, 68, 0.8)',    // red-500
-  'rgba(236, 72, 153, 0.8)',   // pink-500
-  'rgba(6, 182, 212, 0.8)',    // cyan-500
-  'rgba(99, 102, 241, 0.8)',   // indigo-500
-];
-
-const DEFAULT_BORDER_COLORS = [
-  'rgb(139, 92, 246)',   // purple-500
-  'rgb(59, 130, 246)',   // blue-500
-  'rgb(16, 185, 129)',   // green-500
-  'rgb(245, 158, 11)',   // amber-500
-  'rgb(239, 68, 68)',    // red-500
-  'rgb(236, 72, 153)',   // pink-500
-  'rgb(6, 182, 212)',    // cyan-500
-  'rgb(99, 102, 241)',   // indigo-500
-];
 
 /**
  * Validates visualization input data
@@ -264,7 +239,6 @@ export function generateVisualization(input: VisualizationInput): VisualizationR
     description: input.description,
     chartcode,
     data: limitedData,
-    // Include axis metadata for persistence - ensures labels are preserved after reload
     _axis_metadata: {
       x_axis_key: input.x_axis_key,
       y_axis_keys: input.y_axis_keys
@@ -275,7 +249,7 @@ export function generateVisualization(input: VisualizationInput): VisualizationR
 /**
  * Infer the best chart type based on data characteristics
  */
-export function inferBestChartType(data: Record<string, any>[], yKeys: string[]): ChartType {
+export function inferBestChartType(data: Record<string, unknown>[], yKeys: string[]): ChartType {
   if (!data || data.length === 0) return 'bar';
 
   const itemCount = data.length;

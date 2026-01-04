@@ -15,8 +15,15 @@ import {
   Filler,
 } from 'chart.js';
 import { Bar, Line, Pie } from 'react-chartjs-2';
+import {
+  CHART_COLORS,
+  CHART_BORDER_COLORS,
+  CHART_TOOLTIP_STYLE,
+  CHART_LEGEND_STYLE,
+  CHART_GRID_COLOR,
+  CHART_TICK_COLOR,
+} from '@/lib/chart-constants';
 
-// Register Chart.js components
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -30,9 +37,13 @@ ChartJS.register(
   Filler
 );
 
+interface ChartDataItem {
+  [key: string]: string | number | boolean | null | undefined;
+}
+
 interface ChartProps {
   type: 'bar' | 'line' | 'pie' | 'area';
-  data: any[];
+  data: ChartDataItem[];
   config: {
     xKey?: string;
     yKey?: string;
@@ -41,41 +52,10 @@ interface ChartProps {
   };
 }
 
-const COLORS = [
-  'rgba(139, 92, 246, 0.8)',   // purple-500
-  'rgba(59, 130, 246, 0.8)',   // blue-500
-  'rgba(16, 185, 129, 0.8)',   // green-500
-  'rgba(245, 158, 11, 0.8)',   // amber-500
-  'rgba(239, 68, 68, 0.8)',    // red-500
-  'rgba(236, 72, 153, 0.8)',   // pink-500
-  'rgba(6, 182, 212, 0.8)',    // cyan-500
-  'rgba(139, 92, 246, 0.8)',   // purple-500
-];
-
-const BORDER_COLORS = [
-  'rgb(139, 92, 246)',   // purple-500
-  'rgb(59, 130, 246)',   // blue-500
-  'rgb(16, 185, 129)',   // green-500
-  'rgb(245, 158, 11)',   // amber-500
-  'rgb(239, 68, 68)',    // red-500
-  'rgb(236, 72, 153)',   // pink-500
-  'rgb(6, 182, 212)',    // cyan-500
-  'rgb(139, 92, 246)',   // purple-500
-];
-
 export default function DynamicChart({ type, data, config }: ChartProps) {
-  const chartRef = useRef<any>(null);
-
-  console.log('DynamicChart render:', {
-    type,
-    dataLength: data?.length,
-    config,
-    sampleData: data?.[0],
-    allData: data
-  });
+  const chartRef = useRef(null);
 
   if (!data || data.length === 0) {
-    console.warn('DynamicChart: No data provided or empty array');
     return (
       <div className="p-6 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-2xl">
         <p className="text-red-600 dark:text-red-400">No data available for chart</p>
@@ -102,32 +82,22 @@ export default function DynamicChart({ type, data, config }: ChartProps) {
     plugins: {
       legend: {
         position: 'top' as const,
-        labels: {
-          color: 'rgb(148, 163, 184)',
-          font: { size: 12 },
-        },
+        labels: CHART_LEGEND_STYLE,
       },
-      tooltip: {
-        backgroundColor: 'rgb(30, 41, 59)',
-        titleColor: 'rgb(248, 250, 252)',
-        bodyColor: 'rgb(226, 232, 240)',
-        borderColor: 'rgb(71, 85, 105)',
-        borderWidth: 1,
-        cornerRadius: 8,
-      },
+      tooltip: CHART_TOOLTIP_STYLE,
     },
     scales: type !== 'pie' ? {
       x: {
-        grid: { color: 'rgba(71, 85, 105, 0.3)' },
+        grid: { color: CHART_GRID_COLOR },
         ticks: {
-          color: 'rgb(148, 163, 184)',
+          color: CHART_TICK_COLOR,
           maxRotation: 45,
           minRotation: 45,
         },
       },
       y: {
-        grid: { color: 'rgba(71, 85, 105, 0.3)' },
-        ticks: { color: 'rgb(148, 163, 184)' },
+        grid: { color: CHART_GRID_COLOR },
+        ticks: { color: CHART_TICK_COLOR },
         ...(isStacked && { stacked: true }),
       },
     } : undefined,
@@ -136,8 +106,6 @@ export default function DynamicChart({ type, data, config }: ChartProps) {
   const renderChart = () => {
     switch (type) {
       case 'bar':
-        console.log('Rendering bar chart...');
-
         if (isStacked) {
           const chartData = {
             labels,
@@ -182,8 +150,8 @@ export default function DynamicChart({ type, data, config }: ChartProps) {
           datasets: [{
             label: yKey.charAt(0).toUpperCase() + yKey.slice(1).replace(/_/g, ' '),
             data: topData.map(item => Number(item[yKey]) || Number(item.value) || 0),
-            backgroundColor: COLORS[0],
-            borderColor: BORDER_COLORS[0],
+            backgroundColor: CHART_COLORS[0],
+            borderColor: CHART_BORDER_COLORS[0],
             borderWidth: 1,
             borderRadius: { topLeft: 8, topRight: 8, bottomLeft: 0, bottomRight: 0 },
           }],
@@ -197,8 +165,8 @@ export default function DynamicChart({ type, data, config }: ChartProps) {
           datasets: [{
             label: yKey.charAt(0).toUpperCase() + yKey.slice(1).replace(/_/g, ' '),
             data: topData.map(item => Number(item[yKey]) || Number(item.value) || 0),
-            backgroundColor: COLORS[0],
-            borderColor: BORDER_COLORS[0],
+            backgroundColor: CHART_COLORS[0],
+            borderColor: CHART_BORDER_COLORS[0],
             borderWidth: 2,
             tension: 0.4,
             pointRadius: 4,
@@ -214,8 +182,8 @@ export default function DynamicChart({ type, data, config }: ChartProps) {
           datasets: [{
             label: yKey.charAt(0).toUpperCase() + yKey.slice(1).replace(/_/g, ' '),
             data: topData.map(item => Number(item[yKey]) || Number(item.value) || 0),
-            backgroundColor: COLORS[0].replace('0.8', '0.3'),
-            borderColor: BORDER_COLORS[0],
+            backgroundColor: CHART_COLORS[0].replace('0.8', '0.3'),
+            borderColor: CHART_BORDER_COLORS[0],
             borderWidth: 2,
             fill: true,
             tension: 0.4,
@@ -230,7 +198,7 @@ export default function DynamicChart({ type, data, config }: ChartProps) {
         const valueKey = config.yKey || Object.keys(data[0])[1];
 
         // Sort data by value and limit to top items
-        const sortedData = [...data].sort((a, b) => b[valueKey] - a[valueKey]);
+        const sortedData = [...data].sort((a, b) => (Number(b[valueKey]) || 0) - (Number(a[valueKey]) || 0));
         const topItems = sortedData.slice(0, 8);
         const otherItems = sortedData.slice(8);
 
@@ -245,8 +213,8 @@ export default function DynamicChart({ type, data, config }: ChartProps) {
           labels: pieData.map(item => String(item[nameKey])),
           datasets: [{
             data: pieData.map(item => Number(item[valueKey]) || 0),
-            backgroundColor: pieData.map((_, i) => COLORS[i % COLORS.length]),
-            borderColor: pieData.map((_, i) => BORDER_COLORS[i % BORDER_COLORS.length]),
+            backgroundColor: pieData.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]),
+            borderColor: pieData.map((_, i) => CHART_BORDER_COLORS[i % CHART_BORDER_COLORS.length]),
             borderWidth: 2,
           }],
         };
@@ -258,19 +226,11 @@ export default function DynamicChart({ type, data, config }: ChartProps) {
             legend: {
               position: 'bottom' as const,
               labels: {
-                color: 'rgb(148, 163, 184)',
-                font: { size: 12 },
+                ...CHART_LEGEND_STYLE,
                 padding: 16,
               },
             },
-            tooltip: {
-              backgroundColor: 'rgb(30, 41, 59)',
-              titleColor: 'rgb(248, 250, 252)',
-              bodyColor: 'rgb(226, 232, 240)',
-              borderColor: 'rgb(71, 85, 105)',
-              borderWidth: 1,
-              cornerRadius: 8,
-            },
+            tooltip: CHART_TOOLTIP_STYLE,
           },
         };
 

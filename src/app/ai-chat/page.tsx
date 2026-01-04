@@ -12,27 +12,42 @@ import { createClient } from '@/lib/supabase/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+interface ChartData {
+  data?: Record<string, unknown>[];
+  x_axis_key?: string;
+  y_axis_keys?: string[];
+  [key: string]: unknown;
+}
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   chartCode?: string;
-  chartData?: any;
+  chartData?: ChartData | null;
 }
 
 interface ToolCall {
   id: string;
   name: string;
-  input: any;
+  input: Record<string, unknown>;
   status: 'pending' | 'running' | 'completed' | 'error';
-  result?: any;
+  result?: Record<string, unknown>;
 }
 
 interface ToolResult {
   tool_use_id: string;
   tool_name: string;
-  result: any;
+  result: Record<string, unknown>;
+}
+
+interface StoredMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  tool_calls?: ToolCall[];
+  chart_code?: string;
+  chart_data?: ChartData | null;
 }
 
 interface ThinkingStep {
@@ -132,12 +147,12 @@ export default function AIChat() {
         if (response.ok) {
           const data = await response.json();
           // Convert stored messages to Message format
-          const loadedMessages: Message[] = (data.messages || []).map((msg: any) => ({
+          const loadedMessages: Message[] = (data.messages || []).map((msg: StoredMessage) => ({
             role: msg.role,
             content: msg.content,
-            toolCalls: msg.tool_calls || undefined,
-            chartCode: msg.chart_code || undefined,
-            chartData: msg.chart_data || undefined,
+            toolCalls: msg.tool_calls,
+            chartCode: msg.chart_code,
+            chartData: msg.chart_data,
           }));
           setMessages(loadedMessages);
         }
@@ -632,21 +647,24 @@ export default function AIChat() {
 
       // Check if any tool result is a visualization (from create_visualization tool)
       const toolResults = Array.from(toolResultsMap.values());
+      interface VisualizationToolResult {
+        _visualization?: boolean;
+        chartcode?: string;
+        data?: Record<string, unknown>[] | { sample?: Record<string, unknown>[] };
+        _axis_metadata?: { x_axis_key?: string; y_axis_keys?: string[] };
+      }
       const visualizationResult = toolResults.find(
-        (result: any) => result?._visualization === true && result?.chartcode
+        (result): result is VisualizationToolResult =>
+          result?._visualization === true && Boolean(result?.chartcode)
       );
 
-      if (visualizationResult) {
-        // Use chartcode and data from visualization tool result
+      if (visualizationResult && visualizationResult.chartcode) {
         finalChartCode = visualizationResult.chartcode;
-        // Include axis metadata for persistence - ensures labels are preserved after reload
-        // Handle both original array and sanitized { sample, ... } format (defensive)
-        let vizData = visualizationResult.data;
 
-        // If data was sanitized into { sample, total_items, truncated } format, extract from sample
-        if (vizData && typeof vizData === 'object' && !Array.isArray(vizData) && vizData.sample) {
+        // Extract data array, handling sanitized format if needed
+        let vizData = visualizationResult.data;
+        if (vizData && typeof vizData === 'object' && !Array.isArray(vizData) && 'sample' in vizData) {
           vizData = vizData.sample;
-          console.log('📊 Extracted data from sanitized sample format');
         }
 
         if (Array.isArray(vizData) && vizData.length > 0) {
@@ -655,16 +673,6 @@ export default function AIChat() {
             x_axis_key: visualizationResult._axis_metadata?.x_axis_key,
             y_axis_keys: visualizationResult._axis_metadata?.y_axis_keys
           };
-          console.log('📊 Chart data with metadata:', {
-            dataLength: vizData.length,
-            x_axis_key: visualizationResult._axis_metadata?.x_axis_key,
-            y_axis_keys: visualizationResult._axis_metadata?.y_axis_keys,
-            sampleItem: vizData[0]
-          });
-        } else {
-          // Final fallback: log error if data is still not valid
-          console.error('❌ Visualization data is not a valid array:', vizData);
-          chartData = null;
         }
       } else if (chartCode) {
         // Fall back to extracting from assistant message (legacy behavior)

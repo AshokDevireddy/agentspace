@@ -186,23 +186,35 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
   },
 };
 
+// Tool input with optional filtering fields
+export interface ToolInput {
+  agent_id?: string;
+  agent_ids?: string[];
+  __allowed_agent_ids?: string[];
+  __scope_enforced?: boolean;
+  [key: string]: unknown;
+}
+
 // Result of permission check
 export interface PermissionResult {
   allowed: boolean;
-  filteredInput: any;
+  filteredInput: ToolInput | null;
   error?: string;
   scope?: PermissionScope;
+}
+
+interface DownlineAgent {
+  id: string;
 }
 
 /**
  * Pre-fetch user's downline agent IDs at session start
  * This is cached and reused for all tool calls in a session
  */
-export async function getDownlineAgentIds(userId: string, agencyId: string): Promise<string[]> {
+export async function getDownlineAgentIds(userId: string, _agencyId: string): Promise<string[]> {
   try {
     const supabase = await createServerClient();
 
-    // Use the get_agent_downline RPC function
     const { data, error } = await supabase.rpc('get_agent_downline', {
       p_user_id: userId
     });
@@ -212,7 +224,7 @@ export async function getDownlineAgentIds(userId: string, agencyId: string): Pro
       return [];
     }
 
-    return data?.map((a: any) => a.id) || [];
+    return (data as DownlineAgent[] | null)?.map((a) => a.id) || [];
   } catch (error) {
     console.error('Error in getDownlineAgentIds:', error);
     return [];
@@ -271,7 +283,7 @@ export function getAllowedAgentIds(context: UserContext): string[] {
  */
 export function enforcePermissions(
   toolName: string,
-  input: any,
+  input: ToolInput,
   context: UserContext
 ): PermissionResult {
   const permission = TOOL_PERMISSIONS[toolName];

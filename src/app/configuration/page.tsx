@@ -2007,8 +2007,7 @@ export default function ConfigurationPage() {
 
     const newFiles: PolicyReportFile[] = validFiles.map(file => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      file,
-      carrier: ''
+      file
     }))
 
     setPolicyReportFiles(prev => [...prev, ...newFiles])

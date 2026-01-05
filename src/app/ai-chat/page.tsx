@@ -71,6 +71,7 @@ export default function AIChat() {
   const [currentToolCalls, setCurrentToolCalls] = useState<ToolCall[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isCreatingConversation = useRef(false);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
 
   // Conversation management state
@@ -137,6 +138,12 @@ export default function AIChat() {
   // Load conversation when selected
   useEffect(() => {
     const loadConversation = async () => {
+      // Skip if we just created this conversation (no messages to load yet)
+      if (isCreatingConversation.current) {
+        isCreatingConversation.current = false;
+        return;
+      }
+
       if (!currentConversationId) {
         setMessages([]);
         return;
@@ -166,6 +173,7 @@ export default function AIChat() {
 
   // Handle selecting a conversation
   const handleSelectConversation = (conversationId: string | null) => {
+    isCreatingConversation.current = false;
     setCurrentConversationId(conversationId);
   };
 
@@ -414,6 +422,7 @@ export default function AIChat() {
     // Create conversation if this is the first message
     let activeConversationId = currentConversationId;
     if (!activeConversationId) {
+      isCreatingConversation.current = true;
       activeConversationId = await createConversation();
       if (activeConversationId) {
         setCurrentConversationId(activeConversationId);

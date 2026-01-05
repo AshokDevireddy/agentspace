@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { priceId } = body;
+    const { priceId, couponCode } = body;
 
     if (!priceId) {
       return NextResponse.json(
@@ -92,10 +92,41 @@ export async function POST(request: NextRequest) {
         .eq('id', userData.id);
     }
 
+    // Validate and check coupon if provided
+    let validatedCoupon = null;
+    if (couponCode) {
+      try {
+        const coupon = await stripe.coupons.retrieve(couponCode);
+
+        if (!coupon.valid) {
+          return NextResponse.json(
+            { error: 'This coupon is no longer active' },
+            { status: 400 }
+          );
+        }
+
+        // Check if customer has already used ANY coupon (one per lifetime)
+        const customer = await stripe.customers.retrieve(customerId);
+        if (!customer.deleted && customer.metadata?.has_used_coupon === 'true') {
+          return NextResponse.json(
+            { error: 'You have already used your one-time promotional discount' },
+            { status: 400 }
+          );
+        }
+
+        validatedCoupon = couponCode;
+      } catch (error: any) {
+        return NextResponse.json(
+          { error: 'Invalid coupon code' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create checkout session
     const origin = request.headers.get('origin') || 'http://localhost:3000';
 
-    const session = await stripe.checkout.sessions.create({
+    const sessionConfig: any = {
       customer: customerId,
       line_items: [
         {
@@ -106,6 +137,7 @@ export async function POST(request: NextRequest) {
       mode: 'subscription',
       success_url: `${origin}/user/profile?session_id={CHECKOUT_SESSION_ID}&success=true`,
       cancel_url: `${origin}/user/profile?canceled=true`,
+      allow_promotion_codes: true, // Enable coupon field in Stripe Checkout
       metadata: {
         user_id: userData.id,
         tier: tier,
@@ -116,7 +148,16 @@ export async function POST(request: NextRequest) {
           tier: tier,
         },
       },
-    });
+    };
+
+    // Apply coupon if validated
+    if (validatedCoupon) {
+      sessionConfig.discounts = [{ coupon: validatedCoupon }];
+      // Store that this customer will use this coupon (will be marked as used in webhook)
+      sessionConfig.metadata.applied_coupon = validatedCoupon;
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionConfig);
 
     return NextResponse.json({ sessionId: session.id, url: session.url });
   } catch (error: unknown) {

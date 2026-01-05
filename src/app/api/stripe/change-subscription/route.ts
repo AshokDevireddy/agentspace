@@ -4,7 +4,7 @@ import Stripe from 'stripe';
 import { TIER_PRICE_IDS } from '@/lib/subscription-tiers';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-12-18.acacia',
+  apiVersion: '2025-11-17.clover',
 });
 
 // Tier hierarchy for determining upgrades vs downgrades
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    const { newTier } = await request.json();
+    const { newTier, couponCode } = await request.json();
 
     if (!newTier || !['free', 'basic', 'pro', 'expert'].includes(newTier)) {
       return NextResponse.json({ error: 'Invalid tier specified' }, { status: 400 });
@@ -93,9 +93,38 @@ export async function POST(request: NextRequest) {
 
     // Handle upgrade from free tier (create new subscription)
     if (currentTier === 'free') {
+      // Get user's Stripe customer ID
+      const { data: userWithStripe } = await adminSupabase
+        .from('users')
+        .select('stripe_customer_id')
+        .eq('id', userData.id)
+        .single();
+
+      // Validate and check coupon if provided
+      let validatedCoupon = null;
+      if (couponCode && userWithStripe?.stripe_customer_id) {
+        try {
+          const coupon = await stripe.coupons.retrieve(couponCode);
+
+          if (!coupon.valid) {
+            return NextResponse.json({ error: 'This coupon is no longer active' }, { status: 400 });
+          }
+
+          // Check if customer has already used ANY coupon (one per lifetime)
+          const customer = await stripe.customers.retrieve(userWithStripe.stripe_customer_id);
+          if (!customer.deleted && customer.metadata?.has_used_coupon === 'true') {
+            return NextResponse.json({ error: 'You have already used your one-time promotional discount' }, { status: 400 });
+          }
+
+          validatedCoupon = couponCode;
+        } catch (error: any) {
+          return NextResponse.json({ error: 'Invalid coupon code' }, { status: 400 });
+        }
+      }
+
       // Create checkout session for new subscription
-      const session = await stripe.checkout.sessions.create({
-        customer: undefined, // Will be created automatically
+      const sessionConfig: any = {
+        customer: userWithStripe?.stripe_customer_id || undefined,
         line_items: [
           {
             price: newPriceId,
@@ -103,13 +132,22 @@ export async function POST(request: NextRequest) {
           },
         ],
         mode: 'subscription',
+        allow_promotion_codes: true, // Enable coupon field in Stripe Checkout
         success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/user/profile?upgrade=success`,
         cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/user/profile?upgrade=cancelled`,
         metadata: {
           user_id: userData.id,
           tier: newTier,
         },
-      });
+      };
+
+      // Apply coupon if validated
+      if (validatedCoupon) {
+        sessionConfig.discounts = [{ coupon: validatedCoupon }];
+        sessionConfig.metadata.applied_coupon = validatedCoupon;
+      }
+
+      const session = await stripe.checkout.sessions.create(sessionConfig);
 
       return NextResponse.json({
         success: true,
@@ -123,7 +161,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Get current subscription details
-    const subscription = await stripe.subscriptions.retrieve(userData.stripe_subscription_id);
+    const subscription = await stripe.subscriptions.retrieve(userData.stripe_subscription_id, {
+      expand: ['items.data.price', 'discounts']
+    });
 
     if (!subscription || subscription.items.data.length === 0) {
       return NextResponse.json({ error: 'Invalid subscription state' }, { status: 400 });
@@ -134,6 +174,28 @@ export async function POST(request: NextRequest) {
     if (isUpgrade) {
       // UPGRADE: Immediate change with proration
       console.log(`🔼 UPGRADE: ${currentTier} → ${newTier} for user ${userData.id}`);
+
+      // Check if subscription has an active discount (trial)
+      // In newer API versions, discounts is an array; in older versions it was subscription.discount
+      const subscriptionDiscounts = (subscription as any).discounts || [];
+      const hasSubscriptionDiscount = subscriptionDiscounts.length > 0 && subscriptionDiscounts[0]?.coupon;
+
+      const customer = await stripe.customers.retrieve(
+        typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id
+      );
+      const hasCustomerDiscount = !customer.deleted && customer.discount;
+
+      const hasActiveDiscount = hasSubscriptionDiscount || hasCustomerDiscount;
+
+      if (hasActiveDiscount) {
+        console.log(`✨ Active discount detected - will preserve during upgrade`);
+        if (hasSubscriptionDiscount) {
+          console.log(`  - Subscription discount: ${subscriptionDiscounts[0]?.coupon?.id}`);
+        }
+        if (hasCustomerDiscount) {
+          console.log(`  - Customer discount: ${(customer.discount as any).coupon?.id}`);
+        }
+      }
 
       // Get all current subscription items (main price + metered prices)
       const allItems = subscription.items.data;
@@ -165,11 +227,24 @@ export async function POST(request: NextRequest) {
       }
 
       // Update subscription with new main price and remove old metered prices
-      await stripe.subscriptions.update(userData.stripe_subscription_id, {
+      // If there's an active discount, don't charge immediately and preserve the discount
+      const updateConfig: any = {
         items: itemsToUpdate,
-        proration_behavior: 'always_invoice',
+        proration_behavior: hasActiveDiscount ? 'none' : 'always_invoice',
         billing_cycle_anchor: 'unchanged',
-      });
+      };
+
+      // Preserve the discount by keeping the existing discounts array
+      if (hasActiveDiscount && subscriptionDiscounts.length > 0) {
+        // Extract the coupon ID to reapply it
+        const existingCouponId = subscriptionDiscounts[0]?.coupon?.id;
+        if (existingCouponId) {
+          updateConfig.discounts = [{ coupon: existingCouponId }];
+          console.log(`📌 Preserving discount ${existingCouponId} on upgraded subscription`);
+        }
+      }
+
+      await stripe.subscriptions.update(userData.stripe_subscription_id, updateConfig);
 
       // Add new tier's metered prices
       const meteredPrices: string[] = [];
@@ -232,8 +307,8 @@ export async function POST(request: NextRequest) {
       // We only store the scheduled change in our database.
       // The actual Stripe subscription update happens in the webhook when the billing cycle renews.
 
-      // Get billing cycle end (future-proof for API version 2025-03-31)
-      const periodEnd = subscription.current_period_end || subscription.items.data[0]?.current_period_end;
+      // Get billing cycle end
+      const periodEnd = subscription.current_period_end;
 
       if (!periodEnd) {
         console.error('❌ Missing period_end for downgrade scheduling:', subscription.id);

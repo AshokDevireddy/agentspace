@@ -115,6 +115,51 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
     return;
   }
 
+  // Check if a coupon was applied and mark customer as having used their one-time coupon
+  // This handles both: coupons passed from our API AND coupons entered directly in Stripe Checkout
+  let appliedCoupon = session.metadata?.applied_coupon;
+
+  // If no coupon in metadata, check if one was applied directly in Stripe Checkout
+  if (!appliedCoupon && session.total_details?.amount_discount && session.total_details.amount_discount > 0) {
+    // User applied a coupon directly in Stripe UI - retrieve the session with expanded discount
+    const expandedSession = await stripe.checkout.sessions.retrieve(session.id, {
+      expand: ['total_details.breakdown']
+    });
+
+    // Get the coupon code from the discount
+    const discount = (expandedSession as any).total_details?.breakdown?.discounts?.[0];
+    if (discount?.discount?.coupon?.id) {
+      appliedCoupon = discount.discount.coupon.id;
+      console.log(`📋 Coupon applied directly in Stripe Checkout: ${appliedCoupon}`);
+    }
+  }
+
+  if (appliedCoupon && session.customer) {
+    try {
+      const customerId = typeof session.customer === 'string' ? session.customer : session.customer.id;
+
+      // Check if customer has already used a coupon
+      const customer = await stripe.customers.retrieve(customerId);
+      if (!customer.deleted && customer.metadata?.has_used_coupon === 'true') {
+        console.log(`ℹ️  Customer ${customerId} has coupon ${appliedCoupon} applied (already marked as used)`);
+        // This is normal for tier changes during trial period - the discount is preserved
+        // The customer was already marked as having used their one-time coupon on initial subscription
+      } else {
+        // Mark as used (first time using a coupon)
+        await stripe.customers.update(customerId, {
+          metadata: {
+            has_used_coupon: 'true',
+            first_coupon_code: appliedCoupon,
+            coupon_used_at: new Date().toISOString(),
+          },
+        });
+        console.log(`✅ Marked customer ${customerId} as having used their one-time coupon (${appliedCoupon})`);
+      }
+    } catch (error: any) {
+      console.error('Failed to mark coupon as used:', error.message);
+    }
+  }
+
   // Check if this is a subscription or a one-time payment (top-up)
   const mode = session.mode;
 

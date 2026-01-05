@@ -526,9 +526,9 @@ export default function AnalyticsTestPage() {
 	const [userRole, setUserRole] = React.useState<string | null>(null)
 	const [viewMode, setViewMode] = React.useState<'just_me' | 'downlines'>(() => {
 		if (typeof window !== 'undefined') {
-			return (localStorage.getItem('analytics_view_mode') as 'just_me' | 'downlines') || 'just_me'
+			return (localStorage.getItem('analytics_view_mode') as 'just_me' | 'downlines') || 'downlines'
 		}
-		return 'just_me'
+		return 'downlines'
 	})
 
 	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)

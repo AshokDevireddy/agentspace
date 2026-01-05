@@ -77,21 +77,35 @@ export default function SetupAccount() {
 
   const fetchUserData = async () => {
     try {
-      const { accessToken: storedAccessToken } = getInviteTokens()
       let authUserId: string | null = null
+      let accessToken: string | null = null
 
-      // Check stored tokens first (avoids getUser() which can hang)
-      if (storedAccessToken) {
-        const payload = decodeAndValidateJwt(storedAccessToken)
-        if (!payload) {
-          clearInviteTokens()
-          router.push('/login?error=Your session has expired. Please use your invitation link again.')
-          return
+      // PRIORITY 1: Check for session from server (fastest and most reliable after invite flow)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          authUserId = session.user.id
+          accessToken = session.access_token
         }
-        authUserId = payload.sub
+      } catch (sessionError) {
+        console.error('Error getting session:', sessionError)
       }
 
-      // Fallback to session check with timeout
+      // PRIORITY 2: Check stored invite tokens as fallback
+      if (!authUserId) {
+        const { accessToken: storedAccessToken } = getInviteTokens()
+        if (storedAccessToken) {
+          const payload = decodeAndValidateJwt(storedAccessToken)
+          if (payload) {
+            authUserId = payload.sub
+            accessToken = storedAccessToken
+          } else {
+            clearInviteTokens()
+          }
+        }
+      }
+
+      // PRIORITY 3: Try getUser() with timeout as last resort
       if (!authUserId) {
         try {
           const getUserPromise = supabase.auth.getUser()
@@ -108,17 +122,17 @@ export default function SetupAccount() {
       }
 
       if (!authUserId) {
-        router.push('/login')
+        router.push('/login?error=Session expired. Please use your invitation link again.')
         return
       }
 
       // Fetch user data
       let userRecord: UserData | null = null
 
-      if (storedAccessToken) {
+      if (accessToken) {
         const { data } = await supabaseRestFetch<UserData[]>(
           `/rest/v1/users?auth_user_id=eq.${authUserId}&status=eq.onboarding&select=*`,
-          { accessToken: storedAccessToken }
+          { accessToken }
         )
         userRecord = data?.[0] || null
       } else {
@@ -150,10 +164,10 @@ export default function SetupAccount() {
       if (userRecord.agency_id) {
         let agencyData: AgencyData | null = null
 
-        if (storedAccessToken) {
+        if (accessToken) {
           const { data } = await supabaseRestFetch<AgencyData[]>(
             `/rest/v1/agencies?id=eq.${userRecord.agency_id}&select=display_name,name`,
-            { accessToken: storedAccessToken }
+            { accessToken }
           )
           agencyData = data?.[0] || null
         } else {
@@ -222,15 +236,33 @@ export default function SetupAccount() {
     setErrors([])
 
     try {
-      let accessToken = getInviteTokens().accessToken
+      // Try to get a fresh session first
+      let accessToken: string | null = null
 
+      // First, try to get session from Supabase (most reliable)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        accessToken = session.access_token
+      }
+
+      // Fallback to stored invite tokens
       if (!accessToken) {
-        const { data: { session } } = await supabase.auth.getSession()
-        accessToken = session?.access_token || null
+        const storedTokens = getInviteTokens()
+        if (storedTokens.accessToken) {
+          // Validate the stored token before using it
+          const payload = decodeAndValidateJwt(storedTokens.accessToken)
+          if (payload) {
+            accessToken = storedTokens.accessToken
+          } else {
+            // Token is expired, clear it
+            clearInviteTokens()
+          }
+        }
       }
 
       if (!accessToken) {
-        setErrors(['Authentication error. Please try logging in again.'])
+        setErrors(['Your session has expired. Please click the invitation link in your email again.'])
+        window.scrollTo({ top: 0, behavior: 'smooth' })
         return
       }
 

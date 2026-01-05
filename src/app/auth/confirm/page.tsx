@@ -62,7 +62,7 @@ export default function ConfirmSession() {
       }
 
       setMessage('Session confirmation failed. Redirecting to login...')
-      setTimeout(() => router.push('/login?error=Please use the invitation link from your email'), REDIRECT_DELAY_MS)
+      setTimeout(() => router.push('/login?error=Invitation link has expired.'), REDIRECT_DELAY_MS)
     } catch {
       setMessage('An error occurred. Redirecting to login...')
       setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)

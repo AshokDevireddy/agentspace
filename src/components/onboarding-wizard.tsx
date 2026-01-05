@@ -1172,7 +1172,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Header */}
         <div>
-          <h1 className="text-4xl font-bold mb-2" style={{ color: `hsl(${primaryColor})` }}>
+          <h1 className="text-4xl font-bold mb-2 text-foreground dark:text-white">
             Complete Your Setup
           </h1>
           <p className="text-muted-foreground">

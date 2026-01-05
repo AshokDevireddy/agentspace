@@ -370,25 +370,34 @@ export default function ConfigurationPage() {
   const [carrierDropdownOpen, setCarrierDropdownOpen] = useState(false)
   const carrierDropdownRef = useRef<HTMLDivElement | null>(null)
 
-  // Policy Reports state
-  const [uploads, setUploads] = useState<Array<{carrier: string, file: File | null}>>([
-    { carrier: 'Aetna', file: null },
-    { carrier: 'Aflac', file: null },
-    { carrier: 'American Amicable', file: null },
-    { carrier: 'Combined Insurance', file: null },
-    { carrier: 'American Home Life', file: null },
-    { carrier: 'Royal Neighbors', file: null },
-    { carrier: 'Liberty Bankers Life', file: null },
-    { carrier: 'Transamerica', file: null },
-    { carrier: 'Foresters', file: null },
-    { carrier: 'Reagan CRM Data', file: null },
-    { carrier: 'Ethos', file: null },
-    { carrier: 'Mutual of Omaha', file: null },
-    { carrier: 'Americo', file: null },
-  ])
+  // Policy Reports state - drag and drop upload
+  interface PolicyReportFile {
+    id: string
+    file: File
+  }
+  
+  const [policyReportFiles, setPolicyReportFiles] = useState<PolicyReportFile[]>([])
+  const [isDraggingPolicyReports, setIsDraggingPolicyReports] = useState(false)
   const [uploadingReports, setUploadingReports] = useState(false)
   const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
   const [checkingExistingFiles, setCheckingExistingFiles] = useState(false)
+  
+  // All supported carriers
+  const supportedCarriers = [
+    'Aetna',
+    'Aflac',
+    'American Amicable',
+    'Combined Insurance',
+    'American Home Life',
+    'Royal Neighbors',
+    'Liberty Bankers Life',
+    'Transamerica',
+    'Foresters',
+    'Reagan CRM Data',
+    'Ethos',
+    'Mutual of Omaha',
+    'Americo',
+  ]
 
   // Carriers and Products state with caching
   const [carriers, setCarriers] = useState<Carrier[]>([])
@@ -1962,27 +1971,79 @@ export default function ConfigurationPage() {
     }
   }
 
-  const handleFileUpload = (carrierIndex: number, file: File) => {
-    const newUploads = [...uploads]
-    newUploads[carrierIndex] = {
-      ...newUploads[carrierIndex],
-      file: file
-    }
-    setUploads(newUploads)
+  // Drag and drop handlers for policy reports
+  const handlePolicyReportDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDraggingPolicyReports(true)
   }
 
-  const handleFileRemove = (carrierIndex: number) => {
-    const newUploads = [...uploads]
-    newUploads[carrierIndex] = {
-      ...newUploads[carrierIndex],
-      file: null
+  const handlePolicyReportDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDraggingPolicyReports(false)
+  }
+
+  const handlePolicyReportDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  const handlePolicyReportDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDraggingPolicyReports(false)
+
+    const droppedFiles = Array.from(e.dataTransfer.files)
+    const validFiles = droppedFiles.filter(file => {
+      const extension = file.name.split('.').pop()?.toLowerCase()
+      return extension === 'csv' || extension === 'xlsx' || extension === 'xls'
+    })
+
+    if (validFiles.length === 0) {
+      showWarning('Please drop CSV or Excel files only.')
+      return
     }
-    setUploads(newUploads)
+
+    const newFiles: PolicyReportFile[] = validFiles.map(file => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      file
+    }))
+
+    setPolicyReportFiles(prev => [...prev, ...newFiles])
+  }
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(e.target.files || [])
+    const validFiles = selectedFiles.filter(file => {
+      const extension = file.name.split('.').pop()?.toLowerCase()
+      return extension === 'csv' || extension === 'xlsx' || extension === 'xls'
+    })
+
+    if (validFiles.length === 0) {
+      showWarning('Please select CSV or Excel files only.')
+      return
+    }
+
+    const newFiles: PolicyReportFile[] = validFiles.map(file => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      file
+    }))
+
+    setPolicyReportFiles(prev => [...prev, ...newFiles])
+    
+    // Reset input
+    if (e.target) {
+      e.target.value = ''
+    }
+  }
+
+  const handleFileRemove = (fileId: string) => {
+    setPolicyReportFiles(prev => prev.filter(f => f.id !== fileId))
   }
 
   const handleAnalyzePersistency = async () => {
-    const uploadedFiles = uploads.filter(u => u.file !== null) as Array<{ carrier: string; file: File }>;
-    if (uploadedFiles.length === 0) {
+    if (policyReportFiles.length === 0) {
       showWarning('Please upload at least one policy report before analyzing.')
       return
     }
@@ -1991,7 +2052,7 @@ export default function ConfigurationPage() {
       setUploadingReports(true)
 
       // 0) Create an ingest job first
-      const expectedFiles = uploadedFiles.length
+      const expectedFiles = policyReportFiles.length
       const clientJobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
       // Resolve agencyId from current session
@@ -2041,7 +2102,7 @@ export default function ConfigurationPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           jobId,
-          files: uploadedFiles.map(({ file }) => ({
+          files: policyReportFiles.map(({ file }) => ({
             fileName: file.name,
             contentType: file.type || 'application/octet-stream',
             size: file.size,
@@ -2059,7 +2120,7 @@ export default function ConfigurationPage() {
       const results = await Promise.allSettled(
         (signJson.files as Array<{ fileId: string; fileName: string; presignedUrl: string }>).
           map(async (f) => {
-            const match = uploadedFiles.find(uf => uf.file.name === f.fileName)
+            const match = policyReportFiles.find(pf => pf.file.name === f.fileName)
             if (!match) throw new Error(`Missing file for ${f.fileName}`)
             const res = await putToSignedUrl(f.presignedUrl, match.file)
             if (!res.ok) throw new Error(`Upload failed with status ${res.status}`)
@@ -2085,7 +2146,7 @@ export default function ConfigurationPage() {
 
       if (failures.length === 0) {
         showSuccess(`Successfully uploaded ${successes.length} file(s).`)
-        setUploads(uploads.map(u => ({ carrier: u.carrier, file: null })))
+        setPolicyReportFiles([])
         checkExistingPolicyFiles()
       } else {
         showWarning(`Uploaded ${successes.length} file(s), but ${failures.length} failed: ${failures.join(', ')}`)
@@ -3607,12 +3668,12 @@ export default function ConfigurationPage() {
                 </div>
               )}
 
-              {/* Policy Reports Tab - KEEPING EXISTING CODE */}
+              {/* Policy Reports Tab - Drag and Drop Upload */}
               {activeTab === "policy-reports" && (
                 <div>
                   <div className="mb-4">
                     <h2 className="text-xl font-semibold text-foreground mb-1">Policy Reports</h2>
-                    <p className="text-sm text-muted-foreground">Upload CSV or Excel files for each carrier to analyze persistency rates</p>
+                    <p className="text-sm text-muted-foreground">Drag and drop CSV or Excel files for any carrier to analyze persistency rates</p>
                   </div>
 
                   {checkingExistingFiles && uploadedFilesInfo.length === 0 && (
@@ -3623,73 +3684,113 @@ export default function ConfigurationPage() {
                   )}
 
                   {uploadedFilesInfo.length > 0 && (
-                    <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <p className="text-blue-800">
+                    <div className="mb-6 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                      <p className="text-blue-800 dark:text-blue-200">
                         <strong>Note:</strong> Previous uploads detected. New uploads will replace existing files for those carriers.
                       </p>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                    {uploads.map((upload, index) => (
-                      <div key={upload.carrier} className="space-y-2">
-                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-100 text-center">
-                          {upload.carrier}
-                        </h3>
-                        <div className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-6 min-h-[200px] flex flex-col items-center justify-center hover:border-gray-400 dark:hover:border-slate-500 transition-colors bg-transparent dark:bg-slate-900/40">
-                          {upload.file ? (
-                            <div className="text-center">
-                              <FileText className="h-12 w-12 text-gray-600 dark:text-gray-300 mx-auto mb-3" />
-                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
-                                {upload.file.name}
-                              </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                                {(upload.file.size / 1024).toFixed(2)} KB
-                              </p>
-                              <Button
-                                onClick={() => handleFileRemove(index)}
-                                className="bg-black text-white hover:bg-gray-800 dark:bg-white/10 dark:hover:bg-white/20 px-4 py-2 text-sm"
-                              >
-                                <X className="h-4 w-4 mr-1" />
-                                Remove
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="text-center">
-                              <Upload className="h-12 w-12 text-gray-400 dark:text-gray-300 mx-auto mb-3" />
-                              <p className="text-sm font-medium text-gray-700 dark:text-gray-100 mb-1">
-                                Click to upload
-                              </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                                CSV or Excel file
-                              </p>
-                              <input
-                                type="file"
-                                accept=".csv,.xlsx,.xls"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0]
-                                  if (file) handleFileUpload(index, file)
-                                }}
-                                className="hidden"
-                                id={`upload-config-${index}`}
-                              />
-                              <label
-                                htmlFor={`upload-config-${index}`}
-                                className="cursor-pointer bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 rounded text-sm text-gray-700 dark:text-gray-100 border border-border inline-block transition-colors"
-                              >
-                                Choose File
-                              </label>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                  {/* Supported Carriers List */}
+                  <div className="mb-4 p-4 bg-muted/50 rounded-lg border border-border">
+                    <p className="text-sm font-semibold text-foreground mb-2">Supported Carriers:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {supportedCarriers.map((carrier) => (
+                        <span
+                          key={carrier}
+                          className="text-xs px-2 py-1 bg-background border border-border rounded-md text-muted-foreground"
+                        >
+                          {carrier}
+                        </span>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* Drag and Drop Area */}
+                  <div
+                    onDragEnter={handlePolicyReportDragEnter}
+                    onDragOver={handlePolicyReportDragOver}
+                    onDragLeave={handlePolicyReportDragLeave}
+                    onDrop={handlePolicyReportDrop}
+                    className={cn(
+                      "border-2 border-dashed rounded-lg p-12 mb-6 transition-colors",
+                      isDraggingPolicyReports
+                        ? "border-primary bg-primary/5 dark:bg-primary/10"
+                        : "border-gray-300 dark:border-slate-600 hover:border-gray-400 dark:hover:border-slate-500 bg-transparent dark:bg-slate-900/40"
+                    )}
+                  >
+                    <div className="flex flex-col items-center justify-center text-center">
+                      <Upload className={cn(
+                        "h-16 w-16 mb-4 transition-colors",
+                        isDraggingPolicyReports
+                          ? "text-primary"
+                          : "text-gray-400 dark:text-gray-300"
+                      )} />
+                      <p className="text-lg font-medium text-foreground mb-2">
+                        {isDraggingPolicyReports ? "Drop files here" : "Drag and drop files here"}
+                      </p>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        or click to browse
+                      </p>
+                      <input
+                        type="file"
+                        accept=".csv,.xlsx,.xls"
+                        onChange={handleFileInputChange}
+                        multiple
+                        className="hidden"
+                        id="policy-report-upload"
+                      />
+                      <label
+                        htmlFor="policy-report-upload"
+                        className="cursor-pointer bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2 rounded-md text-sm font-medium transition-colors inline-block"
+                      >
+                        Choose Files
+                      </label>
+                      <p className="text-xs text-muted-foreground mt-4">
+                        Supported formats: CSV, XLSX, XLS
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Uploaded Files List */}
+                  {policyReportFiles.length > 0 && (
+                    <div className="mb-6 space-y-3">
+                      <h3 className="text-sm font-semibold text-foreground mb-3">
+                        Uploaded Files ({policyReportFiles.length})
+                      </h3>
+                      <div className="space-y-2">
+                        {policyReportFiles.map((fileItem) => (
+                          <div
+                            key={fileItem.id}
+                            className="flex items-center gap-4 p-4 border border-border rounded-lg bg-card hover:bg-accent/50 transition-colors"
+                          >
+                            <FileText className="h-8 w-8 text-muted-foreground flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">
+                                {fileItem.file.name}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {(fileItem.file.size / 1024).toFixed(2)} KB
+                              </p>
+                            </div>
+                            <Button
+                              onClick={() => handleFileRemove(fileItem.id)}
+                              variant="ghost"
+                              size="icon"
+                              className="flex-shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex justify-center">
                     <Button
                       onClick={handleAnalyzePersistency}
-                      disabled={uploadingReports || uploads.every(u => u.file === null)}
+                      disabled={uploadingReports || policyReportFiles.length === 0}
                       className="bg-black text-white hover:bg-gray-800 px-8 py-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {uploadingReports ? (
@@ -3706,12 +3807,13 @@ export default function ConfigurationPage() {
                     </Button>
                   </div>
 
-                  <div className="mt-8 bg-amber-50 border border-amber-200 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-amber-900 mb-2">Instructions</h3>
-                    <ul className="space-y-1 text-sm text-amber-800 list-disc list-inside">
-                      <li>Upload CSV or Excel files containing your policy data for each carrier</li>
-                      <li>Files will be processed to calculate persistency rates and track policy status</li>
+                  <div className="mt-8 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold text-amber-900 dark:text-amber-100 mb-2">Instructions</h3>
+                    <ul className="space-y-1 text-sm text-amber-800 dark:text-amber-200 list-disc list-inside">
+                      <li>Drag and drop one or more CSV or Excel files into the upload area above</li>
+                      <li>Files will be automatically processed to calculate persistency rates and track policy status</li>
                       <li>New uploads will replace any existing files for the same carrier</li>
+                      <li>Supported carriers: {supportedCarriers.join(', ')}</li>
                     </ul>
                   </div>
                 </div>

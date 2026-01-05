@@ -27,9 +27,9 @@ export default function Home() {
   const [loadingDashboard, setLoadingDashboard] = useState(true)
   const [viewMode, setViewMode] = useState<'just_me' | 'downlines'>(() => {
     if (typeof window !== 'undefined') {
-      return (localStorage.getItem('dashboard_view_mode') as 'just_me' | 'downlines') || 'just_me'
+      return (localStorage.getItem('dashboard_view_mode') as 'just_me' | 'downlines') || 'downlines'
     }
-    return 'just_me'
+    return 'downlines'
   })
 
   // Save view mode to localStorage

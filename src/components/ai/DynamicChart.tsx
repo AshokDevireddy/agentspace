@@ -1,26 +1,49 @@
 'use client';
 
+import React, { useRef } from 'react';
 import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  LineElement,
+  PointElement,
+  ArcElement,
+  Title,
   Tooltip,
   Legend,
-  ResponsiveContainer,
-  Cell
-} from 'recharts';
+  Filler,
+} from 'chart.js';
+import { Bar, Line, Pie } from 'react-chartjs-2';
+import {
+  CHART_COLORS,
+  CHART_BORDER_COLORS,
+  CHART_TOOLTIP_STYLE,
+  CHART_LEGEND_STYLE,
+  CHART_GRID_COLOR,
+  CHART_TICK_COLOR,
+} from '@/lib/chart-constants';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  LineElement,
+  PointElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
+
+interface ChartDataItem {
+  [key: string]: string | number | boolean | null | undefined;
+}
 
 interface ChartProps {
   type: 'bar' | 'line' | 'pie' | 'area';
-  data: any[];
+  data: ChartDataItem[];
   config: {
     xKey?: string;
     yKey?: string;
@@ -29,233 +52,189 @@ interface ChartProps {
   };
 }
 
-const COLORS = [
-  '#8b5cf6', // purple-500
-  '#3b82f6', // blue-500
-  '#10b981', // green-500
-  '#f59e0b', // amber-500
-  '#ef4444', // red-500
-  '#ec4899', // pink-500
-  '#06b6d4', // cyan-500
-  '#8b5cf6', // purple-500
-];
-
 export default function DynamicChart({ type, data, config }: ChartProps) {
-  console.log('🎨 DynamicChart render:', {
-    type,
-    dataLength: data?.length,
-    config,
-    sampleData: data?.[0],
-    allData: data
-  });
+  const chartRef = useRef(null);
 
   if (!data || data.length === 0) {
-    console.warn('⚠️ DynamicChart: No data provided or empty array');
     return (
-      <div className="p-6 bg-red-50 border border-red-200 rounded-2xl">
-        <p className="text-red-600">No data available for chart</p>
+      <div className="p-6 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-2xl">
+        <p className="text-red-600 dark:text-red-400">No data available for chart</p>
       </div>
     );
   }
 
+  // Determine keys
+  const xKey = config.xKey || 'name';
+  const yKey = config.yKey || 'value';
+
+  // Check if this is a stacked bar chart
+  const isStacked = data.length > 0 && data[0].active !== undefined && data[0].inactive !== undefined;
+
+  // Limit data
+  const topData = data.slice(0, 10);
+
+  // Extract labels
+  const labels = topData.map(item => String(item[xKey] || item.name || ''));
+
+  const baseOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+        labels: CHART_LEGEND_STYLE,
+      },
+      tooltip: CHART_TOOLTIP_STYLE,
+    },
+    scales: type !== 'pie' ? {
+      x: {
+        grid: { color: CHART_GRID_COLOR },
+        ticks: {
+          color: CHART_TICK_COLOR,
+          maxRotation: 45,
+          minRotation: 45,
+        },
+      },
+      y: {
+        grid: { color: CHART_GRID_COLOR },
+        ticks: { color: CHART_TICK_COLOR },
+        ...(isStacked && { stacked: true }),
+      },
+    } : undefined,
+  };
+
   const renderChart = () => {
     switch (type) {
       case 'bar':
-        console.log('📊 Rendering bar chart...');
+        if (isStacked) {
+          const chartData = {
+            labels,
+            datasets: [
+              {
+                label: 'Active',
+                data: topData.map(item => Number(item.active) || 0),
+                backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                borderColor: 'rgb(16, 185, 129)',
+                borderWidth: 1,
+                borderRadius: 0,
+              },
+              {
+                label: 'Inactive',
+                data: topData.map(item => Number(item.inactive) || 0),
+                backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                borderColor: 'rgb(239, 68, 68)',
+                borderWidth: 1,
+                borderRadius: { topLeft: 8, topRight: 8, bottomLeft: 0, bottomRight: 0 },
+              },
+            ],
+          };
 
-        // Limit bar chart data to top 10 items to reduce clutter
-        const topBarData = data.slice(0, 10);
+          return (
+            <Bar
+              ref={chartRef}
+              data={chartData}
+              options={{
+                ...baseOptions,
+                scales: {
+                  ...baseOptions.scales,
+                  x: { ...baseOptions.scales?.x, stacked: true },
+                  y: { ...baseOptions.scales?.y, stacked: true },
+                },
+              }}
+            />
+          );
+        }
 
-        // Check if this is a stacked bar chart (has multiple data keys like active/inactive)
-        const isStacked = data.length > 0 && data[0].active !== undefined && data[0].inactive !== undefined;
+        const barChartData = {
+          labels,
+          datasets: [{
+            label: yKey.charAt(0).toUpperCase() + yKey.slice(1).replace(/_/g, ' '),
+            data: topData.map(item => Number(item[yKey]) || Number(item.value) || 0),
+            backgroundColor: CHART_COLORS[0],
+            borderColor: CHART_BORDER_COLORS[0],
+            borderWidth: 1,
+            borderRadius: { topLeft: 8, topRight: 8, bottomLeft: 0, bottomRight: 0 },
+          }],
+        };
 
-        // Always use 'name' as xKey for consistency (our data processing uses 'name')
-        const xKey = 'name';
-
-        console.log('📊 Bar chart config:', {
-          isStacked,
-          xKey,
-          dataLength: topBarData.length,
-          firstItem: topBarData[0],
-          configXKey: config.xKey,
-          usingXKey: xKey
-        });
-
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <BarChart data={topBarData} margin={{ bottom: 60, left: 10, right: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis
-                dataKey={xKey}
-                className="text-xs"
-                tick={{ fill: 'currentColor' }}
-                angle={-45}
-                textAnchor="end"
-                height={80}
-              />
-              <YAxis
-                className="text-xs"
-                tick={{ fill: 'currentColor' }}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--card))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px'
-                }}
-              />
-              <Legend />
-              {isStacked ? (
-                <>
-                  <Bar
-                    dataKey="active"
-                    stackId="a"
-                    fill="#10b981"
-                    name="Active"
-                    radius={[0, 0, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="inactive"
-                    stackId="a"
-                    fill="#ef4444"
-                    name="Inactive"
-                    radius={[8, 8, 0, 0]}
-                  />
-                </>
-              ) : (
-                <Bar
-                  dataKey={config.yKey || 'value'}
-                  fill={COLORS[0]}
-                  radius={[8, 8, 0, 0]}
-                />
-              )}
-            </BarChart>
-          </ResponsiveContainer>
-        );
+        return <Bar ref={chartRef} data={barChartData} options={baseOptions} />;
 
       case 'line':
-        return (
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis
-                dataKey={config.xKey}
-                className="text-xs"
-                tick={{ fill: 'currentColor' }}
-              />
-              <YAxis
-                className="text-xs"
-                tick={{ fill: 'currentColor' }}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--card))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px'
-                }}
-              />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey={config.yKey}
-                stroke={COLORS[0]}
-                strokeWidth={2}
-                dot={{ fill: COLORS[0], r: 4 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        );
+        const lineChartData = {
+          labels,
+          datasets: [{
+            label: yKey.charAt(0).toUpperCase() + yKey.slice(1).replace(/_/g, ' '),
+            data: topData.map(item => Number(item[yKey]) || Number(item.value) || 0),
+            backgroundColor: CHART_COLORS[0],
+            borderColor: CHART_BORDER_COLORS[0],
+            borderWidth: 2,
+            tension: 0.4,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+          }],
+        };
+
+        return <Line ref={chartRef} data={lineChartData} options={baseOptions} />;
 
       case 'area':
-        return (
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis
-                dataKey={config.xKey}
-                className="text-xs"
-                tick={{ fill: 'currentColor' }}
-              />
-              <YAxis
-                className="text-xs"
-                tick={{ fill: 'currentColor' }}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--card))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px'
-                }}
-              />
-              <Legend />
-              <Area
-                type="monotone"
-                dataKey={config.yKey}
-                stroke={COLORS[0]}
-                fill={COLORS[0]}
-                fillOpacity={0.6}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        );
+        const areaChartData = {
+          labels,
+          datasets: [{
+            label: yKey.charAt(0).toUpperCase() + yKey.slice(1).replace(/_/g, ' '),
+            data: topData.map(item => Number(item[yKey]) || Number(item.value) || 0),
+            backgroundColor: CHART_COLORS[0].replace('0.8', '0.3'),
+            borderColor: CHART_BORDER_COLORS[0],
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+          }],
+        };
+
+        return <Line ref={chartRef} data={areaChartData} options={baseOptions} />;
 
       case 'pie':
-        // For pie charts, we need to determine the name and value keys
+        // For pie charts, determine the name and value keys
         const nameKey = config.xKey || Object.keys(data[0])[0];
         const valueKey = config.yKey || Object.keys(data[0])[1];
 
-        // Sort data by value and limit to top items to reduce clutter
-        const sortedData = [...data].sort((a, b) => b[valueKey] - a[valueKey]);
+        // Sort data by value and limit to top items
+        const sortedData = [...data].sort((a, b) => (Number(b[valueKey]) || 0) - (Number(a[valueKey]) || 0));
         const topItems = sortedData.slice(0, 8);
         const otherItems = sortedData.slice(8);
 
         // Combine remaining items into "Others" category
-        let chartData = topItems;
+        let pieData = topItems;
         if (otherItems.length > 0) {
-          const othersValue = otherItems.reduce((sum, item) => sum + item[valueKey], 0);
-          chartData = [...topItems, { [nameKey]: 'Others', [valueKey]: othersValue }];
+          const othersValue = otherItems.reduce((sum, item) => sum + (Number(item[valueKey]) || 0), 0);
+          pieData = [...topItems, { [nameKey]: 'Others', [valueKey]: othersValue }];
         }
 
-        // Custom label that only shows for slices > 5%
-        const renderLabel = (entry: any) => {
-          const total = chartData.reduce((sum, item) => sum + item[valueKey], 0);
-          const percent = (entry[valueKey] / total) * 100;
-          if (percent < 5) return ''; // Hide small labels
-          return `${entry[nameKey]}: ${entry[valueKey]}`;
+        const pieChartData = {
+          labels: pieData.map(item => String(item[nameKey])),
+          datasets: [{
+            data: pieData.map(item => Number(item[valueKey]) || 0),
+            backgroundColor: pieData.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]),
+            borderColor: pieData.map((_, i) => CHART_BORDER_COLORS[i % CHART_BORDER_COLORS.length]),
+            borderWidth: 2,
+          }],
         };
 
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <PieChart>
-              <Pie
-                data={chartData}
-                dataKey={valueKey}
-                nameKey={nameKey}
-                cx="50%"
-                cy="50%"
-                outerRadius={120}
-                label={renderLabel}
-                labelLine={false}
-              >
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--card))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px'
-                }}
-              />
-              <Legend
-                verticalAlign="bottom"
-                height={36}
-                wrapperStyle={{ fontSize: '12px' }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        );
+        const pieOptions = {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom' as const,
+              labels: {
+                ...CHART_LEGEND_STYLE,
+                padding: 16,
+              },
+            },
+            tooltip: CHART_TOOLTIP_STYLE,
+          },
+        };
+
+        return <Pie ref={chartRef} data={pieChartData} options={pieOptions} />;
 
       default:
         return null;
@@ -263,17 +242,16 @@ export default function DynamicChart({ type, data, config }: ChartProps) {
   };
 
   return (
-    <div className="p-6 bg-gradient-to-br from-white via-slate-50/50 to-white backdrop-blur-sm border border-slate-200 rounded-2xl shadow-xl shadow-slate-200/50">
+    <div className="p-6 bg-gradient-to-br from-white via-slate-50/50 to-white dark:from-slate-900 dark:via-slate-800/50 dark:to-slate-900 backdrop-blur-sm border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50">
       <div className="mb-6">
-        <h3 className="text-xl font-bold text-slate-800 mb-2">{config.title}</h3>
+        <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">{config.title}</h3>
         {config.description && (
-          <p className="text-sm text-slate-600">{config.description}</p>
+          <p className="text-sm text-slate-600 dark:text-slate-400">{config.description}</p>
         )}
       </div>
-      <div className="bg-white/50 rounded-xl p-4">
+      <div className="bg-white/50 dark:bg-slate-800/50 rounded-xl p-4" style={{ height: '400px' }}>
         {renderChart()}
       </div>
     </div>
   );
 }
-

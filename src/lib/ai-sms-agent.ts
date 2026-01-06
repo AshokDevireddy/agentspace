@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { sendSMS, normalizePhoneNumber } from '@/lib/telnyx';
 import { logMessage, getDealWithDetails } from '@/lib/sms-helpers';
 import { Anthropic } from '@anthropic-ai/sdk';
+import { createTracer } from '@/lib/langfuse-wrapper';
 
 // Types
 interface AIProcessingResult {
@@ -293,8 +294,12 @@ export async function processAIMessage(
       };
     }
 
-    // Generate AI response
-    const aiResponse = await generateAIResponse(messageText, dealDetails);
+    // Generate AI response with Langfuse tracing
+    const aiResponse = await generateAIResponse(messageText, dealDetails, {
+      userId: agent.id,
+      agencyId: agent.agency_id,
+      conversationId: conversation.id,
+    });
 
     // Send the response via SMS
     await sendSMS({
@@ -401,12 +406,27 @@ export function classifyMessage(
 }
 
 /**
- * Generate AI response using Claude
+ * Generate AI response using Claude with Langfuse tracing
  */
 async function generateAIResponse(
   messageText: string,
-  dealDetails: any
+  dealDetails: any,
+  traceMetadata: {
+    userId: string;
+    agencyId: string;
+    conversationId?: string;
+  }
 ): Promise<string> {
+  // Create Langfuse tracer for SMS AI request
+  const tracer = createTracer(
+    {
+      userId: traceMetadata.userId,
+      agencyId: traceMetadata.agencyId,
+      conversationId: traceMetadata.conversationId,
+    },
+    'claude-haiku-4-5'
+  );
+
   const systemPrompt = `You are a policy information assistant. You ONLY answer questions about the specific policy details provided below. Keep responses under 320 characters for SMS.
 
 STRICT RULES:
@@ -431,24 +451,41 @@ Policy Information:
 
 Please provide a helpful response about their policy information. Keep it under 320 characters.`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5',
-    max_tokens: 200,
-    system: systemPrompt,
-    messages: [
-      {
-        role: 'user',
-        content: userPrompt
-      }
-    ]
-  });
+  const messages: Anthropic.MessageParam[] = [
+    {
+      role: 'user',
+      content: userPrompt
+    }
+  ];
 
-  const aiResponse = response.content[0]?.type === 'text' ? response.content[0].text : '';
+  // Start generation span for tracing
+  tracer.startGeneration(messages);
 
-  // Ensure response is SMS-friendly length
-  if (aiResponse.length > 320) {
-    return aiResponse.substring(0, 317) + '...';
+  let aiResponse = '';
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 200,
+      system: systemPrompt,
+      messages
+    });
+
+    aiResponse = response.content[0]?.type === 'text' ? response.content[0].text : '';
+
+    // Ensure response is SMS-friendly length
+    if (aiResponse.length > 320) {
+      aiResponse = aiResponse.substring(0, 317) + '...';
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    tracer.endTrace(false, errorMessage);
+    throw error;
   }
+
+  // End generation span with output
+  tracer.endGeneration(aiResponse);
+  tracer.endTrace(true);
 
   return aiResponse;
 }

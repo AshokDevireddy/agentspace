@@ -4,6 +4,18 @@ import { NextRequest } from 'next/server';
 import { executeToolCall } from '@/lib/ai-tools';
 import { getTierLimits } from '@/lib/subscription-tiers';
 import { reportAIUsage, getMeteredSubscriptionItems } from '@/lib/stripe-usage';
+import {
+  buildUserContext,
+  enforcePermissions,
+  isToolAvailable,
+  getAccessScopeDescription,
+  UserContext,
+} from '@/lib/ai-permissions';
+import {
+  sanitizeToolResult as sanitizeForPrivacy,
+  summarizeInputForAudit,
+} from '@/lib/ai-sanitizer';
+import { createTracer } from '@/lib/langfuse-wrapper';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -226,6 +238,258 @@ const tools: Anthropic.Tool[] = [
         end_date: { type: 'string', description: 'End date filter' }
       },
       required: ['data_type']
+    }
+  },
+  {
+    name: 'create_visualization',
+    description: 'Create a dynamic chart/visualization from data. Use this tool to generate bar charts, line charts, pie charts, area charts, or stacked bar charts. The data parameter should contain the actual data to visualize (from a previous tool call result). Use this after retrieving data with other tools, or when user says "visualize that" to chart the most recent data.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        chart_type: {
+          type: 'string',
+          description: 'Type of chart to create',
+          enum: ['bar', 'line', 'pie', 'area', 'stacked_bar']
+        },
+        title: {
+          type: 'string',
+          description: 'Title for the chart'
+        },
+        description: {
+          type: 'string',
+          description: 'Optional description explaining what the chart shows'
+        },
+        data: {
+          type: 'array',
+          description: 'Array of data objects to visualize. Each object should have consistent keys.',
+          items: {
+            type: 'object'
+          }
+        },
+        x_axis_key: {
+          type: 'string',
+          description: 'The key/field name to use for the X-axis (category labels)'
+        },
+        y_axis_keys: {
+          type: 'array',
+          description: 'Array of key/field names to use for Y-axis values. Use multiple keys for grouped/stacked charts.',
+          items: {
+            type: 'string'
+          }
+        },
+        config: {
+          type: 'object',
+          description: 'Optional configuration for chart appearance',
+          properties: {
+            colors: {
+              type: 'array',
+              description: 'Custom colors for data series',
+              items: { type: 'string' }
+            },
+            show_legend: {
+              type: 'boolean',
+              description: 'Whether to show legend (default: true)'
+            },
+            show_grid: {
+              type: 'boolean',
+              description: 'Whether to show grid lines (default: true)'
+            },
+            y_axis_label: {
+              type: 'string',
+              description: 'Label for Y-axis'
+            },
+            x_axis_label: {
+              type: 'string',
+              description: 'Label for X-axis'
+            }
+          }
+        }
+      },
+      required: ['chart_type', 'title', 'data', 'x_axis_key', 'y_axis_keys']
+    }
+  },
+  {
+    name: 'get_expected_payouts',
+    description: 'Get expected payout/commission projections for a SINGLE agent. Shows their expected earnings breakdown by your production (deals you wrote) vs downline production (commission from hierarchy). For payouts of ALL agents/downlines, use get_downline_payouts instead. Use this for questions about a specific agent\'s commissions, earnings, or individual payouts. IMPORTANT: When asking about ANOTHER agent\'s payouts (not current user), you MUST provide their agent_id - otherwise it returns the current user\'s payouts!',
+    input_schema: {
+      type: 'object',
+      properties: {
+        agent_id: { type: 'string', description: 'REQUIRED when querying for another agent. The agent ID to get payouts for. If omitted, returns current user\'s payouts. Get this ID from search_agents first.' },
+        months_past: { type: 'number', description: 'Months to look back (default 12)' },
+        months_future: { type: 'number', description: 'Months to look forward (default 12)' },
+        carrier_id: { type: 'string', description: 'Optional carrier ID to filter by' },
+        include_debt: { type: 'boolean', description: 'Include debt from lapsed policies (default true)' }
+      }
+    }
+  },
+  {
+    name: 'get_downline_payouts',
+    description: 'Get expected payouts FOR each agent in your downline/hierarchy (or all agents for admins). Shows what each individual agent expects to receive as their own payout. Use this when asked about payouts OF downlines, team payouts, what each agent will earn, or aggregate payout data across multiple agents.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        agent_id: { type: 'string', description: 'Root agent ID to start from (defaults to current user). For admins, returns all agency agents.' },
+        include_root: { type: 'boolean', description: 'Include the root agent in results (default true)' },
+        months_future: { type: 'number', description: 'Months to look forward (default 12)' }
+      }
+    }
+  },
+  {
+    name: 'get_scoreboard',
+    description: 'Get production scoreboard/leaderboard with agent rankings. Shows total production, policies sold, daily breakdown, and top performers for a time period. Use this for questions about rankings, top producers, leaderboard, or production competitions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        time_range: {
+          type: 'string',
+          description: 'Time range for scoreboard',
+          enum: ['this_week', 'last_week', '7_days', '14_days', '30_days', '90_days', 'ytd', 'custom']
+        },
+        start_date: { type: 'string', description: 'Start date for custom range (YYYY-MM-DD)' },
+        end_date: { type: 'string', description: 'End date for custom range (YYYY-MM-DD)' }
+      }
+    }
+  },
+  {
+    name: 'get_clients',
+    description: 'Get client list with details. Shows client name, email, phone, status, supporting agent, and dates. Can filter by status and agent. Use this for questions about clients, client lists, or client management.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Filter by client status',
+          enum: ['pre-invite', 'invited', 'onboarding', 'active', 'inactive', 'all']
+        },
+        agent_id: { type: 'string', description: 'Filter by supporting agent ID' },
+        search: { type: 'string', description: 'Search by name or email' },
+        limit: { type: 'number', description: 'Max results (default 50)' }
+      }
+    }
+  },
+  {
+    name: 'get_at_risk_policies',
+    description: 'Get policies at risk of lapsing or requiring attention. Shows policies approaching payment due dates, recently lapsed, or flagged for follow-up. Use this for questions about at-risk policies, lapse prevention, billing issues, or policies needing attention.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        risk_type: {
+          type: 'string',
+          description: 'Type of risk to filter by',
+          enum: ['lapse_risk', 'billing_due', 'recently_lapsed', 'needs_attention', 'all']
+        },
+        days_ahead: { type: 'number', description: 'Days to look ahead for upcoming risks (default 30)' },
+        agent_id: { type: 'string', description: 'Filter by agent ID' }
+      }
+    }
+  },
+  {
+    name: 'get_commission_structure',
+    description: 'Get commission structure showing commission percentages by position and product. Explains how much each position earns per product type. Use this for questions about commission rates, payout percentages, or compensation structure.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        position_id: { type: 'string', description: 'Specific position ID to get commissions for' },
+        product_id: { type: 'string', description: 'Specific product ID to filter by' }
+      }
+    }
+  },
+  {
+    name: 'get_positions',
+    description: 'Get agency position hierarchy (e.g., Agent, Senior Agent, Manager, etc.) with their levels and descriptions. Use this for questions about position levels, career progression, or agency hierarchy.',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'get_draft_messages',
+    description: 'Get pending SMS draft messages awaiting approval. Shows drafts created by you or your downline. Use this for questions about pending SMS drafts, messages needing approval, or draft message status.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Filter by draft status',
+          enum: ['pending', 'approved', 'rejected', 'all']
+        },
+        agent_id: { type: 'string', description: 'Filter by agent who created draft' }
+      }
+    }
+  },
+  {
+    name: 'get_carrier_resources',
+    description: 'Get carrier contact information, phone numbers, portal URLs, and support hours. Use this when user asks "What\'s the phone number for X carrier?", "How do I contact Y?", or "Show me carrier resources".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        carrier_id: { type: 'string', description: 'Specific carrier ID to get resources for (optional, returns all if not specified)' }
+      }
+    }
+  },
+  {
+    name: 'get_user_profile',
+    description: 'Get current user\'s profile and subscription information including tier, usage limits, billing cycle dates, and remaining AI requests. Use this when user asks "How many AI requests do I have left?", "When does my billing cycle reset?", or "What\'s my subscription tier?".',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'get_lead_source_analytics',
+    description: 'Get lead source distribution and performance analytics. Shows which lead sources (referral, provided, purchased, no-lead) generate the most deals and their conversion rates. Use for questions about lead sources, lead performance, or "Where do my deals come from?".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        start_date: { type: 'string', description: 'Start date for filtering (YYYY-MM-DD)' },
+        end_date: { type: 'string', description: 'End date for filtering (YYYY-MM-DD)' },
+        agent_id: { type: 'string', description: 'Filter by specific agent ID' }
+      }
+    }
+  },
+  {
+    name: 'get_production_trends',
+    description: 'Get time-series production data showing trends over time. Use for questions like "Show me production trends", "How is my month-over-month growth?", "What\'s my production history?", or any trend analysis.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        time_range: {
+          type: 'string',
+          description: 'Time granularity for trends',
+          enum: ['daily', 'weekly', 'monthly']
+        },
+        periods: { type: 'number', description: 'Number of periods to return (default 12)' },
+        agent_id: { type: 'string', description: 'Filter by specific agent ID' }
+      }
+    }
+  },
+  {
+    name: 'get_carrier_distribution',
+    description: 'Get policy distribution by carrier, showing count and premium breakdown. Optimized for pie chart visualization. Use for "Show me policies by carrier", "What percentage of my book is with X carrier?", or carrier breakdown questions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Filter by policy status',
+          enum: ['active', 'all']
+        },
+        agent_id: { type: 'string', description: 'Filter by specific agent ID' }
+      }
+    }
+  },
+  {
+    name: 'get_analytics_snapshot',
+    description: 'Get comprehensive analytics overview with production, policies, agents, and clients metrics. Includes comparison with previous period. Use for "Give me an analytics snapshot", "How am I doing this month?", or comprehensive business overview.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        time_period: {
+          type: 'string',
+          description: 'Time period for analytics',
+          enum: ['current_month', 'last_month', 'ytd', 'all']
+        }
+      }
     }
   },
 ];
@@ -451,6 +715,12 @@ function sanitizeToolResult(toolName: string, result: any) {
     return result;
   }
 
+  // Skip sanitization for visualization results - we need the full data array
+  // to be preserved for chart rendering and persistence
+  if (result._visualization === true) {
+    return result;
+  }
+
   switch (toolName) {
     case 'get_persistency_analytics':
       return summarizePersistencyAnalytics(result);
@@ -473,7 +743,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // AI Mode requires BOTH Expert tier AND admin status
+    // AI Mode requires Expert tier subscription (admin restriction removed)
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('id, is_admin, role, agency_id, subscription_tier, ai_requests_count, ai_requests_reset_date, stripe_subscription_id, billing_cycle_end')
@@ -487,17 +757,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Check if user is admin
+    // Check if user is admin (for permission scoping, not access control)
     const isAdmin = userData.role === 'admin' || userData.is_admin === true;
 
     // Check if user has Expert tier
     const hasExpertTier = userData.subscription_tier === 'expert';
 
-    // AI Mode requires BOTH conditions
+    // AI Mode requires Expert tier (admin restriction removed)
     if (!hasExpertTier) {
       return new Response(JSON.stringify({
         error: 'Expert tier required',
-        message: 'AI Mode is only available with Expert tier subscription.',
+        message: 'AI Mode is only available with Expert tier subscription. Please upgrade to access this feature.',
         tier_required: 'expert',
         current_tier: userData.subscription_tier
       }), {
@@ -506,17 +776,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (!isAdmin) {
-      return new Response(JSON.stringify({
-        error: 'Admin access required',
-        message: 'AI Mode is only available for admin users with Expert tier subscription.',
-        admin_required: true,
-        is_admin: isAdmin
-      }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    // Build user context for permission enforcement
+    const userContext: UserContext = await buildUserContext(
+      userData.id,
+      userData.agency_id,
+      isAdmin
+    );
+
+    // Log access scope for debugging
+    console.log(`AI Mode access: User ${userData.id}, Admin: ${isAdmin}, Downline count: ${userContext.downline_agent_ids.length}`);
 
     // AI usage limits: 50 requests per billing cycle included for Expert tier admins
     const AI_REQUEST_LIMIT = 50;
@@ -548,8 +816,33 @@ export async function POST(request: NextRequest) {
 
     const { messages } = await request.json();
 
-    // System prompt for better formatting
+    // Initialize Langfuse tracer for observability (only for this chat route)
+    const tracer = createTracer(
+      {
+        userId: userData.id,
+        agencyId: userData.agency_id,
+        isAdmin,
+        subscriptionTier: userData.subscription_tier,
+      },
+      'claude-sonnet-4-5'
+    );
+    const requestStartedAt = new Date();
+
+    // Build dynamic system prompt based on user role
+    const accessScopeDescription = getAccessScopeDescription(userContext);
+
+    // System prompt for better formatting with user context
     const systemPrompt = `You are an AI assistant helping analyze insurance agency data. Your responses will be rendered with markdown support, so please format them professionally.
+
+## DATA ACCESS SCOPE - CRITICAL
+${accessScopeDescription}
+${!isAdmin ? `
+IMPORTANT: You are helping a non-admin user. You must respect these boundaries:
+- You can ONLY show data for this user and their downline agents
+- If asked about agency-wide data, explain they need admin access
+- Never attempt to access data outside their permitted scope
+- If a tool returns an error about permissions, explain it politely and offer alternatives
+` : ''}
 
 FORMATTING GUIDELINES:
 - Use clear headings (# for main title, ## for sections, ### for subsections)
@@ -698,12 +991,34 @@ DATA RETRIEVAL GUIDELINES - CRITICAL:
 - If a user asks "how many policies" or "show policies by carrier" → use get_persistency_analytics, NOT get_deals
 
 FUZZY SEARCH GUIDELINES:
+- All search tools now support typo-tolerant fuzzy matching with similarity scoring
 - When user asks about specific people (agents/clients) by name but doesn't provide exact IDs: FIRST use search_agents or search_clients
 - Use search_agents for finding agents by partial name/email (e.g., "find agent john" → search_agents with query "john")
 - Use search_clients for finding clients by partial name/email/phone
 - Use search_policies for finding policies by policy number, app number, or client name
+- Use get_carrier_resources with carrier_name param for carrier lookup with fuzzy matching
 - After getting search results, use the returned IDs for further queries (get_agent_hierarchy, get_deals, etc.)
 - For group analysis on agents/policies, you may not need fuzzy search - use get_agents or get_deals directly with filters
+
+CRITICAL - AGENT ID CHAINING:
+When querying data for a SPECIFIC agent found via search, you MUST pass their agent_id to subsequent tool calls:
+- get_expected_payouts: MUST pass agent_id parameter when asking about another agent's payouts
+- get_agent_hierarchy: MUST pass agent_id parameter
+- get_deals: Should pass agent_id to filter deals
+- get_scoreboard: Pass agent_id to see that agent's rankings
+Without passing agent_id, these tools default to the current logged-in user's data, NOT the searched agent!
+Example: User asks "what is Andrew's expected payout?"
+  1. First call search_agents with query "andrew" → get Andrew's ID (e.g., "abc-123")
+  2. Then call get_expected_payouts with agent_id: "abc-123" ← REQUIRED to get Andrew's data!
+
+HANDLING FUZZY SEARCH RESULTS - SUGGESTIONS:
+- If no exact match is found, tools return "suggestions" with similar names and similarity scores
+- Look for "no_exact_match: true" in the response - this indicates no direct match was found
+- When suggestions are returned, check "suggestion_message" field - use this to help the user
+- Example: User asks for "Jhon Smith" → tool returns suggestion for "John Smith"
+- Present suggestions to the user naturally: "I couldn't find 'Jhon Smith', but did you mean John Smith?"
+- Results include "similarity_score" (0.0 to 1.0) - higher scores indicate closer matches
+- If user confirms a suggestion, re-query with the correct ID from the suggestion
 
 HIERARCHY ANALYSIS GUIDELINES:
 - When user asks about hierarchy relationships, upline/downline performance, or "which hierarchy has better production": use get_agent_hierarchy
@@ -732,6 +1047,30 @@ TOOL SELECTION DECISION TREE:
    → Use get_agents_paginated (check has_more to decide when to stop)
 6. User asks about persistency/active policies:
    → Use get_persistency_analytics (always)
+7. User asks about rankings, top producers, leaderboard:
+   → Use get_scoreboard
+8. User asks about clients, client list, client status:
+   → Use get_clients
+9. User asks about at-risk policies, lapse prevention, policies needing attention:
+   → Use get_at_risk_policies
+10. User asks about commission rates, payout percentages:
+    → Use get_commission_structure
+11. User asks about position levels, career hierarchy:
+    → Use get_positions
+12. User asks about pending SMS drafts, messages awaiting approval:
+    → Use get_draft_messages
+13. User asks about carrier phone numbers, contact info, portal URLs:
+    → Use get_carrier_resources
+14. User asks about their subscription, AI requests remaining, billing cycle:
+    → Use get_user_profile
+15. User asks about lead sources, where deals come from, lead performance:
+    → Use get_lead_source_analytics
+16. User asks about production trends, month-over-month, growth over time:
+    → Use get_production_trends
+17. User asks about carrier distribution, policies by carrier (for charts):
+    → Use get_carrier_distribution
+18. User asks for overall analytics snapshot, "how am I doing":
+    → Use get_analytics_snapshot
 
 IMPORTANT CHART CODE RULES:
 - The 'data' variable contains the exact tool result - adapt to its structure
@@ -747,14 +1086,88 @@ IMPORTANT CHART CODE RULES:
 
 WHEN TO USE EACH TOOL:
 ✅ get_persistency_analytics: "How many active policies?", "Show policies by carrier", "What's our lapse rate?"
+✅ get_expected_payouts: "What's my payout?" (no agent_id), "What is [Name]'s payout?" (search_agents FIRST, then pass agent_id!)
 ✅ search_agents: "Find agent John", "Show me agents named Smith", "Who is john@email.com?"
 ✅ get_agent_hierarchy: "Show me John's downline", "What's the production for John's hierarchy?"
 ✅ compare_hierarchies: "Which hierarchy has better production - John's or Jane's?"
 ✅ get_data_summary: "How many deals do we have?", "What's the total production?", "Count active agents"
 ✅ get_deals_paginated: "Show me all active deals" (if >1000), "List deals for agent X" (large dataset)
+✅ create_visualization: "Visualize that", "Show me a chart", "Make a pie chart of..."
+✅ get_scoreboard: "Who are top producers?", "Show leaderboard", "Production rankings this week", "Top 5 agents"
+✅ get_clients: "List my clients", "How many active clients?", "Show client status", "Clients assigned to me"
+✅ get_at_risk_policies: "Policies at risk?", "What's about to lapse?", "Billing reminders needed", "At-risk policies"
+✅ get_commission_structure: "What's the commission rate?", "How much does a Manager earn?", "Commission percentages"
+✅ get_positions: "What positions exist?", "Agency hierarchy levels", "Position levels in agency"
+✅ get_draft_messages: "Pending SMS drafts", "Messages awaiting approval", "Draft message status"
+✅ get_carrier_resources: "Phone number for Transamerica?", "SBLI contact info?", "Carrier portal URL?"
+✅ get_user_profile: "How many AI requests left?", "When does billing reset?", "What's my subscription tier?"
+✅ get_lead_source_analytics: "Lead source breakdown?", "Where do my deals come from?", "Best performing lead source?"
+✅ get_production_trends: "Production trends?", "Month-over-month growth?", "Show my production history"
+✅ get_carrier_distribution: "Policies by carrier?", "What % is with SBLI?", "Carrier breakdown pie chart"
+✅ get_analytics_snapshot: "Analytics snapshot", "How am I doing this month?", "Overall performance summary"
 ❌ get_deals: "Show me the client names for Aflac policies", "What premium did client John Doe pay?" (small datasets only)
 
-Remember: Keep it clean, structured, and easy to scan. Only provide what was asked for - no extra visualizations or tables.`;
+DYNAMIC VISUALIZATION TOOL (create_visualization):
+Use the create_visualization tool to generate charts and graphs dynamically. This tool is PREFERRED over writing chartcode manually.
+
+When to use create_visualization:
+1. After retrieving data with another tool - automatically visualize the results
+2. When user says "visualize that", "show me a chart", "graph this"
+3. When data is numeric/comparative and would benefit from visualization
+4. For rankings, trends, breakdowns, or distributions
+
+How to use create_visualization:
+1. First, retrieve data using the appropriate tool (get_persistency_analytics, get_agents, etc.)
+2. Extract the relevant array from the tool result
+3. Call create_visualization with:
+   - chart_type: 'bar' | 'line' | 'pie' | 'area' | 'stacked_bar'
+   - title: Descriptive title
+   - data: The array of objects to visualize
+   - x_axis_key: The field to use for labels/categories
+   - y_axis_keys: Array of fields for the values
+
+Chart Type Selection:
+- bar: Comparisons, rankings (e.g., "top 5 agents by production")
+- line: Trends over time (e.g., "monthly sales")
+- pie: Part-to-whole relationships (e.g., "policy distribution by carrier")
+- area: Cumulative trends (e.g., "total premium over time")
+- stacked_bar: Multiple metrics per category (e.g., "active vs inactive by carrier")
+
+Example - After getting persistency data:
+1. Call get_persistency_analytics
+2. Extract carriers array from result
+3. Call create_visualization with:
+   - chart_type: 'stacked_bar'
+   - title: 'Active vs Inactive Policies by Carrier'
+   - data: carriers array
+   - x_axis_key: 'carrier'
+   - y_axis_keys: ['active', 'inactive']
+
+Example - After getting downline payouts (visualizing by agent):
+1. Call get_downline_payouts
+2. Extract the by_agent array from result (NOT the whole result object)
+3. Call create_visualization with:
+   - chart_type: 'bar'
+   - title: 'Expected Payouts by Agent'
+   - data: by_agent array (the array itself, not { by_agent: [...] })
+   - x_axis_key: 'agent_name'
+   - y_axis_keys: ['total_expected']
+
+Example - After getting downline payouts (visualizing by carrier):
+1. Call get_downline_payouts
+2. Extract the by_carrier array from result
+3. Call create_visualization with:
+   - chart_type: 'bar'
+   - title: 'Expected Payouts by Carrier'
+   - data: by_carrier array
+   - x_axis_key: 'carrier_name'
+   - y_axis_keys: ['total']
+
+CRITICAL: When using create_visualization, the 'data' parameter MUST be the actual array of objects to chart, NOT a wrapper object. For example, pass result.by_agent (the array) NOT result (the object containing by_agent).
+
+IMPORTANT: The create_visualization tool generates chartcode automatically. You do NOT need to write chartcode manually when using this tool.
+
+Remember: Keep it clean, structured, and easy to scan. When data is numeric or comparative, consider using create_visualization to make it more visual.`;
 
     // Increment AI request count
     await supabase
@@ -778,11 +1191,19 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
     const stream = new ReadableStream({
       async start(controller) {
         let isStreamActive = true;
+        let totalToolCalls = 0;
+        const toolsUsed: string[] = [];
+        let currentConversationId: string | undefined;
+        let iterationIndex = 0;
+
         try {
           let conversationMessages = [...messages];
           let shouldContinue = true;
 
           while (shouldContinue && isStreamActive) {
+            // Start a new generation span for this iteration
+            tracer.startGeneration(conversationMessages);
+
             const messageStream = await anthropic.messages.create({
               model: 'claude-sonnet-4-5',
               max_tokens: 4096,
@@ -797,10 +1218,14 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
             let assistantContent: any[] = [];
             let stopReason = '';
             const toolResultsMap = new Map<string, any>();
+            iterationIndex++;
 
             for await (const event of messageStream) {
               // Check if stream is still active before enqueueing
               if (!isStreamActive) break;
+
+              // Track token usage from streaming events
+              tracer.trackStreamEvent(event);
 
               // Send the event to the client
               const chunk = `data: ${JSON.stringify(event)}\n\n`;
@@ -837,7 +1262,7 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
               }
 
               if (event.type === 'content_block_stop' && currentToolUse) {
-                // Tool use is complete, execute it
+                // Tool use is complete, execute it with permission checks
                 try {
                   // Parse tool input, handling empty/incomplete JSON
                   let toolInput = {};
@@ -851,13 +1276,48 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
                     }
                   }
 
-                  const toolResult = await executeToolCall(
+                  // PERMISSION CHECK: Enforce data access controls
+                  const permissionResult = enforcePermissions(
                     currentToolUse.name,
                     toolInput,
-                    userData.agency_id
+                    userContext
                   );
 
-                  const sanitizedToolResult = sanitizeToolResult(currentToolUse.name, toolResult);
+                  // Start tool span for tracing
+                  const toolSpan = tracer.startTool(currentToolUse.name, toolInput as Record<string, unknown>);
+                  const toolStartTime = Date.now();
+
+                  let toolResult;
+                  if (!permissionResult.allowed) {
+                    // Permission denied - return error message
+                    toolResult = {
+                      error: permissionResult.error,
+                      permission_denied: true,
+                    };
+                    console.log(`Permission denied for tool ${currentToolUse.name}: ${permissionResult.error}`);
+                    tracer.endTool(toolSpan, toolResult, Date.now() - toolStartTime, false, permissionResult.error);
+                  } else {
+                    // Execute tool with filtered input
+                    toolResult = await executeToolCall(
+                      currentToolUse.name,
+                      permissionResult.filteredInput,
+                      userData.agency_id,
+                      userContext // Pass user context to tool
+                    );
+                    tracer.endTool(toolSpan, toolResult, Date.now() - toolStartTime, true);
+                  }
+
+                  // Track tool usage for logging
+                  totalToolCalls++;
+                  if (!toolsUsed.includes(currentToolUse.name)) {
+                    toolsUsed.push(currentToolUse.name);
+                  }
+
+                  // Apply privacy sanitization based on user role
+                  const privacySanitized = sanitizeForPrivacy(currentToolUse.name, toolResult, userContext);
+
+                  // Apply token-optimization sanitization
+                  const sanitizedToolResult = sanitizeToolResult(currentToolUse.name, privacySanitized);
 
                   // Store tool result
                   toolResultsMap.set(currentToolUse.id, {
@@ -896,6 +1356,9 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
                 stopReason = event.delta.stop_reason;
               }
             }
+
+            // End this generation span and get cost breakdown
+            const costs = tracer.endGeneration(assistantContent);
 
             // If we used tools, continue the conversation with tool results
             if (stopReason === 'tool_use') {
@@ -938,12 +1401,20 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
 
           // Send done signal only if stream is still active
           if (isStreamActive) {
+            // Finalize Langfuse trace
+            tracer.endTrace(true);
+
             controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
             controller.close();
             isStreamActive = false;
           }
         } catch (error) {
           console.error('Streaming error:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+          // Finalize Langfuse trace with error
+          tracer.endTrace(false, errorMessage);
+
           if (isStreamActive) {
             try {
               controller.error(error);

@@ -7,9 +7,17 @@ import { Sparkles, Send, Loader2, CheckCircle2, Circle, ChevronDown, ChevronUp }
 import { Button } from '@/components/ui/button';
 import CodeExecutor from '@/components/ai/CodeExecutor';
 import ThinkingProgress from '@/components/ai/ThinkingProgress';
+import { ConversationSidebar } from '@/components/ai/ConversationSidebar';
 import { createClient } from '@/lib/supabase/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+interface ChartData {
+  data?: Record<string, unknown>[];
+  x_axis_key?: string;
+  y_axis_keys?: string[];
+  [key: string]: unknown;
+}
 
 interface Message {
   role: 'user' | 'assistant';
@@ -17,21 +25,29 @@ interface Message {
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   chartCode?: string;
-  chartData?: any;
+  chartData?: ChartData | null;
 }
 
 interface ToolCall {
   id: string;
   name: string;
-  input: any;
+  input: Record<string, unknown>;
   status: 'pending' | 'running' | 'completed' | 'error';
-  result?: any;
+  result?: Record<string, unknown>;
 }
 
 interface ToolResult {
   tool_use_id: string;
   tool_name: string;
-  result: any;
+  result: Record<string, unknown>;
+}
+
+interface StoredMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  tool_calls?: ToolCall[];
+  chart_code?: string;
+  chart_data?: ChartData | null;
 }
 
 interface ThinkingStep {
@@ -48,17 +64,23 @@ export default function AIChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [hasAccess, setHasAccess] = useState(false);
+  const [needsUpgrade, setNeedsUpgrade] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const [currentToolCalls, setCurrentToolCalls] = useState<ToolCall[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isCreatingConversation = useRef(false);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
 
-  // Check admin status
+  // Conversation management state
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Check Expert tier subscription (AI Mode is available to all Expert tier users)
   useEffect(() => {
-    const checkAdmin = async () => {
+    const checkAccess = async () => {
       if (loading) {
         return;
       }
@@ -72,22 +94,25 @@ export default function AIChat() {
         const supabase = createClient();
         const { data: userData, error } = await supabase
           .from('users')
-          .select('is_admin')
+          .select('subscription_tier')
           .eq('auth_user_id', user.id)
           .maybeSingle();
 
-        if (error || !userData || !userData.is_admin) {
+        if (error || !userData) {
           router.push('/unauthorized');
+        } else if (userData.subscription_tier !== 'expert') {
+          // Show upgrade prompt instead of redirecting
+          setNeedsUpgrade(true);
         } else {
-          setIsAdmin(true);
+          setHasAccess(true);
         }
       } catch (error) {
-        console.error('Error checking admin status:', error);
+        console.error('Error checking subscription:', error);
         router.push('/unauthorized');
       }
     };
 
-    checkAdmin();
+    checkAccess();
   }, [user, loading, router]);
 
   // Auto-scroll to bottom
@@ -102,10 +127,99 @@ export default function AIChat() {
       // Reset height to auto to get the correct scrollHeight
       textarea.style.height = 'auto';
       // Set height to scrollHeight (content height) but cap at max-height
-      const newHeight = Math.min(textarea.scrollHeight, 200); // Max 200px
+      const maxHeight = 200;
+      const newHeight = Math.min(textarea.scrollHeight, maxHeight);
       textarea.style.height = `${newHeight}px`;
+      // Only show overflow scroll when content exceeds max height
+      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
     }
   }, [input]);
+
+  // Load conversation when selected
+  useEffect(() => {
+    const loadConversation = async () => {
+      // Skip if we just created this conversation (no messages to load yet)
+      if (isCreatingConversation.current) {
+        isCreatingConversation.current = false;
+        return;
+      }
+
+      if (!currentConversationId) {
+        setMessages([]);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/ai/conversations/${currentConversationId}`);
+        if (response.ok) {
+          const data = await response.json();
+          // Convert stored messages to Message format
+          const loadedMessages: Message[] = (data.messages || []).map((msg: StoredMessage) => ({
+            role: msg.role,
+            content: msg.content,
+            toolCalls: msg.tool_calls,
+            chartCode: msg.chart_code,
+            chartData: msg.chart_data,
+          }));
+          setMessages(loadedMessages);
+        }
+      } catch (error) {
+        console.error('Error loading conversation:', error);
+      }
+    };
+
+    loadConversation();
+  }, [currentConversationId]);
+
+  // Handle selecting a conversation
+  const handleSelectConversation = (conversationId: string | null) => {
+    isCreatingConversation.current = false;
+    setCurrentConversationId(conversationId);
+  };
+
+  // Handle creating a new conversation
+  const handleNewConversation = () => {
+    setCurrentConversationId(null);
+    setMessages([]);
+  };
+
+  // Save message to database
+  const saveMessage = async (conversationId: string, message: Message) => {
+    try {
+      await fetch(`/api/ai/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: message.role,
+          content: message.content,
+          tool_calls: message.toolCalls || null,
+          chart_code: message.chartCode || null,
+          chart_data: message.chartData || null,
+        }),
+      });
+    } catch (error) {
+      console.error('Error saving message:', error);
+    }
+  };
+
+  // Create a new conversation
+  const createConversation = async (): Promise<string | null> => {
+    try {
+      const response = await fetch('/api/ai/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'New Conversation' }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.conversation?.id || null;
+      }
+    } catch (error) {
+      console.error('Error creating conversation:', error);
+    }
+    return null;
+  };
 
   const toggleToolExpanded = (toolId: string) => {
     setExpandedTools(prev => {
@@ -126,7 +240,8 @@ export default function AIChat() {
       'get_persistency_analytics': 'Loading comprehensive analytics',
       'get_conversations_data': 'Getting conversation data',
       'get_carriers_and_products': 'Loading carriers and products',
-      'get_agency_summary': 'Generating agency summary'
+      'get_agency_summary': 'Generating agency summary',
+      'create_visualization': 'Creating visualization'
     };
     return names[toolName] || toolName;
   };
@@ -254,6 +369,14 @@ export default function AIChat() {
         const avg = formatCurrency(result.summary?.average_premium ?? result.summary?.average_production);
         return `Summary over ${count || '0'} records${avg ? ` • average ${avg}` : ''}`;
       }
+      case 'create_visualization': {
+        if (result._visualization) {
+          const chartType = result.chart_type || 'chart';
+          const dataCount = formatNumber(result.data?.length);
+          return `Generated ${chartType} visualization${dataCount ? ` with ${dataCount} data points` : ''}`;
+        }
+        return 'Visualization created';
+      }
       default: {
         const keys = Object.keys(result);
         if (keys.length === 0) return 'Received empty result.';
@@ -294,6 +417,21 @@ export default function AIChat() {
     // Reset textarea height after sending
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
+    }
+
+    // Create conversation if this is the first message
+    let activeConversationId = currentConversationId;
+    if (!activeConversationId) {
+      isCreatingConversation.current = true;
+      activeConversationId = await createConversation();
+      if (activeConversationId) {
+        setCurrentConversationId(activeConversationId);
+      }
+    }
+
+    // Save user message to database
+    if (activeConversationId) {
+      await saveMessage(activeConversationId, userMessage);
     }
 
     try {
@@ -514,9 +652,40 @@ export default function AIChat() {
 
       // Get the most relevant data for chart rendering
       let chartData = null;
-      if (chartCode) {
-        // Try to find the most recent tool result
-        const lastToolResult = Array.from(toolResultsMap.values()).pop();
+      let finalChartCode = chartCode;
+
+      // Check if any tool result is a visualization (from create_visualization tool)
+      const toolResults = Array.from(toolResultsMap.values());
+      interface VisualizationToolResult {
+        _visualization?: boolean;
+        chartcode?: string;
+        data?: Record<string, unknown>[] | { sample?: Record<string, unknown>[] };
+        _axis_metadata?: { x_axis_key?: string; y_axis_keys?: string[] };
+      }
+      const visualizationResult = toolResults.find(
+        (result): result is VisualizationToolResult =>
+          result?._visualization === true && Boolean(result?.chartcode)
+      );
+
+      if (visualizationResult && visualizationResult.chartcode) {
+        finalChartCode = visualizationResult.chartcode;
+
+        // Extract data array, handling sanitized format if needed
+        let vizData = visualizationResult.data;
+        if (vizData && typeof vizData === 'object' && !Array.isArray(vizData) && 'sample' in vizData) {
+          vizData = vizData.sample;
+        }
+
+        if (Array.isArray(vizData) && vizData.length > 0) {
+          chartData = {
+            data: vizData,
+            x_axis_key: visualizationResult._axis_metadata?.x_axis_key,
+            y_axis_keys: visualizationResult._axis_metadata?.y_axis_keys
+          };
+        }
+      } else if (chartCode) {
+        // Fall back to extracting from assistant message (legacy behavior)
+        const lastToolResult = toolResults.pop();
         chartData = lastToolResult;
       }
 
@@ -524,7 +693,7 @@ export default function AIChat() {
         role: 'assistant',
         content: cleanContent,
         toolCalls: Array.from(currentToolCallsMap.values()),
-        chartCode: chartCode || undefined,
+        chartCode: finalChartCode || undefined,
         chartData: chartData
       };
 
@@ -532,6 +701,11 @@ export default function AIChat() {
       setCurrentToolCalls([]);
       setThinkingSteps([]);
       setStreamingContent('');
+
+      // Save assistant message to database
+      if (activeConversationId) {
+        await saveMessage(activeConversationId, finalMessage);
+      }
     } catch (error) {
       console.error('Error sending message:', error);
       const errorMessage: Message = {
@@ -553,8 +727,52 @@ export default function AIChat() {
     }
   };
 
-  // Show loading spinner while auth is loading or admin check is in progress
-  if (loading || !isAdmin) {
+  // Show loading spinner while auth is loading
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  // Show upgrade prompt for non-Expert tier users
+  if (needsUpgrade) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50 dark:bg-gray-900">
+        <div className="max-w-md mx-auto text-center p-8">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-purple-500 via-purple-600 to-blue-600 shadow-2xl shadow-purple-500/40 mb-6">
+            <Sparkles className="h-10 w-10 text-white" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">
+            Expert Tier Required
+          </h2>
+          <p className="text-slate-600 dark:text-gray-400 mb-6">
+            AI Mode is an exclusive feature available only with the Expert tier subscription.
+            Upgrade your plan to unlock powerful AI-driven analytics and visualizations.
+          </p>
+          <div className="space-y-3">
+            <Button
+              onClick={() => router.push('/settings')}
+              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+            >
+              Upgrade to Expert
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.back()}
+              className="w-full"
+            >
+              Go Back
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while checking access
+  if (!hasAccess) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -563,11 +781,21 @@ export default function AIChat() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 dark:bg-gray-900 overflow-hidden ai-mode-content" data-tour="ai-mode">
-      {/* Header - Fixed at top */}
-      <div className="fixed top-0 left-0 right-0 z-10 backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 shadow-sm lg:left-64">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-center">
+    <div className="flex h-full bg-slate-50 dark:bg-gray-900 overflow-hidden ai-mode-content" data-tour="ai-mode">
+      {/* Conversation Sidebar */}
+      <ConversationSidebar
+        currentConversationId={currentConversationId}
+        onSelectConversation={handleSelectConversation}
+        onNewConversation={handleNewConversation}
+        isCollapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
+
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header - fixed height to align border with sidebar */}
+        <div className="backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 shadow-sm border-b border-slate-200 dark:border-gray-700 h-16 flex items-center">
+          <div className="max-w-4xl mx-auto px-4 w-full">
             <div className="flex items-center gap-3">
               <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-500 via-purple-600 to-blue-600 shadow-lg shadow-purple-500/30">
                 <Sparkles className="h-5 w-5 text-white" />
@@ -581,18 +809,17 @@ export default function AIChat() {
                     BETA
                   </span>
                 </div>
-                <p className="text-xs text-slate-600">
+                <p className="text-xs text-slate-600 dark:text-slate-400">
                   * AI can make mistakes. Please verify important information.
                 </p>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto pt-20 pb-24">
-        <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {/* Messages */}
+        <div className="flex-1 min-h-0 overflow-y-auto pb-4">
+          <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
           {messages.length === 0 && (
             <div className="text-center py-16">
               <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-purple-500 via-purple-600 to-blue-600 shadow-2xl shadow-purple-500/40 mb-6">
@@ -753,47 +980,44 @@ export default function AIChat() {
         </div>
       </div>
 
-      {/* Input - Floating at bottom */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 pointer-events-none lg:left-64">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="relative pointer-events-auto flex items-end gap-3">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyPress}
-              placeholder="Ask me anything about your agency..."
-              disabled={isLoading}
-              rows={1}
-              className="flex-1 min-h-[56px] max-h-[200px] pl-5 pr-5 py-4 text-base rounded-3xl border-2 border-slate-200 dark:border-gray-700 focus:border-purple-400 dark:focus:border-purple-500 focus:ring-4 focus:ring-purple-100 dark:focus:ring-purple-900/30 shadow-2xl bg-white dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500 backdrop-blur-sm transition-all resize-none overflow-y-auto focus:outline-none"
-              style={{
-                scrollbarWidth: 'thin',
-                scrollbarColor: '#cbd5e1 transparent'
-              }}
-            />
-            <button
-              onClick={sendMessage}
-              disabled={isLoading || !input.trim()}
-              className="flex-shrink-0 h-11 w-11 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-slate-300 disabled:to-slate-300 shadow-lg shadow-purple-300 disabled:shadow-none transition-all flex items-center justify-center mb-[6px]"
-            >
-              {isLoading ? (
-                <Loader2 className="h-5 w-5 text-white animate-spin" />
-              ) : (
-                <svg
-                  className="h-5 w-5 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2.5}
-                    d="M5 10l7-7m0 0l7 7m-7-7v18"
-                  />
-                </svg>
-              )}
-            </button>
+        {/* Input - expands upward, stays anchored at bottom */}
+        <div className="flex-shrink-0 min-h-20 border-t border-slate-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl flex items-center">
+          <div className="max-w-4xl mx-auto px-4 w-full">
+            <div className="flex items-end gap-3">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyPress}
+                placeholder="Ask me anything about your agency..."
+                disabled={isLoading}
+                rows={1}
+                className="flex-1 min-h-[48px] max-h-[200px] px-5 py-3 text-base rounded-3xl border-2 border-slate-200 dark:border-gray-700 focus:border-purple-400 dark:focus:border-purple-500 focus:ring-4 focus:ring-purple-100 dark:focus:ring-purple-900/30 shadow-lg bg-white dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500 backdrop-blur-sm transition-all resize-none focus:outline-none [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-thumb]:rounded-full dark:[&::-webkit-scrollbar-thumb]:bg-gray-600"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={isLoading || !input.trim()}
+                className="flex-shrink-0 h-12 w-12 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-slate-300 disabled:to-slate-300 shadow-lg shadow-purple-300 disabled:shadow-none transition-all flex items-center justify-center"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-5 w-5 text-white animate-spin" />
+                ) : (
+                  <svg
+                    className="h-5 w-5 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.5}
+                      d="M5 10l7-7m0 0l7 7m-7-7v18"
+                    />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft } from "lucide-react"
+import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft, MessageCircle } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
@@ -16,6 +16,8 @@ import { useTheme } from "next-themes"
 import { useNotification } from "@/contexts/notification-context"
 import { useAuth } from "@/providers/AuthProvider"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
+import { SmsTemplateEditor } from "@/components/sms-template-editor"
+import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_PLACEHOLDERS } from "@/lib/sms-template-helpers"
 
 // Types for carrier data
 interface Carrier {
@@ -75,7 +77,7 @@ interface Commission {
   commission_percentage: number
 }
 
-type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord" | "carrier-logins"
+type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord" | "carrier-logins" | "sms-templates"
 
 // Default primary color schemes for light and dark mode
 const DEFAULT_PRIMARY_COLOR_LIGHT = "0 0% 0%" // Black for light mode
@@ -360,6 +362,16 @@ export default function ConfigurationPage() {
   const [discordWebhookValue, setDiscordWebhookValue] = useState("")
   const [savingDiscordWebhook, setSavingDiscordWebhook] = useState(false)
 
+  // SMS Templates state
+  const [smsWelcomeEnabled, setSmsWelcomeEnabled] = useState(true)
+  const [smsWelcomeTemplate, setSmsWelcomeTemplate] = useState("")
+  const [smsBillingReminderEnabled, setSmsBillingReminderEnabled] = useState(true)
+  const [smsBillingReminderTemplate, setSmsBillingReminderTemplate] = useState("")
+  const [smsLapseReminderEnabled, setSmsLapseReminderEnabled] = useState(true)
+  const [smsLapseReminderTemplate, setSmsLapseReminderTemplate] = useState("")
+  const [smsBirthdayEnabled, setSmsBirthdayEnabled] = useState(true)
+  const [smsBirthdayTemplate, setSmsBirthdayTemplate] = useState("")
+
   // Carrier Logins state
   const [carrierNames, setCarrierNames] = useState<string[]>([])
   const [selectedCarrierLogin, setSelectedCarrierLogin] = useState<string>("")
@@ -580,7 +592,7 @@ export default function ConfigurationPage() {
         if (userData?.agency_id) {
           const { data: agencyInfo } = await supabase
             .from('agencies')
-            .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, whitelabel_domain')
+            .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template')
             .eq('id', userData.agency_id)
             .single()
 
@@ -594,6 +606,15 @@ export default function ConfigurationPage() {
             setMessagingEnabled(agencyInfo.messaging_enabled || false)
             setDiscordWebhookUrl(agencyInfo.discord_webhook_url || "")
             setWhitelabelDomain(agencyInfo.whitelabel_domain || "")
+            // Initialize SMS template state
+            setSmsWelcomeEnabled(agencyInfo.sms_welcome_enabled ?? true)
+            setSmsWelcomeTemplate(agencyInfo.sms_welcome_template || "")
+            setSmsBillingReminderEnabled(agencyInfo.sms_billing_reminder_enabled ?? true)
+            setSmsBillingReminderTemplate(agencyInfo.sms_billing_reminder_template || "")
+            setSmsLapseReminderEnabled(agencyInfo.sms_lapse_reminder_enabled ?? true)
+            setSmsLapseReminderTemplate(agencyInfo.sms_lapse_reminder_template || "")
+            setSmsBirthdayEnabled(agencyInfo.sms_birthday_enabled ?? true)
+            setSmsBirthdayTemplate(agencyInfo.sms_birthday_template || "")
             setLoadingAgencyProfile(false)
           }
         }
@@ -2170,6 +2191,7 @@ export default function ConfigurationPage() {
     { id: "policy-reports" as TabType, label: "Policy Reports", icon: BarChart3 },
     { id: "carrier-logins" as TabType, label: "Carrier Logins", icon: Lock },
     { id: "discord" as TabType, label: "Discord Notifications", icon: Bell },
+    { id: "sms-templates" as TabType, label: "SMS Templates", icon: MessageCircle },
   ]
 
   // Get commissions grid data
@@ -4147,6 +4169,84 @@ export default function ConfigurationPage() {
                         </p>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* SMS Templates Tab */}
+              {activeTab === "sms-templates" && (
+                <div>
+                  <div className="mb-4">
+                    <h2 className="text-xl font-semibold text-foreground mb-1">SMS Templates</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Customize automated SMS messages sent to your clients. Use placeholders to personalize messages.
+                    </p>
+                  </div>
+
+                  <div className="space-y-6">
+                    <SmsTemplateEditor
+                      title="Welcome Message"
+                      description="Sent when a new client conversation is created."
+                      placeholders={SMS_TEMPLATE_PLACEHOLDERS.welcome}
+                      enabled={smsWelcomeEnabled}
+                      template={smsWelcomeTemplate}
+                      defaultTemplate={DEFAULT_SMS_TEMPLATES.welcome}
+                      dbFieldEnabled="sms_welcome_enabled"
+                      dbFieldTemplate="sms_welcome_template"
+                      agencyId={agency?.id}
+                      onEnabledChange={setSmsWelcomeEnabled}
+                      onTemplateChange={setSmsWelcomeTemplate}
+                      showSuccess={showSuccess}
+                      showError={showError}
+                    />
+
+                    <SmsTemplateEditor
+                      title="Billing Reminder"
+                      description="Sent 3 days before premium payment is due."
+                      placeholders={SMS_TEMPLATE_PLACEHOLDERS.billing_reminder}
+                      enabled={smsBillingReminderEnabled}
+                      template={smsBillingReminderTemplate}
+                      defaultTemplate={DEFAULT_SMS_TEMPLATES.billing_reminder}
+                      dbFieldEnabled="sms_billing_reminder_enabled"
+                      dbFieldTemplate="sms_billing_reminder_template"
+                      agencyId={agency?.id}
+                      onEnabledChange={setSmsBillingReminderEnabled}
+                      onTemplateChange={setSmsBillingReminderTemplate}
+                      showSuccess={showSuccess}
+                      showError={showError}
+                    />
+
+                    <SmsTemplateEditor
+                      title="Lapse Reminder"
+                      description="Sent when a policy enters lapse pending status."
+                      placeholders={SMS_TEMPLATE_PLACEHOLDERS.lapse_reminder}
+                      enabled={smsLapseReminderEnabled}
+                      template={smsLapseReminderTemplate}
+                      defaultTemplate={DEFAULT_SMS_TEMPLATES.lapse_reminder}
+                      dbFieldEnabled="sms_lapse_reminder_enabled"
+                      dbFieldTemplate="sms_lapse_reminder_template"
+                      agencyId={agency?.id}
+                      onEnabledChange={setSmsLapseReminderEnabled}
+                      onTemplateChange={setSmsLapseReminderTemplate}
+                      showSuccess={showSuccess}
+                      showError={showError}
+                    />
+
+                    <SmsTemplateEditor
+                      title="Birthday Message"
+                      description="Sent on the client's birthday."
+                      placeholders={SMS_TEMPLATE_PLACEHOLDERS.birthday}
+                      enabled={smsBirthdayEnabled}
+                      template={smsBirthdayTemplate}
+                      defaultTemplate={DEFAULT_SMS_TEMPLATES.birthday}
+                      dbFieldEnabled="sms_birthday_enabled"
+                      dbFieldTemplate="sms_birthday_template"
+                      agencyId={agency?.id}
+                      onEnabledChange={setSmsBirthdayEnabled}
+                      onTemplateChange={setSmsBirthdayTemplate}
+                      showSuccess={showSuccess}
+                      showError={showError}
+                    />
                   </div>
                 </div>
               )}

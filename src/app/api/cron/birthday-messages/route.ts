@@ -9,6 +9,8 @@ import {
   getConversationIfExists,
   logMessage,
 } from '@/lib/sms-helpers';
+import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
+import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
 
 export async function GET(request: NextRequest) {
   try {
@@ -65,6 +67,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const agencyIds = birthdayDeals.map((d: { agency_id: string }) => d.agency_id);
+    const agencySettingsMap = await batchFetchAgencySmsSettings(agencyIds);
+
     let successCount = 0;
     let errorCount = 0;
     let skippedCount = 0;
@@ -117,9 +122,22 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
+        const agencySettings = agencySettingsMap.get(deal.agency_id);
+        if (agencySettings?.sms_birthday_enabled === false) {
+          console.log(`  ⏭️  SKIPPED: Birthday SMS disabled for agency ${deal.agency_name}`);
+          skippedCount++;
+          continue;
+        }
+
         // Get first name from client_name
         const firstName = deal.client_name.split(' ')[0];
-        const messageText = `Happy Birthday, ${firstName}! Wishing you a great year ahead from your friends at ${deal.agency_name}.`;
+
+        // Use agency template or default
+        const template = agencySettings?.sms_birthday_template || DEFAULT_SMS_TEMPLATES.birthday;
+        const messageText = replaceSmsPlaceholders(template, {
+          client_first_name: firstName,
+          agency_name: deal.agency_name,
+        });
 
         console.log(`  📝 Message: "${messageText}"`);
         console.log(`  📤 Creating draft message (not sending yet)...`);

@@ -9,6 +9,8 @@ import {
   getConversationIfExists,
   logMessage,
 } from '@/lib/sms-helpers';
+import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
+import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
 
 export async function GET(request: NextRequest) {
   try {
@@ -47,6 +49,9 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`Found ${deals.length} policies with lapse_pending status`);
+
+    const agencyIds = deals.map((d: { agency_id: string }) => d.agency_id);
+    const agencySettingsMap = await batchFetchAgencySmsSettings(agencyIds);
 
     let successCount = 0;
     let errorCount = 0;
@@ -102,11 +107,24 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
+        const agencySettings = agencySettingsMap.get(deal.agency_id);
+        if (agencySettings?.sms_lapse_reminder_enabled === false) {
+          console.log(`  ⏭️  SKIPPED: Lapse reminder SMS disabled for agency`);
+          skippedCount++;
+          continue;
+        }
+
         const agentName = `${deal.agent_first_name} ${deal.agent_last_name}`;
         const agentPhone = deal.agent_phone || 'your agent';
         const clientFirstName = deal.client_name.split(' ')[0]; // Extract first name
 
-        const messageText = `Hi ${clientFirstName}, your policy is pending lapse. Your agent ${agentName} will reach out shortly at this number: ${agentPhone}`;
+        // Use agency template or default
+        const template = agencySettings?.sms_lapse_reminder_template || DEFAULT_SMS_TEMPLATES.lapse_reminder;
+        const messageText = replaceSmsPlaceholders(template, {
+          client_first_name: clientFirstName,
+          agent_name: agentName,
+          agent_phone: agentPhone,
+        });
 
         console.log(`  📝 Message: "${messageText}"`);
         console.log(`  📤 Creating draft message (not sending yet)...`);

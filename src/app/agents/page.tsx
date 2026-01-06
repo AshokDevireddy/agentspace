@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { Input } from "@/components/ui/input"
+import { MonthRangePicker } from "@/components/ui/month-range-picker"
 import AddUserModal from "@/components/modals/add-user-modal"
 import { AgentDetailsModal } from "@/components/modals/agent-details-modal"
 import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog, Mail, Send } from "lucide-react"
@@ -39,6 +40,16 @@ interface Agent {
   email?: string | null
   first_name?: string
   last_name?: string
+  // Debt and production metrics
+  individual_debt: number
+  individual_debt_count: number
+  individual_production: number
+  individual_production_count: number
+  hierarchy_debt: number
+  hierarchy_debt_count: number
+  hierarchy_production: number
+  hierarchy_production_count: number
+  debt_to_production_ratio: number | null
 }
 
 interface TreeNode {
@@ -112,6 +123,26 @@ const getPositionColorByLevel = (positionLevel: number | null | undefined, color
   return colorMap.get(positionLevel) || "bg-gray-500/20 text-gray-400 border-gray-500/30"
 }
 
+// Color utility for debt-to-production ratio
+const getRatioBadgeColor = (ratio: number | null): string => {
+  if (ratio === null) return "bg-muted text-muted-foreground border-border"
+  if (ratio <= 0.1) return "bg-green-500/20 text-green-400 border-green-500/30"   // Excellent: <10%
+  if (ratio <= 0.25) return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" // Good: 10-25%
+  if (ratio <= 0.5) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"  // Warning: 25-50%
+  if (ratio <= 0.75) return "bg-orange-500/20 text-orange-400 border-orange-500/30" // Concerning: 50-75%
+  return "bg-red-500/20 text-red-400 border-red-500/30" // Critical: >75%
+}
+
+// Format currency for display
+const formatCurrency = (value: number): string => {
+  if (value >= 1000000) {
+    return `$${(value / 1000000).toFixed(1)}M`
+  }
+  if (value >= 1000) {
+    return `$${(value / 1000).toFixed(1)}K`
+  }
+  return `$${value.toFixed(0)}`
+}
 
 const renderForeignObjectNode = ({
   nodeDatum,
@@ -272,8 +303,20 @@ const renderForeignObjectNode = ({
 }
 
 
+// Default date range: current year
+const getDefaultDateRange = () => {
+  const now = new Date()
+  return {
+    startMonth: `${now.getFullYear()}-01`,
+    endMonth: `${now.getFullYear()}-12`
+  }
+}
+
 export default function Agents() {
   const { showSuccess, showError, showWarning } = useNotification()
+
+  // Get default date range (memoized to prevent re-renders)
+  const defaultDateRange = getDefaultDateRange()
 
   // Persisted filter state using custom hook (includes view/tab state)
   const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply] = usePersistedFilters(
@@ -286,7 +329,9 @@ export default function Agents() {
       agentName: "all",
       status: "all",
       position: "all",
-      view: 'table' as 'table' | 'tree' | 'pending-positions'
+      view: 'table' as 'table' | 'tree' | 'pending-positions',
+      startMonth: defaultDateRange.startMonth,
+      endMonth: defaultDateRange.endMonth
     }
   )
 
@@ -508,6 +553,14 @@ export default function Agents() {
         }
         if (appliedFilters.position && appliedFilters.position !== 'all') {
           params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
+        }
+
+        // Add date range params for debt/production metrics
+        if (appliedFilters.startMonth) {
+          params.append('startMonth', appliedFilters.startMonth)
+        }
+        if (appliedFilters.endMonth) {
+          params.append('endMonth', appliedFilters.endMonth)
         }
 
         const url = `/api/agents?${params.toString()}`
@@ -752,6 +805,9 @@ export default function Agents() {
       case 'position':
         setLocalFilters({ position: 'all' })
         break
+      case 'dateRange':
+        setLocalFilters({ startMonth: defaultDateRange.startMonth, endMonth: defaultDateRange.endMonth })
+        break
     }
   }
 
@@ -763,6 +819,7 @@ export default function Agents() {
     { id: 'agentName', label: 'Agent Name' },
     { id: 'status', label: 'Status' },
     { id: 'position', label: 'Position' },
+    { id: 'dateRange', label: 'Date Range' },
   ]
 
   const hasActiveFilters =
@@ -772,7 +829,9 @@ export default function Agents() {
     appliedFilters.directDownline !== 'all' ||
     appliedFilters.agentName !== 'all' ||
     appliedFilters.status !== 'all' ||
-    appliedFilters.position !== 'all'
+    appliedFilters.position !== 'all' ||
+    appliedFilters.startMonth !== defaultDateRange.startMonth ||
+    appliedFilters.endMonth !== defaultDateRange.endMonth
 
   // Handle position assignment
   const handleAssignPosition = async (agentId: string, positionId: string) => {
@@ -1185,6 +1244,15 @@ export default function Agents() {
                     />
                   </Badge>
                 )}
+                {visibleFilters.has('dateRange') && (
+                  <Badge variant="outline" className="h-8 px-3">
+                    Date Range
+                    <X
+                      className="h-3 w-3 ml-2 cursor-pointer"
+                      onClick={() => removeFilter('dateRange')}
+                    />
+                  </Badge>
+                )}
 
                 {hasActiveFilters && (
                   <Button
@@ -1316,6 +1384,21 @@ export default function Agents() {
                       />
                     </div>
                   )}
+
+                  {visibleFilters.has('dateRange') && (
+                    <div className="relative overflow-visible">
+                      <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                        Date Range (Production)
+                      </label>
+                      <MonthRangePicker
+                        startMonth={localFilters.startMonth}
+                        endMonth={localFilters.endMonth}
+                        onRangeChange={(start, end) => {
+                          setLocalFilters({ startMonth: start, endMonth: end })
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1333,6 +1416,31 @@ export default function Agents() {
                   <th className="text-xs uppercase tracking-wider">Position</th>
                   <th className="text-xs uppercase tracking-wider">Upline</th>
                   <th className="text-xs uppercase tracking-wider">Status</th>
+                  <th className="text-xs uppercase tracking-wider text-right">
+                    <div className="flex flex-col items-end">
+                      <span>Production</span>
+                      <span className="text-[10px] text-muted-foreground font-normal normal-case">(Own)</span>
+                    </div>
+                  </th>
+                  <th className="text-xs uppercase tracking-wider text-right">
+                    <div className="flex flex-col items-end">
+                      <span>Production</span>
+                      <span className="text-[10px] text-muted-foreground font-normal normal-case">(Team)</span>
+                    </div>
+                  </th>
+                  <th className="text-xs uppercase tracking-wider text-right">
+                    <div className="flex flex-col items-end">
+                      <span>Debt</span>
+                      <span className="text-[10px] text-muted-foreground font-normal normal-case">(Own)</span>
+                    </div>
+                  </th>
+                  <th className="text-xs uppercase tracking-wider text-right">
+                    <div className="flex flex-col items-end">
+                      <span>Debt</span>
+                      <span className="text-[10px] text-muted-foreground font-normal normal-case">(Team)</span>
+                    </div>
+                  </th>
+                  <th className="text-xs uppercase tracking-wider text-center">D/P Ratio</th>
                   <th className="text-xs uppercase tracking-wider">Created</th>
                   <th className="text-xs uppercase tracking-wider">Last Login</th>
                   <th className="text-xs uppercase tracking-wider">Downlines</th>
@@ -1355,6 +1463,11 @@ export default function Agents() {
                       <td><div className="h-5 w-20 bg-muted rounded" /></td>
                       <td><div className="h-4 w-24 bg-muted rounded" /></td>
                       <td><div className="h-5 w-16 bg-muted rounded" /></td>
+                      <td><div className="h-4 w-16 bg-muted rounded ml-auto" /></td>
+                      <td><div className="h-4 w-16 bg-muted rounded ml-auto" /></td>
+                      <td><div className="h-4 w-16 bg-muted rounded ml-auto" /></td>
+                      <td><div className="h-4 w-16 bg-muted rounded ml-auto" /></td>
+                      <td><div className="h-5 w-14 bg-muted rounded mx-auto" /></td>
                       <td><div className="h-4 w-20 bg-muted rounded" /></td>
                       <td><div className="h-4 w-20 bg-muted rounded" /></td>
                       <td><div className="h-4 w-12 bg-muted rounded" /></td>
@@ -1362,13 +1475,13 @@ export default function Agents() {
                   ))
                 ) : error ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-destructive">
+                    <td colSpan={12} className="py-8 text-center text-destructive">
                       Error: {error}
                     </td>
                   </tr>
                 ) : agentsData.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-muted-foreground">
+                    <td colSpan={12} className="py-8 text-center text-muted-foreground">
                       No agents found matching your criteria
                     </td>
                   </tr>
@@ -1484,6 +1597,61 @@ export default function Agents() {
                             .split('-')
                             .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
                             .join('-')}
+                        </Badge>
+                      </td>
+                      {/* Production (Own) */}
+                      <td className="text-right">
+                        <div className="flex flex-col items-end">
+                          <span className="font-semibold text-sm text-green-500">
+                            {formatCurrency(agent.individual_production)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {agent.individual_production_count} {agent.individual_production_count === 1 ? 'deal' : 'deals'}
+                          </span>
+                        </div>
+                      </td>
+                      {/* Production (Team) */}
+                      <td className="text-right">
+                        <div className="flex flex-col items-end">
+                          <span className="font-semibold text-sm text-green-500">
+                            {formatCurrency(agent.hierarchy_production)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {agent.hierarchy_production_count} {agent.hierarchy_production_count === 1 ? 'deal' : 'deals'}
+                          </span>
+                        </div>
+                      </td>
+                      {/* Debt (Own) */}
+                      <td className="text-right">
+                        <div className="flex flex-col items-end">
+                          <span className={`font-semibold text-sm ${agent.individual_debt > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                            {formatCurrency(agent.individual_debt)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {agent.individual_debt_count} lapsed
+                          </span>
+                        </div>
+                      </td>
+                      {/* Debt (Team) */}
+                      <td className="text-right">
+                        <div className="flex flex-col items-end">
+                          <span className={`font-semibold text-sm ${agent.hierarchy_debt > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                            {formatCurrency(agent.hierarchy_debt)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {agent.hierarchy_debt_count} lapsed
+                          </span>
+                        </div>
+                      </td>
+                      {/* D/P Ratio */}
+                      <td className="text-center">
+                        <Badge
+                          className={`${getRatioBadgeColor(agent.debt_to_production_ratio)} border font-semibold text-xs`}
+                          variant="outline"
+                        >
+                          {agent.debt_to_production_ratio !== null
+                            ? `${(agent.debt_to_production_ratio * 100).toFixed(1)}%`
+                            : 'N/A'}
                         </Badge>
                       </td>
                       <td>

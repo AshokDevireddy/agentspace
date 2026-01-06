@@ -18,8 +18,6 @@ interface ProfileData {
   lastName: string;
   fullName: string;
   createdAt: string;
-  totalProduction: number;
-  totalPoliciesSold: number;
   is_admin: boolean;
   role: string;
   position_id: string | null;

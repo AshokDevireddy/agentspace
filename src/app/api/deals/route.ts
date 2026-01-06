@@ -784,6 +784,53 @@ export async function PUT(req: NextRequest) {
       });
     }
 
+    // Fetch current deal to detect status transition for lapse notifications
+    const LAPSE_STATUSES = ['lapse_pending', 'lapse'];
+    let isTransitioningToLapse = false;
+    let currentDealForNotification: {
+      client_name: string;
+      monthly_premium: number | null;
+      annual_premium: number | null;
+      carrier_name: string;
+      policy_number: string | null;
+      policy_effective_date: string | null;
+      agent_id: string;
+      agency_id: string;
+    } | null = null;
+
+    if (updateData.status_standardized && LAPSE_STATUSES.includes(updateData.status_standardized)) {
+      const { data: currentDeal } = await supabase
+        .from("deals")
+        .select(`
+          id,
+          status_standardized,
+          client_name,
+          monthly_premium,
+          annual_premium,
+          policy_number,
+          policy_effective_date,
+          agent_id,
+          agency_id,
+          carrier:carriers(name)
+        `)
+        .eq("id", id)
+        .single();
+
+      if (currentDeal && !LAPSE_STATUSES.includes(currentDeal.status_standardized || '')) {
+        isTransitioningToLapse = true;
+        currentDealForNotification = {
+          client_name: currentDeal.client_name,
+          monthly_premium: currentDeal.monthly_premium,
+          annual_premium: currentDeal.annual_premium,
+          carrier_name: (currentDeal.carrier as any)?.name || '',
+          policy_number: currentDeal.policy_number,
+          policy_effective_date: currentDeal.policy_effective_date,
+          agent_id: currentDeal.agent_id,
+          agency_id: currentDeal.agency_id,
+        };
+      }
+    }
+
     // Add updated_at timestamp
     updateData.updated_at = new Date().toISOString();
 
@@ -818,7 +865,33 @@ export async function PUT(req: NextRequest) {
       }
     }
 
+    // Send lapse notification emails if status transitioned to lapse
+    if (isTransitioningToLapse && currentDealForNotification) {
+      try {
+        // Call Supabase edge function to send lapse notifications
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-lapse-notification`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({
+              deal_id: deal.id,
+              agency_id: currentDealForNotification.agency_id,
+            }),
+          }
+        );
 
+        const result = await response.json();
+        console.log(`[Deals API] Lapse notifications: ${result.sent || 0} emails sent`,
+          result.errors ? `Errors: ${result.errors.join(', ')}` : '');
+      } catch (notificationError) {
+        // Don't fail the deal update if notifications fail
+        console.error('[Deals API] Failed to send lapse notifications:', notificationError);
+      }
+    }
 
     return NextResponse.json({ deal, message: "Deal updated successfully" }, {
       status: 200,

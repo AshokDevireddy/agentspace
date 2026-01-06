@@ -11,7 +11,7 @@ import { useTheme } from "next-themes"
 import { useNotification } from '@/contexts/notification-context'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
 import { supabaseRestFetch, updatePassword } from '@/lib/supabase/api'
-import { AUTH_TIMEOUT_MS, getInviteTokens, clearInviteTokens } from '@/lib/auth/constants'
+import { AUTH_TIMEOUT_MS, getInviteTokens, clearInviteTokens, withTimeout } from '@/lib/auth/constants'
 
 interface UserData {
   id: string
@@ -75,6 +75,20 @@ export default function SetupAccount() {
     }
   }, [errors])
 
+  // Master timeout to prevent infinite loading state
+  useEffect(() => {
+    if (!loading) return
+
+    const masterTimeout = setTimeout(() => {
+      if (loading) {
+        setErrors(['Loading timed out. Please try using your invitation link again or contact support.'])
+        setLoading(false)
+      }
+    }, 15000)
+
+    return () => clearTimeout(masterTimeout)
+  }, [loading])
+
   const fetchUserData = async () => {
     try {
       let authUserId: string | null = null
@@ -82,7 +96,7 @@ export default function SetupAccount() {
 
       // PRIORITY 1: Check for session from server (fastest and most reliable after invite flow)
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        const { data: { session } } = await withTimeout(supabase.auth.getSession())
         if (session?.user) {
           authUserId = session.user.id
           accessToken = session.access_token
@@ -240,9 +254,13 @@ export default function SetupAccount() {
       let accessToken: string | null = null
 
       // First, try to get session from Supabase (most reliable)
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.access_token) {
-        accessToken = session.access_token
+      try {
+        const { data: { session } } = await withTimeout(supabase.auth.getSession())
+        if (session?.access_token) {
+          accessToken = session.access_token
+        }
+      } catch {
+        // Timeout, continue to fallback
       }
 
       // Fallback to stored invite tokens
@@ -274,7 +292,7 @@ export default function SetupAccount() {
         return
       }
 
-      // Update profile
+      // Update profile - only set clients to active, admins/agents stay in onboarding for the wizard
       const updateData: Record<string, unknown> = {
         first_name: formData.firstName,
         last_name: formData.lastName,
@@ -282,6 +300,7 @@ export default function SetupAccount() {
         updated_at: new Date().toISOString(),
       }
 
+      // Only clients skip the onboarding wizard and go directly to active
       if (userData?.role === 'client') {
         updateData.status = 'active'
       }
@@ -351,6 +370,27 @@ export default function SetupAccount() {
             {errors.map((error, index) => (
               <div key={index}>{error}</div>
             ))}
+            <div className="mt-3 flex gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setErrors([])
+                  setLoading(true)
+                  fetchUserData()
+                }}
+              >
+                Retry
+              </Button>
+              <Button
+                variant="link"
+                size="sm"
+                onClick={() => router.push('/login')}
+                className="text-destructive"
+              >
+                Back to Login
+              </Button>
+            </div>
           </div>
         )}
 

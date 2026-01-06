@@ -82,8 +82,8 @@ export async function middleware(req: NextRequest) {
       }
 
       // If user is invited (hasn't clicked invite link yet), redirect to login
+      // Note: Don't call signOut() here as it creates race conditions with the client-side session
       if (userProfile.status === 'invited') {
-        await supabase.auth.signOut()
         return NextResponse.redirect(new URL('/login?message=check-email', req.url))
       }
 

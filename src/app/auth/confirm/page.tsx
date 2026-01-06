@@ -13,12 +13,15 @@ interface UserRecord {
   status: string
 }
 
+const MASTER_TIMEOUT_MS = 15000
+
 export default function ConfirmSession() {
   const supabase = createClient()
   const router = useRouter()
   const [message, setMessage] = useState('Confirming your session...')
   const [initialHashTokens] = useState<HashTokens | null>(captureHashTokens)
   const processingRef = useRef(false)
+  const completedRef = useRef(false)
 
   useEffect(() => {
     if (processingRef.current) return
@@ -28,6 +31,19 @@ export default function ConfirmSession() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Master timeout to prevent infinite loading
+  useEffect(() => {
+    const masterTimeout = setTimeout(() => {
+      if (!completedRef.current) {
+        completedRef.current = true
+        setMessage('Session confirmation timed out. Redirecting to login...')
+        router.push('/login?error=Session confirmation timed out. Please try your invitation link again.')
+      }
+    }, MASTER_TIMEOUT_MS)
+
+    return () => clearTimeout(masterTimeout)
+  }, [router])
+
   const confirmSession = async () => {
     try {
       // Try hash tokens first (from Supabase implicit flow)
@@ -35,6 +51,7 @@ export default function ConfirmSession() {
         const payload = decodeAndValidateJwt(initialHashTokens.accessToken)
 
         if (!payload) {
+          completedRef.current = true
           setMessage('Your link has expired. Please request a new invitation.')
           setTimeout(() => router.push('/login?error=Your invitation link has expired. Please contact your administrator.'), REDIRECT_DELAY_MS)
           return
@@ -44,11 +61,15 @@ export default function ConfirmSession() {
         return
       }
 
-      // Fallback: check for existing session
-      const { data: { user: existingUser } } = await supabase.auth.getUser()
-      if (existingUser) {
-        await routeUser(existingUser.id)
-        return
+      // Fallback: check for existing session with timeout
+      try {
+        const { data: { user: existingUser } } = await withTimeout(supabase.auth.getUser())
+        if (existingUser) {
+          await routeUser(existingUser.id)
+          return
+        }
+      } catch (err) {
+        console.error('Error checking existing session:', err)
       }
 
       // Try PKCE flow (code in query params)
@@ -61,9 +82,12 @@ export default function ConfirmSession() {
         }
       }
 
+      completedRef.current = true
       setMessage('Session confirmation failed. Redirecting to login...')
       setTimeout(() => router.push('/login?error=Invitation link has expired.'), REDIRECT_DELAY_MS)
-    } catch {
+    } catch (err) {
+      console.error('Error in confirmSession:', err)
+      completedRef.current = true
       setMessage('An error occurred. Redirecting to login...')
       setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
     }
@@ -74,6 +98,7 @@ export default function ConfirmSession() {
       const user = await fetchUserRecord(authUserId, accessToken)
 
       if (!user) {
+        completedRef.current = true
         setMessage('Account not found. Redirecting to login...')
         setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
         return
@@ -85,20 +110,25 @@ export default function ConfirmSession() {
       }
 
       if (user.status === 'onboarding') {
+        completedRef.current = true
         setMessage('Continue setting up your account...')
         router.push('/setup-account')
         return
       }
 
       if (user.status === 'active') {
+        completedRef.current = true
         setMessage('Welcome back! Redirecting...')
         router.push(user.role === 'client' ? '/client/dashboard' : '/')
         return
       }
 
+      completedRef.current = true
       setMessage('Account is not accessible. Please contact support.')
       setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
-    } catch {
+    } catch (err) {
+      console.error('Error in routeUser:', err)
+      completedRef.current = true
       setMessage('An error occurred. Redirecting to login...')
       setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
     }
@@ -149,11 +179,13 @@ export default function ConfirmSession() {
             refresh_token: initialHashTokens.refreshToken
           })
         )
-      } catch {
+      } catch (err) {
+        console.error('Error setting session, storing tokens as fallback:', err)
         storeInviteTokens(accessToken, initialHashTokens.refreshToken)
       }
     }
 
+    completedRef.current = true
     setMessage('Setting up your account...')
     router.push('/setup-account')
   }

@@ -51,7 +51,7 @@ const timeframeOptions = [
 ]
 
 export default function Scoreboard() {
-  const { user } = useAuth()
+  const { user, userData } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ScoreboardData | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -552,47 +552,49 @@ export default function Scoreboard() {
         </div>
       </div>
 
-      {/* Weekly Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="professional-card rounded-md">
-          <CardContent className="p-6 text-center">
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Production</h3>
-            <p className="text-3xl font-bold text-foreground">
-              {loading ? (
-                <span className="inline-block h-8 w-32 bg-muted animate-pulse rounded" />
-              ) : (
-                formatCurrency(data?.stats?.totalProduction || 0)
-              )}
-            </p>
-          </CardContent>
-        </Card>
+      {/* Weekly Stats - Only show for admins */}
+      {userData?.role === 'admin' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="professional-card rounded-md">
+            <CardContent className="p-6 text-center">
+              <h3 className="text-sm font-medium text-muted-foreground mb-2">Production</h3>
+              <p className="text-3xl font-bold text-foreground">
+                {loading ? (
+                  <span className="inline-block h-8 w-32 bg-muted animate-pulse rounded" />
+                ) : (
+                  formatCurrency(data?.stats?.totalProduction || 0)
+                )}
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card className="professional-card rounded-md">
-          <CardContent className="p-6 text-center">
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Policies Sold</h3>
-            <p className="text-3xl font-bold text-foreground">
-              {loading ? (
-                <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
-              ) : (
-                data?.stats?.totalDeals || 0
-              )}
-            </p>
-          </CardContent>
-        </Card>
+          <Card className="professional-card rounded-md">
+            <CardContent className="p-6 text-center">
+              <h3 className="text-sm font-medium text-muted-foreground mb-2">Policies Sold</h3>
+              <p className="text-3xl font-bold text-foreground">
+                {loading ? (
+                  <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
+                ) : (
+                  data?.stats?.totalDeals || 0
+                )}
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card className="professional-card rounded-md">
-          <CardContent className="p-6 text-center">
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Active Agents</h3>
-            <p className="text-3xl font-bold text-foreground">
-              {loading ? (
-                <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
-              ) : (
-                data?.stats?.activeAgents || 0
-              )}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+          <Card className="professional-card rounded-md">
+            <CardContent className="p-6 text-center">
+              <h3 className="text-sm font-medium text-muted-foreground mb-2">Active Agents</h3>
+              <p className="text-3xl font-bold text-foreground">
+                {loading ? (
+                  <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
+                ) : (
+                  data?.stats?.activeAgents || 0
+                )}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Top 3 Winners */}
       {loading ? (

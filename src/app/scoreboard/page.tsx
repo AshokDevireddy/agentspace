@@ -651,23 +651,23 @@ export default function Scoreboard() {
               <table className="w-full min-w-max">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-0">Rank</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-[80px]">Name</th>
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-0 bg-card z-10 w-20 min-w-[80px]" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Rank</th>
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-[80px] bg-card z-10" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Name</th>
                     {generateDateRange(displayDateRange.startDate, displayDateRange.endDate).map(date => (
                       <th key={date} className="text-center py-3 px-4 font-medium text-muted-foreground whitespace-nowrap">
                         {formatDateHeader(date)}
                       </th>
                     ))}
-                    <th className="text-right py-3 px-4 font-medium text-muted-foreground sticky right-0">Total</th>
+                    <th className="text-right py-3 px-4 font-medium text-muted-foreground sticky right-0 bg-card z-10" style={{ boxShadow: '-2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[0, 1, 2, 3, 4].map((index) => (
                     <tr key={index} className="border-b border-border">
-                      <td className="py-3 px-4 sticky left-0">
+                      <td className="py-3 px-4 sticky left-0 bg-card z-10 w-20 min-w-[80px]" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>
                         <div className="h-5 w-8 bg-muted animate-pulse rounded" />
                       </td>
-                      <td className="py-3 px-4 sticky left-[80px]">
+                      <td className="py-3 px-4 sticky left-[80px] bg-card z-10" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>
                         <div className="h-5 w-32 bg-muted animate-pulse rounded" />
                       </td>
                       {generateDateRange(displayDateRange.startDate, displayDateRange.endDate).map(date => (
@@ -675,7 +675,7 @@ export default function Scoreboard() {
                           <div className="h-5 w-20 bg-muted animate-pulse rounded mx-auto" />
                         </td>
                       ))}
-                      <td className="py-3 px-4 text-right sticky right-0">
+                      <td className="py-3 px-4 text-right sticky right-0 bg-card z-10" style={{ boxShadow: '-2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>
                         <div className="h-5 w-24 bg-muted animate-pulse rounded ml-auto" />
                       </td>
                     </tr>
@@ -696,42 +696,45 @@ export default function Scoreboard() {
               <table className="w-full min-w-max">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-0">Rank</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-[80px]">Name</th>
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-0 bg-card z-10 w-20 min-w-[80px]" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Rank</th>
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-[80px] bg-card z-10" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Name</th>
                     {sortedDates.map(date => (
                       <th key={date} className="text-center py-3 px-4 font-medium text-muted-foreground whitespace-nowrap">
                         {formatDateHeader(date)}
                       </th>
                     ))}
-                    <th className="text-right py-3 px-4 font-medium text-muted-foreground sticky right-0">Total</th>
+                    <th className="text-right py-3 px-4 font-medium text-muted-foreground sticky right-0 bg-card z-10" style={{ boxShadow: '-2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Total</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.leaderboard.map((agent, index) => (
-                    <tr key={agent.agent_id} className={`border-b border-border hover:bg-accent/50 transition-colors ${index < 3 ? 'bg-primary/10' : ''}`}>
-                      <td className="py-3 px-4 sticky left-0">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-semibold text-foreground">{agent.rank}</span>
-                          {index < 3 && (
-                            <span className={`text-lg ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-gray-400' : 'text-orange-500'}`}>
-                              {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 font-medium text-foreground sticky left-[80px] whitespace-nowrap">{agent.name}</td>
-                      {sortedDates.map(date => (
-                        <td key={date} className="py-3 px-4 text-center text-foreground whitespace-nowrap">
-                          {agent.dailyBreakdown[date]
-                            ? formatCurrency(agent.dailyBreakdown[date])
-                            : '--'}
+                  {data.leaderboard.map((agent, index) => {
+                    const rowBgClass = index < 3 ? 'bg-primary/10' : 'bg-card'
+                    return (
+                      <tr key={agent.agent_id} className={`border-b border-border hover:bg-accent/50 transition-colors ${index < 3 ? 'bg-primary/10' : ''}`}>
+                        <td className={`py-3 px-4 sticky left-0 z-10 w-20 min-w-[80px] ${rowBgClass}`} style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-semibold text-foreground">{agent.rank}</span>
+                            {index < 3 && (
+                              <span className={`text-lg ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-gray-400' : 'text-orange-500'}`}>
+                                {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+                              </span>
+                            )}
+                          </div>
                         </td>
-                      ))}
-                      <td className="py-3 px-4 text-right font-bold text-foreground sticky right-0 whitespace-nowrap">
-                        {formatCurrency(agent.total)}
-                      </td>
-                    </tr>
-                  ))}
+                        <td className={`py-3 px-4 font-medium text-foreground sticky left-[80px] whitespace-nowrap z-10 ${rowBgClass}`} style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>{agent.name}</td>
+                        {sortedDates.map(date => (
+                          <td key={date} className="py-3 px-4 text-center text-foreground whitespace-nowrap">
+                            {agent.dailyBreakdown[date]
+                              ? formatCurrency(agent.dailyBreakdown[date])
+                              : '--'}
+                          </td>
+                        ))}
+                        <td className={`py-3 px-4 text-right font-bold text-foreground sticky right-0 whitespace-nowrap z-10 ${rowBgClass}`} style={{ boxShadow: '-2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>
+                          {formatCurrency(agent.total)}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

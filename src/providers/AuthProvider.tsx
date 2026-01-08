@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
@@ -40,7 +40,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [isHydrated, setIsHydrated] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
+  const supabaseRef = useRef<ReturnType<typeof createClient>>(null!)
+  supabaseRef.current ??= createClient()
+  const supabase = supabaseRef.current
 
   // Mark as hydrated after first client-side render
   // This prevents hydration mismatch between server and client
@@ -130,7 +132,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [isHydrated])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHydrated]) // supabase client is stable via ref
 
   const signIn = async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -199,9 +202,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null)
     setUserData(null)
 
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
-    router.push('/login')
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.error('[AuthProvider] signOut error:', error)
+      }
+    } catch (err) {
+      console.error('[AuthProvider] signOut exception:', err)
+    }
+
+    window.location.href = '/login'
   }
 
   return (

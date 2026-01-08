@@ -66,6 +66,43 @@ export default function Scoreboard() {
   const [assumedMonthsTillLapse, setAssumedMonthsTillLapse] = useState<number>(5)
   const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
+  const [defaultScoreboardStartDate, setDefaultScoreboardStartDate] = useState<string | null>(null)
+
+  // Fetch agency default scoreboard start date
+  useEffect(() => {
+    const fetchAgencyDefaultDate = async () => {
+      if (!user?.id) return
+
+      try {
+        const supabase = createClient()
+        // First get the user's agency_id
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('agency_id')
+          .eq('auth_user_id', user.id)
+          .single()
+
+        if (userError || !userData?.agency_id) {
+          return
+        }
+
+        // Then get the agency's default_scoreboard_start_date
+        const { data: agencyData, error: agencyError } = await supabase
+          .from('agencies')
+          .select('default_scoreboard_start_date')
+          .eq('id', userData.agency_id)
+          .single()
+
+        if (!agencyError && agencyData?.default_scoreboard_start_date) {
+          setDefaultScoreboardStartDate(agencyData.default_scoreboard_start_date)
+        }
+      } catch (error) {
+        console.error('Error fetching agency default scoreboard start date:', error)
+      }
+    }
+
+    fetchAgencyDefaultDate()
+  }, [user?.id])
 
   // Calculate date range based on timeframe
   const getDateRange = (selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
@@ -141,8 +178,11 @@ export default function Scoreboard() {
       }
     }
 
+    // Use agency default start date if available and not null
+    const finalStartDate = defaultScoreboardStartDate || startDate.toISOString().split('T')[0]
+
     return {
-      startDate: startDate.toISOString().split('T')[0],
+      startDate: finalStartDate,
       endDate: endDate.toISOString().split('T')[0]
     }
   }
@@ -156,7 +196,7 @@ export default function Scoreboard() {
       }
     }
     return getDateRange(timeframe)
-  }, [timeframe, customStartDate, customEndDate])
+  }, [timeframe, customStartDate, customEndDate, defaultScoreboardStartDate])
 
   // Update custom dates when timeframe changes (only for non-custom timeframes)
   useEffect(() => {
@@ -165,7 +205,7 @@ export default function Scoreboard() {
       setCustomStartDate(range.startDate)
       setCustomEndDate(range.endDate)
     }
-  }, [timeframe])
+  }, [timeframe, defaultScoreboardStartDate])
 
   // Fetch scoreboard data - only depends on user and the computed date range
   useEffect(() => {

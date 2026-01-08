@@ -70,6 +70,8 @@ export default function ProfilePage() {
 
   // Fetch user profile data from API
   useEffect(() => {
+    const abortController = new AbortController();
+
     const fetchProfileData = async () => {
       if (!user) {
         setLoading(false);
@@ -77,7 +79,9 @@ export default function ProfilePage() {
       }
 
       try {
-        const response = await fetch(`/api/user/profile?user_id=${user.id}`);
+        const response = await fetch(`/api/user/profile?user_id=${user.id}`, {
+          signal: abortController.signal
+        });
 
         if (!response.ok) {
           throw new Error('Failed to fetch profile data');
@@ -92,6 +96,7 @@ export default function ProfilePage() {
           console.error('API Error:', result.error);
         }
       } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return;
         console.error('Error fetching profile data:', error);
       } finally {
         setLoading(false);
@@ -99,6 +104,10 @@ export default function ProfilePage() {
     };
 
     fetchProfileData();
+
+    return () => {
+      abortController.abort();
+    };
   }, [user]);
 
   // Fetch positions if admin
@@ -194,11 +203,19 @@ export default function ProfilePage() {
     setSavingTheme(false)
   }
 
-  // Show loading screen until data is ready
+  // Show loading skeleton until data is ready
   if (authLoading || loading || !profileData) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
+      <div className="flex flex-col items-center w-full min-h-screen bg-background py-8 animate-pulse">
+        <div className="w-full max-w-3xl bg-card rounded-2xl shadow-md p-8 mb-8 border border-border">
+          <div className="flex items-center">
+            <div className="w-32 h-32 bg-muted rounded-lg mr-8" />
+            <div className="space-y-3">
+              <div className="h-10 w-64 bg-muted rounded" />
+              <div className="h-4 w-48 bg-muted rounded" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

@@ -306,12 +306,21 @@ export default function Agents() {
   const [totalCount, setTotalCount] = useState(0)
   const [translate, setTranslate] = useState({ x: 0, y: 0 })
   const [positionColorMap, setPositionColorMap] = useState<Map<number, string>>(new Map())
+  const [positionsLoaded, setPositionsLoaded] = useState(false)
+  const [allPositions, setAllPositions] = useState<Position[]>([]) // Master positions list - fetched once
+  const [userPositionLevel, setUserPositionLevel] = useState<number | null>(null) // User's position level for filtering
 
   // Pending positions state
   const [pendingAgents, setPendingAgents] = useState<PendingAgent[]>([])
   const [pendingCount, setPendingCount] = useState(0)
-  const [positions, setPositions] = useState<Position[]>([]) // For pending positions assignment (filtered by user level)
-  const [filterPositions, setFilterPositions] = useState<Position[]>([]) // For filter dropdown (all agency positions)
+
+  // Derived positions - computed from allPositions
+  const positions = allPositions.filter(p =>
+    userPositionLevel === null || userPositionLevel === undefined
+      ? true
+      : p.level < userPositionLevel
+  ) // For pending positions assignment (filtered by user level)
+  const filterPositions = allPositions // For filter dropdown (all agency positions)
   const [assigningAgentId, setAssigningAgentId] = useState<string | null>(null)
   const [selectedPositionId, setSelectedPositionId] = useState<string>("")
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null) // Track which agent we're working on
@@ -428,55 +437,112 @@ export default function Agents() {
         }
     }, []);
 
-  // Fetch all positions for the agency and build color map based on rank
+  // Reset loading states on component mount (handles navigation back to page)
+  // This ensures skeleton shows even when React preserves component state
   useEffect(() => {
-    const fetchPositionsForColorMap = async () => {
+    setPositionsLoaded(false)
+    setLoading(true)
+    // Clear agentsData to ensure skeleton shows instead of stale empty state
+    setAgentsData([])
+    setTreeData(null)
+  }, [])
+
+  // Fetch all positions and user's position level on mount
+  useEffect(() => {
+    setPositionsLoaded(false)
+
+    const abortController = new AbortController()
+    let isActive = true
+
+    const fetchPositionsAndUserLevel = async () => {
       try {
         const supabase = createClient()
         const { data: { session } } = await supabase.auth.getSession()
         const accessToken = session?.access_token
 
-        if (!accessToken) return
+        if (!accessToken) {
+          if (isActive) {
+            setPositionsLoaded(true)
+          }
+          return
+        }
 
-        // Fetch all positions for the agency
         const response = await fetch('/api/positions', {
           headers: {
             'Authorization': `Bearer ${accessToken}`
-          }
+          },
+          signal: abortController.signal
         })
 
         if (response.ok) {
           const data = await response.json()
 
-          // Sort positions by level (descending - highest level first)
-          const sortedPositions = [...data].sort((a, b) => b.level - a.level)
+          if (isActive) {
+            // Store all positions (used for filter dropdown and assignment)
+            setAllPositions(data)
 
-          // Create a map of level -> color based on rank
-          const colorMap = new Map<number, string>()
-          sortedPositions.forEach((position, index) => {
-            // Top 10 positions get distinct colors, rest get gray
-            if (index < 10) {
-              colorMap.set(position.level, positionLevelColors[index])
-            } else {
-              colorMap.set(position.level, "bg-gray-500/20 text-gray-400 border-gray-500/30")
-            }
-          })
+            // Sort positions by level (descending - highest level first) for color map
+            const sortedPositions = [...data].sort((a: Position, b: Position) => b.level - a.level)
 
-          setPositionColorMap(colorMap)
+            // Create a map of level -> color based on rank
+            const colorMap = new Map<number, string>()
+            sortedPositions.forEach((position: Position, index: number) => {
+              // Top 10 positions get distinct colors, rest get gray
+              if (index < 10) {
+                colorMap.set(position.level, positionLevelColors[index])
+              } else {
+                colorMap.set(position.level, "bg-gray-500/20 text-gray-400 border-gray-500/30")
+              }
+            })
+            setPositionColorMap(colorMap)
+          }
+        }
+
+        // Fetch current user's position level (for filtering assignment dropdown)
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user && isActive) {
+          const { data: userData } = await supabase
+            .from('users')
+            .select('position_id, position:positions(level)')
+            .eq('auth_user_id', user.id)
+            .single()
+
+          if (userData?.position?.level !== undefined) {
+            setUserPositionLevel(userData.position.level)
+          }
         }
       } catch (err) {
-        console.error('Error fetching positions for color map:', err)
+        if (err instanceof Error && err.name === 'AbortError') return
+        console.error('Error fetching positions:', err)
+      } finally {
+        if (isActive) {
+          setPositionsLoaded(true)
+        }
       }
     }
 
-    fetchPositionsForColorMap()
+    fetchPositionsAndUserLevel()
+
+    return () => {
+      isActive = false
+      abortController.abort()
+    }
   }, [])
 
   // Fetch agents data from API (only when active filters change, not local filters)
   useEffect(() => {
+    const abortController = new AbortController()
+    let isActive = true
+
     const fetchAgents = async () => {
       try {
         setLoading(true)
+        // Clear data when starting a new fetch to ensure skeleton shows
+        if (view === 'table') {
+          setAgentsData([])
+        } else {
+          setTreeData(null)
+        }
 
         // Build query params
         const params = new URLSearchParams()
@@ -511,35 +577,14 @@ export default function Agents() {
         }
 
         const url = `/api/agents?${params.toString()}`
-        const response = await fetch(url)
+        const response = await fetch(url, { signal: abortController.signal })
         if (!response.ok) {
           throw new Error('Failed to fetch agents')
         }
         const data = await response.json()
 
         if(view === 'table') {
-            // For pre-invite agents without email, fetch email from agent details
-            const agentsWithEmail = await Promise.all(
-              data.agents.map(async (agent: Agent) => {
-                if (agent.status?.toLowerCase() === 'pre-invite' && !agent.email) {
-                  try {
-                    const response = await fetch(`/api/agents/${agent.id}`, {
-                      credentials: 'include'
-                    })
-                    if (response.ok) {
-                      const agentData = await response.json()
-                      return { ...agent, email: agentData.email || null }
-                    }
-                  } catch (err) {
-                    console.error('Error fetching agent email:', err)
-                  }
-                }
-                return agent
-              })
-            )
-
-            // Agents are already sorted hierarchically by the database RPC
-            setAgentsData(agentsWithEmail)
+            setAgentsData(data.agents)
             setTotalPages(data.pagination.totalPages)
             setTotalCount(data.pagination.totalCount)
             if (data.allAgents) {
@@ -549,22 +594,39 @@ export default function Agents() {
             setTreeData(data.tree)
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred')
-        console.error('Error fetching agents:', err)
+        if (err instanceof Error && err.name === 'AbortError') {
+          return
+        }
+        if (isActive) {
+          setError(err instanceof Error ? err.message : 'An error occurred')
+          console.error('Error fetching agents:', err)
+          setLoading(false)
+        }
       } finally {
-        setLoading(false)
+        // Only set loading to false if effect is still active (not aborted/cleaned up)
+        if (isActive) {
+          setLoading(false)
+        }
       }
     }
 
     fetchAgents()
+
+    return () => {
+      isActive = false
+      abortController.abort()
+    }
   }, [currentPage, view, appliedFilters])
 
   // Fetch all agents for pending positions view (with and without positions)
   // This loads all data upfront so we can filter client-side without API calls
   useEffect(() => {
-    const fetchAllAgents = async () => {
-      if (view !== 'pending-positions') return
+    if (view !== 'pending-positions') return
 
+    const abortController = new AbortController()
+    let isActive = true
+
+    const fetchAllAgents = async () => {
       try {
         const supabase = createClient()
         const { data: { session } } = await supabase.auth.getSession()
@@ -583,123 +645,30 @@ export default function Agents() {
         const response = await fetch(url.toString(), {
           headers: {
             'Authorization': `Bearer ${accessToken}`
-          }
+          },
+          signal: abortController.signal
         })
 
-        if (response.ok) {
+        if (response.ok && isActive) {
           const data = await response.json()
-          console.log('[Frontend] Received agents data:', data.agents?.length || 0, 'agents')
-          console.log('[Frontend] Sample agent created_at values:', data.agents?.slice(0, 3).map((a: PendingAgent) => ({
-            id: a.agent_id,
-            name: `${a.first_name} ${a.last_name}`,
-            created_at: a.created_at,
-            type: typeof a.created_at,
-            has_position: a.has_position
-          })))
           setPendingAgents(data.agents || [])
           // Count only those without positions for the badge
           const withoutPositionsCount = (data.agents || []).filter((a: PendingAgent) => !a.has_position).length
           setPendingCount(withoutPositionsCount)
-        } else {
+        } else if (!response.ok) {
           console.error('Failed to fetch agents:', response.status, await response.text())
         }
       } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
         console.error('Error fetching agents:', err)
       }
     }
 
     fetchAllAgents()
-  }, [view])
 
-  // Fetch positions for assignment dropdown (filtered by user's level)
-  useEffect(() => {
-    const fetchPositions = async () => {
-      try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
-
-        if (!accessToken) {
-          console.error('No access token available')
-          return
-        }
-
-        // Fetch positions with Bearer token
-        const response = await fetch('/api/positions', {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-
-          // Fetch current user's position level to filter positions
-          const { data: { user } } = await supabase.auth.getUser()
-          if (user) {
-            const { data: userData } = await supabase
-              .from('users')
-              .select('position_id, position:positions(level)')
-              .eq('auth_user_id', user.id)
-              .single()
-
-            const currentUserPositionLevel = userData?.position?.level
-
-            // Filter positions: only show positions BELOW current user's level (not including their level)
-            const filteredData = currentUserPositionLevel !== null && currentUserPositionLevel !== undefined
-              ? data.filter((pos: any) => pos.level < currentUserPositionLevel)
-              : data
-
-            setPositions(filteredData || [])
-          } else {
-            setPositions(data || [])
-          }
-        } else {
-          console.error('Failed to fetch positions:', response.status, await response.text())
-        }
-      } catch (err) {
-        console.error('Error fetching positions:', err)
-      }
-    }
-
-    if (view === 'pending-positions') {
-      fetchPositions()
-    }
-  }, [view])
-
-  // Fetch all positions for filter dropdown (table view) - no filtering, just all agency positions
-  useEffect(() => {
-    const fetchFilterPositions = async () => {
-      try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
-
-        if (!accessToken) {
-          console.error('No access token available')
-          return
-        }
-
-        // Fetch all positions for the agency (no level filtering)
-        const response = await fetch('/api/positions', {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          setFilterPositions(data || [])
-        } else {
-          console.error('Failed to fetch filter positions:', response.status, await response.text())
-        }
-      } catch (err) {
-        console.error('Error fetching filter positions:', err)
-      }
-    }
-
-    if (view === 'table') {
-      fetchFilterPositions()
+    return () => {
+      isActive = false
+      abortController.abort()
     }
   }, [view])
 
@@ -1023,6 +992,60 @@ export default function Agents() {
 
   const nodeSize = { x: 220, y: 200 };
   const foreignObjectProps = { width: nodeSize.x, height: nodeSize.y, x: -110, y: 10 };
+
+  // Block render until positions are loaded to ensure colors display correctly
+  if (!positionsLoaded) {
+    return (
+      <div className="space-y-6 animate-pulse">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="h-10 w-32 bg-muted rounded" />
+          <div className="flex items-center gap-2">
+            <div className="h-9 w-24 bg-muted rounded" />
+            <div className="h-9 w-24 bg-muted rounded" />
+            <div className="h-9 w-28 bg-muted rounded" />
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-card rounded-lg border p-4">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-24 bg-muted rounded" />
+            <div className="h-8 w-32 bg-muted rounded" />
+            <div className="h-8 w-32 bg-muted rounded" />
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="bg-card rounded-lg border">
+          <div className="p-4 border-b">
+            <div className="flex items-center gap-4">
+              <div className="h-5 w-24 bg-muted rounded" />
+              <div className="h-5 w-20 bg-muted rounded" />
+              <div className="h-5 w-20 bg-muted rounded" />
+              <div className="h-5 w-20 bg-muted rounded" />
+              <div className="h-5 w-20 bg-muted rounded" />
+            </div>
+          </div>
+          <div className="p-4 space-y-4">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 py-2">
+                <div className="h-10 w-10 bg-muted rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-40 bg-muted rounded" />
+                  <div className="h-3 w-24 bg-muted rounded" />
+                </div>
+                <div className="h-6 w-20 bg-muted rounded" />
+                <div className="h-6 w-24 bg-muted rounded" />
+                <div className="h-6 w-16 bg-muted rounded" />
+                <div className="h-4 w-20 bg-muted rounded" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 agents-content" data-tour="agents">
@@ -1405,30 +1428,9 @@ export default function Agents() {
                             <div className="mt-2">
                               {agent.status?.toLowerCase() === 'pre-invite' && agent.email && (
                                 <Button
-                                  onClick={async (e) => {
+                                  onClick={(e) => {
                                     e.stopPropagation()
-                                    // Fetch full agent details if needed
-                                    let agentWithEmail = agent
-                                    if (!agent.first_name || !agent.last_name) {
-                                      try {
-                                        const response = await fetch(`/api/agents/${agent.id}`, {
-                                          credentials: 'include'
-                                        })
-                                        if (response.ok) {
-                                          const agentData = await response.json()
-                                          const nameParts = agentData.name.split(' ')
-                                          agentWithEmail = { 
-                                            ...agent, 
-                                            email: agentData.email || agent.email,
-                                            first_name: agentData.name.split(',')[1]?.trim() || nameParts[0] || '',
-                                            last_name: agentData.name.split(',')[0]?.trim() || nameParts.slice(1).join(' ') || ''
-                                          }
-                                        }
-                                      } catch (err) {
-                                        console.error('Error fetching agent details:', err)
-                                      }
-                                    }
-                                    await handleSendInvite(agentWithEmail)
+                                    handleSendInvite(agent)
                                   }}
                                   disabled={sendingInvite && agentToInvite?.id === agent.id}
                                   variant="outline"

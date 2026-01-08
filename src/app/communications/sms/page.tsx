@@ -1089,9 +1089,18 @@ function SMSMessagingPageContent() {
             "flex-1 overflow-y-auto custom-scrollbar",
             userTier === 'basic' && viewMode === 'downlines' && "blur-sm pointer-events-none"
           )}>
-          {loading ? (
-            <div className="flex items-center justify-center p-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          {(loading || !isAdminChecked) ? (
+            <div className="p-2 space-y-2 animate-pulse">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 p-3 rounded-lg">
+                  <div className="h-10 w-10 bg-muted rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-32 bg-muted rounded" />
+                    <div className="h-3 w-48 bg-muted rounded" />
+                  </div>
+                  <div className="h-3 w-12 bg-muted rounded" />
+                </div>
+              ))}
             </div>
           ) : filteredConversations.length === 0 ? (
             <div className="p-8 text-center">

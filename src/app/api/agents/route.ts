@@ -284,25 +284,29 @@ export async function GET(request: Request) {
       };
     });
 
-    const { data: optionRows, error: optionsError } = await supabaseAdmin.rpc(
-      "get_agent_options",
-      {
-        p_user_id: currentUser.id,
-        p_include_full_agency: includeFullAgency,
-      },
-    );
+    // Only fetch agent options for table view (filter dropdowns)
+    let allAgents: Array<{ id: string; name: string }> = [];
+    if (view === "table") {
+      const { data: optionRows, error: optionsError } = await supabaseAdmin.rpc(
+        "get_agent_options",
+        {
+          p_user_id: currentUser.id,
+          p_include_full_agency: includeFullAgency,
+        },
+      );
 
-    if (optionsError) {
-      console.error("get_agent_options RPC error:", optionsError);
-      return NextResponse.json({ error: optionsError.message }, {
-        status: 500,
-      });
+      if (optionsError) {
+        console.error("get_agent_options RPC error:", optionsError);
+        return NextResponse.json({ error: optionsError.message }, {
+          status: 500,
+        });
+      }
+
+      allAgents = (optionRows || []).map((row: any) => ({
+        id: row.agent_id,
+        name: row.display_name,
+      }));
     }
-
-    const allAgents = (optionRows || []).map((row: any) => ({
-      id: row.agent_id,
-      name: row.display_name,
-    }));
 
     return NextResponse.json({
       agents,

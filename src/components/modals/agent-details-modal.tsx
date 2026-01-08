@@ -102,9 +102,11 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
   const [editedData, setEditedData] = useState<any>(null)
   const [saving, setSaving] = useState(false)
   const [positionColorMap, setPositionColorMap] = useState<Map<number, string>>(new Map())
+  const [positionsLoaded, setPositionsLoaded] = useState(false)
 
   useEffect(() => {
     if (open && agentId) {
+      setPositionsLoaded(false)
       fetchAgentDetails()
       fetchDownlines()
       checkAdminStatus()
@@ -149,6 +151,8 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
       }
     } catch (err) {
       console.error('Error fetching positions for color map:', err)
+    } finally {
+      setPositionsLoaded(true)
     }
   }
 
@@ -342,7 +346,7 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
     }
   }
 
-  if (!agent && loading) {
+  if ((!agent && loading) || !positionsLoaded) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">

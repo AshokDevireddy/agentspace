@@ -539,7 +539,7 @@ export default function AnalyticsTestPage() {
 		localStorage.setItem('analytics_view_mode', viewMode)
 	}, [viewMode])
 
-	React.	useEffect(() => {
+	React.useEffect(() => {
 		let isMounted = true
 		;(async () => {
 			try {

@@ -41,6 +41,8 @@ export default function Home() {
 
   // Fetch all dashboard data in parallel
   useEffect(() => {
+    const abortController = new AbortController()
+
     const fetchAllDashboardData = async () => {
       if (!user) {
         setUserDataLoading(false)
@@ -63,10 +65,11 @@ export default function Home() {
 
       const supabase = createClient()
 
-      // Run all 3 fetches in PARALLEL using Promise.allSettled
-      const [userResult, scoreboardResult, dashboardResult] = await Promise.allSettled([
-        // 1. User profile fetch
-        fetch(`/api/user/profile?user_id=${user.id}`).then(res => res.json()),
+      try {
+        // Run all 3 fetches in PARALLEL using Promise.allSettled
+        const [userResult, scoreboardResult, dashboardResult] = await Promise.allSettled([
+          // 1. User profile fetch
+          fetch(`/api/user/profile?user_id=${user.id}`, { signal: abortController.signal }).then(res => res.json()),
 
         // 2. Scoreboard RPC
         supabase.rpc('get_scoreboard_data', {
@@ -172,9 +175,18 @@ export default function Home() {
         console.error('Error fetching dashboard data:', dashboardResult.reason)
       }
       setLoadingDashboard(false)
+      } catch (error) {
+        // Ignore AbortError - expected when component unmounts
+        if (error instanceof Error && error.name === 'AbortError') return
+        console.error('Error fetching dashboard data:', error)
+      }
     }
 
     fetchAllDashboardData()
+
+    return () => {
+      abortController.abort()
+    }
   }, [user])
 
   // Auto-start tour for newly active users (who just completed the wizard)

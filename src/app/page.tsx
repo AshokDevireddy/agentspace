@@ -536,7 +536,7 @@ export default function Home() {
       {!isLoadingDashboardData && dashboardData && (
         <div
           key={viewMode}
-          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500"
+          className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500"
           data-tour="dashboard-stats"
         >
           {/* Active Policies */}
@@ -589,14 +589,6 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
-
-          {/* Production Progress */}
-          <ProductionProgressCard
-            viewMode={viewMode}
-            ytdProduction={ytdProduction}
-            mtdProduction={mtdProduction}
-            loading={loadingProduction}
-          />
         </div>
       )}
 
@@ -604,13 +596,13 @@ export default function Home() {
       {isLoadingDashboardData && (
         <div className="space-y-4">
           <div className="h-8 bg-muted animate-pulse rounded w-48" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
               <Card key={i} className="professional-card rounded-md">
                 <CardContent className="p-4">
                   <div className="animate-pulse">
-                    <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
-                    <div className="h-8 bg-gray-200 rounded w-1/2"></div>
+                    <div className="h-4 bg-muted rounded w-3/4 mb-4"></div>
+                    <div className="h-8 bg-muted rounded w-1/2"></div>
                   </div>
                 </CardContent>
               </Card>
@@ -619,124 +611,15 @@ export default function Home() {
         </div>
       )}
 
-      {/* Pie Chart and Scoreboard Side by Side */}
+      {/* Production Progress + Top Producers Side by Side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Carrier Distribution Pie Chart */}
-        {isLoadingDashboardData ? (
-          <Card className="professional-card rounded-md">
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
-                <BarChart3 className="h-5 w-5 text-foreground" />
-                <span>Active Policies by Carrier</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80 flex items-center justify-center">
-                <div className="h-64 w-64 rounded-full bg-muted animate-pulse" />
-              </div>
-            </CardContent>
-          </Card>
-        ) : !isLoadingDashboardData && currentData?.carriers_active ? (
-          <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg" key={`pie-${viewMode}`}>
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
-                <BarChart3 className="h-5 w-5 text-foreground" />
-                <span>Active Policies by Carrier</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80 animate-in fade-in duration-500">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieChartData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={renderCustomLabel}
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
-                      isAnimationActive={true}
-                      animationDuration={800}
-                      animationBegin={0}
-                    >
-                      {pieChartData.map((entry: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      content={({ active, payload }) => {
-                        if (!active || !payload || !payload[0]) return null
-                        
-                        const data = payload[0].payload
-                        
-                        // If it's "Others", show detailed breakdown
-                        if (data?.isOthers && data?.originalCarriers && data.originalCarriers.length > 0) {
-                          return (
-                            <div
-                              style={{
-                                backgroundColor: 'hsl(var(--card))',
-                                border: '1px solid hsl(var(--border))',
-                                borderRadius: '8px',
-                                padding: '12px',
-                                color: 'hsl(var(--foreground))',
-                                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
-                              }}
-                            >
-                              <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>
-                                Others: {data.value} policies ({data.percentage}%)
-                              </div>
-                              <div style={{ borderTop: '1px solid hsl(var(--border))', paddingTop: '8px' }}>
-                                <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'hsl(var(--muted-foreground))' }}>
-                                  Breakdown:
-                                </div>
-                                {data.originalCarriers.map((carrier: any, idx: number) => (
-                                  <div
-                                    key={idx}
-                                    style={{
-                                      fontSize: '12px',
-                                      padding: '4px 0',
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      gap: '12px'
-                                    }}
-                                  >
-                                    <span>{carrier.name}:</span>
-                                    <span style={{ fontWeight: '500' }}>
-                                      {carrier.value} policies ({carrier.percentage}%)
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )
-                        }
-                        
-                        // Regular tooltip for other slices
-                        return (
-                          <div
-                            style={{
-                              backgroundColor: 'hsl(var(--card))',
-                              border: '1px solid hsl(var(--border))',
-                              borderRadius: '8px',
-                              padding: '8px 12px',
-                              color: 'hsl(var(--foreground))'
-                            }}
-                          >
-                            <div style={{ fontWeight: '500' }}>
-                              {data.name}: {data.value} policies ({data.percentage}%)
-                            </div>
-                          </div>
-                        )
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+        {/* Production Progress */}
+        <ProductionProgressCard
+          viewMode={viewMode}
+          ytdProduction={ytdProduction}
+          mtdProduction={mtdProduction}
+          loading={loadingProduction}
+        />
 
         {/* Top Producers */}
         <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
@@ -794,6 +677,109 @@ export default function Home() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Carrier Distribution Pie Chart - Full Width */}
+      {!isLoadingDashboardData && currentData?.carriers_active && (
+        <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg" key={`pie-${viewMode}`}>
+          <CardHeader>
+            <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
+              <BarChart3 className="h-5 w-5 text-foreground" />
+              <span>Active Policies by Carrier</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80 animate-in fade-in duration-500">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieChartData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={renderCustomLabel}
+                    outerRadius={120}
+                    fill="#8884d8"
+                    dataKey="value"
+                    isAnimationActive={true}
+                    animationDuration={800}
+                    animationBegin={0}
+                  >
+                    {pieChartData.map((entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || !payload[0]) return null
+
+                      const data = payload[0].payload
+
+                      // If it's "Others", show detailed breakdown
+                      if (data?.isOthers && data?.originalCarriers && data.originalCarriers.length > 0) {
+                        return (
+                          <div
+                            style={{
+                              backgroundColor: 'hsl(var(--card))',
+                              border: '1px solid hsl(var(--border))',
+                              borderRadius: '8px',
+                              padding: '12px',
+                              color: 'hsl(var(--foreground))',
+                              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+                            }}
+                          >
+                            <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>
+                              Others: {data.value} policies ({data.percentage}%)
+                            </div>
+                            <div style={{ borderTop: '1px solid hsl(var(--border))', paddingTop: '8px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'hsl(var(--muted-foreground))' }}>
+                                Breakdown:
+                              </div>
+                              {data.originalCarriers.map((carrier: any, idx: number) => (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    fontSize: '12px',
+                                    padding: '4px 0',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    gap: '12px'
+                                  }}
+                                >
+                                  <span>{carrier.name}:</span>
+                                  <span style={{ fontWeight: '500' }}>
+                                    {carrier.value} policies ({carrier.percentage}%)
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      }
+
+                      // Regular tooltip for other slices
+                      return (
+                        <div
+                          style={{
+                            backgroundColor: 'hsl(var(--card))',
+                            border: '1px solid hsl(var(--border))',
+                            borderRadius: '8px',
+                            padding: '8px 12px',
+                            color: 'hsl(var(--foreground))'
+                          }}
+                        >
+                          <div style={{ fontWeight: '500' }}>
+                            {data.name}: {data.value} policies ({data.percentage}%)
+                          </div>
+                        </div>
+                      )
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Production Chart - COMMENTED OUT */}
       {/* <Card className="professional-card">

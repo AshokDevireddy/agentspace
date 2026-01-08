@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TrendingUp } from "lucide-react"
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts"
 
@@ -64,17 +64,17 @@ export function ProductionProgressCard({
   if (loading) {
     return (
       <Card className="professional-card rounded-md">
-        <CardContent className="p-4">
-          <div className="animate-pulse">
-            <div className="flex items-center justify-between mb-3">
-              <div className="h-4 bg-muted rounded w-24"></div>
-              <div className="h-6 bg-muted rounded w-20"></div>
-            </div>
-            <div className="flex justify-center my-4">
-              <div className="h-32 w-32 rounded-full bg-muted"></div>
-            </div>
-            <div className="h-4 bg-muted rounded w-full"></div>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div className="h-6 bg-muted rounded w-32 animate-pulse"></div>
+            <div className="h-8 bg-muted rounded w-24 animate-pulse"></div>
           </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex justify-center py-4">
+            <div className="h-64 w-64 rounded-full bg-muted animate-pulse"></div>
+          </div>
+          <div className="h-5 bg-muted rounded w-48 mx-auto animate-pulse"></div>
         </CardContent>
       </Card>
     )
@@ -82,29 +82,26 @@ export function ProductionProgressCard({
 
   return (
     <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
-      <CardContent className="p-4">
-        {/* Header with toggle */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            <p className="text-sm font-medium text-muted-foreground">
-              Production
-            </p>
-          </div>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-foreground" />
+            <span>Production Progress</span>
+          </CardTitle>
 
           {/* YTD/MTD Toggle */}
-          <div className="relative bg-muted/50 p-0.5 rounded-md">
+          <div className="relative bg-muted/50 p-1 rounded-lg">
             <div
-              className="absolute top-0.5 bottom-0.5 bg-primary rounded transition-all duration-200 ease-in-out"
+              className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-200 ease-in-out"
               style={{
-                left: periodMode === 'ytd' ? '2px' : 'calc(50%)',
-                width: 'calc(50% - 2px)'
+                left: periodMode === 'ytd' ? '4px' : 'calc(50%)',
+                width: 'calc(50% - 4px)'
               }}
             />
             <div className="relative z-10 flex">
               <button
                 onClick={() => setPeriodMode('ytd')}
-                className={`relative z-10 py-1 px-2 rounded text-xs font-medium transition-colors duration-200 ${
+                className={`relative z-10 py-1.5 px-3 rounded-md text-sm font-medium transition-colors duration-200 ${
                   periodMode === 'ytd'
                     ? 'text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground'
@@ -114,7 +111,7 @@ export function ProductionProgressCard({
               </button>
               <button
                 onClick={() => setPeriodMode('mtd')}
-                className={`relative z-10 py-1 px-2 rounded text-xs font-medium transition-colors duration-200 ${
+                className={`relative z-10 py-1.5 px-3 rounded-md text-sm font-medium transition-colors duration-200 ${
                   periodMode === 'mtd'
                     ? 'text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground'
@@ -125,18 +122,20 @@ export function ProductionProgressCard({
             </div>
           </div>
         </div>
+      </CardHeader>
 
-        {/* Circular Progress */}
-        <div className="relative flex justify-center items-center">
-          <div className="w-36 h-36">
+      <CardContent>
+        {/* Large Circular Progress */}
+        <div className="relative flex justify-center items-center py-4">
+          <div className="w-64 h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={chartData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={50}
-                  outerRadius={65}
+                  innerRadius={90}
+                  outerRadius={115}
                   startAngle={90}
                   endAngle={-270}
                   dataKey="value"
@@ -155,20 +154,20 @@ export function ProductionProgressCard({
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             {viewMode === 'just_me' ? (
               <>
-                <span className="text-2xl font-bold text-foreground">
+                <span className="text-4xl font-bold text-foreground">
                   {displayPercentage !== null ? `${displayPercentage.toFixed(0)}%` : '0%'}
                 </span>
-                <span className="text-sm font-semibold text-foreground">
+                <span className="text-xl font-semibold text-foreground mt-1">
                   {formatCompactCurrency(production)}
                 </span>
               </>
             ) : (
               <>
-                <span className="text-xl font-bold text-foreground">
+                <span className="text-3xl font-bold text-foreground">
                   {formatCompactCurrency(production)}
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  Total
+                <span className="text-sm text-muted-foreground mt-1">
+                  Total Production
                 </span>
               </>
             )}
@@ -176,13 +175,13 @@ export function ProductionProgressCard({
         </div>
 
         {/* Goal text or label */}
-        <div className="text-center mt-2">
+        <div className="text-center">
           {viewMode === 'just_me' ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               {formatCurrency(production)} of {formatCurrency(goal)} goal
             </p>
           ) : (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Downline Production
             </p>
           )}

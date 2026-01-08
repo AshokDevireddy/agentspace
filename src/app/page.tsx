@@ -1,6 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ProductionProgressCard } from "@/components/production-progress-card"
 import { Users, BarChart3, FileText, Briefcase, AlertCircle } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { useState, useEffect, useMemo, useCallback } from "react"
@@ -27,6 +28,9 @@ export default function Home() {
   const [loadingScoreboard, setLoadingScoreboard] = useState(true)
   const [dashboardData, setDashboardData] = useState<any>(null)
   const [loadingDashboard, setLoadingDashboard] = useState(true)
+  const [ytdProduction, setYtdProduction] = useState<{ individual: number; hierarchy: number }>({ individual: 0, hierarchy: 0 })
+  const [mtdProduction, setMtdProduction] = useState<{ individual: number; hierarchy: number }>({ individual: 0, hierarchy: 0 })
+  const [loadingProduction, setLoadingProduction] = useState(true)
   const [viewMode, setViewMode] = useState<'just_me' | 'downlines'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('dashboard_view_mode') as 'just_me' | 'downlines') || 'downlines'
@@ -175,6 +179,89 @@ export default function Home() {
     }
 
     fetchAllDashboardData()
+  }, [user])
+
+  // Fetch YTD and MTD production data
+  useEffect(() => {
+    const fetchProductionData = async () => {
+      if (!user) {
+        setLoadingProduction(false)
+        return
+      }
+
+      const supabase = createClient()
+      const today = new Date()
+
+      // Format dates as YYYY-MM-DD strings directly to avoid timezone issues
+      const year = today.getFullYear()
+      const month = String(today.getMonth() + 1).padStart(2, '0')
+      const day = String(today.getDate()).padStart(2, '0')
+      const todayStr = `${year}-${month}-${day}`
+
+      // YTD: Jan 1 of current year to today
+      const ytdStart = `${year}-01-01`
+      const ytdEnd = todayStr
+
+      // MTD: 1st of current month to today
+      const mtdStart = `${year}-${month}-01`
+      const mtdEnd = todayStr
+
+      // Get agency-wide production totals (for downlines view)
+      const { data: ytdAgencyData } = await supabase
+        .from('deals')
+        .select('annual_premium')
+        .gte('policy_effective_date', ytdStart)
+        .lte('policy_effective_date', ytdEnd)
+
+      const { data: mtdAgencyData } = await supabase
+        .from('deals')
+        .select('annual_premium')
+        .gte('policy_effective_date', mtdStart)
+        .lte('policy_effective_date', mtdEnd)
+
+      const ytdAgencyTotal = (ytdAgencyData || []).reduce((sum, d) => sum + (d.annual_premium || 0), 0)
+      const mtdAgencyTotal = (mtdAgencyData || []).reduce((sum, d) => sum + (d.annual_premium || 0), 0)
+
+      try {
+        // Fetch YTD and MTD production for individual (just me) view
+        const [ytdResult, mtdResult] = await Promise.all([
+          supabase.rpc('get_agents_debt_production', {
+            p_user_id: user.id,
+            p_agent_ids: [user.id],
+            p_start_date: ytdStart,
+            p_end_date: ytdEnd
+          }),
+          supabase.rpc('get_agents_debt_production', {
+            p_user_id: user.id,
+            p_agent_ids: [user.id],
+            p_start_date: mtdStart,
+            p_end_date: mtdEnd
+          })
+        ])
+
+        if (ytdResult.data && !ytdResult.error) {
+          const ytdData = ytdResult.data[0] || { individual_production: 0 }
+          setYtdProduction({
+            individual: ytdData.individual_production || 0,
+            hierarchy: ytdAgencyTotal
+          })
+        }
+
+        if (mtdResult.data && !mtdResult.error) {
+          const mtdData = mtdResult.data[0] || { individual_production: 0 }
+          setMtdProduction({
+            individual: mtdData.individual_production || 0,
+            hierarchy: mtdAgencyTotal
+          })
+        }
+      } catch (error) {
+        console.error('[Production] Error fetching production data:', error)
+      } finally {
+        setLoadingProduction(false)
+      }
+    }
+
+    fetchProductionData()
   }, [user])
 
   // Auto-start tour for newly active users (who just completed the wizard)
@@ -449,7 +536,7 @@ export default function Home() {
       {!isLoadingDashboardData && dashboardData && (
         <div
           key={viewMode}
-          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500"
+          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500"
           data-tour="dashboard-stats"
         >
           {/* Active Policies */}
@@ -502,6 +589,14 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Production Progress */}
+          <ProductionProgressCard
+            viewMode={viewMode}
+            ytdProduction={ytdProduction}
+            mtdProduction={mtdProduction}
+            loading={loadingProduction}
+          />
         </div>
       )}
 
@@ -509,8 +604,8 @@ export default function Home() {
       {isLoadingDashboardData && (
         <div className="space-y-4">
           <div className="h-8 bg-muted animate-pulse rounded w-48" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {Array.from({ length: 3 }).map((_, i) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
               <Card key={i} className="professional-card rounded-md">
                 <CardContent className="p-4">
                   <div className="animate-pulse">

@@ -1,34 +1,39 @@
 "use client"
 
-import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TrendingUp } from "lucide-react"
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts"
+import { type TimePeriod } from "@/lib/date-utils"
 
 const ANNUAL_GOAL = 400000 // $400,000 per year
 
 interface ProductionProgressCardProps {
   viewMode: 'just_me' | 'downlines'
-  ytdProduction: { individual: number; hierarchy: number }
-  mtdProduction: { individual: number; hierarchy: number }
+  production: { individual: number; hierarchy: number }
+  timePeriod: TimePeriod
   loading?: boolean
+}
+
+// Calculate pro-rated goal based on time period
+function getProRatedGoal(period: TimePeriod): number {
+  switch (period) {
+    case 'ytd': return ANNUAL_GOAL
+    case 'this_month': return ANNUAL_GOAL / 12
+    case 'this_week': return ANNUAL_GOAL / 52
+  }
 }
 
 export function ProductionProgressCard({
   viewMode,
-  ytdProduction,
-  mtdProduction,
+  production,
+  timePeriod,
   loading = false
 }: ProductionProgressCardProps) {
-  const [periodMode, setPeriodMode] = useState<'ytd' | 'mtd'>('ytd')
+  // Get the appropriate production value based on view mode
+  const productionValue = viewMode === 'just_me' ? production.individual : production.hierarchy
 
-  // Get the appropriate production value based on view mode and period
-  const production = periodMode === 'ytd'
-    ? (viewMode === 'just_me' ? ytdProduction.individual : ytdProduction.hierarchy)
-    : (viewMode === 'just_me' ? mtdProduction.individual : mtdProduction.hierarchy)
-
-  const goal = ANNUAL_GOAL // Always show progress against $400K
-  const rawPercentage = (production / goal) * 100
+  const goal = getProRatedGoal(timePeriod)
+  const rawPercentage = (productionValue / goal) * 100
   const displayPercentage = viewMode === 'just_me' ? rawPercentage : null
   const chartPercentage = viewMode === 'just_me' ? Math.min(rawPercentage, 100) : 100
 
@@ -83,45 +88,10 @@ export function ProductionProgressCard({
   return (
     <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-foreground" />
-            <span>Production Progress</span>
-          </CardTitle>
-
-          {/* YTD/MTD Toggle */}
-          <div className="relative bg-muted/50 p-1 rounded-lg">
-            <div
-              className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-200 ease-in-out"
-              style={{
-                left: periodMode === 'ytd' ? '4px' : 'calc(50%)',
-                width: 'calc(50% - 4px)'
-              }}
-            />
-            <div className="relative z-10 flex">
-              <button
-                onClick={() => setPeriodMode('ytd')}
-                className={`relative z-10 py-1.5 px-3 rounded-md text-sm font-medium transition-colors duration-200 ${
-                  periodMode === 'ytd'
-                    ? 'text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                YTD
-              </button>
-              <button
-                onClick={() => setPeriodMode('mtd')}
-                className={`relative z-10 py-1.5 px-3 rounded-md text-sm font-medium transition-colors duration-200 ${
-                  periodMode === 'mtd'
-                    ? 'text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                MTD
-              </button>
-            </div>
-          </div>
-        </div>
+        <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-2">
+          <TrendingUp className="h-5 w-5 text-foreground" />
+          <span>Production Progress</span>
+        </CardTitle>
       </CardHeader>
 
       <CardContent>
@@ -158,13 +128,13 @@ export function ProductionProgressCard({
                   {displayPercentage !== null ? `${displayPercentage.toFixed(0)}%` : '0%'}
                 </span>
                 <span className="text-xl font-semibold text-foreground mt-1">
-                  {formatCompactCurrency(production)}
+                  {formatCompactCurrency(productionValue)}
                 </span>
               </>
             ) : (
               <>
                 <span className="text-3xl font-bold text-foreground">
-                  {formatCompactCurrency(production)}
+                  {formatCompactCurrency(productionValue)}
                 </span>
                 <span className="text-sm text-muted-foreground mt-1">
                   Total Production
@@ -178,7 +148,7 @@ export function ProductionProgressCard({
         <div className="text-center">
           {viewMode === 'just_me' ? (
             <p className="text-sm text-muted-foreground">
-              {formatCurrency(production)} of {formatCurrency(goal)} goal
+              {formatCurrency(productionValue)} of {formatCurrency(goal)} goal
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">

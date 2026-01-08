@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft } from "lucide-react"
+import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft, Mail } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
@@ -75,7 +75,7 @@ interface Commission {
   commission_percentage: number
 }
 
-type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord" | "carrier-logins"
+type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications"
 
 // Default primary color schemes for light and dark mode
 const DEFAULT_PRIMARY_COLOR_LIGHT = "0 0% 0%" // Black for light mode
@@ -360,6 +360,20 @@ export default function ConfigurationPage() {
   const [discordWebhookValue, setDiscordWebhookValue] = useState("")
   const [savingDiscordWebhook, setSavingDiscordWebhook] = useState(false)
 
+  // Lapse Email Notification Settings state
+  const [lapseEmailEnabled, setLapseEmailEnabled] = useState(false)
+  const [lapseEmailSubject, setLapseEmailSubject] = useState("Policy Lapse Alert: {{client_name}}")
+  const [lapseEmailBody, setLapseEmailBody] = useState("")
+  const [editingLapseSubject, setEditingLapseSubject] = useState(false)
+  const [editingLapseBody, setEditingLapseBody] = useState(false)
+  const [lapseSubjectValue, setLapseSubjectValue] = useState("")
+  const [lapseBodyValue, setLapseBodyValue] = useState("")
+  const [savingLapseEmail, setSavingLapseEmail] = useState(false)
+  // New state for Supabase-style email editor
+  const [emailViewMode, setEmailViewMode] = useState<'source' | 'preview'>('source')
+  const [hasUnsavedEmailChanges, setHasUnsavedEmailChanges] = useState(false)
+  const bodyTextareaRef = useRef<HTMLTextAreaElement>(null)
+
   // Carrier Logins state
   const [carrierNames, setCarrierNames] = useState<string[]>([])
   const [selectedCarrierLogin, setSelectedCarrierLogin] = useState<string>("")
@@ -580,7 +594,7 @@ export default function ConfigurationPage() {
         if (userData?.agency_id) {
           const { data: agencyInfo } = await supabase
             .from('agencies')
-            .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, whitelabel_domain')
+            .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body')
             .eq('id', userData.agency_id)
             .single()
 
@@ -594,6 +608,12 @@ export default function ConfigurationPage() {
             setMessagingEnabled(agencyInfo.messaging_enabled || false)
             setDiscordWebhookUrl(agencyInfo.discord_webhook_url || "")
             setWhitelabelDomain(agencyInfo.whitelabel_domain || "")
+            setLapseEmailEnabled(agencyInfo.lapse_email_notifications_enabled || false)
+            setLapseEmailSubject(agencyInfo.lapse_email_subject || "Policy Lapse Alert: {{client_name}}")
+            setLapseEmailBody(agencyInfo.lapse_email_body || "")
+            // Initialize edit values for always-editable fields
+            setLapseSubjectValue(agencyInfo.lapse_email_subject || "Policy Lapse Alert: {{client_name}}")
+            setLapseBodyValue(agencyInfo.lapse_email_body || "")
             setLoadingAgencyProfile(false)
           }
         }
@@ -1949,6 +1969,194 @@ export default function ConfigurationPage() {
     setDiscordWebhookValue("")
   }
 
+  // Lapse Email Notification Management Functions
+  const handleToggleLapseEmail = async (enabled: boolean) => {
+    if (!agency) return
+
+    try {
+      setSavingLapseEmail(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ lapse_email_notifications_enabled: enabled })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setLapseEmailEnabled(enabled)
+      showSuccess(enabled ? 'Lapse email notifications enabled' : 'Lapse email notifications disabled')
+    } catch (error) {
+      console.error('Error updating lapse email setting:', error)
+      showError('Failed to update notification setting')
+      setLapseEmailEnabled(!enabled)
+    } finally {
+      setSavingLapseEmail(false)
+    }
+  }
+
+  const handleEditLapseSubject = () => {
+    setEditingLapseSubject(true)
+    setLapseSubjectValue(lapseEmailSubject)
+  }
+
+  const handleSaveLapseSubject = async () => {
+    if (!agency || !lapseSubjectValue.trim()) return
+
+    try {
+      setSavingLapseEmail(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ lapse_email_subject: lapseSubjectValue.trim() })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setLapseEmailSubject(lapseSubjectValue.trim())
+      setEditingLapseSubject(false)
+      setLapseSubjectValue("")
+      showSuccess('Email subject updated')
+    } catch (error) {
+      console.error('Error updating email subject:', error)
+      showError('Failed to update email subject')
+    } finally {
+      setSavingLapseEmail(false)
+    }
+  }
+
+  const handleCancelLapseSubjectEdit = () => {
+    setEditingLapseSubject(false)
+    setLapseSubjectValue("")
+  }
+
+  const handleEditLapseBody = () => {
+    setEditingLapseBody(true)
+    setLapseBodyValue(lapseEmailBody)
+  }
+
+  const handleSaveLapseBody = async () => {
+    if (!agency) return
+
+    try {
+      setSavingLapseEmail(true)
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('agencies')
+        .update({ lapse_email_body: lapseBodyValue })
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      setLapseEmailBody(lapseBodyValue)
+      setEditingLapseBody(false)
+      setLapseBodyValue("")
+      showSuccess('Email template updated')
+    } catch (error) {
+      console.error('Error updating email template:', error)
+      showError('Failed to update email template')
+    } finally {
+      setSavingLapseEmail(false)
+    }
+  }
+
+  const handleCancelLapseBodyEdit = () => {
+    setEditingLapseBody(false)
+    setLapseBodyValue("")
+  }
+
+  // Email template helper data and functions
+  const samplePlaceholders = {
+    client_name: 'John Smith',
+    premium: '$125.00',
+    carrier: 'Mutual of Omaha',
+    policy_number: 'POL-123456',
+    agent_name: 'Jane Doe',
+    policy_effective_date: '01/15/2024'
+  }
+
+  const emailPlaceholders = [
+    { label: 'client_name', value: '{{client_name}}' },
+    { label: 'premium', value: '{{premium}}' },
+    { label: 'carrier', value: '{{carrier}}' },
+    { label: 'policy_number', value: '{{policy_number}}' },
+    { label: 'agent_name', value: '{{agent_name}}' },
+    { label: 'policy_effective_date', value: '{{policy_effective_date}}' },
+  ]
+
+  const insertPlaceholder = (placeholder: string) => {
+    const textarea = bodyTextareaRef.current
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const newValue = lapseBodyValue.slice(0, start) + placeholder + lapseBodyValue.slice(end)
+    setLapseBodyValue(newValue)
+    setHasUnsavedEmailChanges(true)
+    setTimeout(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start + placeholder.length, start + placeholder.length)
+    }, 0)
+  }
+
+  const getPreviewHtml = () => {
+    let html = lapseBodyValue
+    // Replace placeholders with sample values
+    Object.entries(samplePlaceholders).forEach(([key, value]) => {
+      html = html.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value)
+    })
+    // Convert newlines to <br> tags for proper display
+    html = html.replace(/\n/g, '<br />')
+    return html
+  }
+
+  const handleSaveEmailTemplate = async () => {
+    if (!agency) return
+
+    try {
+      setSavingLapseEmail(true)
+      const supabase = createClient()
+
+      const updates: { lapse_email_subject?: string; lapse_email_body?: string } = {}
+
+      if (lapseSubjectValue.trim() && lapseSubjectValue.trim() !== lapseEmailSubject) {
+        updates.lapse_email_subject = lapseSubjectValue.trim()
+      }
+
+      if (lapseBodyValue !== lapseEmailBody) {
+        updates.lapse_email_body = lapseBodyValue
+      }
+
+      if (Object.keys(updates).length === 0) {
+        showWarning('No changes to save')
+        return
+      }
+
+      const { error } = await supabase
+        .from('agencies')
+        .update(updates)
+        .eq('id', agency.id)
+
+      if (error) throw error
+
+      if (updates.lapse_email_subject) {
+        setLapseEmailSubject(updates.lapse_email_subject)
+      }
+      if (updates.lapse_email_body !== undefined) {
+        setLapseEmailBody(updates.lapse_email_body)
+      }
+
+      setHasUnsavedEmailChanges(false)
+      showSuccess('Email template saved')
+    } catch (error) {
+      console.error('Error saving email template:', error)
+      showError('Failed to save email template')
+    } finally {
+      setSavingLapseEmail(false)
+    }
+  }
+
   // Policy Reports Management Functions
   const checkExistingPolicyFiles = async () => {
     try {
@@ -2167,6 +2375,7 @@ export default function ConfigurationPage() {
     { id: "commissions" as TabType, label: "Commissions", icon: DollarSign },
     { id: "lead-sources" as TabType, label: "Lead Sources", icon: Users },
     { id: "messaging" as TabType, label: "Messaging", icon: MessageSquare },
+    { id: "email-notifications" as TabType, label: "Email Notifications", icon: Mail },
     { id: "policy-reports" as TabType, label: "Policy Reports", icon: BarChart3 },
     { id: "carrier-logins" as TabType, label: "Carrier Logins", icon: Lock },
     { id: "discord" as TabType, label: "Discord Notifications", icon: Bell },
@@ -3815,6 +4024,177 @@ export default function ConfigurationPage() {
                       <li>New uploads will replace any existing files for the same carrier</li>
                       <li>Supported carriers: {supportedCarriers.join(', ')}</li>
                     </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* Email Notifications Tab */}
+              {activeTab === "email-notifications" && (
+                <div>
+                  <div className="mb-6">
+                    <h2 className="text-xl font-semibold text-foreground mb-1">Email Notifications</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Configure email templates for policy alerts
+                    </p>
+                  </div>
+
+                  <div className="space-y-6">
+                    {/* Lapse Notification Settings */}
+                    <div className="bg-accent/30 rounded-lg border border-border overflow-hidden">
+                      {/* Enable Toggle */}
+                      <div className="flex items-center justify-between p-4 border-b border-border">
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => handleToggleLapseEmail(!lapseEmailEnabled)}
+                            disabled={savingLapseEmail}
+                            className={cn(
+                              "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                              lapseEmailEnabled ? "bg-green-600" : "bg-gray-300 dark:bg-gray-600",
+                              savingLapseEmail && "opacity-50 cursor-not-allowed"
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm",
+                                lapseEmailEnabled ? "translate-x-4" : "translate-x-0.5"
+                              )}
+                            />
+                          </button>
+                          <span className="font-medium text-foreground">Enable Lapse Email Notifications</span>
+                        </div>
+                      </div>
+
+                      {/* Subject Field */}
+                      <div className="p-4 border-b border-border">
+                        <label className="block text-sm font-medium text-foreground mb-2">
+                          Subject
+                        </label>
+                        <Input
+                          value={lapseSubjectValue || lapseEmailSubject}
+                          onChange={(e) => {
+                            setLapseSubjectValue(e.target.value)
+                            setHasUnsavedEmailChanges(true)
+                          }}
+                          className="h-10 text-sm font-mono bg-background dark:bg-accent/40 border-border"
+                          placeholder="Enter email subject..."
+                          disabled={savingLapseEmail}
+                        />
+                      </div>
+
+                      {/* Body Section */}
+                      <div className="p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-sm font-medium text-foreground">
+                            Body
+                          </label>
+                          {/* Source/Preview Toggle */}
+                          <div className="flex rounded-md border border-border overflow-hidden">
+                            <button
+                              onClick={() => setEmailViewMode('source')}
+                              className={cn(
+                                "px-3 py-1 text-xs font-medium transition-colors",
+                                emailViewMode === 'source'
+                                  ? "bg-foreground text-background"
+                                  : "bg-background text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              Source
+                            </button>
+                            <button
+                              onClick={() => setEmailViewMode('preview')}
+                              className={cn(
+                                "px-3 py-1 text-xs font-medium transition-colors border-l border-border",
+                                emailViewMode === 'preview'
+                                  ? "bg-foreground text-background"
+                                  : "bg-background text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              Preview
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Source Editor */}
+                        {emailViewMode === 'source' && (
+                          <textarea
+                            ref={bodyTextareaRef}
+                            value={lapseBodyValue || lapseEmailBody}
+                            onChange={(e) => {
+                              setLapseBodyValue(e.target.value)
+                              setHasUnsavedEmailChanges(true)
+                            }}
+                            className="w-full h-72 p-4 border border-border rounded-lg font-mono text-sm resize-none bg-zinc-900 dark:bg-zinc-950 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-primary"
+                            placeholder="Enter your HTML email template..."
+                            disabled={savingLapseEmail}
+                          />
+                        )}
+
+                        {/* Preview Panel */}
+                        {emailViewMode === 'preview' && (
+                          <div className="w-full h-72 p-4 border border-border rounded-lg bg-white dark:bg-zinc-900 overflow-auto">
+                            <div
+                              className="prose prose-sm dark:prose-invert max-w-none text-foreground"
+                              dangerouslySetInnerHTML={{ __html: getPreviewHtml() }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Variable Buttons */}
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          {emailPlaceholders.map((placeholder) => (
+                            <button
+                              key={placeholder.label}
+                              onClick={() => insertPlaceholder(placeholder.value)}
+                              disabled={emailViewMode === 'preview'}
+                              className={cn(
+                                "px-3 py-1.5 text-xs font-mono rounded-md border transition-colors",
+                                emailViewMode === 'preview'
+                                  ? "border-border text-muted-foreground bg-accent/30 cursor-not-allowed"
+                                  : "border-border text-foreground bg-accent/50 hover:bg-accent hover:border-foreground/30"
+                              )}
+                            >
+                              {placeholder.value}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Save Button */}
+                        <div className="flex justify-end mt-6">
+                          <Button
+                            onClick={handleSaveEmailTemplate}
+                            disabled={savingLapseEmail || !hasUnsavedEmailChanges}
+                            className="bg-green-600 hover:bg-green-700 text-white px-6"
+                          >
+                            {savingLapseEmail ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              'Save changes'
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Info Box */}
+                    <div className="bg-blue-50 dark:bg-blue-950/50 rounded-lg p-4 border border-blue-200 dark:border-blue-800/50">
+                      <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-2">How It Works</h3>
+                      <ul className="space-y-1 text-sm text-blue-800 dark:text-blue-200">
+                        <li>When a policy status changes to "lapse pending" or "lapse", the system sends an email to the writing agent and all their uplines.</li>
+                        <li>Use the placeholders above to personalize the email with policy details.</li>
+                      </ul>
+                    </div>
+
+                    {/* Warning if disabled */}
+                    {!lapseEmailEnabled && (
+                      <div className="bg-amber-50 dark:bg-amber-950/50 rounded-lg p-4 border border-amber-200 dark:border-amber-800/50">
+                        <p className="text-sm text-amber-800 dark:text-amber-200">
+                          <strong>Note:</strong> Lapse email notifications are currently disabled. Enable the toggle above to start receiving alerts.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

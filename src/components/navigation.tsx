@@ -65,83 +65,64 @@ const isDefaultColorForMode = (color: string, mode: 'light' | 'dark' | 'system' 
 }
 
 export default function Navigation() {
-  const { signOut, user } = useAuth()
+  const { signOut, user, userData } = useAuth()
   const pathname = usePathname()
   const { resolvedTheme } = useTheme()
-  const [isAdmin, setIsAdmin] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [agencyName, setAgencyName] = useState<string>("AgentSpace")
   const [agencyLogo, setAgencyLogo] = useState<string | null>(null)
   const [agencyColor, setAgencyColor] = useState<string>("217 91% 60%")
-  const [agencyId, setAgencyId] = useState<string | null>(null)
   const [isLoadingAgency, setIsLoadingAgency] = useState(true)
-  const [subscriptionTier, setSubscriptionTier] = useState<string>('free')
   const previousResolvedThemeRef = useRef<string | null>(null)
 
   // Create stable supabase client instance for realtime subscriptions
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
 
-  // Check if user is admin and fetch agency data
+  // Derive admin status and subscription tier from AuthProvider context
+  const isAdmin = userData?.is_admin || false
+  const subscriptionTier = userData?.subscription_tier || 'free'
+  const agencyId = userData?.agency_id || null
+
   useEffect(() => {
-    const checkAdminAndFetchAgency = async () => {
-      if (!user?.id) {
-        setIsAdmin(false)
+    const fetchAgencyBranding = async () => {
+      if (!agencyId) {
+        setIsLoadingAgency(false)
         return
       }
 
       try {
         const supabase = createClient()
-        const { data: userData, error } = await supabase
-          .from('users')
-          .select('is_admin, agency_id, subscription_tier')
-          .eq('auth_user_id', user.id)
+        const { data: agencyData } = await supabase
+          .from('agencies')
+          .select('display_name, name, logo_url, primary_color')
+          .eq('id', agencyId)
           .maybeSingle()
 
-        if (error) {
-          // Silently handle error - user may not exist in users table yet (e.g., during setup)
-          setIsAdmin(false)
-          setSubscriptionTier('free')
-        } else {
-          setIsAdmin(userData?.is_admin || false)
-          setSubscriptionTier(userData?.subscription_tier || 'free')
+        if (agencyData) {
+          setAgencyName(agencyData.display_name || agencyData.name || "AgentSpace")
+          setAgencyLogo(agencyData.logo_url || null)
+          setAgencyColor(agencyData.primary_color || "217 91% 60%")
 
-          // Fetch agency data if user has an agency
-          if (userData?.agency_id) {
-            setAgencyId(userData.agency_id)
-            const { data: agencyData } = await supabase
-              .from('agencies')
-              .select('display_name, name, logo_url, primary_color')
-              .eq('id', userData.agency_id)
-              .maybeSingle()
+          // Apply agency color to CSS variable
+          if (agencyData.primary_color) {
+            document.documentElement.style.setProperty('--primary', agencyData.primary_color)
 
-            if (agencyData) {
-              setAgencyName(agencyData.display_name || agencyData.name || "AgentSpace")
-              setAgencyLogo(agencyData.logo_url || null)
-              setAgencyColor(agencyData.primary_color || "217 91% 60%")
-
-              // Apply agency color to CSS variable
-              if (agencyData.primary_color) {
-                document.documentElement.style.setProperty('--primary', agencyData.primary_color)
-
-                // Set the foreground color based on the primary color's luminance
-                const textColor = getContrastTextColor(agencyData.primary_color)
-                document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
-              }
-            }
+            // Set the foreground color based on the primary color's luminance
+            const textColor = getContrastTextColor(agencyData.primary_color)
+            document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
           }
         }
       } catch (error) {
-        // Silently handle error - user may not exist in users table yet
-        setIsAdmin(false)
+        console.error('Error fetching agency branding:', error)
       } finally {
         setIsLoadingAgency(false)
       }
     }
 
-    checkAdminAndFetchAgency()
-  }, [user])
+    fetchAgencyBranding()
+  }, [agencyId])
 
   // Handle automatic primary color switching when theme changes (from ThemeToggle)
   useEffect(() => {
@@ -203,8 +184,8 @@ export default function Navigation() {
 
     const fetchUnreadCount = async () => {
       try {
-        // Use 'self' view to minimize data transfer - we only need unread counts
-        const response = await fetch('/api/sms/conversations?view=self', {
+        // Use countOnly=true for lightweight unread count query
+        const response = await fetch('/api/sms/conversations?view=self&countOnly=true', {
           credentials: 'include'
         })
 
@@ -214,9 +195,7 @@ export default function Navigation() {
         }
 
         const data = await response.json()
-        const conversations = data.conversations || []
-        const total = conversations.reduce((sum: number, conv: any) => sum + (conv.unreadCount || 0), 0)
-        setUnreadCount(total)
+        setUnreadCount(data.unreadCount || 0)
       } catch (error) {
         console.error('Error fetching unread count:', error)
         setUnreadCount(0)

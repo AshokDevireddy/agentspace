@@ -157,6 +157,9 @@ export default function LoginPage() {
         localStorage.setItem(TOKEN_STORAGE_KEYS.LOGIN_REFRESH, refreshToken)
       }
 
+      // Small delay to let session cookies propagate before redirect
+      await new Promise(resolve => setTimeout(resolve, 100))
+
       if (userData.status === 'onboarding') {
         if (userData.role === 'client') {
           window.location.href = '/client/dashboard'

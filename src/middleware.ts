@@ -49,13 +49,16 @@ export async function middleware(req: NextRequest) {
   }
 
   // If user is authenticated, check role-based access
+  let userProfile: { role: string | null; is_admin: boolean | null; status: string | null; subscription_tier: string | null } | null = null
+
   if (user) {
-    // Get user profile to check role
-    const { data: userProfile } = await supabase
+    const { data } = await supabase
       .from('users')
-      .select('role, is_admin, status')
+      .select('role, is_admin, status, subscription_tier')
       .eq('auth_user_id', user.id)
       .maybeSingle()
+
+    userProfile = data
 
     // Handle user status
     if (userProfile) {
@@ -79,8 +82,8 @@ export async function middleware(req: NextRequest) {
       }
 
       // If user is invited (hasn't clicked invite link yet), redirect to login
+      // Note: Don't call signOut() here as it creates race conditions with the client-side session
       if (userProfile.status === 'invited') {
-        await supabase.auth.signOut()
         return NextResponse.redirect(new URL('/login?message=check-email', req.url))
       }
 
@@ -110,14 +113,8 @@ export async function middleware(req: NextRequest) {
   const isAdminRoute = adminRoutes.some(route => req.nextUrl.pathname.startsWith(route))
 
   if (isAdminRoute && user) {
-    // Get user profile to check admin status
-    const { data: adminCheckUser } = await supabase
-      .from('users')
-      .select('is_admin, role')
-      .eq('auth_user_id', user.id)
-      .maybeSingle()
-
-    if (!adminCheckUser?.is_admin) {
+    // Use already-fetched userProfile instead of making another query
+    if (!userProfile?.is_admin) {
       const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
       if (isApiRoute) {
         return NextResponse.json(
@@ -134,14 +131,8 @@ export async function middleware(req: NextRequest) {
   const isProExpertRoute = proExpertRoutes.some(route => req.nextUrl.pathname.startsWith(route))
 
   if (isProExpertRoute && user) {
-    // Get user profile to check subscription tier
-    const { data: tierCheckUser } = await supabase
-      .from('users')
-      .select('subscription_tier')
-      .eq('auth_user_id', user.id)
-      .maybeSingle()
-
-    const tier = tierCheckUser?.subscription_tier || 'free'
+    // Use already-fetched userProfile instead of making another query
+    const tier = userProfile?.subscription_tier || 'free'
     if (tier !== 'pro' && tier !== 'expert') {
       const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
       if (isApiRoute) {

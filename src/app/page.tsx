@@ -3,12 +3,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, BarChart3, FileText, Briefcase, AlertCircle } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import OnboardingWizard from "@/components/onboarding-wizard"
 import { useTour } from "@/contexts/onboarding-tour-context"
 import { createClient } from "@/lib/supabase/client"
 import Link from "next/link"
+
+const PIE_CHART_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347', '#d084d0', '#84d0d0', '#d0d084'] as const
 
 export default function Home() {
   const { user, loading: authLoading } = useAuth()
@@ -37,212 +39,142 @@ export default function Home() {
     localStorage.setItem('dashboard_view_mode', viewMode)
   }, [viewMode])
 
-  // Fetch user data from API
+  // Fetch all dashboard data in parallel
   useEffect(() => {
-    const fetchUserData = async () => {
+    const fetchAllDashboardData = async () => {
       if (!user) {
         setUserDataLoading(false)
-        return
-      }
-
-      try {
-        const response = await fetch(`/api/user/profile?user_id=${user.id}`)
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch profile data')
-        }
-
-        const result = await response.json()
-
-        if (result.success) {
-          setFirstName(result.data.firstName || 'User')
-          setUserData(result.data)
-
-          // Set user role for tour
-          setUserRole(result.data.is_admin ? 'admin' : 'agent')
-
-          // Check if user is in onboarding status
-          if (result.data.status === 'onboarding') {
-            setShowOnboarding(true)
-            // For now, always show wizard first on first visit
-            // When wizard completes via onComplete callback, we'll switch to tour
-            setShowWizard(true)
-          }
-        } else {
-          console.error('API Error:', result.error)
-          // Fallback to auth metadata
-          const authFirstName = user.user_metadata?.first_name || 'User'
-          setFirstName(authFirstName)
-        }
-      } catch (error) {
-        console.error('Error fetching user data:', error)
-        // Fallback to auth metadata
-        const authFirstName = user.user_metadata?.first_name || 'User'
-        setFirstName(authFirstName)
-      } finally {
-        setUserDataLoading(false)
-      }
-    }
-
-    fetchUserData()
-  }, [user])
-
-  // Fetch scoreboard data for this week
-  useEffect(() => {
-    const fetchScoreboardData = async () => {
-      if (!user) {
         setLoadingScoreboard(false)
+        setLoadingDashboard(false)
         return
       }
 
-      try {
-        // Calculate current week dates (Sunday to Saturday)
-        const today = new Date()
-        const dayOfWeek = today.getDay()
-        const sunday = new Date(today)
-        sunday.setDate(today.getDate() - dayOfWeek)
-        sunday.setHours(0, 0, 0, 0)
-        const saturday = new Date(sunday)
-        saturday.setDate(sunday.getDate() + 6)
-        saturday.setHours(23, 59, 59, 999)
+      // Calculate current week dates (Sunday to Saturday) - needed for scoreboard
+      const today = new Date()
+      const dayOfWeek = today.getDay()
+      const sunday = new Date(today)
+      sunday.setDate(today.getDate() - dayOfWeek)
+      sunday.setHours(0, 0, 0, 0)
+      const saturday = new Date(sunday)
+      saturday.setDate(sunday.getDate() + 6)
+      saturday.setHours(23, 59, 59, 999)
+      const startDate = sunday.toISOString().split('T')[0]
+      const endDate = saturday.toISOString().split('T')[0]
 
-        const startDate = sunday.toISOString().split('T')[0]
-        const endDate = saturday.toISOString().split('T')[0]
+      const supabase = createClient()
 
-        // console.log('🔍 SCOREBOARD DEBUG - Calling RPC with user.id:', user.id, 'user.email:', user.email)
+      // Run all 3 fetches in PARALLEL using Promise.allSettled
+      const [userResult, scoreboardResult, dashboardResult] = await Promise.allSettled([
+        // 1. User profile fetch
+        fetch(`/api/user/profile?user_id=${user.id}`).then(res => res.json()),
 
-        // Use Supabase RPC function
-        const supabase = createClient()
-        const { data: rpcData, error: rpcError } = await supabase.rpc('get_scoreboard_data', {
+        // 2. Scoreboard RPC
+        supabase.rpc('get_scoreboard_data', {
           p_user_id: user.id,
           p_start_date: startDate,
           p_end_date: endDate
-        })
-        // console.log('get_scoreboard_data', rpcData, rpcError)
+        }),
 
-        if (rpcError) {
-          console.error('RPC Error:', rpcError)
-          throw new Error(rpcError.message || 'Failed to fetch scoreboard data')
-        }
-
-        if (!rpcData || !rpcData.success || !rpcData.data) {
-          throw new Error('Invalid response from scoreboard RPC')
-        }
-
-        const result = rpcData.data
-
-        // Set top 5 producers
-        const top5 = result.leaderboard.slice(0, 5).map((producer: any) => ({
-          rank: producer.rank,
-          name: producer.name,
-          amount: `$${producer.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-        }))
-        setTopProducers(top5)
-
-        // Set date range
-        setDateRange({
-          startDate: result.dateRange.startDate,
-          endDate: result.dateRange.endDate
-        })
-
-        // Calculate production chart data from daily breakdown
-        const dailyProductionMap = new Map<string, number>()
-
-        result.leaderboard.forEach((agent: any) => {
-          if (agent.dailyBreakdown) {
-            Object.entries(agent.dailyBreakdown).forEach(([date, amount]) => {
-              const current = dailyProductionMap.get(date) || 0
-              dailyProductionMap.set(date, current + (amount as number))
-            })
-          }
-        })
-
-        // Convert to chart data format
-        const chartData = Array.from(dailyProductionMap.entries())
-          .sort((a, b) => a[0].localeCompare(b[0]))
-          .map(([date, production]) => ({
-            date: new Date(date + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }),
-            production: Math.round(production)
-          }))
-
-        setProductionData(chartData)
-      } catch (error) {
-        console.error('Error fetching scoreboard data:', error)
-      } finally {
-        setLoadingScoreboard(false)
-      }
-    }
-
-    fetchScoreboardData()
-  }, [user])
-
-  // Fetch dashboard analytics data
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      if (!user) {
-        setLoadingDashboard(false)
-        return
-      }
-
-      try {
-        // console.log('🔍 DASHBOARD DEBUG - Calling RPC with user.id:', user.id, 'user.email:', user.email)
-
-        // Create Supabase client
-        const supabase = createClient()
-
-        // Call the RPC function to get dashboard data with user_id
-        const { data, error } = await supabase.rpc('get_dashboard_data_with_agency_id', {
+        // 3. Dashboard analytics RPC
+        supabase.rpc('get_dashboard_data_with_agency_id', {
           p_user_id: user.id
         })
-        // console.log('get_dashboard_data_with_agency_id', data, error)
+      ])
 
-        if (error) {
-          console.error('Error calling RPC:', error)
-          throw error
-        }
+      // Process user profile result
+      if (userResult.status === 'fulfilled' && userResult.value?.success) {
+        const result = userResult.value
+        setFirstName(result.data.firstName || 'User')
+        setUserData(result.data)
+        setUserRole(result.data.is_admin ? 'admin' : 'agent')
 
-        if (!data) {
-          console.error('No data returned from RPC')
-          return
+        if (result.data.status === 'onboarding') {
+          setShowOnboarding(true)
+          setShowWizard(true)
         }
-
-        setDashboardData(data)
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error)
-        // Fallback to mock data on error
-        const mockData = {
-          "totals": {
-            "active_policies": 1285,
-            "monthly_commissions": 52430.50,
-            "new_policies_last_month": 94,
-            "clients_count": 312,
-            "pending_positions": 0
-          },
-          "carriers_active": [
-            {
-              "carrier_id": "7d7a2b29-3e88-4a53-b1c4-1cc4b736e235",
-              "carrier": "Aetna Life",
-              "active_policies": 542
-            },
-            {
-              "carrier_id": "e9f9d05a-1a1b-4b0e-9550-2450b657812f",
-              "carrier": "MetLife",
-              "active_policies": 388
-            },
-            {
-              "carrier_id": "5e9a7f42-891d-40be-90a2-93f56b941121",
-              "carrier": "United Healthcare",
-              "active_policies": 355
-            }
-          ]
-        }
-        setDashboardData(mockData)
-      } finally {
-        setLoadingDashboard(false)
+      } else {
+        console.error('Error fetching user data:', userResult.status === 'rejected' ? userResult.reason : 'Unknown error')
+        const authFirstName = user.user_metadata?.first_name || 'User'
+        setFirstName(authFirstName)
       }
+      setUserDataLoading(false)
+
+      // Process scoreboard result
+      if (scoreboardResult.status === 'fulfilled') {
+        const { data: rpcData, error: rpcError } = scoreboardResult.value
+        if (!rpcError && rpcData?.success && rpcData?.data) {
+          const result = rpcData.data
+
+          // Set top 5 producers
+          const top5 = result.leaderboard.slice(0, 5).map((producer: any) => ({
+            rank: producer.rank,
+            name: producer.name,
+            amount: `$${producer.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          }))
+          setTopProducers(top5)
+
+          // Set date range
+          setDateRange({
+            startDate: result.dateRange.startDate,
+            endDate: result.dateRange.endDate
+          })
+
+          // Calculate production chart data from daily breakdown
+          const dailyProductionMap = new Map<string, number>()
+          result.leaderboard.forEach((agent: any) => {
+            if (agent.dailyBreakdown) {
+              Object.entries(agent.dailyBreakdown).forEach(([date, amount]) => {
+                const current = dailyProductionMap.get(date) || 0
+                dailyProductionMap.set(date, current + (amount as number))
+              })
+            }
+          })
+
+          const chartData = Array.from(dailyProductionMap.entries())
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([date, production]) => ({
+              date: new Date(date + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }),
+              production: Math.round(production)
+            }))
+          setProductionData(chartData)
+        } else {
+          console.error('Error fetching scoreboard data:', rpcError)
+        }
+      } else {
+        console.error('Error fetching scoreboard data:', scoreboardResult.reason)
+      }
+      setLoadingScoreboard(false)
+
+      // Process dashboard result
+      if (dashboardResult.status === 'fulfilled') {
+        const { data, error } = dashboardResult.value
+        if (!error && data) {
+          setDashboardData(data)
+        } else {
+          console.error('Error fetching dashboard data:', error)
+          // Fallback to mock data on error
+          setDashboardData({
+            "totals": {
+              "active_policies": 1285,
+              "monthly_commissions": 52430.50,
+              "new_policies_last_month": 94,
+              "clients_count": 312,
+              "pending_positions": 0
+            },
+            "carriers_active": [
+              { "carrier_id": "7d7a2b29-3e88-4a53-b1c4-1cc4b736e235", "carrier": "Aetna Life", "active_policies": 542 },
+              { "carrier_id": "e9f9d05a-1a1b-4b0e-9550-2450b657812f", "carrier": "MetLife", "active_policies": 388 },
+              { "carrier_id": "5e9a7f42-891d-40be-90a2-93f56b941121", "carrier": "United Healthcare", "active_policies": 355 }
+            ]
+          })
+        }
+      } else {
+        console.error('Error fetching dashboard data:', dashboardResult.reason)
+      }
+      setLoadingDashboard(false)
     }
 
-    fetchDashboardData()
+    fetchAllDashboardData()
   }, [user])
 
   // Auto-start tour for newly active users (who just completed the wizard)
@@ -298,21 +230,16 @@ export default function Home() {
   // Combined loading state - wait for auth, user data, and both RPCs to complete
   const isLoadingDashboardData = authLoading || userDataLoading || !firstName || loadingScoreboard || loadingDashboard || !dateRange.startDate
 
-  // Format date range for display
-  const formatDateRange = () => {
+  const formattedDateRange = useMemo(() => {
     if (!dateRange.startDate || !dateRange.endDate) {
       return 'This Week'
     }
     const start = new Date(dateRange.startDate + 'T00:00:00')
     const end = new Date(dateRange.endDate + 'T00:00:00')
     return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-  }
+  }, [dateRange.startDate, dateRange.endDate])
 
-  // Colors for pie chart
-  const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347', '#d084d0', '#84d0d0', '#d0d084']
-
-  // Get current data based on view mode
-  const getCurrentData = () => {
+  const currentData = useMemo(() => {
     // Backward compatibility: if dashboardData has the new split structure, use it
     if (dashboardData?.your_deals || dashboardData?.downline_production) {
       if (viewMode === 'just_me') {
@@ -323,16 +250,13 @@ export default function Home() {
     }
     // Otherwise, use old flat structure (before migration)
     return dashboardData || null
-  }
+  }, [dashboardData, viewMode])
 
-  // Format carriers data for pie chart (switches based on viewMode)
-  const getPieChartData = () => {
-    const currentData = getCurrentData()
+  const pieChartData = useMemo(() => {
     if (!currentData?.carriers_active) return []
 
     const totalPolicies = currentData.carriers_active.reduce((sum: number, carrier: any) => sum + carrier.active_policies, 0)
     const GROUP_THRESHOLD = 4 // Group slices below 4% into "Others"
-    const LABEL_THRESHOLD = 5 // Threshold for label display (kept for reference, but all displayed slices show labels)
 
     // Separate large and small carriers
     const largeCarriers: any[] = []
@@ -344,7 +268,7 @@ export default function Home() {
         name: carrier.carrier,
         value: carrier.active_policies,
         percentage: percentage.toFixed(1),
-        fill: COLORS[index % COLORS.length],
+        fill: PIE_CHART_COLORS[index % PIE_CHART_COLORS.length],
         showLabel: true // Always show labels for all carriers that are displayed separately
       }
 
@@ -362,7 +286,7 @@ export default function Home() {
     if (smallCarriers.length > 0) {
       const othersValue = smallCarriers.reduce((sum, carrier) => sum + carrier.value, 0)
       const othersPercentage = (othersValue / totalPolicies) * 100
-      
+
       largeCarriers.push({
         name: 'Others',
         value: othersValue,
@@ -379,14 +303,13 @@ export default function Home() {
     }
 
     return largeCarriers
-  }
+  }, [currentData])
 
-  // Custom label renderer that wraps long names and shows all labels
-  const renderCustomLabel = (props: any) => {
+  const renderCustomLabel = useCallback((props: any) => {
     // Recharts passes label props with cx, cy, midAngle, innerRadius, outerRadius, x, y
     // The actual data is in the payload property
     const { cx, cy, midAngle, innerRadius, outerRadius, x, y, payload } = props
-    
+
     // Safety check - if coordinates are missing, don't render
     if (x === undefined || y === undefined || !payload) {
       return null
@@ -398,9 +321,6 @@ export default function Home() {
     if (!name || percentage === undefined) {
       return null
     }
-
-    // Show all labels for all displayed slices (all large carriers and "Others")
-    // All slices in getPieChartData() have showLabel: true, so we render them all
 
     // Helper function to split name at the middle if too long
     const splitName = (text: string) => {
@@ -438,7 +358,7 @@ export default function Home() {
         )}
       </text>
     )
-  }
+  }, [])
 
   // Show onboarding wizard if user is in onboarding status and hasn't completed wizard
   if (showOnboarding && showWizard && userData) {
@@ -471,7 +391,7 @@ export default function Home() {
               <span>Welcome, {firstName || 'User'}.</span>
             </h1>
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-              <span>This Week • {formatDateRange()}</span>
+              <span>This Week • {formattedDateRange}</span>
             </div>
           </div>
 
@@ -542,7 +462,7 @@ export default function Home() {
                     <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Active Policies</p>
                   </div>
                   <p className="font-bold text-foreground break-words leading-tight transition-all duration-300" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
-                    {(getCurrentData()?.active_policies ?? 0).toLocaleString()}
+                    {(currentData?.active_policies ?? 0).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -559,7 +479,7 @@ export default function Home() {
                     <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>New Policies (Last Week)</p>
                   </div>
                   <p className="font-bold text-foreground break-words leading-tight transition-all duration-300" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
-                    {(getCurrentData()?.new_policies ?? 0).toLocaleString()}
+                    {(currentData?.new_policies ?? 0).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -576,7 +496,7 @@ export default function Home() {
                     <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>Total Clients</p>
                   </div>
                   <p className="font-bold text-foreground break-words leading-tight transition-all duration-300" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
-                    {(getCurrentData()?.total_clients ?? 0).toLocaleString()}
+                    {(currentData?.total_clients ?? 0).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -621,7 +541,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
-        ) : !isLoadingDashboardData && getCurrentData()?.carriers_active ? (
+        ) : !isLoadingDashboardData && currentData?.carriers_active ? (
           <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg" key={`pie-${viewMode}`}>
             <CardHeader>
               <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
@@ -634,7 +554,7 @@ export default function Home() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={getPieChartData()}
+                      data={pieChartData}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
@@ -646,7 +566,7 @@ export default function Home() {
                       animationDuration={800}
                       animationBegin={0}
                     >
-                      {getPieChartData().map((entry: any, index: number) => (
+                      {pieChartData.map((entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={entry.fill} />
                       ))}
                     </Pie>
@@ -736,7 +656,7 @@ export default function Home() {
               {isLoadingDashboardData ? (
                 <span className="inline-block h-4 w-32 bg-muted animate-pulse rounded" />
               ) : (
-                `Week of ${formatDateRange()}`
+                `Week of ${formattedDateRange}`
               )}
             </div>
             <div className="space-y-4">

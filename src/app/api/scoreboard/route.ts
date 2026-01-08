@@ -43,25 +43,28 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate') || getWeekStart()
     const endDate = searchParams.get('endDate') || getWeekEnd()
 
+    let agents: any[]
     let agentIds: string[]
 
     if (isAdmin) {
-      const { data: allAgents, error: allAgentsError } = await supabase
+      const { data, error } = await supabase
         .from('users')
-        .select('id')
+        .select('id, first_name, last_name, role')
         .eq('agency_id', agency_id as any)
         .in('role', ['admin', 'agent'] as any)
         .eq('is_active', true as any)
 
-      if (allAgentsError) {
+      if (error) {
         return NextResponse.json(
           { success: false, error: 'Failed to fetch agents' },
           { status: 500 }
         )
       }
 
-      agentIds = allAgents?.map(a => (a as any).id as string) || []
+      agents = data || []
+      agentIds = agents.map(a => a.id as string)
     } else {
+      // Get downline IDs first (required for non-admin)
       const { data: downline, error: downlineError } = await supabase.rpc('get_agent_downline', {
         agent_id: profile.id as any
       })
@@ -74,36 +77,21 @@ export async function GET(request: NextRequest) {
       }
 
       agentIds = [profile.id as string, ...((downline as any[])?.map((u: any) => u.id) || [])]
-    }
 
-    let agents: any[]
-    let agentsError: any
-
-    if (isAdmin) {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, role')
-        .eq('agency_id', agency_id as any)
-        .in('role', ['admin', 'agent'] as any)
-        .eq('is_active', true as any)
-
-      agents = data || []
-      agentsError = error
-    } else {
+      // Single query for agent details
       const { data, error } = await supabase
         .from('users')
         .select('id, first_name, last_name, role')
         .in('id', agentIds as any)
 
-      agents = data || []
-      agentsError = error
-    }
+      if (error) {
+        return NextResponse.json(
+          { success: false, error: 'Failed to fetch agents' },
+          { status: 500 }
+        )
+      }
 
-    if (agentsError) {
-      return NextResponse.json(
-        { success: false, error: 'Failed to fetch agents' },
-        { status: 500 }
-      )
+      agents = data || []
     }
     let allDeals: any[]
     let dealsError: any

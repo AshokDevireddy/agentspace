@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createServerClient();
     const { searchParams } = new URL(request.url);
     const view = searchParams.get('view') || 'downlines'; // 'all', 'self', 'downlines'
+    const countOnly = searchParams.get('countOnly') === 'true';
 
     // Get current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -34,6 +35,18 @@ export async function GET(request: NextRequest) {
         { error: 'User not found' },
         { status: 404 }
       );
+    }
+
+    if (countOnly) {
+      const { data: countData, error: countError } = await supabase
+        .rpc('get_unread_message_count', { p_user_id: (userData as any).id, p_view: view });
+
+      if (countError) {
+        console.error('Unread count RPC error:', countError);
+        return NextResponse.json({ unreadCount: 0 });
+      }
+
+      return NextResponse.json({ unreadCount: countData || 0 });
     }
 
     // Fetch conversations using optimized RPC functions based on view mode

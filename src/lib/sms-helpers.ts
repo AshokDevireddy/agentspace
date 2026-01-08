@@ -5,6 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server';
 import { normalizePhoneForStorage, sendSMS } from '@/lib/telnyx';
+import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
 
 interface ConversationResult {
   id: string;
@@ -494,11 +495,31 @@ export async function sendWelcomeMessage(
     }
   }
 
+  // Fetch agency SMS template settings
+  const { data: agencySettings } = await supabase
+    .from('agencies')
+    .select('sms_welcome_enabled, sms_welcome_template')
+    .eq('id', agencyId)
+    .single();
+
+  // Check if welcome SMS is enabled for this agency
+  if (agencySettings?.sms_welcome_enabled === false) {
+    console.log('⏭️ Welcome message skipped: disabled for agency');
+    return;
+  }
+
   const clientFirstName = finalClientName?.split(' ')[0] || 'there';
   const displayEmail = finalClientEmail || 'your email';
   const displayAgentName = finalAgentName || 'your agent';
 
-  const welcomeMessage = `Welcome ${clientFirstName}! Thank you for choosing ${agency.name} for your life insurance needs. Your agent ${displayAgentName} is here to help. You'll receive policy updates and reminders by text. Complete your account setup by clicking the invitation sent to ${displayEmail}. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
+  // Use agency template or default
+  const template = agencySettings?.sms_welcome_template || DEFAULT_SMS_TEMPLATES.welcome;
+  const welcomeMessage = replaceSmsPlaceholders(template, {
+    client_first_name: clientFirstName,
+    agency_name: agency.name,
+    agent_name: displayAgentName,
+    client_email: displayEmail,
+  });
 
   // Create draft message (don't send via Telnyx yet)
   await logMessage({

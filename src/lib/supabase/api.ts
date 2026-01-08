@@ -3,6 +3,8 @@ const getSupabaseConfig = () => ({
   anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 })
 
+const DEFAULT_TIMEOUT_MS = 10000
+
 interface FetchOptions {
   accessToken: string
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -25,10 +27,14 @@ export async function supabaseRestFetch<T = unknown>(
     headers['Prefer'] = 'return=minimal'
   }
 
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
+
   try {
     const response = await fetch(`${url}${endpoint}`, {
       method: options.method || 'GET',
       headers,
+      signal: controller.signal,
       ...(options.body && { body: JSON.stringify(options.body) })
     })
 
@@ -48,11 +54,20 @@ export async function supabaseRestFetch<T = unknown>(
     const data = await response.json()
     return { data, error: null, status: response.status }
   } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return {
+        data: null,
+        error: 'Request timed out',
+        status: 0
+      }
+    }
     return {
       data: null,
       error: err instanceof Error ? err.message : 'Unknown error',
       status: 0
     }
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
@@ -62,6 +77,9 @@ export async function supabaseAuthFetch<T = unknown>(
 ): Promise<{ data: T | null; error: string | null; status: number }> {
   const { url, anonKey } = getSupabaseConfig()
 
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
+
   try {
     const response = await fetch(`${url}/auth/v1${endpoint}`, {
       method: options.method || 'GET',
@@ -70,6 +88,7 @@ export async function supabaseAuthFetch<T = unknown>(
         'apikey': anonKey,
         'Content-Type': 'application/json'
       },
+      signal: controller.signal,
       ...(options.body && { body: JSON.stringify(options.body) })
     })
 
@@ -85,11 +104,20 @@ export async function supabaseAuthFetch<T = unknown>(
 
     return { data, error: null, status: response.status }
   } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return {
+        data: null,
+        error: 'Request timed out',
+        status: 0
+      }
+    }
     return {
       data: null,
       error: err instanceof Error ? err.message : 'Unknown error',
       status: 0
     }
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 

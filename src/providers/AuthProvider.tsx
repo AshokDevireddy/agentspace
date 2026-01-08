@@ -9,6 +9,9 @@ export type UserData = {
   role: 'admin' | 'agent' | 'client'
   status: 'active' | 'onboarding' | 'invited' | 'inactive'
   theme_mode: 'light' | 'dark' | 'system' | null
+  is_admin: boolean
+  agency_id: string | null
+  subscription_tier: 'free' | 'pro' | 'expert'
 }
 
 type AuthContextType = {
@@ -45,12 +48,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsHydrated(true)
   }, [])
 
-  // Fetch user data from the users table
   const fetchUserData = async (authUserId: string): Promise<UserData | null> => {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('role, status, theme_mode')
+        .select('role, status, theme_mode, is_admin, agency_id, subscription_tier')
         .eq('auth_user_id', authUserId)
         .single()
 
@@ -62,7 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return {
         role: data.role as 'admin' | 'agent' | 'client',
         status: data.status as 'active' | 'onboarding' | 'invited' | 'inactive',
-        theme_mode: data.theme_mode as 'light' | 'dark' | 'system' | null
+        theme_mode: data.theme_mode as 'light' | 'dark' | 'system' | null,
+        is_admin: data.is_admin || false,
+        agency_id: data.agency_id || null,
+        subscription_tier: (data.subscription_tier || 'free') as 'free' | 'pro' | 'expert'
       }
     } catch (error) {
       console.error('[AuthProvider] Unexpected error fetching user data:', error)
@@ -137,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Get user profile to check role and theme
     const { data: userProfile, error: userError } = await supabase
       .from('users')
-      .select('role, status, theme_mode')
+      .select('role, status, theme_mode, is_admin, agency_id, subscription_tier')
       .eq('auth_user_id', data.user.id)
       .single()
 
@@ -157,11 +162,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Explicitly set user state (don't rely solely on onAuthStateChange)
     setUser(data.user)
 
-    // Store user data including status and theme_mode
+    // Store user data including all fields needed by Navigation
     setUserData({
       role: userProfile.role as 'admin' | 'agent' | 'client',
       status: userProfile.status as 'active' | 'onboarding' | 'invited' | 'inactive',
-      theme_mode: userProfile.theme_mode as 'light' | 'dark' | 'system' | null
+      theme_mode: userProfile.theme_mode as 'light' | 'dark' | 'system' | null,
+      is_admin: userProfile.is_admin || false,
+      agency_id: userProfile.agency_id || null,
+      subscription_tier: (userProfile.subscription_tier || 'free') as 'free' | 'pro' | 'expert'
     })
 
     // Route based on role

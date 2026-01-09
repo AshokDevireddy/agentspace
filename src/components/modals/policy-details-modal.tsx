@@ -260,10 +260,12 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
       if (result.conflict) {
         setStartConversationDialogOpen(false)
         queryClient.invalidateQueries({ queryKey: queryKeys.conversationDetail(dealId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
         showInfo('A conversation with this phone number already exists. Showing existing conversation.')
       } else {
         setStartConversationDialogOpen(false)
         queryClient.invalidateQueries({ queryKey: queryKeys.conversationDetail(dealId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
       }
     },
     onError: (error: Error) => {

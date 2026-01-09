@@ -137,7 +137,7 @@ export function CreateConversationModal({
       return response.json()
     },
     onSuccess: (data) => {
-      // Invalidate conversations queries
+      // Invalidate all conversations queries (base key matches all conversation-related queries)
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
       onConversationCreated(data.conversationId)
       handleClose()

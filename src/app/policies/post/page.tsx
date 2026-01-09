@@ -449,8 +449,8 @@ export default function PostDeal() {
     onSuccess: (successMessage) => {
       // Invalidate deals cache so the book of business shows the new deal
       // Use partial keys to match all variations regardless of filters
-      queryClient.invalidateQueries({ queryKey: ['deals'] })
-      queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.deals })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dealsBookOfBusiness() })
 
       showSuccess(successMessage, 7000)
       setBeneficiaries([])

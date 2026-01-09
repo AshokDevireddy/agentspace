@@ -178,3 +178,59 @@ export function useInvalidateQueries() {
     })
   }
 }
+
+/**
+ * Authenticated API mutation hook
+ * Use this for API routes that require Bearer token authentication
+ * @param urlOrFn - API endpoint URL or function that returns URL based on variables
+ * @param config - Configuration options
+ */
+export function useAuthenticatedMutation<TData = unknown, TVariables = unknown>(
+  urlOrFn: string | ((variables: TVariables) => string),
+  config: ApiMutationOptions<TData, TVariables> = {}
+) {
+  const queryClient = useQueryClient()
+  const { method = 'POST', invalidateKeys = [], options = {} } = config
+
+  return useMutation<TData, Error, TVariables>({
+    mutationFn: async (variables) => {
+      // Dynamic import to avoid circular dependencies
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        throw new Error('Authentication required. Please log in.')
+      }
+
+      const url = typeof urlOrFn === 'function' ? urlOrFn(variables) : urlOrFn
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        credentials: 'include',
+        body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || errorData.message || `Request failed with status ${response.status}`)
+      }
+
+      // Handle empty responses (204 No Content)
+      const text = await response.text()
+      return text ? JSON.parse(text) : null
+    },
+    onSuccess: (data, variables, context) => {
+      invalidateKeys.forEach((key) => {
+        queryClient.invalidateQueries({ queryKey: [...key] })
+      })
+      options.onSuccess?.(data, variables, context)
+    },
+    ...options,
+  })
+}

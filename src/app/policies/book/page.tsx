@@ -325,7 +325,7 @@ export default function BookOfBusiness() {
   const handlePolicyUpdate = () => {
     // Refresh the deals list after update by invalidating the query
     // Use partial key to match any book-of-business query regardless of filters
-    queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business'] })
+    queryClient.invalidateQueries({ queryKey: queryKeys.dealsBookOfBusiness() })
   }
 
   const getLeadSourceColor = (leadSource: string) => {

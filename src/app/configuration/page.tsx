@@ -21,6 +21,18 @@ import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_PLACEHOLDERS } from "@/lib/sms-temp
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
+import {
+  useCreatePosition,
+  useUpdatePosition,
+  useDeletePosition,
+  useUpdateProduct,
+  useDeleteProduct,
+  useSaveProductCommissions,
+  useSyncCommissions,
+  useSaveCarrierLogin,
+  useCreatePolicyReportJob,
+  useSignPolicyReportFiles,
+} from '@/hooks/mutations'
 
 // Types for carrier data
 interface Carrier {
@@ -395,7 +407,6 @@ export default function ConfigurationPage() {
   const [selectedCarrierLogin, setSelectedCarrierLogin] = useState<string>("")
   const [carrierLoginUsername, setCarrierLoginUsername] = useState<string>("")
   const [carrierLoginPassword, setCarrierLoginPassword] = useState<string>("")
-  const [savingCarrierLogin, setSavingCarrierLogin] = useState(false)
   const [carrierDropdownOpen, setCarrierDropdownOpen] = useState(false)
   const carrierDropdownRef = useRef<HTMLDivElement | null>(null)
 
@@ -448,8 +459,6 @@ export default function ConfigurationPage() {
   } | null>(null)
   const [deleteProductConfirmOpen, setDeleteProductConfirmOpen] = useState(false)
   const [productToDelete, setProductToDelete] = useState<Product | null>(null)
-  const [updatingProduct, setUpdatingProduct] = useState(false)
-  const [deletingProduct, setDeletingProduct] = useState(false)
 
   // Positions state
   const [positions, setPositions] = useState<Position[]>([])
@@ -461,18 +470,14 @@ export default function ConfigurationPage() {
     description: string
     is_active: boolean
   }>({ name: "", level: 0, description: "", is_active: true })
-  const [savingPosition, setSavingPosition] = useState(false)
   const [deletePositionConfirmOpen, setDeletePositionConfirmOpen] = useState(false)
   const [positionToDelete, setPositionToDelete] = useState<Position | null>(null)
-  const [deletingPosition, setDeletingPosition] = useState(false)
 
   // Commissions state
   const [commissions, setCommissions] = useState<Commission[]>([])
   const [selectedCommissionCarrier, setSelectedCommissionCarrier] = useState<string>("")
   const [commissionEdits, setCommissionEdits] = useState<Record<string, number | null>>({})
-  const [savingCommissions, setSavingCommissions] = useState(false)
   const [focusedInputKey, setFocusedInputKey] = useState<string | null>(null)
-  const [syncingMissingCommissions, setSyncingMissingCommissions] = useState(false)
 
   // ============ TanStack Query Hooks ============
 
@@ -666,6 +671,32 @@ export default function ConfigurationPage() {
       console.error('Error updating primary color:', error)
     }
   })
+
+  // Position mutations
+  const createPositionMutation = useCreatePosition()
+  const updatePositionMutation = useUpdatePosition()
+  const deletePositionMutation = useDeletePosition()
+
+  // Product mutations
+  const updateProductMutation = useUpdateProduct()
+  const deleteProductMutation = useDeleteProduct()
+  const saveCommissionsMutation = useSaveProductCommissions()
+  const syncCommissionsMutation = useSyncCommissions()
+
+  // Carrier mutations
+  const saveCarrierLoginMutation = useSaveCarrierLogin()
+
+  // Policy report mutations
+  const createPolicyJobMutation = useCreatePolicyReportJob()
+  const signPolicyFilesMutation = useSignPolicyReportFiles()
+
+  // Derived loading states from mutations (replaces useState-based loading states)
+  const savingPosition = createPositionMutation.isPending || updatePositionMutation.isPending
+  const deletingPosition = deletePositionMutation.isPending
+  const updatingProduct = updateProductMutation.isPending
+  const deletingProduct = deleteProductMutation.isPending
+  const savingCommissions = saveCommissionsMutation.isPending
+  const syncingMissingCommissions = syncCommissionsMutation.isPending
 
   // ============ Sync query data to local state ============
 
@@ -1161,45 +1192,25 @@ export default function ConfigurationPage() {
       return
     }
 
-    try {
-      setSavingPosition(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) return
-
-      const response = await fetch('/api/positions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+    createPositionMutation.mutate(
+      {
+        name: newPosition.name.trim(),
+        level: newPosition.level,
+        description: newPosition.description.trim() || null,
+      },
+      {
+        onSuccess: async () => {
+          setNewPosition({ name: "", level: 0, description: "" })
+          // Auto-sync commissions for all carriers when a new position is added
+          console.log('New position added, auto-syncing commissions for all carriers...')
+          await syncCommissionsForAllCarriers()
         },
-        body: JSON.stringify({
-          name: newPosition.name.trim(),
-          level: newPosition.level,
-          description: newPosition.description.trim() || null
-        })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create position')
+        onError: (error) => {
+          console.error('Error creating position:', error)
+          showError(error instanceof Error ? error.message : 'Failed to create position')
+        },
       }
-
-      setNewPosition({ name: "", level: 0, description: "" })
-      await refetchPositions()
-      
-      // Auto-sync commissions for all carriers when a new position is added
-      console.log('New position added, auto-syncing commissions for all carriers...')
-      await syncCommissionsForAllCarriers()
-    } catch (error) {
-      console.error('Error creating position:', error)
-      showError(error instanceof Error ? error.message : 'Failed to create position')
-    } finally {
-      setSavingPosition(false)
-    }
+    )
   }
 
   const [originalPositionData, setOriginalPositionData] = useState<{
@@ -1224,48 +1235,32 @@ export default function ConfigurationPage() {
   const handleSavePositionEdit = async () => {
     if (!editingPositionId) return
 
-    try {
-      setSavingPosition(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+    const shouldSyncCommissions = originalPositionData && editPositionFormData.is_active !== originalPositionData.is_active
 
-      if (!accessToken) return
-
-      const response = await fetch(`/api/positions/${editingPositionId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+    updatePositionMutation.mutate(
+      {
+        positionId: editingPositionId,
+        name: editPositionFormData.name,
+        level: editPositionFormData.level,
+        description: editPositionFormData.description || null,
+        is_active: editPositionFormData.is_active,
+      },
+      {
+        onSuccess: async () => {
+          // Auto-sync commissions for all carriers if position was activated/deactivated
+          if (shouldSyncCommissions) {
+            console.log('Position activation changed, auto-syncing commissions for all carriers...')
+            await syncCommissionsForAllCarriers()
+          }
+          setEditingPositionId(null)
+          setOriginalPositionData(null)
         },
-        body: JSON.stringify({
-          name: editPositionFormData.name,
-          level: editPositionFormData.level,
-          description: editPositionFormData.description || null,
-          is_active: editPositionFormData.is_active
-        })
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to update position')
+        onError: (error) => {
+          console.error('Error updating position:', error)
+          showError(error instanceof Error ? error.message : 'Failed to update position')
+        },
       }
-
-      // Auto-sync commissions for all carriers if position was activated/deactivated
-      if (originalPositionData && editPositionFormData.is_active !== originalPositionData.is_active) {
-        console.log('Position activation changed, auto-syncing commissions for all carriers...')
-        await syncCommissionsForAllCarriers()
-      }
-
-      setEditingPositionId(null)
-      setOriginalPositionData(null)
-      await refetchPositions()
-    } catch (error) {
-      console.error('Error updating position:', error)
-      showError(error instanceof Error ? error.message : 'Failed to update position')
-    } finally {
-      setSavingPosition(false)
-    }
+    )
   }
 
   const handleDeletePosition = (position: Position) => {
@@ -1276,35 +1271,19 @@ export default function ConfigurationPage() {
   const handleConfirmPositionDelete = async () => {
     if (!positionToDelete) return
 
-    try {
-      setDeletingPosition(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) return
-
-      const response = await fetch(`/api/positions/${positionToDelete.position_id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to delete position')
+    deletePositionMutation.mutate(
+      { positionId: positionToDelete.position_id },
+      {
+        onSuccess: () => {
+          setDeletePositionConfirmOpen(false)
+          setPositionToDelete(null)
+        },
+        onError: (error) => {
+          console.error('Error deleting position:', error)
+          showError(error instanceof Error ? error.message : 'Failed to delete position')
+        },
       }
-
-      setDeletePositionConfirmOpen(false)
-      setPositionToDelete(null)
-      refetchPositions()
-    } catch (error) {
-      console.error('Error deleting position:', error)
-      showError(error instanceof Error ? error.message : 'Failed to delete position')
-    } finally {
-      setDeletingPosition(false)
-    }
+    )
   }
 
   // Commission management functions
@@ -1364,76 +1343,52 @@ export default function ConfigurationPage() {
       return
     }
 
-    try {
-      setSavingCommissions(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+    const commissionsToSave = Object.entries(commissionEdits)
+      .filter(([_, percentage]) => percentage !== null) // Filter out null values (empty cells)
+      .map(([key, percentage]) => {
+        // UUIDs are 36 characters long. Split by taking first 36 chars as position_id
+        // and everything after the separator dash (position 37+) as product_id
+        const position_id = key.substring(0, 36)
+        const product_id = key.substring(37) // Skip the dash separator at position 36
 
-      if (!accessToken) return
+        // If percentage is null or undefined, default to 0
+        const result = { position_id, product_id, commission_percentage: percentage ?? 0 }
 
-      const commissionsToSave = Object.entries(commissionEdits)
-        .filter(([_, percentage]) => percentage !== null) // Filter out null values (empty cells)
-        .map(([key, percentage]) => {
-          // UUIDs are 36 characters long. Split by taking first 36 chars as position_id
-          // and everything after the separator dash (position 37+) as product_id
-          const position_id = key.substring(0, 36)
-          const product_id = key.substring(37) // Skip the dash separator at position 36
-          
-          // If percentage is null or undefined, default to 0
-          const result = { position_id, product_id, commission_percentage: percentage ?? 0 }
-          
-          // Log each commission entry to debug key splitting issues
-          console.log('[Commission Save] Parsed commission entry:', {
-            originalKey: key,
-            originalKeyLength: key.length,
-            position_id,
-            position_id_length: position_id.length,
-            product_id,
-            product_id_length: product_id.length,
-            commission_percentage: percentage ?? 0,
-          })
-          
-          return result
+        // Log each commission entry to debug key splitting issues
+        console.log('[Commission Save] Parsed commission entry:', {
+          originalKey: key,
+          originalKeyLength: key.length,
+          position_id,
+          position_id_length: position_id.length,
+          product_id,
+          product_id_length: product_id.length,
+          commission_percentage: percentage ?? 0,
         })
 
-      console.log('[Commission Save] Sending commissions to API:', {
-        totalCommissions: commissionsToSave.length,
-        commissions: commissionsToSave,
-        uniquePositionIds: [...new Set(commissionsToSave.map(c => c.position_id))],
-        uniqueProductIds: [...new Set(commissionsToSave.map(c => c.product_id))]
+        return result
       })
 
-      const response = await fetch('/api/positions/product-commissions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+    console.log('[Commission Save] Sending commissions to API:', {
+      totalCommissions: commissionsToSave.length,
+      commissions: commissionsToSave,
+      uniquePositionIds: [...new Set(commissionsToSave.map(c => c.position_id))],
+      uniqueProductIds: [...new Set(commissionsToSave.map(c => c.product_id))]
+    })
+
+    saveCommissionsMutation.mutate(
+      { commissions: commissionsToSave },
+      {
+        onSuccess: () => {
+          setCommissionEdits({})
+          refetchCommissions()
+          showSuccess('Commissions saved successfully!')
         },
-        body: JSON.stringify({ commissions: commissionsToSave })
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        console.error('[Commission Save] API error response:', {
-          status: response.status,
-          error: data.error,
-          detail: data.detail,
-          missingPositionIds: data.missingPositionIds,
-          missingProductIds: data.missingProductIds
-        })
-        throw new Error(data.error || 'Failed to save commissions')
+        onError: (error) => {
+          console.error('Error saving commissions:', error)
+          showError(error instanceof Error ? error.message : 'Failed to save commissions')
+        },
       }
-
-      setCommissionEdits({})
-      refetchCommissions()
-      showSuccess('Commissions saved successfully!')
-    } catch (error) {
-      console.error('Error saving commissions:', error)
-      showError(error instanceof Error ? error.message : 'Failed to save commissions')
-    } finally {
-      setSavingCommissions(false)
-    }
+    )
   }
 
   // Helper function to sync commissions for a specific carrier (silently)
@@ -1508,50 +1463,30 @@ export default function ConfigurationPage() {
       return
     }
 
-    try {
-      setSyncingMissingCommissions(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        throw new Error('No access token available')
+    syncCommissionsMutation.mutate(
+      { carrierId: selectedCommissionCarrier },
+      {
+        onSuccess: async (data) => {
+          if (!silent) {
+            if (data.created === 0) {
+              showWarning('All products for this carrier already have commission entries!')
+            } else {
+              showSuccess(`Successfully created ${data.created} missing commission entries for this carrier!`)
+            }
+          }
+          // Only refresh the commissions view if new commissions were created
+          if (data.created > 0) {
+            await refetchCommissions()
+          }
+        },
+        onError: (error) => {
+          console.error('Error syncing commissions:', error)
+          if (!silent) {
+            showError(error instanceof Error ? error.message : 'Failed to sync commissions')
+          }
+        },
       }
-
-      const response = await fetch(`/api/positions/product-commissions/sync?carrier_id=${selectedCommissionCarrier}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to sync commissions')
-      }
-
-      if (!silent) {
-        if (data.created === 0) {
-          showWarning('All products for this carrier already have commission entries!')
-        } else {
-          showSuccess(`Successfully created ${data.created} missing commission entries for this carrier!`)
-        }
-      }
-      
-      // Only refresh the commissions view if new commissions were created
-      // If nothing was created, the data is already up to date
-      if (data.created > 0) {
-        await refetchCommissions()
-      }
-    } catch (error) {
-      console.error('Error syncing commissions:', error)
-      if (!silent) {
-        showError(error instanceof Error ? error.message : 'Failed to sync commissions')
-      }
-    } finally {
-      setSyncingMissingCommissions(false)
-    }
+    )
   }
 
   // Product management functions (keeping existing code)
@@ -1627,77 +1562,57 @@ export default function ConfigurationPage() {
       return
     }
 
-    try {
-      setUpdatingProduct(true)
+    const wasActivationChange = editProductFormData.is_active !== originalProductData.is_active
+    const productCarrierId = allProducts.find(p => p.id === editingProductId)?.carrier_id
+    const productIdToUpdate = editingProductId
 
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        throw new Error('No access token available')
-      }
-
-      const response = await fetch(`/api/products/${editingProductId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          name: editProductFormData.name,
-          product_code: editProductFormData.product_code || null,
-          is_active: editProductFormData.is_active
-        }),
-        credentials: 'include'
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update product')
-      }
-
-      const updatedProduct = {
+    updateProductMutation.mutate(
+      {
+        productId: editingProductId,
         name: editProductFormData.name,
-        product_code: editProductFormData.product_code || undefined,
-        is_active: editProductFormData.is_active
+        product_code: editProductFormData.product_code || null,
+        is_active: editProductFormData.is_active,
+      },
+      {
+        onSuccess: async () => {
+          const updatedProduct = {
+            name: editProductFormData.name,
+            product_code: editProductFormData.product_code || undefined,
+            is_active: editProductFormData.is_active,
+          }
+
+          setAllProducts(prev =>
+            prev.map(product =>
+              product.id === productIdToUpdate
+                ? { ...product, ...updatedProduct }
+                : product
+            )
+          )
+
+          setProducts(prev =>
+            prev.map(product =>
+              product.id === productIdToUpdate
+                ? { ...product, ...updatedProduct }
+                : product
+            )
+          )
+
+          setEditingProductId(null)
+          setEditProductFormData({ name: "", product_code: "", is_active: true })
+          setOriginalProductData(null)
+
+          // Auto-sync commissions if product was activated/deactivated
+          if (wasActivationChange && productCarrierId) {
+            console.log(`Product activation changed for carrier ${productCarrierId}, auto-syncing commissions...`)
+            await syncCommissionsForCarrier(productCarrierId, false)
+          }
+        },
+        onError: (error) => {
+          console.error('Error updating product:', error)
+          showError(error instanceof Error ? error.message : 'Failed to update product')
+        },
       }
-
-      setAllProducts(prev =>
-        prev.map(product =>
-          product.id === editingProductId
-            ? { ...product, ...updatedProduct }
-            : product
-        )
-      )
-
-      setProducts(prev =>
-        prev.map(product =>
-          product.id === editingProductId
-            ? { ...product, ...updatedProduct }
-            : product
-        )
-      )
-
-      setEditingProductId(null)
-      setEditProductFormData({ name: "", product_code: "", is_active: true })
-      setOriginalProductData(null)
-
-      // Auto-sync commissions if product was activated/deactivated or any change
-      const product = allProducts.find(p => p.id === editingProductId)
-      if (product) {
-        const wasActivationChange = editProductFormData.is_active !== originalProductData.is_active
-        if (wasActivationChange) {
-          console.log(`Product activation changed for carrier ${product.carrier_id}, auto-syncing commissions...`)
-          await syncCommissionsForCarrier(product.carrier_id, false)
-        }
-      }
-    } catch (error) {
-      console.error('Error updating product:', error)
-    } finally {
-      setUpdatingProduct(false)
-    }
+    )
   }
 
   const handleDeleteProduct = (product: Product) => {
@@ -1708,74 +1623,37 @@ export default function ConfigurationPage() {
   const handleConfirmProductDelete = async () => {
     if (!productToDelete) return
 
-    try {
-      setDeletingProduct(true)
+    const productId = productToDelete.id
+    const productCarrierId = productToDelete.carrier_id
 
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+    deleteProductMutation.mutate(
+      { productId },
+      {
+        onSuccess: () => {
+          setAllProducts(prev => prev.filter(product => product.id !== productId))
+          setProducts(prev => prev.filter(product => product.id !== productId))
 
-      if (!accessToken) {
-        throw new Error('No access token available')
-      }
+          const remainingProductsForCarrier = allProducts.filter(
+            product => product.id !== productId && product.carrier_id === productCarrierId
+          )
 
-      const response = await fetch(`/api/products/${productToDelete.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        },
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to delete product')
-      }
-
-      setAllProducts(prev => prev.filter(product => product.id !== productToDelete.id))
-      setProducts(prev => prev.filter(product => product.id !== productToDelete.id))
-
-      const remainingProductsForCarrier = allProducts.filter(
-        product => product.id !== productToDelete.id && product.carrier_id === productToDelete.carrier_id
-      )
-
-      if (remainingProductsForCarrier.length === 0) {
-        try {
-          const supabase = createClient()
-          const { data: { session } } = await supabase.auth.getSession()
-          const accessToken = session?.access_token
-
-          if (accessToken) {
-            const carriersResponse = await fetch('/api/carriers', {
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`
-              },
-              credentials: 'include'
-            })
-
-            if (carriersResponse.ok) {
-              const updatedCarriers = await carriersResponse.json()
-              setCarriers(updatedCarriers)
-
-              if (selectedCarrier === productToDelete.carrier_id) {
-                setSelectedCarrier("")
-              }
+          // If no remaining products for carrier, invalidate carriers query to refresh
+          if (remainingProductsForCarrier.length === 0) {
+            queryClient.invalidateQueries({ queryKey: queryKeys.configurationCarriers() })
+            if (selectedCarrier === productCarrierId) {
+              setSelectedCarrier("")
             }
           }
-        } catch (error) {
-          console.error('Error refreshing carriers:', error)
-        }
-      }
 
-      setDeleteProductConfirmOpen(false)
-      setProductToDelete(null)
-    } catch (error) {
-      console.error('Error deleting product:', error)
-    } finally {
-      setDeletingProduct(false)
-    }
+          setDeleteProductConfirmOpen(false)
+          setProductToDelete(null)
+        },
+        onError: (error) => {
+          console.error('Error deleting product:', error)
+          showError(error instanceof Error ? error.message : 'Failed to delete product')
+        },
+      }
+    )
   }
 
   const handleCancelProductDelete = () => {
@@ -4461,55 +4339,32 @@ export default function ConfigurationPage() {
                         {/* Submit Button */}
                         <Button
                           className="w-full bg-gray-600 hover:bg-gray-700 text-white"
-                          disabled={!carrierLoginUsername || !carrierLoginPassword || savingCarrierLogin}
-                          onClick={async () => {
+                          disabled={!carrierLoginUsername || !carrierLoginPassword || saveCarrierLoginMutation.isPending}
+                          onClick={() => {
                             if (!selectedCarrierLogin || !carrierLoginUsername || !carrierLoginPassword) return
 
-                            try {
-                              setSavingCarrierLogin(true)
-                              const supabase = createClient()
-                              const { data: { session } } = await supabase.auth.getSession()
-                              const accessToken = session?.access_token
-
-                              if (!accessToken) {
-                                showError('You must be logged in to save carrier logins.')
-                                return
-                              }
-
-                              const response = await fetch('/api/carrier-logins', {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  'Authorization': `Bearer ${accessToken}`
+                            saveCarrierLoginMutation.mutate(
+                              {
+                                carrier_name: selectedCarrierLogin,
+                                login: carrierLoginUsername,
+                                password: carrierLoginPassword,
+                              },
+                              {
+                                onSuccess: () => {
+                                  showSuccess('Carrier login saved successfully.')
+                                  // Clear credentials so user can enter another or switch carriers without reload
+                                  setCarrierLoginUsername("")
+                                  setCarrierLoginPassword("")
                                 },
-                                body: JSON.stringify({
-                                  carrier_name: selectedCarrierLogin,
-                                  login: carrierLoginUsername,
-                                  password: carrierLoginPassword
-                                })
-                              })
-
-                              const data = await response.json().catch(() => null)
-
-                              if (!response.ok) {
-                                const detail = data?.detail || data?.error || 'Failed to save carrier login.'
-                                showError(detail)
-                                return
+                                onError: (error) => {
+                                  console.error('Error saving carrier login:', error)
+                                  showError(error instanceof Error ? error.message : 'Failed to save carrier login.')
+                                },
                               }
-
-                              showSuccess('Carrier login saved successfully.')
-                              // Clear credentials so user can enter another or switch carriers without reload
-                              setCarrierLoginUsername("")
-                              setCarrierLoginPassword("")
-                            } catch (error) {
-                              console.error('Error saving carrier login:', error)
-                              showError('An unexpected error occurred while saving carrier login.')
-                            } finally {
-                              setSavingCarrierLogin(false)
-                            }
+                            )
                           }}
                         >
-                          {savingCarrierLogin ? 'Saving...' : 'Submit'}
+                          {saveCarrierLoginMutation.isPending ? 'Saving...' : 'Submit'}
                         </Button>
                       </div>
                     )}

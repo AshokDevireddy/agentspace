@@ -16,7 +16,10 @@ export function useApiFetch<T>(
       })
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`)
+        // Try to extract error message from response body
+        const errorData = await response.json().catch(() => ({}))
+        const errorMessage = errorData.error || errorData.message || `API error: ${response.status}`
+        throw new Error(errorMessage)
       }
 
       return response.json()

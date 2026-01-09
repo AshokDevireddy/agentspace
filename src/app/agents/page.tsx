@@ -21,8 +21,9 @@ import {
 import { cn } from "@/lib/utils"
 import { useNotification } from "@/contexts/notification-context"
 import { useApiFetch } from "@/hooks/useApiFetch"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
+import { useAssignPosition, useResendInvite, useSendInvite } from "@/hooks/mutations"
 
 // Agent data type
 interface Agent {
@@ -680,52 +681,10 @@ export default function Agents() {
     appliedFilters.status !== 'all' ||
     appliedFilters.position !== 'all'
 
-  // Handle position assignment mutation
-  const assignPositionMutation = useMutation({
-    mutationFn: async ({ agentId, positionId }: { agentId: string; positionId: string }) => {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        throw new Error('Unable to assign position without a valid session. Please log in again.')
-      }
-
-      const response = await fetch('/api/agents/assign-position', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          agent_id: agentId,
-          position_id: positionId,
-        }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to assign position')
-      }
-
-      return response.json()
-    },
-    onSuccess: () => {
-      // Invalidate and refetch pending positions and agents list
-      queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents })
-
-      // Clear selection state after successful assignment
-      setSelectedPositionId("")
-      setSelectedAgentId(null)
-
-      showSuccess('Position assigned successfully!')
-    },
-    onError: (err: Error) => {
-      console.error('Error assigning position:', err)
-      showError(err.message || 'Failed to assign position')
-    }
-  })
+  // ============ Mutation Hooks ============
+  const assignPositionMutation = useAssignPosition()
+  const resendInviteMutation = useResendInvite()
+  const sendInviteMutation = useSendInvite()
 
   const handleAssignPosition = (agentId: string, positionId: string) => {
     if (!positionId) {
@@ -733,94 +692,37 @@ export default function Agents() {
       return
     }
 
-    assignPositionMutation.mutate({ agentId, positionId })
-  }
-
-  // Handle resend invite mutation
-  const resendInviteMutation = useMutation({
-    mutationFn: async (agentId: string) => {
-      const response = await fetch('/api/agents/resend-invite', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+    assignPositionMutation.mutate(
+      { agentId, positionId },
+      {
+        onSuccess: () => {
+          // Clear selection state after successful assignment
+          setSelectedPositionId("")
+          setSelectedAgentId(null)
+          showSuccess('Position assigned successfully!')
         },
-        credentials: 'include',
-        body: JSON.stringify({ agentId }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to resend invitation')
+        onError: (err: Error) => {
+          console.error('Error assigning position:', err)
+          showError(err.message || 'Failed to assign position')
+        },
       }
-
-      return data
-    },
-    onSuccess: (data) => {
-      // Invalidate agent queries to refresh the status
-      queryClient.invalidateQueries({ queryKey: ['agents'] })
-      queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
-      showSuccess(data.message || 'Invitation resent successfully!')
-    },
-    onError: (err: Error) => {
-      console.error('Error resending invite:', err)
-      showError(err.message || 'Failed to resend invitation')
-    }
-  })
+    )
+  }
 
   const handleResendInvite = (agentId: string) => {
-    resendInviteMutation.mutate(agentId)
+    resendInviteMutation.mutate(agentId, {
+      onSuccess: (data) => {
+        // Invalidate agent queries to refresh the status
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents })
+        queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
+        showSuccess(data.message || 'Invitation resent successfully!')
+      },
+      onError: (err: Error) => {
+        console.error('Error resending invite:', err)
+        showError(err.message || 'Failed to resend invitation')
+      },
+    })
   }
-
-  // Handle send invite for pre-invite users mutation
-  const sendInviteMutation = useMutation({
-    mutationFn: async (agent: Agent) => {
-      if (!agent.email) {
-        throw new Error('Agent email is required to send invitation')
-      }
-
-      // Get the agent's name parts
-      const firstName = agent.first_name || agent.name.split(' ')[0] || ''
-      const lastName = agent.last_name || agent.name.split(' ').slice(1).join(' ') || ''
-
-      // Determine permission level from role (default to agent)
-      const permissionLevel = 'agent'
-
-      const response = await fetch('/api/agents/invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: agent.email,
-          firstName: firstName,
-          lastName: lastName,
-          phoneNumber: null,
-          permissionLevel: permissionLevel,
-          uplineAgentId: null,
-          positionId: agent.position_id || null,
-          preInviteUserId: agent.id
-        })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to send invitation')
-      }
-
-      return response.json()
-    },
-    onSuccess: () => {
-      // Invalidate and refetch agents list and pending positions
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents })
-      queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
-
-      showSuccess('Invitation sent successfully!')
-    },
-    onError: (err: Error) => {
-      console.error('Error sending invite:', err)
-      showError(err.message || 'Failed to send invitation')
-    }
-  })
 
   const handleSendInvite = (agent: Agent) => {
     if (!agent.email) {
@@ -828,7 +730,34 @@ export default function Agents() {
       return
     }
 
-    sendInviteMutation.mutate(agent)
+    // Get the agent's name parts
+    const firstName = agent.first_name || agent.name.split(' ')[0] || ''
+    const lastName = agent.last_name || agent.name.split(' ').slice(1).join(' ') || ''
+
+    sendInviteMutation.mutate(
+      {
+        email: agent.email,
+        firstName,
+        lastName,
+        phoneNumber: null,
+        permissionLevel: 'agent',
+        uplineAgentId: null,
+        positionId: agent.position_id || null,
+        preInviteUserId: agent.id,
+      },
+      {
+        onSuccess: () => {
+          // Invalidate and refetch agents list and pending positions
+          queryClient.invalidateQueries({ queryKey: queryKeys.agents })
+          queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
+          showSuccess('Invitation sent successfully!')
+        },
+        onError: (err: Error) => {
+          console.error('Error sending invite:', err)
+          showError(err.message || 'Failed to send invitation')
+        },
+      }
+    )
   }
 
   // Handle row click to open modal

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar as CalendarIcon, Info } from "lucide-react"
+import { Calendar as CalendarIcon, Info, Medal } from "lucide-react"
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
@@ -84,6 +84,7 @@ export default function Scoreboard() {
   const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
   const [submittedFilter, setSubmittedFilter] = useState<'submitted' | 'issue_paid'>('submitted')
+  const [scope, setScope] = useState<'agency' | 'team'>('agency')
 
   // Update calendar state when client date becomes available after hydration
   useEffect(() => {
@@ -211,7 +212,8 @@ export default function Scoreboard() {
       ...queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate),
       'with-lapse',
       assumedMonthsTillLapse,
-      submittedFilter
+      submittedFilter,
+      scope
     ],
     'get_scoreboard_data_updated_lapsed_deals',
     {
@@ -219,7 +221,8 @@ export default function Scoreboard() {
       p_start_date: dateRange.startDate,
       p_end_date: dateRange.endDate,
       assumed_months_till_lapse: assumedMonthsTillLapse,
-      submitted: submittedFilter === 'submitted'
+      submitted: submittedFilter === 'submitted',
+      p_scope: scope
     },
     {
       enabled: shouldFetch,
@@ -251,6 +254,18 @@ export default function Scoreboard() {
   }, [data, dateRange])
 
   const topAgents = data?.leaderboard?.slice(0, 3) || []
+
+  // Find current user's stats in the leaderboard
+  const currentUserStats = useMemo(() => {
+    if (!data?.leaderboard || !userData?.id) return null
+    const userEntry = data.leaderboard.find(agent => agent.agent_id === userData.id)
+    if (!userEntry) return null
+    return {
+      ...userEntry,
+      totalAgents: data.leaderboard.length,
+      distanceFromTop: data.leaderboard[0] ? data.leaderboard[0].total - userEntry.total : 0
+    }
+  }, [data?.leaderboard, userData?.id])
 
   // Generate all dates in the range
   const generateDateRange = (start: string, end: string): string[] => {
@@ -378,6 +393,31 @@ export default function Scoreboard() {
             <RefreshingIndicator isRefreshing={isRefreshing} />
           </div>
           <div className="flex items-center gap-3">
+            {/* Scope Toggle - Only show for admins */}
+            {userData?.role === 'admin' && (
+              <div className="flex items-center rounded-md border border-border p-1">
+                <button
+                  onClick={() => setScope('agency')}
+                  className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${
+                    scope === 'agency'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Full Agency
+                </button>
+                <button
+                  onClick={() => setScope('team')}
+                  className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${
+                    scope === 'team'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  My Team
+                </button>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <Input
                 type="number"
@@ -660,9 +700,7 @@ export default function Scoreboard() {
             <Card key={index} className="professional-card rounded-md relative overflow-hidden">
               <CardContent className="p-6 text-center">
                 <div className="mb-4">
-                  <span className="text-4xl">
-                    {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
-                  </span>
+                  <Medal className={`h-10 w-10 mx-auto ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-gray-400' : 'text-orange-500'}`} />
                 </div>
                 <div className="h-6 w-32 bg-muted animate-pulse rounded mx-auto mb-2" />
                 <div className="h-8 w-40 bg-muted animate-pulse rounded mx-auto mb-2" />
@@ -677,9 +715,7 @@ export default function Scoreboard() {
             <Card key={agent.agent_id} className="professional-card rounded-md relative overflow-hidden">
               <CardContent className="p-6 text-center">
                 <div className="mb-4">
-                  <span className="text-4xl">
-                    {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
-                  </span>
+                  <Medal className={`h-10 w-10 mx-auto ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-gray-400' : 'text-orange-500'}`} />
                 </div>
                 <h3 className="text-xl font-bold text-foreground mb-2">{agent.name}</h3>
                 <p className="text-2xl font-bold text-foreground">{formatCurrency(agent.total)}</p>
@@ -697,6 +733,43 @@ export default function Scoreboard() {
             </Card>
           ))}
         </div>
+      )}
+
+      {/* Your Stats Card - Show personal production for all users */}
+      {!isLoading && currentUserStats && (
+        <Card className="professional-card rounded-md border-l-4 border-l-primary">
+          <CardContent className="p-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+                  <span className="text-xl font-bold text-primary">#{currentUserStats.rank}</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-foreground">Your Stats</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Rank #{currentUserStats.rank} out of {currentUserStats.totalAgents} agents
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-6">
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Your Production</p>
+                  <p className="text-2xl font-bold text-foreground">{formatCurrency(currentUserStats.total)}</p>
+                </div>
+                {currentUserStats.rank > 1 && (
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground">Behind #1</p>
+                    <p className="text-lg font-semibold text-muted-foreground">{formatCurrency(currentUserStats.distanceFromTop)}</p>
+                  </div>
+                )}
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Policies</p>
+                  <p className="text-lg font-semibold text-foreground">{currentUserStats.dealCount}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Leaderboard Table */}
@@ -772,20 +845,32 @@ export default function Scoreboard() {
                 </thead>
                 <tbody>
                   {data.leaderboard.map((agent, index) => {
-                    const rowBgClass = index < 3 ? 'bg-primary/10' : 'bg-card'
+                    const isCurrentUser = agent.agent_id === userData?.id
+                    const isTop3 = index < 3
+                    // Current user gets special highlight, otherwise top 3 get primary highlight
+                    const rowBgClass = isCurrentUser
+                      ? 'bg-primary/20 border-l-4 border-l-primary'
+                      : isTop3
+                        ? 'bg-primary/10'
+                        : 'bg-card'
                     return (
-                      <tr key={agent.agent_id} className={`border-b border-border hover:bg-accent/50 transition-colors ${index < 3 ? 'bg-primary/10' : ''}`}>
+                      <tr key={agent.agent_id} className={`border-b border-border hover:bg-accent/50 transition-colors ${rowBgClass}`}>
                         <td className={`py-3 px-4 sticky left-0 z-10 w-20 min-w-[80px] ${rowBgClass}`} style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>
                           <div className="flex items-center space-x-2">
                             <span className="font-semibold text-foreground">{agent.rank}</span>
-                            {index < 3 && (
-                              <span className={`text-lg ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-gray-400' : 'text-orange-500'}`}>
-                                {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
-                              </span>
+                            {isTop3 && (
+                              <Medal className={`h-5 w-5 ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-gray-400' : 'text-orange-500'}`} />
                             )}
                           </div>
                         </td>
-                        <td className={`py-3 px-4 font-medium text-foreground sticky left-[80px] whitespace-nowrap z-10 ${rowBgClass}`} style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>{agent.name}</td>
+                        <td className={`py-3 px-4 font-medium text-foreground sticky left-[80px] whitespace-nowrap z-10 ${rowBgClass}`} style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>
+                          <div className="flex items-center gap-2">
+                            {agent.name}
+                            {isCurrentUser && (
+                              <Badge variant="secondary" className="text-xs">You</Badge>
+                            )}
+                          </div>
+                        </td>
                         {sortedDates.map(date => (
                           <td key={date} className="py-3 px-4 text-center text-foreground whitespace-nowrap">
                             {agent.dailyBreakdown[date]

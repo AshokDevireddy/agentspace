@@ -58,22 +58,23 @@ export async function POST(request: NextRequest) {
     }
 
     // Assign to function-scoped variable for catch block access
-    acquiredJob = acquiredJobs[0]
-    console.log(`[API/NIPR/PROCESS] Processing job: ${acquiredJob.job_id}`)
+    const job = acquiredJobs[0]
+    acquiredJob = job
+    console.log(`[API/NIPR/PROCESS] Processing job: ${job.job_id}`)
 
     // Build job data for automation
     const jobData: NIPRJobData = {
-      job_id: acquiredJob.job_id,
-      job_user_id: acquiredJob.job_user_id,
-      job_last_name: acquiredJob.job_last_name,
-      job_npn: acquiredJob.job_npn,
-      job_ssn_last4: acquiredJob.job_ssn_last4,
-      job_dob: acquiredJob.job_dob
+      job_id: job.job_id,
+      job_user_id: job.job_user_id,
+      job_last_name: job.job_last_name,
+      job_npn: job.job_npn,
+      job_ssn_last4: job.job_ssn_last4,
+      job_dob: job.job_dob
     }
 
     // Capture job info for the background task
-    const jobId = acquiredJob.job_id
-    const jobUserId = acquiredJob.job_user_id
+    const jobId = job.job_id
+    const jobUserId = job.job_user_id
 
     // Run automation in background with waitUntil to keep function alive
     const automationPromise = (async () => {
@@ -138,7 +139,7 @@ export async function POST(request: NextRequest) {
     // Return immediately - function stays alive via waitUntil
     return NextResponse.json({
       success: true,
-      message: `Processing job ${acquiredJob.job_id}`,
+      message: `Processing job ${jobId}`,
       processed: 1
     })
 

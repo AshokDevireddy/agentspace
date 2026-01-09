@@ -9,6 +9,7 @@ import OnboardingWizard from "@/components/onboarding-wizard"
 import { useTour } from "@/contexts/onboarding-tour-context"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
+import { useCompleteOnboarding } from "@/hooks/mutations"
 import { Skeleton } from "@/components/ui/skeleton"
 import Link from "next/link"
 
@@ -42,6 +43,7 @@ export default function Home() {
   })
 
   const weekRange = useMemo(() => getWeekDateRange(), [])
+  const completeOnboardingMutation = useCompleteOnboarding()
 
   useEffect(() => {
     localStorage.setItem('dashboard_view_mode', viewMode)
@@ -109,14 +111,16 @@ export default function Home() {
     }
   }, [authLoading, profileLoading, userData, isTourActive, hasStartedTour, startTour, user?.id])
 
-  const handleOnboardingComplete = async () => {
-    try {
-      await fetch('/api/user/complete-onboarding', { method: 'POST' })
-      window.location.reload()
-    } catch (error) {
-      console.error('Error completing onboarding:', error)
-      window.location.reload()
-    }
+  const handleOnboardingComplete = () => {
+    completeOnboardingMutation.mutate(undefined, {
+      onSuccess: () => {
+        window.location.reload()
+      },
+      onError: (error) => {
+        console.error('Error completing onboarding:', error)
+        window.location.reload()
+      },
+    })
   }
 
   const isLoading = authLoading || profileLoading || scoreboardLoading || dashboardLoading

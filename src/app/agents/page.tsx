@@ -19,6 +19,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { useNotification } from "@/contexts/notification-context"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -530,7 +531,7 @@ export default function Agents() {
   }
 
   // Fetch agents data from API (only when active filters change, not local filters)
-  const { data: agentsResponse, isLoading: agentsLoading, error: agentsError } = useApiFetch<{
+  const { data: agentsResponse, isLoading: agentsLoading, isFetching: agentsFetching, error: agentsError } = useApiFetch<{
     agents?: Agent[]
     tree?: TreeNode
     pagination?: { totalPages: number; totalCount: number }
@@ -552,6 +553,7 @@ export default function Agents() {
   const totalCount = agentsResponse?.pagination?.totalCount || 0
   const allAgents = agentsResponse?.allAgents || []
   const error = agentsError?.message || null
+  const isRefreshing = agentsFetching && !agentsLoading // Background refetch with stale data shown
 
   // View-specific loading states to prevent wrong spinners
   // - Table view: needs both agents and positions
@@ -882,7 +884,10 @@ export default function Agents() {
       {/* Header */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-4xl font-bold text-foreground">Agents</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-bold text-foreground">Agents</h1>
+            <RefreshingIndicator isRefreshing={isRefreshing} />
+          </div>
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
               <Button

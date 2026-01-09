@@ -11,8 +11,10 @@ type MutationMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 interface ApiMutationOptions<TData, TVariables> {
   /** HTTP method */
   method?: MutationMethod
-  /** Query keys to invalidate on success */
+  /** Static query keys to invalidate on success */
   invalidateKeys?: QueryKeyType[]
+  /** Dynamic query keys based on mutation variables - use for invalidating detail queries */
+  getInvalidateKeys?: (variables: TVariables) => QueryKeyType[]
   /** Additional mutation options */
   options?: Omit<UseMutationOptions<TData, Error, TVariables>, 'mutationFn'>
 }
@@ -27,7 +29,7 @@ export function useApiMutation<TData = unknown, TVariables = unknown>(
   config: ApiMutationOptions<TData, TVariables> = {}
 ) {
   const queryClient = useQueryClient()
-  const { method = 'POST', invalidateKeys = [], options = {} } = config
+  const { method = 'POST', invalidateKeys = [], getInvalidateKeys, options = {} } = config
 
   return useMutation<TData, Error, TVariables>({
     mutationFn: async (variables) => {
@@ -50,10 +52,18 @@ export function useApiMutation<TData = unknown, TVariables = unknown>(
       return response.json()
     },
     onSuccess: (data, variables, context) => {
-      // Invalidate specified query keys
+      // Invalidate static query keys
       invalidateKeys.forEach((key) => {
         queryClient.invalidateQueries({ queryKey: [...key] })
       })
+
+      // Invalidate dynamic query keys based on variables
+      if (getInvalidateKeys) {
+        const dynamicKeys = getInvalidateKeys(variables)
+        dynamicKeys.forEach((key) => {
+          queryClient.invalidateQueries({ queryKey: [...key] })
+        })
+      }
 
       // Call user's onSuccess if provided
       options.onSuccess?.(data, variables, context)
@@ -190,7 +200,7 @@ export function useAuthenticatedMutation<TData = unknown, TVariables = unknown>(
   config: ApiMutationOptions<TData, TVariables> = {}
 ) {
   const queryClient = useQueryClient()
-  const { method = 'POST', invalidateKeys = [], options = {} } = config
+  const { method = 'POST', invalidateKeys = [], getInvalidateKeys, options = {} } = config
 
   return useMutation<TData, Error, TVariables>({
     mutationFn: async (variables) => {
@@ -226,9 +236,19 @@ export function useAuthenticatedMutation<TData = unknown, TVariables = unknown>(
       return text ? JSON.parse(text) : null
     },
     onSuccess: (data, variables, context) => {
+      // Invalidate static query keys
       invalidateKeys.forEach((key) => {
         queryClient.invalidateQueries({ queryKey: [...key] })
       })
+
+      // Invalidate dynamic query keys based on variables
+      if (getInvalidateKeys) {
+        const dynamicKeys = getInvalidateKeys(variables)
+        dynamicKeys.forEach((key) => {
+          queryClient.invalidateQueries({ queryKey: [...key] })
+        })
+      }
+
       options.onSuccess?.(data, variables, context)
     },
     ...options,

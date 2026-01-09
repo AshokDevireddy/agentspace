@@ -11,6 +11,7 @@ import { Loader2, Plus, X } from "lucide-react"
 import { PolicyDetailsModal } from "@/components/modals/policy-details-modal"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { cn } from "@/lib/utils"
+import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import {
   Popover,
   PopoverContent,
@@ -251,7 +252,7 @@ export default function BookOfBusiness() {
   }, [appliedFilters])
 
   // Fetch deals using TanStack Query
-  const { data: dealsData, isLoading: loading, error: dealsError } = useQuery({
+  const { data: dealsData, isLoading: loading, isFetching: dealsFetching, error: dealsError } = useQuery({
     queryKey: queryKeys.dealsBookOfBusiness(appliedFilters),
     queryFn: async () => {
       const params = buildDealsParams()
@@ -264,6 +265,8 @@ export default function BookOfBusiness() {
     staleTime: 30 * 1000, // 30 seconds
     placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
   })
+
+  const isRefreshing = dealsFetching && !loading // Background refetch with stale data shown
 
   // Update deals and cursor when data changes
   useEffect(() => {
@@ -451,7 +454,10 @@ export default function BookOfBusiness() {
 
       {/* Header with Status Slider and View Mode Slider - Always interactive */}
       <div className="flex items-center justify-between relative z-50">
-        <h1 className="text-4xl font-bold text-foreground">Book of Business</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-4xl font-bold text-foreground">Book of Business</h1>
+          <RefreshingIndicator isRefreshing={isRefreshing} />
+        </div>
 
         <div className="flex items-center gap-4">
           {/* View Mode Slider */}

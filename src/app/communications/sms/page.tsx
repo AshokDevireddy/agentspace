@@ -153,9 +153,17 @@ function SMSMessagingPageContent() {
   const messageInputRef = useRef<HTMLTextAreaElement>(null)
   const messageReadTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
 
+  // Event deduplication to prevent double-processing of real-time events
+  // Events are tracked by messageId + eventType and cleared after 2 seconds
+  const processedEventsRef = useRef<Set<string>>(new Set())
+  const DEDUP_WINDOW_MS = 2000
+
   // Refs to hold current filter values for use in real-time subscription callbacks
   // This prevents stale closures when filters change but subscriptions remain active
   const filtersRef = useRef({ effectiveViewMode: 'self', searchQuery: '', notificationFilter: 'all' as 'all' | 'lapse' | 'needs_info' | 'drafts' | 'unread' })
+
+  // Ref for selected conversation to avoid stale closures in subscriptions
+  const selectedConversationRef = useRef<Conversation | null>(null)
 
   // Check if user is admin - migrated to useQuery
   const { data: adminData, isSuccess: isAdminChecked } = useQuery({
@@ -199,6 +207,11 @@ function SMSMessagingPageContent() {
   useEffect(() => {
     filtersRef.current = { effectiveViewMode, searchQuery, notificationFilter }
   }, [effectiveViewMode, searchQuery, notificationFilter])
+
+  // Keep selectedConversationRef in sync to avoid stale closures in subscriptions
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation
+  }, [selectedConversation])
   const { data: conversationsData, isLoading: loading } = useApiFetch<{ conversations: Conversation[] }>(
     queryKeys.conversationsList(effectiveViewMode, { searchQuery, notificationFilter }),
     `/api/sms/conversations?view=${effectiveViewMode}`,
@@ -394,9 +407,21 @@ function SMSMessagingPageContent() {
           console.log('📨 New message in any conversation:', payload.new)
           const newMessage = payload.new as Message
 
+          // Event deduplication - prevent double-processing
+          const eventKey = `global-${newMessage.id}-INSERT`
+          if (processedEventsRef.current.has(eventKey)) {
+            console.log('🔄 Skipping duplicate global event:', eventKey)
+            return
+          }
+          processedEventsRef.current.add(eventKey)
+          setTimeout(() => processedEventsRef.current.delete(eventKey), DEDUP_WINDOW_MS)
+
+          // Use ref to get current selected conversation and avoid stale closures
+          const currentSelectedId = selectedConversationRef.current?.id
+
           // If this message is for a conversation that's not selected, invalidate conversations
           // Use filtersRef.current to get fresh filter values and avoid stale closures
-          if (newMessage.conversation_id !== selectedConversation?.id && newMessage.direction === 'inbound') {
+          if (newMessage.conversation_id !== currentSelectedId && newMessage.direction === 'inbound') {
             const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
             queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
           }
@@ -416,7 +441,7 @@ function SMSMessagingPageContent() {
       console.log('🔕 Cleaning up global real-time subscription')
       supabase.removeChannel(allConversationsChannel)
     }
-  }, [user?.id, selectedConversation?.id])
+  }, [user?.id]) // Removed selectedConversation?.id - using ref instead to avoid re-subscriptions
 
   // Subscribe to real-time updates - Only for the selected conversation
   useEffect(() => {
@@ -447,6 +472,15 @@ function SMSMessagingPageContent() {
         (payload) => {
           console.log('📨 New message received via real-time:', payload.new)
           const newMessage = payload.new as Message
+
+          // Event deduplication - prevent double-processing
+          const eventKey = `specific-${newMessage.id}-INSERT`
+          if (processedEventsRef.current.has(eventKey)) {
+            console.log('🔄 Skipping duplicate specific event:', eventKey)
+            return
+          }
+          processedEventsRef.current.add(eventKey)
+          setTimeout(() => processedEventsRef.current.delete(eventKey), DEDUP_WINDOW_MS)
 
           console.log('✅ Message belongs to current conversation - invalidating queries')
 

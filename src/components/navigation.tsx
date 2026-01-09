@@ -138,16 +138,19 @@ export default function Navigation() {
       if (isCurrentColorDefault) {
         const newDefaultColor = getDefaultPrimaryColor(currentResolvedTheme as 'light' | 'dark')
 
-        // Update query cache with new color
-        queryClient.setQueryData(queryKeys.agencyBranding(agencyId), {
-          ...agencyData,
-          primary_color: newDefaultColor
-        })
-
-        // Update CSS variables
+        // Update CSS variables first (synchronous)
         document.documentElement.style.setProperty('--primary', newDefaultColor)
         const textColor = getContrastTextColor(newDefaultColor)
         document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
+
+        // Use requestAnimationFrame to ensure CSS is painted before cache update
+        // This prevents visual flash by batching DOM updates before React re-render
+        requestAnimationFrame(() => {
+          queryClient.setQueryData(queryKeys.agencyBranding(agencyId), {
+            ...agencyData,
+            primary_color: newDefaultColor
+          })
+        })
 
         // Update database
         const updateColor = async () => {

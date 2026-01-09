@@ -215,7 +215,7 @@ export default function PostDeal() {
   const carriersOptions = agencyData?.carriersOptions ?? []
 
   // Query: Load products when carrier changes
-  const { data: productsOptions = [] } = useQuery({
+  const { data: productsOptions = [], isFetching: isProductsFetching } = useQuery({
     queryKey: queryKeys.productsByCarrier(agencyId || '', formData.carrierId),
     queryFn: async () => {
       if (!agencyId || !formData.carrierId) {
@@ -500,6 +500,11 @@ export default function PostDeal() {
       // Don't allow negative sign as the first character
       if (value.startsWith("-")) return
       setFormData({ ...formData, [field]: value })
+      return
+    }
+    // Reset productId when carrier changes to prevent stale product selection
+    if (field === "carrierId") {
+      setFormData(prev => ({ ...prev, carrierId: value, productId: "" }))
       return
     }
     setFormData({ ...formData, [field]: value })
@@ -819,6 +824,7 @@ export default function PostDeal() {
                       options={productsOptions}
                       value={formData.productId}
                       onValueChange={(value) => handleInputChange("productId", value)}
+                      disabled={isProductsFetching}
                     />
                   </div>
                 </div>

@@ -3,11 +3,34 @@
  * All query keys should be defined here to ensure consistency and easy invalidation
  */
 
+/**
+ * Creates a stable string representation of filter objects for query keys.
+ * Ensures consistent cache key generation regardless of object reference equality.
+ * This prevents cache bloat when filter objects are recreated on each render.
+ */
+function stableFilterKey(filters: Record<string, unknown> | undefined): string {
+  if (!filters || Object.keys(filters).length === 0) {
+    return ''
+  }
+  // Sort keys for deterministic output
+  const sortedKeys = Object.keys(filters).sort()
+  const normalized = sortedKeys.reduce<Record<string, unknown>>((acc, key) => {
+    const value = filters[key]
+    // Only include defined, non-null, non-empty values
+    if (value !== undefined && value !== null && value !== '') {
+      acc[key] = value
+    }
+    return acc
+  }, {})
+
+  return Object.keys(normalized).length > 0 ? JSON.stringify(normalized) : ''
+}
+
 export const queryKeys = {
   // Agents
   agents: ['agents'] as const,
   agentsList: (page: number, view: string, filters: Record<string, unknown>) =>
-    ['agents', 'list', page, view, filters] as const,
+    ['agents', 'list', page, view, stableFilterKey(filters)] as const,
   agentDetail: (id: string) => ['agents', 'detail', id] as const,
   agentDownlines: (id: string) => ['agents', 'downlines', id] as const,
   agentsPendingPositions: () => ['agents', 'pending-positions'] as const,
@@ -15,23 +38,23 @@ export const queryKeys = {
   // Deals
   deals: ['deals'] as const,
   dealsList: (page: number, view: string, filters: Record<string, unknown>) =>
-    ['deals', 'list', page, view, filters] as const,
+    ['deals', 'list', page, view, stableFilterKey(filters)] as const,
   dealDetail: (id: string) => ['deals', 'detail', id] as const,
   dealsFilterOptions: () => ['deals', 'filter-options'] as const,
   dealsBookOfBusiness: (filters?: Record<string, unknown>) =>
-    ['deals', 'book-of-business', filters] as const,
+    ['deals', 'book-of-business', stableFilterKey(filters)] as const,
 
   // Clients
   clients: ['clients'] as const,
   clientsList: (page: number, filters: Record<string, unknown>) =>
-    ['clients', 'list', page, filters] as const,
+    ['clients', 'list', page, stableFilterKey(filters)] as const,
   clientsAll: (viewMode: string) => ['clients', 'all', viewMode] as const,
   clientDetail: (id: string) => ['clients', 'detail', id] as const,
 
   // Conversations & Messages (SMS)
   conversations: ['conversations'] as const,
   conversationsList: (view: string, filters: Record<string, unknown>) =>
-    ['conversations', 'list', view, filters] as const,
+    ['conversations', 'list', view, stableFilterKey(filters)] as const,
   conversationDetail: (id: string) => ['conversations', 'detail', id] as const,
   conversationCount: (view: string) => ['conversations', 'count', view] as const,
   messages: (conversationId: string) => ['messages', conversationId] as const,
@@ -63,11 +86,11 @@ export const queryKeys = {
   // Analytics
   analytics: ['analytics'] as const,
   analyticsData: (filters: Record<string, unknown>) =>
-    ['analytics', 'data', filters] as const,
+    ['analytics', 'data', stableFilterKey(filters)] as const,
   analyticsProduction: (filters: Record<string, unknown>) =>
-    ['analytics', 'production', filters] as const,
+    ['analytics', 'production', stableFilterKey(filters)] as const,
   analyticsDownlines: (filters: Record<string, unknown>) =>
-    ['analytics', 'downlines', filters] as const,
+    ['analytics', 'downlines', stableFilterKey(filters)] as const,
 
   // Downline Production
   downlineProduction: (agentId: string, timeWindow: string) =>
@@ -76,15 +99,15 @@ export const queryKeys = {
   // Policies
   policies: ['policies'] as const,
   policiesList: (page: number, filters: Record<string, unknown>) =>
-    ['policies', 'list', page, filters] as const,
+    ['policies', 'list', page, stableFilterKey(filters)] as const,
   policyDetail: (id: string) => ['policies', 'detail', id] as const,
   policiesExpectedPayouts: (page: number, filters: Record<string, unknown>) =>
-    ['policies', 'expected-payouts', page, filters] as const,
+    ['policies', 'expected-payouts', page, stableFilterKey(filters)] as const,
 
   // Expected Payouts
   expectedPayouts: ['expected-payouts'] as const,
   expectedPayoutsData: (filters: Record<string, unknown>) =>
-    ['expected-payouts', 'data', filters] as const,
+    ['expected-payouts', 'data', stableFilterKey(filters)] as const,
   expectedPayoutsDebt: (agentId: string) =>
     ['expected-payouts', 'debt', agentId] as const,
 

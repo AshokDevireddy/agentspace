@@ -38,6 +38,18 @@ export function AsyncSearchableSelect({
   const [selectedLabel, setSelectedLabel] = React.useState<string | null>(defaultLabel || null)
   const dropdownRef = React.useRef<HTMLDivElement>(null)
 
+  // Track endpoint changes to reset state
+  const prevEndpointRef = React.useRef(searchEndpoint)
+  React.useEffect(() => {
+    if (prevEndpointRef.current !== searchEndpoint) {
+      // Reset search state when endpoint changes to prevent stale cache issues
+      setSearchTerm("")
+      setDebouncedSearchTerm("")
+      setSelectedLabel(defaultLabel || null)
+      prevEndpointRef.current = searchEndpoint
+    }
+  }, [searchEndpoint, defaultLabel])
+
   // Debounce search term
   React.useEffect(() => {
     const timer = setTimeout(() => {

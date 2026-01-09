@@ -50,9 +50,12 @@ export function useAssignPosition() {
 
       return response.json()
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Invalidate list queries
       queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
       queryClient.invalidateQueries({ queryKey: queryKeys.agents })
+      // Invalidate detail query for the specific agent (fixes modal showing stale data)
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentDetail(variables.agentId) })
     },
   })
 }
@@ -152,6 +155,10 @@ export function useUpdateAgent() {
     {
       method: 'PUT',
       invalidateKeys: [queryKeys.agents, queryKeys.agentsPendingPositions()],
+      getInvalidateKeys: (variables) => [
+        queryKeys.agentDetail(variables.agentId),
+        queryKeys.agentDownlines(variables.agentId),
+      ],
     }
   )
 }
@@ -167,6 +174,9 @@ export function useDeleteAgent() {
     {
       method: 'DELETE',
       invalidateKeys: [queryKeys.agents, queryKeys.agentsPendingPositions()],
+      getInvalidateKeys: (variables) => [
+        queryKeys.agentDetail(variables.agentId),
+      ],
     }
   )
 }

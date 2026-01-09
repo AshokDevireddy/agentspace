@@ -519,14 +519,10 @@ export default function AnalyticsTestPage() {
 	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
-	const [userId, setUserId] = React.useState<string | null>(null)
-	const [subscriptionTier, setSubscriptionTier] = React.useState<string>('free')
 	const [downlineTitle, setDownlineTitle] = React.useState<string | null>(null)
 	const [downlineBreadcrumbInfo, setDownlineBreadcrumbInfo] = React.useState<{ currentAgentName: string; breadcrumbs: Array<{ agentId: string; agentName: string }>; isAtRoot: boolean } | null>(null)
 	const downlineChartRef = React.useRef<DownlineProductionChartHandle>(null)
 	const [selectedAgentId, setSelectedAgentId] = React.useState<string>("")
-	const [originalUserId, setOriginalUserId] = React.useState<string | null>(null)
-	const [userRole, setUserRole] = React.useState<string | null>(null)
 	const [viewMode, setViewMode] = React.useState<'just_me' | 'downlines'>(() => {
 		if (typeof window !== 'undefined') {
 			return (localStorage.getItem('analytics_view_mode') as 'just_me' | 'downlines') || 'downlines'
@@ -574,15 +570,11 @@ export default function AnalyticsTestPage() {
 		gcTime: 10 * 60 * 1000, // 10 minutes
 	})
 
-	// Set state from main query
-	React.useEffect(() => {
-		if (mainAnalyticsData) {
-			setUserId(mainAnalyticsData.userId)
-			setOriginalUserId(mainAnalyticsData.userId)
-			setSubscriptionTier(mainAnalyticsData.subscriptionTier)
-			setUserRole(mainAnalyticsData.userRole)
-		}
-	}, [mainAnalyticsData])
+	// Derive state directly from query data (no useState/useEffect sync needed)
+	const originalUserId = mainAnalyticsData?.userId || null
+	const subscriptionTier = mainAnalyticsData?.subscriptionTier || 'free'
+	const userRole = mainAnalyticsData?.userRole || null
+	const userId = selectedAgentId || originalUserId
 
 	// 2. Fetch all agents for the search dropdown
 	const { data: agentsData } = useApiFetch<{ allAgents?: Array<{ id: string; name: string }> }>(
@@ -615,15 +607,6 @@ export default function AnalyticsTestPage() {
 			staleTime: 5 * 60 * 1000, // 5 minutes
 		}
 	)
-
-	// Update userId when selected agent changes
-	React.useEffect(() => {
-		if (selectedAgentId) {
-			setUserId(selectedAgentId)
-		} else if (originalUserId) {
-			setUserId(originalUserId)
-		}
-	}, [selectedAgentId, originalUserId])
 
 	// Compute the active analytics data based on viewMode and selectedAgentAnalytics
 	const _analyticsFullData = selectedAgentAnalytics || mainAnalyticsData?.analyticsFullData || null

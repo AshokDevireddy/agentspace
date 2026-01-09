@@ -10,6 +10,7 @@ import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
 import { Filter, X, User } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { useQuery } from "@tanstack/react-query"
@@ -127,7 +128,7 @@ export default function Clients() {
   const allClients = allClientsData?.clients || []
 
   // Fetch clients data from API with pagination
-  const { data: clientsResponse, isLoading: clientsLoading, error: clientsError } = useApiFetch<{
+  const { data: clientsResponse, isLoading: clientsLoading, isFetching: clientsFetching, error: clientsError } = useApiFetch<{
     clients: Client[]
     pagination: {
       totalPages: number
@@ -149,6 +150,7 @@ export default function Clients() {
   const totalPages = clientsResponse?.pagination.totalPages || 1
   const totalCount = clientsResponse?.pagination.totalCount || 0
   const loading = isAdminLoading || clientsLoading
+  const isRefreshing = clientsFetching && !clientsLoading // Background refetch with stale data shown
   const error = clientsError?.message || null
 
   // Apply filters when button is clicked
@@ -193,7 +195,10 @@ export default function Clients() {
       {/* Header */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-4xl font-bold text-gradient">Clients</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-bold text-gradient">Clients</h1>
+            <RefreshingIndicator isRefreshing={isRefreshing} />
+          </div>
 
           {/* View Mode Toggle with Slider */}
           <div className="relative bg-accent/30 rounded-lg p-1">

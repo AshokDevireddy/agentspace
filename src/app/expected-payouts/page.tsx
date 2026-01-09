@@ -152,15 +152,19 @@ export default function ExpectedPayoutsPage() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
-  // Set current user ID and tier when userData is loaded
+  // Derived effective agent ID - falls back to userData.id when filter is empty
+  // This prevents race conditions where queries might run before filters are set
+  const effectiveAgentId = appliedFilters.agent || userData?.id || ''
+
+  // Set current user ID and tier when userData is loaded, and persist default agent
   useEffect(() => {
     if (userData) {
       setCurrentUserId(userData.id)
       setUserTier(userData.subscription_tier || 'free')
 
-      // Set default agent if not already set (first time load)
+      // Set default agent for persistence (first time load only)
+      // Note: effectiveAgentId already handles the fallback, but we persist for filter UI
       if (!appliedFilters.agent) {
-        // Use setAndApply to set and apply filters atomically (no setTimeout needed)
         setAndApply({ agent: userData.id })
       }
     }
@@ -222,12 +226,13 @@ export default function ExpectedPayoutsPage() {
   ]
 
   // Fetch payouts data - depends on applied filters
+  // Use effectiveAgentId to prevent race conditions when filter hasn't been set yet
   const {
     data: payoutsData,
     isLoading: payoutsLoading,
     error: payoutsError
   } = useQuery({
-    queryKey: queryKeys.expectedPayoutsData(appliedFilters),
+    queryKey: queryKeys.expectedPayoutsData({ ...appliedFilters, agent: effectiveAgentId }),
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
@@ -257,7 +262,7 @@ export default function ExpectedPayoutsPage() {
       const params = new URLSearchParams()
       params.append('months_past', Math.abs(monthsPast).toString())
       params.append('months_future', Math.abs(monthsFuture).toString())
-      params.append('agent_id', appliedFilters.agent)
+      params.append('agent_id', effectiveAgentId)
 
       if (appliedFilters.carrier !== "all") {
         params.append('carrier_id', appliedFilters.carrier)
@@ -276,7 +281,7 @@ export default function ExpectedPayoutsPage() {
 
       return response.json() as Promise<PayoutsResponse>
     },
-    enabled: !!appliedFilters.agent,
+    enabled: !!effectiveAgentId,
     staleTime: 2 * 60 * 1000, // 2 minutes
     refetchOnWindowFocus: false,
     placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
@@ -286,11 +291,12 @@ export default function ExpectedPayoutsPage() {
   const production = payoutsData?.production || null
 
   // Fetch debt data - depends on agent filter
+  // Use effectiveAgentId to prevent race conditions when filter hasn't been set yet
   const {
     data: debtData,
     isLoading: debtLoading
   } = useQuery({
-    queryKey: queryKeys.expectedPayoutsDebt(appliedFilters.agent),
+    queryKey: queryKeys.expectedPayoutsDebt(effectiveAgentId),
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
@@ -300,7 +306,7 @@ export default function ExpectedPayoutsPage() {
       }
 
       const params = new URLSearchParams()
-      params.append('agent_id', appliedFilters.agent)
+      params.append('agent_id', effectiveAgentId)
 
       const response = await fetch(`/api/expected-payouts/debt?${params.toString()}`, {
         headers: {
@@ -316,7 +322,7 @@ export default function ExpectedPayoutsPage() {
       const data = await response.json() as DebtResponse
       return data.debt
     },
-    enabled: !!appliedFilters.agent,
+    enabled: !!effectiveAgentId,
     staleTime: 2 * 60 * 1000, // 2 minutes
     refetchOnWindowFocus: false,
     placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker

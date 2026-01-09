@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { useNotification } from '@/contexts/notification-context'
 
 interface SubscriptionManagerProps {
@@ -10,12 +10,9 @@ interface SubscriptionManagerProps {
 
 export function SubscriptionManager({ subscriptionStatus, hasAiAddon }: SubscriptionManagerProps) {
   const { showError } = useNotification()
-  const [loading, setLoading] = useState(false);
 
-  const handleManageSubscription = async () => {
-    try {
-      setLoading(true);
-
+  const mutation = useMutation({
+    mutationFn: async () => {
       const response = await fetch('/api/stripe/create-portal-session', {
         method: 'POST',
       });
@@ -26,15 +23,16 @@ export function SubscriptionManager({ subscriptionStatus, hasAiAddon }: Subscrip
         throw new Error(data.error || 'Failed to open billing portal');
       }
 
-      // Redirect to Stripe billing portal
+      return data;
+    },
+    onSuccess: (data) => {
       window.location.href = data.url;
-    } catch (err) {
+    },
+    onError: (err) => {
       console.error('Error opening billing portal:', err);
       showError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+  });
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
@@ -70,11 +68,11 @@ export function SubscriptionManager({ subscriptionStatus, hasAiAddon }: Subscrip
 
       {subscriptionStatus !== 'free' && (
         <button
-          onClick={handleManageSubscription}
-          disabled={loading}
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending}
           className="w-full rounded-md bg-gray-600 px-4 py-2 font-medium text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
         >
-          {loading ? 'Loading...' : 'Manage Subscription'}
+          {mutation.isPending ? 'Loading...' : 'Manage Subscription'}
         </button>
       )}
     </div>

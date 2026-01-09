@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/hooks/queryKeys';
+import { useNotification } from '@/contexts/notification-context';
 
 interface SubscriptionCardProps {
   title: string;
@@ -21,14 +23,11 @@ export function SubscriptionCard({
   isCurrentPlan = false,
   buttonText = 'Subscribe',
 }: SubscriptionCardProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { showError } = useNotification();
+  const queryClient = useQueryClient();
 
-  const handleSubscribe = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
+  const mutation = useMutation({
+    mutationFn: async () => {
       // For AI Mode addon, add to existing subscription instead of creating new one
       if (subscriptionType === 'ai_mode_addon') {
         const response = await fetch('/api/stripe/add-subscription-item', {
@@ -45,9 +44,7 @@ export function SubscriptionCard({
           throw new Error(data.error || 'Failed to add subscription item');
         }
 
-        // Refresh the page to show updated subscription
-        window.location.reload();
-        return;
+        return data;
       }
 
       // For base subscription, create checkout session
@@ -69,17 +66,27 @@ export function SubscriptionCard({
       }
 
       // Redirect to Stripe Checkout URL (modern approach)
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
+      if (!data.url) {
         throw new Error('No checkout URL returned');
       }
-    } catch (err) {
+
+      return data;
+    },
+    onSuccess: (data) => {
+      if (subscriptionType === 'ai_mode_addon') {
+        // Invalidate subscription and user queries to refresh UI
+        queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() });
+        queryClient.invalidateQueries({ queryKey: queryKeys.user });
+      } else {
+        // Redirect to Stripe Checkout
+        window.location.href = data.url;
+      }
+    },
+    onError: (err) => {
       console.error('Subscription error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      setLoading(false);
-    }
-  };
+      showError(err instanceof Error ? err.message : 'Failed to process subscription');
+    },
+  });
 
   return (
     <div className={`rounded-lg border p-6 ${isCurrentPlan ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20' : 'border-gray-200 dark:border-gray-700'}`}>
@@ -110,22 +117,22 @@ export function SubscriptionCard({
         ))}
       </ul>
 
-      {error && (
+      {mutation.error && (
         <div className="mb-4 rounded bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {error}
+          {mutation.error instanceof Error ? mutation.error.message : 'An error occurred'}
         </div>
       )}
 
       <button
-        onClick={handleSubscribe}
-        disabled={loading || isCurrentPlan || buttonText === 'Requires Agent Subscription'}
+        onClick={() => mutation.mutate()}
+        disabled={mutation.isPending || isCurrentPlan || buttonText === 'Requires Agent Subscription'}
         className={`w-full rounded-md px-4 py-2 font-medium transition-colors ${
           isCurrentPlan || buttonText === 'Requires Agent Subscription'
             ? 'cursor-not-allowed bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
             : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
         }`}
       >
-        {loading ? 'Loading...' : buttonText}
+        {mutation.isPending ? 'Loading...' : buttonText}
       </button>
     </div>
   );

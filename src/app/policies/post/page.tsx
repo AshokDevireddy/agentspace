@@ -12,6 +12,8 @@ import { createClient } from "@/lib/supabase/client"
 import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useNotification } from "@/contexts/notification-context"
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queryKeys'
 
 // Options are loaded dynamically from Supabase based on the user's agency
 
@@ -57,26 +59,16 @@ export default function PostDeal() {
   const { user } = useAuth()
   const supabase = createClient()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { showSuccess, showError, showWarning } = useNotification()
 
   const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
   const errorRef = useRef<HTMLDivElement>(null)
   const [currentStep, setCurrentStep] = useState(1)
   const submitIntentRef = useRef(false)
 
   // Dynamic option states
-  const [agencyId, setAgencyId] = useState<string | null>(null)
-  const [carriersOptions, setCarriersOptions] = useState<{ value: string, label: string }[]>([])
-  const [productsOptions, setProductsOptions] = useState<{ value: string, label: string }[]>([])
-  const [leadSourceOptions, setLeadSourceOptions] = useState<{ value: string, label: string }[]>([])
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([])
-
-  // Position check states
-  const [positionCheckLoading, setPositionCheckLoading] = useState(true)
-  const [hasAllPositions, setHasAllPositions] = useState(false)
-  const [missingPositions, setMissingPositions] = useState<any[]>([])
-  const [isAdminUser, setIsAdminUser] = useState(false)
 
   // Billing cycle options (fixed enum)
   const billingCycleOptions = [
@@ -92,54 +84,53 @@ export default function PostDeal() {
     }
   }, [error])
 
-  // Check if user and upline have positions assigned
-  useEffect(() => {
-    const checkPositions = async () => {
-      if (!user?.id) return
+  // Query: Check if user and upline have positions assigned
+  const { data: positionCheckData, isLoading: positionCheckLoading } = useQuery({
+    queryKey: queryKeys.positionsCheck(user?.id || ''),
+    queryFn: async () => {
+      if (!user?.id) return null
 
-      try {
-        setPositionCheckLoading(true)
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
 
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
-
-        if (!accessToken) {
-          setPositionCheckLoading(false)
-          return
-        }
-
-        const response = await fetch('/api/agents/check-positions', {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          setHasAllPositions(data.has_all_positions)
-          setMissingPositions(data.missing_positions || [])
-        } else {
-          console.error('Failed to check positions')
-          // Default to blocking if check fails
-          setHasAllPositions(false)
-        }
-      } catch (err) {
-        console.error('Error checking positions:', err)
-        // Default to blocking if check fails
-        setHasAllPositions(false)
-      } finally {
-        setPositionCheckLoading(false)
+      if (!accessToken) {
+        return null
       }
-    }
 
-    checkPositions()
-  }, [user?.id])
+      const response = await fetch('/api/agents/check-positions', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
 
-  // Load user's agency and initial options
-  useEffect(() => {
-    const loadAgencyAndOptions = async () => {
-      if (!user?.id) return
+      if (response.ok) {
+        const data = await response.json()
+        return {
+          has_all_positions: data.has_all_positions,
+          missing_positions: data.missing_positions || []
+        }
+      } else {
+        console.error('Failed to check positions')
+        return {
+          has_all_positions: false,
+          missing_positions: []
+        }
+      }
+    },
+    enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  const hasAllPositions = positionCheckData?.has_all_positions ?? false
+  const missingPositions = positionCheckData?.missing_positions ?? []
+
+  // Query: Load user's agency and initial options
+  const { data: agencyData } = useQuery({
+    queryKey: queryKeys.agencyOptions(user?.id || ''),
+    queryFn: async () => {
+      if (!user?.id) return null
+
       // Fetch the current user's agency_id
       const { data: currentUser, error: currentUserError } = await supabase
         .from('users')
@@ -148,12 +139,11 @@ export default function PostDeal() {
         .single()
 
       if (currentUserError || !currentUser?.agency_id) {
-        return
+        return null
       }
 
       const agencyIdVal = currentUser.agency_id as string
-      setAgencyId(agencyIdVal)
-      setIsAdminUser(Boolean(currentUser.is_admin || currentUser.role === 'admin'))
+      const isAdminUser = Boolean(currentUser.is_admin || currentUser.role === 'admin')
 
       // Load agency's lead sources
       const { data: agencyData } = await supabase
@@ -162,14 +152,12 @@ export default function PostDeal() {
         .eq('id', agencyIdVal)
         .single()
 
-      if (agencyData?.lead_sources) {
-        setLeadSourceOptions(
-          agencyData.lead_sources.map((source: string) => ({
+      const leadSourceOptions = agencyData?.lead_sources
+        ? agencyData.lead_sources.map((source: string) => ({
             value: source,
             label: source
           }))
-        )
-      }
+        : []
 
       // Load carriers that have products for this agency
       const { data: productsForAgency } = await supabase
@@ -208,20 +196,32 @@ export default function PostDeal() {
         // Continue with unfiltered carriers on error
       }
 
-      setCarriersOptions(Array.from(carrierMap.values()).map(c => ({ value: c.id, label: c.display_name })))
-    }
+      const carriersOptions = Array.from(carrierMap.values()).map(c => ({ value: c.id, label: c.display_name }))
 
-    loadAgencyAndOptions()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id])
-
-  // Load products when carrier changes
-  useEffect(() => {
-    const loadProducts = async () => {
-      if (!agencyId || !formData.carrierId) {
-        setProductsOptions([])
-        return
+      return {
+        agencyId: agencyIdVal,
+        isAdminUser,
+        leadSourceOptions,
+        carriersOptions
       }
+    },
+    enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  const agencyId = agencyData?.agencyId ?? null
+  const isAdminUser = agencyData?.isAdminUser ?? false
+  const leadSourceOptions = agencyData?.leadSourceOptions ?? []
+  const carriersOptions = agencyData?.carriersOptions ?? []
+
+  // Query: Load products when carrier changes
+  const { data: productsOptions = [] } = useQuery({
+    queryKey: queryKeys.productsByCarrier(agencyId || '', formData.carrierId),
+    queryFn: async () => {
+      if (!agencyId || !formData.carrierId) {
+        return []
+      }
+
       const { data: products } = await supabase
         .from('products')
         .select('id, name, is_active')
@@ -230,10 +230,11 @@ export default function PostDeal() {
         .eq('is_active', true)
         .order('name')
 
-      setProductsOptions((products || []).map((p: any) => ({ value: p.id, label: p.name })))
-    }
-    loadProducts()
-  }, [agencyId, formData.carrierId])
+      return (products || []).map((p: any) => ({ value: p.id, label: p.name }))
+    },
+    enabled: !!agencyId && !!formData.carrierId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
 
   const sendDiscordNotification = async (
     agencyId: string,
@@ -280,41 +281,17 @@ export default function PostDeal() {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    // Only submit if we're on the final step
-    if (currentStep !== STEPS.length) {
-      submitIntentRef.current = false
-      return
-    }
-
-    // Require explicit submit intent (button click)
-    if (!submitIntentRef.current) {
-      return
-    }
-
-    if (!validateForm()) {
-      submitIntentRef.current = false
-      return
-    }
-
-    setSubmitting(true)
-    setError(null)
-
-    try {
+  // Mutation: Submit deal
+  const submitDealMutation = useMutation({
+    mutationFn: async () => {
       // SECTION 1: Get current user's agent_id from auth context
       if (!user?.id) {
-        setError("User not authenticated. Please log in again.")
-        setSubmitting(false)
-        return
+        throw new Error("User not authenticated. Please log in again.")
       }
 
       // Ensure agency_id is loaded
       if (!agencyId) {
-        setError("Agency information not loaded. Please refresh the page and try again.")
-        setSubmitting(false)
-        return
+        throw new Error("Agency information not loaded. Please refresh the page and try again.")
       }
 
       // Get the user's agent_id from the users table
@@ -325,9 +302,7 @@ export default function PostDeal() {
         .single()
 
       if (userError || !userData) {
-        setError("Failed to get user information. Please try again.")
-        setSubmitting(false)
-        return
+        throw new Error("Failed to get user information. Please try again.")
       }
 
       const agent_id = userData.id
@@ -445,9 +420,7 @@ export default function PostDeal() {
       console.log('[PostDeal] /api/deals response', { ok: res.ok, status: res.status, data })
 
       if (!res.ok) {
-        setError(data.error || "Failed to submit deal.")
-        setSubmitting(false)
-        return
+        throw new Error(data.error || "Failed to submit deal.")
       }
 
       // Success: show appropriate message based on operation
@@ -471,17 +444,46 @@ export default function PostDeal() {
         // Don't fail the whole operation if Discord notification fails
       })
 
+      return successMessage
+    },
+    onSuccess: (successMessage) => {
+      // Invalidate deals cache so the book of business shows the new deal
+      queryClient.invalidateQueries({ queryKey: queryKeys.deals })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dealsBookOfBusiness() })
+
       showSuccess(successMessage, 7000)
       setBeneficiaries([])
-
       router.push("/policies/book")
-
-    } catch (err) {
-      setError("An unexpected error occurred.")
-    } finally {
-      setSubmitting(false)
+    },
+    onError: (error: Error) => {
+      setError(error.message || "An unexpected error occurred.")
+    },
+    onSettled: () => {
       submitIntentRef.current = false
     }
+  })
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    // Only submit if we're on the final step
+    if (currentStep !== STEPS.length) {
+      submitIntentRef.current = false
+      return
+    }
+
+    // Require explicit submit intent (button click)
+    if (!submitIntentRef.current) {
+      return
+    }
+
+    if (!validateForm()) {
+      submitIntentRef.current = false
+      return
+    }
+
+    setError(null)
+    submitDealMutation.mutate()
   }
 
   const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
@@ -1205,10 +1207,10 @@ export default function PostDeal() {
                   onClick={() => {
                     submitIntentRef.current = true
                   }}
-                  disabled={submitting}
+                  disabled={submitDealMutation.isPending}
                   className="h-12 px-6 bg-foreground hover:bg-foreground/90 text-background disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {submitting ? (
+                  {submitDealMutation.isPending ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Submitting...

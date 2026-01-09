@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,6 +11,9 @@ import { createClient } from "@/lib/supabase/client"
 import { Filter, X, User } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
+import { useApiFetch } from "@/hooks/useApiFetch"
+import { useQuery } from "@tanstack/react-query"
+import { queryKeys } from "@/hooks/queryKeys"
 
 // Client data type
 interface Client {
@@ -87,22 +90,15 @@ export default function Clients() {
     setAndApply({ viewMode: value })
   }
 
-  const [clientsData, setClientsData] = useState<Client[]>([])
-  const [allClients, setAllClients] = useState<Client[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [totalCount, setTotalCount] = useState(0)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [isAdminChecked, setIsAdminChecked] = useState(false)
   const { user } = useAuth()
   const supabase = createClient()
 
   // Check if user is admin
-  useEffect(() => {
-    const checkAdminStatus = async () => {
-      if (!user?.id) return
+  const { data: adminData, isLoading: isAdminLoading } = useQuery({
+    queryKey: queryKeys.userAdminStatus(user?.id),
+    queryFn: async () => {
+      if (!user?.id) return { is_admin: false }
 
       const { data: userData } = await supabase
         .from('users')
@@ -110,66 +106,50 @@ export default function Clients() {
         .eq('auth_user_id', user.id)
         .single()
 
-      const adminStatus = userData?.is_admin || false
-      setIsAdmin(adminStatus)
-      setIsAdminChecked(true)
-    }
+      return { is_admin: userData?.is_admin || false }
+    },
+    enabled: !!user?.id,
+  })
 
-    checkAdminStatus()
-  }, [user?.id])
+  const isAdmin = adminData?.is_admin || false
+  const isAdminChecked = !isAdminLoading
+
+  // For admins viewing "downlines", we actually fetch "all"
+  const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
 
   // Fetch all clients for dropdown options (without pagination)
-  useEffect(() => {
-    if (!isAdminChecked) return
+  const { data: allClientsData } = useApiFetch<{ clients: Client[] }>(
+    queryKeys.clientsAll(effectiveViewMode),
+    `/api/clients?page=1&limit=1000&view=${effectiveViewMode}`,
+    { enabled: isAdminChecked }
+  )
 
-    const fetchAllClients = async () => {
-      try {
-        // For admins viewing "downlines", we actually fetch "all"
-        const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
-        const url = `/api/clients?page=1&limit=1000&view=${effectiveViewMode}`
-        const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error('Failed to fetch clients')
-        }
-        const data = await response.json()
-        setAllClients(data.clients || [])
-      } catch (err) {
-        console.error('Error fetching all clients:', err)
-      }
+  const allClients = allClientsData?.clients || []
+
+  // Fetch clients data from API with pagination
+  const { data: clientsResponse, isLoading: clientsLoading, error: clientsError } = useApiFetch<{
+    clients: Client[]
+    pagination: {
+      totalPages: number
+      totalCount: number
+      currentPage: number
+      limit: number
     }
-
-    fetchAllClients()
-  }, [viewMode, isAdmin, isAdminChecked])
-
-  // Fetch clients data from API
-  useEffect(() => {
-    if (!isAdminChecked) return
-
-    const fetchClients = async () => {
-      try {
-        setLoading(true)
-        // For admins viewing "downlines", we actually fetch "all"
-        const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
-        const url = `/api/clients?page=${currentPage}&limit=20&view=${effectiveViewMode}`
-        const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error('Failed to fetch clients')
-        }
-        const data = await response.json()
-
-        setClientsData(data.clients)
-        setTotalPages(data.pagination.totalPages)
-        setTotalCount(data.pagination.totalCount)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred')
-        console.error('Error fetching clients:', err)
-      } finally {
-        setLoading(false)
-      }
+  }>(
+    queryKeys.clientsList(currentPage, { view: effectiveViewMode }),
+    `/api/clients?page=${currentPage}&limit=20&view=${effectiveViewMode}`,
+    {
+      enabled: isAdminChecked,
+      staleTime: 30 * 1000, // 30 seconds
+      placeholderData: (previousData) => previousData, // Keep previous data while fetching (stale-while-revalidate)
     }
+  )
 
-    fetchClients()
-  }, [currentPage, viewMode, isAdmin, isAdminChecked])
+  const clientsData = clientsResponse?.clients || []
+  const totalPages = clientsResponse?.pagination.totalPages || 1
+  const totalCount = clientsResponse?.pagination.totalCount || 0
+  const loading = isAdminLoading || clientsLoading
+  const error = clientsError?.message || null
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {

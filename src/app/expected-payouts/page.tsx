@@ -8,6 +8,9 @@ import { createClient } from "@/lib/supabase/client"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { DollarSign, TrendingUp, TrendingDown, Calendar } from "lucide-react"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
+import { useApiFetch } from "@/hooks/useApiFetch"
+import { useQuery } from "@tanstack/react-query"
+import { queryKeys } from "@/hooks/queryKeys"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { cn } from "@/lib/utils"
 
@@ -50,6 +53,49 @@ interface AgentOption {
   label: string
 }
 
+interface UserData {
+  id: string
+  role: string
+  agency_id: string
+  subscription_tier: string
+  auth_user_id: string
+}
+
+interface AgentResponse {
+  id: string
+  first_name: string
+  last_name: string
+}
+
+interface CarrierResponse {
+  id: string
+  name: string
+}
+
+interface PayoutsResponse {
+  payouts: PayoutData[]
+  production: ProductionBreakdown
+}
+
+interface DebtData {
+  total: number
+  lapsedDealsCount: number
+  breakdown: Array<{
+    deal_id: string
+    client_name: string
+    policy_number: string
+    original_commission: number
+    debt_amount: number
+    days_active: number
+    months_active: number
+    is_early_lapse: boolean
+  }>
+}
+
+interface DebtResponse {
+  debt: DebtData
+}
+
 export default function ExpectedPayoutsPage() {
   const supabase = createClient()
 
@@ -69,7 +115,7 @@ export default function ExpectedPayoutsPage() {
 
   // Persisted filter state using custom hook
   // Changed key to 'expected-payouts-v2' to clear old cached data with wrong calculations
-  const { localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters } = usePersistedFilters(
+  const { localFilters, appliedFilters, setLocalFilters, applyFilters, setAndApply, clearFilters } = usePersistedFilters(
     'expected-payouts-v2',
     {
       startMonth: defaultRange.startMonth,
@@ -79,237 +125,208 @@ export default function ExpectedPayoutsPage() {
     }
   )
 
-  const [payouts, setPayouts] = useState<PayoutData[]>([])
-  const [production, setProduction] = useState<ProductionBreakdown | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [userTier, setUserTier] = useState<string>('free')
 
-  // Debt state
-  const [debtData, setDebtData] = useState<{
-    total: number;
-    lapsedDealsCount: number;
-    breakdown: Array<{
-      deal_id: string;
-      client_name: string;
-      policy_number: string;
-      original_commission: number;
-      debt_amount: number;
-      days_active: number;
-      months_active: number;
-      is_early_lapse: boolean;
-    }>;
-  } | null>(null)
-  const [debtLoading, setDebtLoading] = useState(true)
+  // Fetch current user data
+  const { data: userData, isLoading: userLoading } = useQuery({
+    queryKey: queryKeys.userProfile(),
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error("Not authenticated")
+      }
 
-  // Options
-  const [carrierOptions, setCarrierOptions] = useState<CarrierOption[]>([{ value: "all", label: "All Carriers" }])
-  const [agentOptions, setAgentOptions] = useState<AgentOption[]>([])
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error("No user found")
 
-  // Fetch current user and available agents
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, role, agency_id, subscription_tier')
+        .eq('auth_user_id', user.id)
+        .single()
+
+      if (error) throw error
+      return data as UserData
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  // Set current user ID and tier when userData is loaded
   useEffect(() => {
-    let isMounted = true
+    if (userData) {
+      setCurrentUserId(userData.id)
+      setUserTier(userData.subscription_tier || 'free')
 
-    const fetchUserAndAgents = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
+      // Set default agent if not already set (first time load)
+      if (!appliedFilters.agent) {
+        // Use setAndApply to set and apply filters atomically (no setTimeout needed)
+        setAndApply({ agent: userData.id })
+      }
+    }
+  }, [userData, appliedFilters.agent, setAndApply])
 
-        if (!accessToken) {
-          setError("Not authenticated")
-          return
-        }
+  // Fetch available agents
+  const { data: agents = [] } = useQuery({
+    queryKey: queryKeys.agentDownlines(userData?.id || ''),
+    queryFn: async () => {
+      if (!userData) return []
 
-        // Get current user
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user || !isMounted) return
-
-        const { data: userData } = await supabase
+      if (userData.role === 'admin') {
+        // Admin: Get all agents in agency
+        const { data, error } = await supabase
           .from('users')
-          .select('id, role, agency_id, subscription_tier')
-          .eq('auth_user_id', user.id)
-          .single()
+          .select('id, first_name, last_name')
+          .eq('agency_id', userData.agency_id)
+          .in('role', ['agent', 'admin'])
+          .order('first_name')
 
-        if (!userData || !isMounted) return
+        if (error) throw error
+        return data as AgentResponse[]
+      } else {
+        // Agent: Get self and downlines
+        const { data, error } = await supabase
+          .rpc('get_agent_downline', { agent_id: userData.id })
 
-        setCurrentUserId(userData.id)
-        setUserTier(userData.subscription_tier || 'free')
-
-        // Set default agent if not already set (first time load)
-        if (!appliedFilters.agent && isMounted) {
-          // Use a combined state update to ensure atomicity
-          setLocalFilters({ agent: userData.id })
-          // Trigger apply in the next tick to ensure state is updated
-          setTimeout(() => {
-            if (isMounted) {
-              applyFilters()
-            }
-          }, 0)
-        }
-
-        // Fetch available agents based on role
-        if (userData.role === 'admin') {
-          // Admin: Get all agents in agency
-          const { data: agents } = await supabase
-            .from('users')
-            .select('id, first_name, last_name')
-            .eq('agency_id', userData.agency_id)
-            .in('role', ['agent', 'admin'])
-            .order('first_name')
-
-          if (agents && isMounted) {
-            setAgentOptions(agents.map(a => ({
-              value: a.id,
-              label: `${a.first_name} ${a.last_name}`
-            })))
-          }
-        } else {
-          // Agent: Get self and downlines
-          const { data: downlines } = await supabase
-            .rpc('get_agent_downline', { agent_id: userData.id })
-
-          if (downlines && isMounted) {
-            setAgentOptions(downlines.map((a: any) => ({
-              value: a.id,
-              label: `${a.first_name} ${a.last_name}`
-            })))
-          }
-        }
-
-        // Fetch all carriers for filter
-        const { data: carriers } = await supabase
-          .from('carriers')
-          .select('id, name')
-          .order('name')
-
-        if (carriers && isMounted) {
-          setCarrierOptions([
-            { value: "all", label: "All Carriers" },
-            ...carriers.map(c => ({ value: c.id, label: c.name }))
-          ])
-        }
-      } catch (err) {
-        if (isMounted) {
-          setError(err instanceof Error ? err.message : 'Failed to load user data')
-        }
+        if (error) throw error
+        return data as AgentResponse[]
       }
-    }
+    },
+    enabled: !!userData,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
 
-    fetchUserAndAgents()
+  const agentOptions: AgentOption[] = agents.map(a => ({
+    value: a.id,
+    label: `${a.first_name} ${a.last_name}`
+  }))
 
-    return () => {
-      isMounted = false
-    }
-  }, [supabase, appliedFilters.agent, setLocalFilters, applyFilters])
+  // Fetch all carriers for filter
+  const { data: carriers = [] } = useQuery({
+    queryKey: queryKeys.carriersList(),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('carriers')
+        .select('id, name')
+        .order('name')
 
-  // Fetch payouts data (only when applied filters change)
-  useEffect(() => {
-    const fetchPayouts = async () => {
-      if (!appliedFilters.agent) return // Wait for agent to be set
+      if (error) throw error
+      return data as CarrierResponse[]
+    },
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  })
 
-      try {
-        setLoading(true)
-        setError(null)
+  const carrierOptions: CarrierOption[] = [
+    { value: "all", label: "All Carriers" },
+    ...carriers.map(c => ({ value: c.id, label: c.name }))
+  ]
 
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
+  // Fetch payouts data - depends on applied filters
+  const {
+    data: payoutsData,
+    isLoading: payoutsLoading,
+    error: payoutsError
+  } = useQuery({
+    queryKey: queryKeys.expectedPayoutsData(appliedFilters),
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
 
-        if (!accessToken) {
-          setError("Not authenticated")
-          return
-        }
-
-        // Calculate months difference from now using proper month arithmetic
-        // Important: We need to calculate from the START of the current month
-        const now = new Date()
-        const nowYear = now.getFullYear()
-        const nowMonth = now.getMonth() // 0-indexed (0 = January)
-
-        // Parse start and end months from the filter (format: "YYYY-MM")
-        const [startYear, startMonthStr] = appliedFilters.startMonth.split('-').map(Number)
-        const [endYear, endMonthStr] = appliedFilters.endMonth.split('-').map(Number)
-        const startMonthIdx = startMonthStr - 1 // Convert to 0-indexed
-        const endMonthIdx = endMonthStr - 1 // Convert to 0-indexed
-
-        // Calculate month differences from current month
-        // For inclusive range: if selecting Jan-Dec, and current is Jan,
-        // we want past=0 (include Jan) and future=11 (include Dec)
-        const monthsPast = (nowYear - startYear) * 12 + (nowMonth - startMonthIdx)
-        const monthsFuture = (endYear - nowYear) * 12 + (endMonthIdx - nowMonth)
-
-        const params = new URLSearchParams()
-        params.append('months_past', Math.abs(monthsPast).toString())
-        params.append('months_future', Math.abs(monthsFuture).toString())
-        params.append('agent_id', appliedFilters.agent)
-
-        if (appliedFilters.carrier !== "all") {
-          params.append('carrier_id', appliedFilters.carrier)
-        }
-
-        const response = await fetch(`/api/expected-payouts?${params.toString()}`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-          throw new Error(errorData.error || errorData.message || 'Failed to fetch expected payouts')
-        }
-
-        const data = await response.json()
-        setPayouts(data.payouts || [])
-        setProduction(data.production || null)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load payouts')
-      } finally {
-        setLoading(false)
+      if (!accessToken) {
+        throw new Error("Not authenticated")
       }
-    }
 
-    fetchPayouts()
-  }, [appliedFilters, supabase.auth])
+      // Calculate months difference from now using proper month arithmetic
+      // Important: We need to calculate from the START of the current month
+      const now = new Date()
+      const nowYear = now.getFullYear()
+      const nowMonth = now.getMonth() // 0-indexed (0 = January)
 
-  // Fetch debt data
-  useEffect(() => {
-    const fetchDebt = async () => {
-      if (!appliedFilters.agent) return
+      // Parse start and end months from the filter (format: "YYYY-MM")
+      const [startYear, startMonthStr] = appliedFilters.startMonth.split('-').map(Number)
+      const [endYear, endMonthStr] = appliedFilters.endMonth.split('-').map(Number)
+      const startMonthIdx = startMonthStr - 1 // Convert to 0-indexed
+      const endMonthIdx = endMonthStr - 1 // Convert to 0-indexed
 
-      try {
-        setDebtLoading(true)
+      // Calculate month differences from current month
+      // For inclusive range: if selecting Jan-Dec, and current is Jan,
+      // we want past=0 (include Jan) and future=11 (include Dec)
+      const monthsPast = (nowYear - startYear) * 12 + (nowMonth - startMonthIdx)
+      const monthsFuture = (endYear - nowYear) * 12 + (endMonthIdx - nowMonth)
 
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
+      const params = new URLSearchParams()
+      params.append('months_past', Math.abs(monthsPast).toString())
+      params.append('months_future', Math.abs(monthsFuture).toString())
+      params.append('agent_id', appliedFilters.agent)
 
-        if (!accessToken) return
-
-        const params = new URLSearchParams()
-        params.append('agent_id', appliedFilters.agent)
-
-        const response = await fetch(`/api/expected-payouts/debt?${params.toString()}`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          setDebtData(data.debt)
-        } else {
-          // If debt fetch fails, set to zero so we still show the cards
-          setDebtData({ total: 0, lapsedDealsCount: 0, breakdown: [] })
-        }
-      } catch (err) {
-        console.error('Failed to fetch debt:', err)
-        setDebtData({ total: 0, lapsedDealsCount: 0, breakdown: [] })
-      } finally {
-        setDebtLoading(false)
+      if (appliedFilters.carrier !== "all") {
+        params.append('carrier_id', appliedFilters.carrier)
       }
-    }
 
-    fetchDebt()
-  }, [appliedFilters.agent, supabase.auth])
+      const response = await fetch(`/api/expected-payouts?${params.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errorData.error || errorData.message || 'Failed to fetch expected payouts')
+      }
+
+      return response.json() as Promise<PayoutsResponse>
+    },
+    enabled: !!appliedFilters.agent,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    refetchOnWindowFocus: false,
+  })
+
+  const payouts = payoutsData?.payouts || []
+  const production = payoutsData?.production || null
+
+  // Fetch debt data - depends on agent filter
+  const {
+    data: debtData,
+    isLoading: debtLoading
+  } = useQuery({
+    queryKey: queryKeys.expectedPayoutsDebt(appliedFilters.agent),
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        throw new Error("Not authenticated")
+      }
+
+      const params = new URLSearchParams()
+      params.append('agent_id', appliedFilters.agent)
+
+      const response = await fetch(`/api/expected-payouts/debt?${params.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+
+      if (!response.ok) {
+        // If debt fetch fails, return zero values
+        return { total: 0, lapsedDealsCount: 0, breakdown: [] } as DebtData
+      }
+
+      const data = await response.json() as DebtResponse
+      return data.debt
+    },
+    enabled: !!appliedFilters.agent,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    refetchOnWindowFocus: false,
+    // Return zero values on error instead of throwing
+    retry: false,
+    meta: {
+      errorHandler: () => ({ total: 0, lapsedDealsCount: 0, breakdown: [] })
+    }
+  })
+
+  const loading = userLoading || payoutsLoading
+  const error = payoutsError ? (payoutsError instanceof Error ? payoutsError.message : 'Failed to load payouts') : null
 
   // Apply filters handler
   const handleApplyFilters = () => {

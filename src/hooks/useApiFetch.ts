@@ -3,7 +3,7 @@ import { useQuery, UseQueryOptions } from '@tanstack/react-query'
 interface UseApiFetchOptions<T> extends Omit<UseQueryOptions<T, Error>, 'queryKey' | 'queryFn'> {}
 
 export function useApiFetch<T>(
-  queryKey: unknown[],
+  queryKey: readonly unknown[],
   url: string,
   options: UseApiFetchOptions<T> = {}
 ) {

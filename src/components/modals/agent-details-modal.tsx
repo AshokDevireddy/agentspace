@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, VisuallyHidden } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -12,6 +12,8 @@ import { Loader2, User, Calendar, DollarSign, Users, Building2, Mail, Phone, Che
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { useNotification } from "@/contexts/notification-context"
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queryKeys'
 
 interface AgentDetailsModalProps {
   open: boolean
@@ -93,34 +95,19 @@ const getAgentStatusSteps = (status: string | null | undefined) => {
 
 export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: AgentDetailsModalProps) {
   const { showSuccess, showError } = useNotification()
-  const [agent, setAgent] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
-  const [downlines, setDownlines] = useState<any[]>([])
-  const [loadingDownlines, setLoadingDownlines] = useState(false)
-  const [isAdmin, setIsAdmin] = useState(false)
+  const queryClient = useQueryClient()
   const [isEditing, setIsEditing] = useState(false)
   const [editedData, setEditedData] = useState<any>(null)
-  const [saving, setSaving] = useState(false)
-  const [positionColorMap, setPositionColorMap] = useState<Map<number, string>>(new Map())
-  const [positionsLoaded, setPositionsLoaded] = useState(false)
 
-  useEffect(() => {
-    if (open && agentId) {
-      setPositionsLoaded(false)
-      fetchAgentDetails()
-      fetchDownlines()
-      checkAdminStatus()
-      fetchPositionsForColorMap()
-    }
-  }, [open, agentId])
-
-  const fetchPositionsForColorMap = async () => {
-    try {
+  // Fetch positions for color map
+  const { data: positionColorMap = new Map<number, string>() } = useQuery({
+    queryKey: queryKeys.positionsList(),
+    queryFn: async () => {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
 
-      if (!accessToken) return
+      if (!accessToken) return new Map<number, string>()
 
       // Fetch all positions for the agency
       const response = await fetch('/api/positions', {
@@ -129,60 +116,61 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
         }
       })
 
-      if (response.ok) {
-        const data = await response.json()
-
-        // Sort positions by level (descending - highest level first)
-        const sortedPositions = [...data].sort((a: any, b: any) => b.level - a.level)
-
-        // Create a map of level -> color based on rank
-        const colorMap = new Map<number, string>()
-        sortedPositions.forEach((position: any, index: number) => {
-          // Top 10 positions get distinct colors, rest get gray
-          if (index < 10) {
-            colorMap.set(position.level, positionLevelColors[index])
-          } else {
-            colorMap.set(position.level, "bg-gray-500/20 text-gray-400 border-gray-500/30")
-          }
-        })
-
-        setPositionColorMap(colorMap)
-        console.log('[AgentDetailsModal] Position color map created:', colorMap)
+      if (!response.ok) {
+        return new Map<number, string>()
       }
-    } catch (err) {
-      console.error('Error fetching positions for color map:', err)
-    } finally {
-      setPositionsLoaded(true)
-    }
-  }
 
-  const checkAdminStatus = async () => {
-    try {
+      const data = await response.json()
+
+      // Sort positions by level (descending - highest level first)
+      const sortedPositions = [...data].sort((a: any, b: any) => b.level - a.level)
+
+      // Create a map of level -> color based on rank
+      const colorMap = new Map<number, string>()
+      sortedPositions.forEach((position: any, index: number) => {
+        // Top 10 positions get distinct colors, rest get gray
+        if (index < 10) {
+          colorMap.set(position.level, positionLevelColors[index])
+        } else {
+          colorMap.set(position.level, "bg-gray-500/20 text-gray-400 border-gray-500/30")
+        }
+      })
+
+      console.log('[AgentDetailsModal] Position color map created:', colorMap)
+      return colorMap
+    },
+    enabled: open,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  // Check admin status
+  const { data: isAdmin = false } = useQuery({
+    queryKey: queryKeys.userAdminStatus(),
+    queryFn: async () => {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
-      
-      if (user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('is_admin, perm_level, role')
-          .eq('auth_user_id', user.id)
-          .single()
-        
-        // Check all three admin indicators: is_admin, perm_level, and role
-        const isAdmin = userData?.is_admin || 
-                       userData?.perm_level === 'admin' || 
-                       userData?.role === 'admin'
-        setIsAdmin(isAdmin)
-      }
-    } catch (err) {
-      console.error('Error checking admin status:', err)
-      setIsAdmin(false)
-    }
-  }
 
-  const fetchAgentDetails = async () => {
-    setLoading(true)
-    try {
+      if (!user) return false
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('is_admin, perm_level, role')
+        .eq('auth_user_id', user.id)
+        .single()
+
+      // Check all three admin indicators: is_admin, perm_level, and role
+      return userData?.is_admin ||
+             userData?.perm_level === 'admin' ||
+             userData?.role === 'admin'
+    },
+    enabled: open,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  // Fetch agent details
+  const { data: agent, isLoading: loading, error: agentError, refetch: refetchAgent } = useQuery({
+    queryKey: queryKeys.agentDetail(agentId),
+    queryFn: async () => {
       const response = await fetch(`/api/agents/${agentId}`, {
         credentials: 'include'
       })
@@ -194,38 +182,36 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
       const data = await response.json()
       // Convert name format from "Last, First" to "First Last" if needed
       // Also normalize status to lowercase for consistency
-      const agentData = {
+      return {
         ...data,
-        name: data.name?.includes(',') 
+        name: data.name?.includes(',')
           ? data.name.split(',').reverse().map((s: string) => s.trim()).join(' ')
           : data.name,
         status: data.status?.toLowerCase() || 'active'
       }
-      setAgent(agentData)
-    } catch (err) {
-      console.error('Error fetching agent:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+    },
+    enabled: open && !!agentId,
+    staleTime: 30 * 1000, // 30 seconds
+  })
 
-  const fetchDownlines = async () => {
-    setLoadingDownlines(true)
-    try {
+  // Fetch downlines
+  const { data: downlines = [], isLoading: loadingDownlines } = useQuery({
+    queryKey: queryKeys.agentDownlines(agentId),
+    queryFn: async () => {
       const response = await fetch(`/api/agents/downlines?agentId=${agentId}`, {
         credentials: 'include'
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        setDownlines(data.downlines || [])
+      if (!response.ok) {
+        throw new Error('Failed to fetch downlines')
       }
-    } catch (err) {
-      console.error('Error fetching downlines:', err)
-    } finally {
-      setLoadingDownlines(false)
-    }
-  }
+
+      const data = await response.json()
+      return data.downlines || []
+    },
+    enabled: open && !!agentId,
+    staleTime: 30 * 1000, // 30 seconds
+  })
 
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return 'N/A'
@@ -261,7 +247,83 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
     setEditedData(null)
   }
 
-  const handleSave = async () => {
+  // Mutation for saving agent changes
+  const saveMutation = useMutation({
+    mutationFn: async ({ shouldSendInvite }: { shouldSendInvite: boolean }) => {
+      if (!agent || !editedData) throw new Error('Missing agent or edited data')
+
+      if (shouldSendInvite) {
+        // Send invite using the invite API
+        const nameParts = agent.name.split(' ')
+        const firstName = nameParts[0] || ''
+        const lastName = nameParts.slice(1).join(' ') || ''
+
+        // Determine permission level from role
+        const permissionLevel = editedData.role === 'admin' ? 'admin' : 'agent'
+
+        const inviteResponse = await fetch('/api/agents/invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            email: editedData.email,
+            firstName: firstName,
+            lastName: lastName,
+            phoneNumber: editedData.phone_number || null,
+            permissionLevel: permissionLevel,
+            uplineAgentId: editedData.upline_id && editedData.upline_id !== 'all' ? editedData.upline_id : null,
+            positionId: agent.position_id || null,
+            preInviteUserId: agent.id
+          })
+        })
+
+        if (!inviteResponse.ok) {
+          const errorData = await inviteResponse.json()
+          throw new Error(errorData.error || 'Failed to send invitation')
+        }
+
+        return { type: 'invite' }
+      } else {
+        // Regular save (without invite)
+        const response = await fetch(`/api/agents/${agent.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(editedData)
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to update agent')
+        }
+
+        return { type: 'update' }
+      }
+    },
+    onSuccess: (data) => {
+      // Invalidate and refetch agent queries
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentDetail(agentId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentDownlines(agentId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents })
+
+      setIsEditing(false)
+      setEditedData(null)
+
+      if (data.type === 'invite') {
+        showSuccess('Invitation sent successfully!')
+      } else {
+        showSuccess('Agent updated successfully!')
+      }
+
+      onOpenChange(false)
+      onUpdate?.()
+    },
+    onError: (err: Error) => {
+      console.error('Error saving agent:', err)
+      showError(err.message || 'Failed to save agent')
+    }
+  })
+
+  const handleSave = () => {
     if (!agent || !editedData) return
 
     // Check if we should send an invite automatically
@@ -270,83 +332,10 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
     const emailChanged = editedData.email !== agent.email
     const shouldSendInvite = wasPreInvite && hasEmail && emailChanged
 
-    if (shouldSendInvite) {
-      // Send invite using the invite API
-      setSaving(true)
-      try {
-          // First, get the agent's name parts
-          const nameParts = agent.name.split(' ')
-          const firstName = nameParts[0] || ''
-          const lastName = nameParts.slice(1).join(' ') || ''
-
-          // Determine permission level from role
-          const permissionLevel = editedData.role === 'admin' ? 'admin' : 'agent'
-
-          const inviteResponse = await fetch('/api/agents/invite', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-              email: editedData.email,
-              firstName: firstName,
-              lastName: lastName,
-              phoneNumber: editedData.phone_number || null,
-              permissionLevel: permissionLevel,
-              uplineAgentId: editedData.upline_id && editedData.upline_id !== 'all' ? editedData.upline_id : null,
-              positionId: agent.position_id || null,
-              preInviteUserId: agent.id
-            })
-          })
-
-          if (!inviteResponse.ok) {
-            const errorData = await inviteResponse.json()
-            throw new Error(errorData.error || 'Failed to send invitation')
-          }
-
-          // After successful invite, the user status will be updated to 'invited'
-          // Refresh the agent details
-          await fetchAgentDetails()
-          setIsEditing(false)
-          setEditedData(null)
-          showSuccess('Invitation sent successfully!')
-          onOpenChange(false)
-          return
-        } catch (err) {
-          console.error('Error sending invite:', err)
-          showError(err instanceof Error ? err.message : 'Failed to send invitation')
-          setSaving(false)
-          return
-        }
-    }
-
-    // Regular save (without invite)
-    setSaving(true)
-    try {
-      const response = await fetch(`/api/agents/${agent.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editedData)
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to update agent')
-      }
-
-      await fetchAgentDetails()
-      setIsEditing(false)
-      setEditedData(null)
-      showSuccess('Agent updated successfully!')
-      onOpenChange(false)
-    } catch (err) {
-      console.error('Error updating agent:', err)
-      showError(err instanceof Error ? err.message : 'Failed to update agent')
-    } finally {
-      setSaving(false)
-    }
+    saveMutation.mutate({ shouldSendInvite })
   }
 
-  if ((!agent && loading) || !positionsLoaded) {
+  if (loading || (!agent && !agentError)) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
@@ -356,6 +345,29 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
           </VisuallyHidden>
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
+  if (agentError) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <VisuallyHidden>
+            <DialogTitle>Error Loading Agent</DialogTitle>
+            <DialogDescription>There was an error loading the agent details</DialogDescription>
+          </VisuallyHidden>
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <X className="h-12 w-12 text-destructive mb-4" />
+            <h3 className="text-lg font-semibold text-foreground mb-2">Failed to Load Agent</h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              {agentError instanceof Error ? agentError.message : 'An unexpected error occurred'}
+            </p>
+            <Button onClick={() => refetchAgent()} variant="outline">
+              Try Again
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -430,15 +442,15 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
                 <div className="flex items-center gap-2 mr-8">
                   <Button
                     onClick={handleSave}
-                    disabled={saving}
+                    disabled={saveMutation.isPending}
                     className="bg-green-600 hover:bg-green-700"
                   >
                     <Save className="h-4 w-4 mr-2" />
-                    {saving ? 'Saving...' : 'Save Changes'}
+                    {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
                   </Button>
                   <Button
                     onClick={handleCancelEdit}
-                    disabled={saving}
+                    disabled={saveMutation.isPending}
                     variant="outline"
                   >
                     <X className="h-4 w-4 mr-2" />

@@ -1,7 +1,9 @@
 "use client"
 
 import React from "react"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
+import { queryKeys } from "@/hooks/queryKeys"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, Home } from "lucide-react"
@@ -81,9 +83,6 @@ function formatCurrency(n: number) {
 
 const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, DownlineProductionChartProps>(
   ({ userId, timeWindow, embedded = false, onTitleChange, onBreadcrumbChange }, ref) => {
-  const [data, setData] = React.useState<DownlineProductionData[]>([])
-  const [isLoading, setIsLoading] = React.useState(true)
-  const [error, setError] = React.useState<string | null>(null)
   const [currentAgentId, setCurrentAgentId] = React.useState<string>(userId)
   const [currentAgentName, setCurrentAgentName] = React.useState<string>("You")
   const [breadcrumbs, setBreadcrumbs] = React.useState<BreadcrumbItem[]>([])
@@ -113,17 +112,15 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
     }
   }, [timeWindow])
 
-  // Fetch downline production data
-  const fetchData = React.useCallback(async (agentId: string) => {
-    setIsLoading(true)
-    setError(null)
-
-    try {
+  // Fetch downline production data with TanStack Query
+  const { data = [], isLoading, error } = useQuery<DownlineProductionData[], Error>({
+    queryKey: queryKeys.downlineProduction(currentAgentId, timeWindow),
+    queryFn: async () => {
       const supabase = createClient()
       const { startDate, endDate } = getDateRange()
 
       console.log('[DownlineProductionChart] Fetching data with params:', {
-        p_agent_id: agentId,
+        p_agent_id: currentAgentId,
         p_start_date: startDate,
         p_end_date: endDate
       })
@@ -131,7 +128,7 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
       const { data: rpcData, error: rpcError } = await supabase.rpc(
         'get_downline_production_distribution',
         {
-          p_agent_id: agentId,
+          p_agent_id: currentAgentId,
           p_start_date: startDate,
           p_end_date: endDate
         }
@@ -150,38 +147,20 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
 
       if (rpcError) {
         console.error('[DownlineProductionChart] RPC Error Full Details:', JSON.stringify(rpcError, null, 2))
-        setError(`Failed to load downline production data: ${rpcError.message || 'Unknown error'}`)
-        setData([])
-        return
+        throw new Error(`Failed to load downline production data: ${rpcError.message || 'Unknown error'}`)
       }
 
       console.log('[DownlineProductionChart] Successfully fetched data:', rpcData)
-      setData(rpcData || [])
-    } catch (err) {
-      console.error('[DownlineProductionChart] Fetch error:', err)
-      console.error('[DownlineProductionChart] Error stack:', err instanceof Error ? err.stack : 'No stack trace')
-      setError(`An error occurred while fetching data: ${err instanceof Error ? err.message : 'Unknown error'}`)
-      setData([])
-    } finally {
-      setIsLoading(false)
-    }
-  }, [getDateRange])
-
-  // Initial load
-  React.useEffect(() => {
-    fetchData(userId)
-  }, [userId, fetchData])
-
-  // Refetch when time window changes
-  React.useEffect(() => {
-    fetchData(currentAgentId)
-  }, [timeWindow, currentAgentId, fetchData])
+      return (rpcData || []) as DownlineProductionData[]
+    },
+    staleTime: 60000, // 1 minute - stale-while-revalidate pattern
+  })
 
   // Handle slice click
   const handleSliceClick = async (agentId: string, agentName: string, isClickable: boolean) => {
     if (!isClickable) {
-      setError('Agent not in downline - cannot drill down')
-      setTimeout(() => setError(null), 3000)
+      // Toast or other user feedback would be better here
+      console.warn('[DownlineProductionChart] Agent not in downline - cannot drill down')
       return
     }
 
@@ -327,7 +306,7 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
       {/* Error Message */}
       {error && (
         <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
+          {error.message}
         </div>
       )}
 

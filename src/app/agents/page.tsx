@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import Link from "next/link"
 import { Tree, CustomNodeElementProps } from 'react-d3-tree';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,6 +20,9 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { useNotification } from "@/contexts/notification-context"
+import { useApiFetch } from "@/hooks/useApiFetch"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/hooks/queryKeys"
 
 // Agent data type
 interface Agent {
@@ -274,6 +277,7 @@ const renderForeignObjectNode = ({
 
 export default function Agents() {
   const { showSuccess, showError, showWarning } = useNotification()
+  const queryClient = useQueryClient()
 
   // Persisted filter state using custom hook (includes view/tab state)
   const { localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply } = usePersistedFilters(
@@ -296,37 +300,12 @@ export default function Agents() {
     setAndApply({ view: value })
   }
 
-  const [agentsData, setAgentsData] = useState<Agent[]>([])
-  const [allAgents, setAllAgents] = useState<Array<{ id: string; name: string }>>([])
-  const [treeData, setTreeData] = useState<TreeNode | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [totalCount, setTotalCount] = useState(0)
   const [translate, setTranslate] = useState({ x: 0, y: 0 })
-  const [positionColorMap, setPositionColorMap] = useState<Map<number, string>>(new Map())
-  const [positionsLoaded, setPositionsLoaded] = useState(false)
-  const [allPositions, setAllPositions] = useState<Position[]>([]) // Master positions list - fetched once
-  const [userPositionLevel, setUserPositionLevel] = useState<number | null>(null) // User's position level for filtering
 
-  // Pending positions state
-  const [pendingAgents, setPendingAgents] = useState<PendingAgent[]>([])
-  const [pendingCount, setPendingCount] = useState(0)
-
-  // Derived positions - computed from allPositions
-  const positions = allPositions.filter(p =>
-    userPositionLevel === null || userPositionLevel === undefined
-      ? true
-      : p.level < userPositionLevel
-  ) // For pending positions assignment (filtered by user level)
-  const filterPositions = allPositions // For filter dropdown (all agency positions)
-  const [assigningAgentId, setAssigningAgentId] = useState<string | null>(null)
+  // Local UI state (not managed by queries)
   const [selectedPositionId, setSelectedPositionId] = useState<string>("")
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null) // Track which agent we're working on
-  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
-  const [agentToInvite, setAgentToInvite] = useState<Agent | null>(null)
-  const [sendingInvite, setSendingInvite] = useState(false)
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [pendingSearchTerm, setPendingSearchTerm] = useState("")
   const [selectedAgentIdForModal, setSelectedAgentIdForModal] = useState<string | null>(null)
   const [agentModalOpen, setAgentModalOpen] = useState(false)
@@ -437,231 +416,196 @@ export default function Agents() {
         }
     }, []);
 
-  // Reset positions loading on mount to ensure position colors load correctly
-  useEffect(() => {
-    setPositionsLoaded(false)
-  }, [])
-
   // Fetch all positions and user's position level on mount
-  useEffect(() => {
-    setPositionsLoaded(false)
+  const { data: positionsData, isLoading: positionsLoading } = useQuery({
+    queryKey: queryKeys.positionsList(),
+    queryFn: async ({ signal }) => {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
 
-    const abortController = new AbortController()
-    let isActive = true
+      if (!accessToken) {
+        return { positions: [], userPositionLevel: null }
+      }
 
-    const fetchPositionsAndUserLevel = async () => {
-      try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
+      const response = await fetch('/api/positions', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        },
+        signal
+      })
 
-        if (!accessToken) {
-          if (isActive) {
-            setPositionsLoaded(true)
-          }
-          return
-        }
+      if (!response.ok) {
+        throw new Error('Failed to fetch positions')
+      }
 
-        const response = await fetch('/api/positions', {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          },
-          signal: abortController.signal
-        })
+      const positions = await response.json()
 
-        if (response.ok) {
-          const data = await response.json()
+      // Fetch current user's position level (for filtering assignment dropdown)
+      const { data: { user } } = await supabase.auth.getUser()
+      let userPositionLevel = null
 
-          if (isActive) {
-            // Store all positions (used for filter dropdown and assignment)
-            setAllPositions(data)
+      if (user) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('position_id, position:positions(level)')
+          .eq('auth_user_id', user.id)
+          .single()
 
-            // Sort positions by level (descending - highest level first) for color map
-            const sortedPositions = [...data].sort((a: Position, b: Position) => b.level - a.level)
-
-            // Create a map of level -> color based on rank
-            const colorMap = new Map<number, string>()
-            sortedPositions.forEach((position: Position, index: number) => {
-              // Top 10 positions get distinct colors, rest get gray
-              if (index < 10) {
-                colorMap.set(position.level, positionLevelColors[index])
-              } else {
-                colorMap.set(position.level, "bg-gray-500/20 text-gray-400 border-gray-500/30")
-              }
-            })
-            setPositionColorMap(colorMap)
-          }
-        }
-
-        // Fetch current user's position level (for filtering assignment dropdown)
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user && isActive) {
-          const { data: userData } = await supabase
-            .from('users')
-            .select('position_id, position:positions(level)')
-            .eq('auth_user_id', user.id)
-            .single()
-
-          if (userData?.position?.level !== undefined) {
-            setUserPositionLevel(userData.position.level)
-          }
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return
-        console.error('Error fetching positions:', err)
-      } finally {
-        if (isActive) {
-          setPositionsLoaded(true)
+        if (userData?.position?.level !== undefined) {
+          userPositionLevel = userData.position.level
         }
       }
+
+      return { positions, userPositionLevel }
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  // Compute position color map from positions data (pure transformation)
+  const positionColorMap = useMemo(() => {
+    if (!positionsData?.positions) return new Map<number, string>()
+
+    const sortedPositions = [...positionsData.positions].sort((a: Position, b: Position) => b.level - a.level)
+    const colorMap = new Map<number, string>()
+
+    sortedPositions.forEach((position: Position, index: number) => {
+      // Top 10 positions get distinct colors, rest get gray
+      if (index < 10) {
+        colorMap.set(position.level, positionLevelColors[index])
+      } else {
+        colorMap.set(position.level, "bg-gray-500/20 text-gray-400 border-gray-500/30")
+      }
+    })
+
+    return colorMap
+  }, [positionsData?.positions])
+
+  // Derived positions data
+  const allPositions = positionsData?.positions || []
+  const userPositionLevel = positionsData?.userPositionLevel || null
+  const positions = allPositions.filter((p: Position) =>
+    userPositionLevel === null || userPositionLevel === undefined
+      ? true
+      : p.level < userPositionLevel
+  ) // For pending positions assignment (filtered by user level)
+  const filterPositions = allPositions // For filter dropdown (all agency positions)
+  const positionsLoaded = !positionsLoading
+
+  // Build query params for agents fetch
+  const buildAgentsUrl = () => {
+    const params = new URLSearchParams()
+    if (view === 'table') {
+      params.append('page', currentPage.toString())
+      params.append('limit', '20')
+    } else if (view === 'tree') {
+      params.append('view', 'tree')
     }
 
-    fetchPositionsAndUserLevel()
-
-    return () => {
-      isActive = false
-      abortController.abort()
+    // Add active filter parameters
+    if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
+      params.append('inUpline', appliedFilters.inUpline)
     }
-  }, [])
+    if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
+      params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
+    }
+    if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
+      params.append('inDownline', appliedFilters.inDownline)
+    }
+    if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
+      params.append('directDownline', appliedFilters.directDownline)
+    }
+    if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
+      params.append('agentName', appliedFilters.agentName)
+    }
+    if (appliedFilters.status && appliedFilters.status !== 'all') {
+      params.append('status', appliedFilters.status)
+    }
+    if (appliedFilters.position && appliedFilters.position !== 'all') {
+      params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
+    }
+
+    return `/api/agents?${params.toString()}`
+  }
 
   // Fetch agents data from API (only when active filters change, not local filters)
-  useEffect(() => {
-    const abortController = new AbortController()
-    let isActive = true
-
-    const fetchAgents = async () => {
-      try {
-        setLoading(true)
-        // Keep existing data while loading (stale-while-revalidate pattern)
-        // This prevents skeleton flash when filters change
-
-        // Build query params
-        const params = new URLSearchParams()
-        if (view === 'table') {
-          params.append('page', currentPage.toString())
-          params.append('limit', '20')
-        } else {
-          params.append('view', 'tree')
-        }
-
-        // Add active filter parameters
-        if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
-          params.append('inUpline', appliedFilters.inUpline)
-        }
-        if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
-          params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
-        }
-        if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
-          params.append('inDownline', appliedFilters.inDownline)
-        }
-        if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
-          params.append('directDownline', appliedFilters.directDownline)
-        }
-        if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
-          params.append('agentName', appliedFilters.agentName)
-        }
-        if (appliedFilters.status && appliedFilters.status !== 'all') {
-          params.append('status', appliedFilters.status)
-        }
-        if (appliedFilters.position && appliedFilters.position !== 'all') {
-          params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
-        }
-
-        const url = `/api/agents?${params.toString()}`
-        const response = await fetch(url, { signal: abortController.signal })
-        if (!response.ok) {
-          throw new Error('Failed to fetch agents')
-        }
-        const data = await response.json()
-
-        if(view === 'table') {
-            setAgentsData(data.agents)
-            setTotalPages(data.pagination.totalPages)
-            setTotalCount(data.pagination.totalCount)
-            if (data.allAgents) {
-              setAllAgents(data.allAgents)
-            }
-        } else {
-            setTreeData(data.tree)
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
-          return
-        }
-        if (isActive) {
-          setError(err instanceof Error ? err.message : 'An error occurred')
-          console.error('Error fetching agents:', err)
-          setLoading(false)
-        }
-      } finally {
-        // Only set loading to false if effect is still active (not aborted/cleaned up)
-        if (isActive) {
-          setLoading(false)
-        }
-      }
+  const { data: agentsResponse, isLoading: agentsLoading, error: agentsError } = useApiFetch<{
+    agents?: Agent[]
+    tree?: TreeNode
+    pagination?: { totalPages: number; totalCount: number }
+    allAgents?: Array<{ id: string; name: string }>
+  }>(
+    queryKeys.agentsList(currentPage, view, appliedFilters),
+    buildAgentsUrl(),
+    {
+      enabled: view === 'table' || view === 'tree',
+      staleTime: 30 * 1000, // 30 seconds
+      placeholderData: (previousData) => previousData, // Keep previous data while fetching new data (stale-while-revalidate)
     }
+  )
 
-    fetchAgents()
+  // Derived agents data
+  const agentsData = agentsResponse?.agents || []
+  const treeData = agentsResponse?.tree || null
+  const totalPages = agentsResponse?.pagination?.totalPages || 1
+  const totalCount = agentsResponse?.pagination?.totalCount || 0
+  const allAgents = agentsResponse?.allAgents || []
+  const error = agentsError?.message || null
 
-    return () => {
-      isActive = false
-      abortController.abort()
-    }
-  }, [currentPage, view, appliedFilters])
+  // View-specific loading states to prevent wrong spinners
+  // - Table view: needs both agents and positions
+  // - Tree view: only needs agents (positions data not used in tree)
+  // - Pending positions view: only needs pendingPositionsData
 
   // Fetch all agents for pending positions view (with and without positions)
   // This loads all data upfront so we can filter client-side without API calls
-  useEffect(() => {
-    if (view !== 'pending-positions') return
+  const buildPendingPositionsUrl = async () => {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const accessToken = session?.access_token
 
-    const abortController = new AbortController()
-    let isActive = true
+    if (!accessToken) {
+      throw new Error('No access token available')
+    }
 
-    const fetchAllAgents = async () => {
-      try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
+    const url = new URL('/api/agents/without-positions', window.location.origin)
+    url.searchParams.set('all', 'true') // Special parameter to fetch all agents
 
-        if (!accessToken) {
-          console.error('No access token available')
-          return
-        }
+    return { url: url.toString(), accessToken }
+  }
 
-        // Fetch ALL agents (with and without positions) by using special 'all' parameter
-        // This triggers the API's search path which returns all agents (with and without positions)
-        const url = new URL('/api/agents/without-positions', window.location.origin)
-        url.searchParams.set('all', 'true') // Special parameter to fetch all agents
+  const { data: pendingPositionsData, isLoading: pendingPositionsLoading } = useQuery({
+    queryKey: queryKeys.agentsPendingPositions(),
+    queryFn: async ({ signal }) => {
+      const { url, accessToken } = await buildPendingPositionsUrl()
 
-        const response = await fetch(url.toString(), {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          },
-          signal: abortController.signal
-        })
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        },
+        signal
+      })
 
-        if (response.ok && isActive) {
-          const data = await response.json()
-          setPendingAgents(data.agents || [])
-          // Count only those without positions for the badge
-          const withoutPositionsCount = (data.agents || []).filter((a: PendingAgent) => !a.has_position).length
-          setPendingCount(withoutPositionsCount)
-        } else if (!response.ok) {
-          console.error('Failed to fetch agents:', response.status, await response.text())
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return
-        console.error('Error fetching agents:', err)
+      if (!response.ok) {
+        throw new Error('Failed to fetch pending positions')
       }
-    }
 
-    fetchAllAgents()
+      return response.json()
+    },
+    enabled: view === 'pending-positions',
+    staleTime: 30 * 1000, // 30 seconds
+  })
 
-    return () => {
-      isActive = false
-      abortController.abort()
-    }
-  }, [view])
+  // Derived pending positions data
+  const pendingAgents = pendingPositionsData?.agents || []
+  const pendingCount = pendingAgents.filter((a: PendingAgent) => !a.has_position).length
+
+  // Compute view-specific loading state
+  const loading = view === 'tree'
+    ? agentsLoading
+    : view === 'pending-positions'
+      ? pendingPositionsLoading
+      : agentsLoading || positionsLoading
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
@@ -734,15 +678,9 @@ export default function Agents() {
     appliedFilters.status !== 'all' ||
     appliedFilters.position !== 'all'
 
-  // Handle position assignment
-  const handleAssignPosition = async (agentId: string, positionId: string) => {
-    if (!positionId) {
-      showWarning('Please select a position')
-      return
-    }
-
-    try {
-      setAssigningAgentId(agentId)
+  // Handle position assignment mutation
+  const assignPositionMutation = useMutation({
+    mutationFn: async ({ agentId, positionId }: { agentId: string; positionId: string }) => {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
@@ -768,41 +706,37 @@ export default function Agents() {
         throw new Error(error.error || 'Failed to assign position')
       }
 
-      // Refresh the agents list to get updated position information
-      // Fetch all agents again (with and without positions)
-      const refreshUrl = new URL('/api/agents/without-positions', window.location.origin)
-      refreshUrl.searchParams.set('all', 'true') // Special parameter to fetch all agents
-
-      const refreshResponse = await fetch(refreshUrl.toString(), {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      if (refreshResponse.ok) {
-        const refreshData = await refreshResponse.json()
-        setPendingAgents(refreshData.agents || [])
-        setPendingCount(refreshData.count || 0)
-      }
+      return response.json()
+    },
+    onSuccess: () => {
+      // Invalidate and refetch pending positions and agents list
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents })
 
       // Clear selection state after successful assignment
       setSelectedPositionId("")
       setSelectedAgentId(null)
-      setAssigningAgentId(null)
 
       showSuccess('Position assigned successfully!')
-    } catch (err) {
+    },
+    onError: (err: Error) => {
       console.error('Error assigning position:', err)
-      showError(err instanceof Error ? err.message : 'Failed to assign position')
-    } finally {
-      setAssigningAgentId(null)
+      showError(err.message || 'Failed to assign position')
     }
+  })
+
+  const handleAssignPosition = (agentId: string, positionId: string) => {
+    if (!positionId) {
+      showWarning('Please select a position')
+      return
+    }
+
+    assignPositionMutation.mutate({ agentId, positionId })
   }
 
-  // Handle resend invite
-  const handleResendInvite = async (agentId: string) => {
-    try {
-      setResendingInviteId(agentId)
+  // Handle resend invite mutation
+  const resendInviteMutation = useMutation({
+    mutationFn: async (agentId: string) => {
       const response = await fetch('/api/agents/resend-invite', {
         method: 'POST',
         headers: {
@@ -817,26 +751,28 @@ export default function Agents() {
         throw new Error(data.error || 'Failed to resend invitation')
       }
 
+      return data
+    },
+    onSuccess: (data) => {
       showSuccess(data.message || 'Invitation resent successfully!')
-    } catch (err) {
+    },
+    onError: (err: Error) => {
       console.error('Error resending invite:', err)
-      showError(err instanceof Error ? err.message : 'Failed to resend invitation')
-    } finally {
-      setResendingInviteId(null)
+      showError(err.message || 'Failed to resend invitation')
     }
+  })
+
+  const handleResendInvite = (agentId: string) => {
+    resendInviteMutation.mutate(agentId)
   }
 
-  // Handle send invite for pre-invite users
-  const handleSendInvite = async (agent: Agent) => {
-    if (!agent.email) {
-      showWarning('Agent email is required to send invitation')
-      return
-    }
+  // Handle send invite for pre-invite users mutation
+  const sendInviteMutation = useMutation({
+    mutationFn: async (agent: Agent) => {
+      if (!agent.email) {
+        throw new Error('Agent email is required to send invitation')
+      }
 
-    setAgentToInvite(agent)
-    setSendingInvite(true)
-    
-    try {
       // Get the agent's name parts
       const firstName = agent.first_name || agent.name.split(' ')[0] || ''
       const lastName = agent.last_name || agent.name.split(' ').slice(1).join(' ') || ''
@@ -865,60 +801,28 @@ export default function Agents() {
         throw new Error(errorData.error || 'Failed to send invitation')
       }
 
-      // Refresh the agents list
-      const params = new URLSearchParams()
-      if (view === 'table') {
-        params.append('page', currentPage.toString())
-        params.append('limit', '20')
-      } else {
-        params.append('view', 'tree')
-      }
-
-      // Add active filter parameters
-      if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
-        params.append('inUpline', appliedFilters.inUpline)
-      }
-      if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
-        params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
-      }
-      if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
-        params.append('inDownline', appliedFilters.inDownline)
-      }
-      if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
-        params.append('directDownline', appliedFilters.directDownline)
-      }
-      if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
-        params.append('agentName', appliedFilters.agentName)
-      }
-      if (appliedFilters.status && appliedFilters.status !== 'all') {
-        params.append('status', appliedFilters.status)
-      }
-      if (appliedFilters.position && appliedFilters.position !== 'all') {
-        params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
-      }
-
-      const url = `/api/agents?${params.toString()}`
-      const refreshResponse = await fetch(url)
-      if (refreshResponse.ok) {
-        const refreshData = await refreshResponse.json()
-        if (view === 'table') {
-          setAgentsData(refreshData.agents)
-          setTotalPages(refreshData.pagination.totalPages)
-          setTotalCount(refreshData.pagination.totalCount)
-          if (refreshData.allAgents) {
-            setAllAgents(refreshData.allAgents)
-          }
-        }
-      }
+      return response.json()
+    },
+    onSuccess: () => {
+      // Invalidate and refetch agents list and pending positions
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents })
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
 
       showSuccess('Invitation sent successfully!')
-    } catch (err) {
+    },
+    onError: (err: Error) => {
       console.error('Error sending invite:', err)
-      showError(err instanceof Error ? err.message : 'Failed to send invitation')
-    } finally {
-      setSendingInvite(false)
-      setAgentToInvite(null)
+      showError(err.message || 'Failed to send invitation')
     }
+  })
+
+  const handleSendInvite = (agent: Agent) => {
+    if (!agent.email) {
+      showWarning('Agent email is required to send invitation')
+      return
+    }
+
+    sendInviteMutation.mutate(agent)
   }
 
   // Handle row click to open modal
@@ -958,7 +862,7 @@ export default function Agents() {
   const positionOptions = [
     { value: "all", label: "All Positions" },
     { value: "not_set", label: "Not Set" },
-    ...filterPositions.map(p => ({ value: p.position_id, label: p.name }))
+    ...filterPositions.map((p: Position) => ({ value: p.position_id, label: p.name }))
   ]
 
   // Generate status options
@@ -974,7 +878,7 @@ export default function Agents() {
   // Filter agents client-side based on search term (all data is already loaded)
   const normalizedPendingSearch = pendingSearchTerm.trim().toLowerCase()
   const visiblePendingAgents = normalizedPendingSearch
-    ? pendingAgents.filter((agent) => {
+    ? pendingAgents.filter((agent: PendingAgent) => {
         const fullName = `${agent.first_name} ${agent.last_name}`.toLowerCase()
         const email = (agent.email || "").toLowerCase()
         return fullName.includes(normalizedPendingSearch) || email.includes(normalizedPendingSearch)
@@ -1423,13 +1327,13 @@ export default function Agents() {
                                     e.stopPropagation()
                                     handleSendInvite(agent)
                                   }}
-                                  disabled={sendingInvite && agentToInvite?.id === agent.id}
+                                  disabled={sendInviteMutation.isPending}
                                   variant="outline"
                                   size="sm"
                                   className="h-7 px-3 text-xs gap-1.5 bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30 hover:border-blue-500/40"
                                 >
                                   <Send className="h-3 w-3" />
-                                  {sendingInvite && agentToInvite?.id === agent.id ? 'Sending...' : 'Send Invitation'}
+                                  {sendInviteMutation.isPending ? 'Sending...' : 'Send Invitation'}
                                 </Button>
                               )}
                               {(agent.status?.toLowerCase() === 'invited' || agent.status?.toLowerCase() === 'onboarding') && (
@@ -1438,13 +1342,13 @@ export default function Agents() {
                                     e.stopPropagation()
                                     handleResendInvite(agent.id)
                                   }}
-                                  disabled={resendingInviteId === agent.id}
+                                  disabled={resendInviteMutation.isPending}
                                   variant="outline"
                                   size="sm"
                                   className="h-7 px-3 text-xs gap-1.5 bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30 hover:border-blue-500/40"
                                 >
                                   <Mail className="h-3 w-3" />
-                                  {resendingInviteId === agent.id ? 'Sending...' : 'Resend Invite'}
+                                  {resendInviteMutation.isPending ? 'Sending...' : 'Resend Invite'}
                                 </Button>
                               )}
                             </div>
@@ -1699,7 +1603,6 @@ export default function Agents() {
                         if (!value) {
                           setSelectedAgentId(null)
                           setSelectedPositionId("")
-                          setAssigningAgentId(null)
                         }
                       }}
                       placeholder="Search by name or email to find and modify agent positions..."
@@ -1726,7 +1629,7 @@ export default function Agents() {
                   </div>
                 ) : (
                   <>
-                    {visiblePendingAgents.map((agent) => (
+                    {visiblePendingAgents.map((agent: PendingAgent) => (
                   <div
                     key={agent.agent_id}
                     className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
@@ -1763,9 +1666,9 @@ export default function Agents() {
                     <div className="flex items-center gap-3 ml-4">
                       <SimpleSearchableSelect
                         options={positions
-                          .filter(p => p.is_active)
-                          .sort((a, b) => b.level - a.level)
-                          .map(p => ({
+                          .filter((p: Position) => p.is_active)
+                          .sort((a: Position, b: Position) => b.level - a.level)
+                          .map((p: Position) => ({
                             value: p.position_id,
                             label: `${p.name} (Level ${p.level})`
                           }))}
@@ -1780,41 +1683,41 @@ export default function Agents() {
                       <Button
                         onClick={() => {
                           // Prevent clicks if currently assigning
-                          if (assigningAgentId === agent.agent_id) {
+                          if (assignPositionMutation.isPending) {
                             return
                           }
-                          
+
                           // Must be working on this agent and have a selected position
                           if (selectedAgentId !== agent.agent_id || !selectedPositionId) {
                             return
                           }
-                          
+
                           // If agent has position, only allow if the selected position is different
                           if (agent.has_position && selectedPositionId === agent.position_id) {
                             return
                           }
-                          
+
                           handleAssignPosition(agent.agent_id, selectedPositionId)
                         }}
                         disabled={
-                          // Disable if currently assigning this agent
-                          assigningAgentId === agent.agent_id ||
+                          // Disable if currently assigning
+                          assignPositionMutation.isPending ||
                           // For agents with position: enable only if working on this agent AND selected a DIFFERENT position
                           (agent.has_position && (
-                            selectedAgentId !== agent.agent_id || 
-                            !selectedPositionId || 
+                            selectedAgentId !== agent.agent_id ||
+                            !selectedPositionId ||
                             selectedPositionId === agent.position_id
                           )) ||
                           // For agents without position: enable only if working on this agent AND selected a position
                           (!agent.has_position && (
-                            selectedAgentId !== agent.agent_id || 
+                            selectedAgentId !== agent.agent_id ||
                             !selectedPositionId
                           ))
                         }
                         className="bg-foreground hover:bg-foreground/90 text-background disabled:opacity-50 disabled:cursor-not-allowed"
                         size="sm"
                       >
-                        {assigningAgentId === agent.agent_id
+                        {assignPositionMutation.isPending
                           ? 'Assigning...'
                           : agent.has_position && selectedAgentId === agent.agent_id && selectedPositionId && selectedPositionId !== agent.position_id
                           ? 'Update Position'
@@ -1840,65 +1743,8 @@ export default function Agents() {
           onOpenChange={handleAgentModalClose}
           agentId={selectedAgentIdForModal}
           onUpdate={() => {
-            // Refresh agents data if needed
-            const fetchAgents = async () => {
-              try {
-                setLoading(true)
-                const params = new URLSearchParams()
-                if (view === 'table') {
-                  params.append('page', currentPage.toString())
-                  params.append('limit', '20')
-                } else {
-                  params.append('view', 'tree')
-                }
-
-                if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
-                  params.append('inUpline', appliedFilters.inUpline)
-                }
-                if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
-                  params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
-                }
-                if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
-                  params.append('inDownline', appliedFilters.inDownline)
-                }
-                if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
-                  params.append('directDownline', appliedFilters.directDownline)
-                }
-                if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
-                  params.append('agentName', appliedFilters.agentName)
-                }
-                if (appliedFilters.status && appliedFilters.status !== 'all') {
-                  params.append('status', appliedFilters.status)
-                }
-                if (appliedFilters.position && appliedFilters.position !== 'all') {
-                  params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
-                }
-
-                const url = `/api/agents?${params.toString()}`
-                const response = await fetch(url)
-                if (!response.ok) {
-                  throw new Error('Failed to fetch agents')
-                }
-                const data = await response.json()
-
-                if(view === 'table') {
-                    setAgentsData(data.agents)
-                    setTotalPages(data.pagination.totalPages)
-                    setTotalCount(data.pagination.totalCount)
-                    if (data.allAgents) {
-                      setAllAgents(data.allAgents)
-                    }
-                } else {
-                    setTreeData(data.tree)
-                }
-              } catch (err) {
-                setError(err instanceof Error ? err.message : 'An error occurred')
-                console.error('Error fetching agents:', err)
-              } finally {
-                setLoading(false)
-              }
-            }
-            fetchAgents()
+            // Invalidate and refetch agents data
+            queryClient.invalidateQueries({ queryKey: queryKeys.agents })
           }}
         />
       )}

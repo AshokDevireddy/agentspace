@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import { Check, Sparkles, Crown, Zap } from 'lucide-react';
-import { useNotification } from '@/contexts/notification-context'
+import { useNotification } from '@/contexts/notification-context';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/hooks/queryKeys';
 
 interface PricingTierCardProps {
   tier: 'free' | 'basic' | 'pro' | 'expert';
@@ -65,22 +66,15 @@ export function PricingTierCard({
   currentTier,
   hasActiveSubscription,
 }: PricingTierCardProps) {
-  const { showSuccess, showError } = useNotification()
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { showSuccess, showError } = useNotification();
+  const queryClient = useQueryClient();
 
   const colors = tierColors[tier];
   const icon = tierIcons[tier];
 
-  // All tiers are accessible for subscription (Expert features may be admin-only, not the subscription)
-  const isDisabled = loading || isCurrentPlan || tier === 'free';
-
-  const handleSubscribe = async () => {
-    if (tier === 'free') return;
-
-    try {
-      setLoading(true);
-      setError(null);
+  const subscriptionMutation = useMutation({
+    mutationFn: async () => {
+      if (tier === 'free') return;
 
       // If user already has an active subscription, use change-subscription endpoint
       if (hasActiveSubscription && currentTier !== 'free') {
@@ -100,15 +94,7 @@ export function PricingTierCard({
           throw new Error(data.error || 'Failed to change subscription');
         }
 
-        // If it's a downgrade, show success message
-        if (!data.immediate) {
-          showSuccess(`Downgrade scheduled! Your plan will change to ${tier} on ${new Date(data.effectiveDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
-        } else {
-          showSuccess(`Successfully upgraded to ${tier} tier!`);
-        }
-
-        // Reload page to reflect changes
-        window.location.reload();
+        return { type: 'change', data };
       } else {
         // User doesn't have subscription (Free tier) - use Stripe Checkout
         console.log(`Creating new subscription for tier: ${tier}`);
@@ -128,17 +114,43 @@ export function PricingTierCard({
         }
 
         if (data.url) {
-          window.location.href = data.url;
+          return { type: 'checkout', data };
         } else {
           throw new Error('No checkout URL returned');
         }
       }
-    } catch (err) {
+    },
+    onSuccess: (result) => {
+      if (!result) return;
+
+      if (result.type === 'change') {
+        // If it's a downgrade, show success message
+        if (!result.data.immediate) {
+          showSuccess(`Downgrade scheduled! Your plan will change to ${tier} on ${new Date(result.data.effectiveDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
+        } else {
+          showSuccess(`Successfully upgraded to ${tier} tier!`);
+        }
+
+        // Invalidate subscription and user queries to refresh UI
+        queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() });
+        queryClient.invalidateQueries({ queryKey: queryKeys.user });
+      } else if (result.type === 'checkout') {
+        window.location.href = result.data.url;
+      }
+    },
+    onError: (err) => {
       console.error('Subscription error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      setLoading(false);
-    }
+      showError(err instanceof Error ? err.message : 'Failed to update subscription');
+    },
+  });
+
+  const handleSubscribe = () => {
+    if (tier === 'free') return;
+    subscriptionMutation.mutate();
   };
+
+  // All tiers are accessible for subscription (Expert features may be admin-only, not the subscription)
+  const isDisabled = subscriptionMutation.isPending || isCurrentPlan || tier === 'free';
 
   return (
     <div className={`relative flex flex-col rounded-2xl border-2 ${colors.border} ${colors.bg} p-6 shadow-lg transition-all hover:shadow-xl ${recommended ? 'scale-105 ring-2 ring-purple-500 ring-offset-2 dark:ring-offset-gray-900' : ''}`}>
@@ -188,9 +200,9 @@ export function PricingTierCard({
       </ul>
 
       {/* Error Message */}
-      {error && (
+      {subscriptionMutation.error && (
         <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {error}
+          {subscriptionMutation.error.message}
         </div>
       )}
 
@@ -206,7 +218,7 @@ export function PricingTierCard({
             : colors.button
         } disabled:opacity-50`}
       >
-        {loading ? (
+        {subscriptionMutation.isPending ? (
           'Loading...'
         ) : isCurrentPlan ? (
           'Current Plan'

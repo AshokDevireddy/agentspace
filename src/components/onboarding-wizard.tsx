@@ -11,6 +11,9 @@ import { Progress } from "@/components/ui/progress"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 import { withTimeout } from '@/lib/auth/constants'
+import { useQuery } from '@tanstack/react-query'
+import { useApiFetch } from '@/hooks/useApiFetch'
+import { queryKeys } from '@/hooks/queryKeys'
 
 interface UserData {
   id: string
@@ -185,59 +188,64 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   }, [errors])
 
   // Fetch agency primary color
-  useEffect(() => {
-    const fetchAgencyColor = async () => {
-      if (userData.agency_id) {
-        const { data: agencyData } = await supabase
-          .from('agencies')
-          .select('primary_color')
-          .eq('id', userData.agency_id)
-          .single()
+  const { data: agencyData } = useQuery({
+    queryKey: queryKeys.agencyColor(userData.agency_id || ''),
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('agencies')
+        .select('primary_color')
+        .eq('id', userData.agency_id)
+        .single()
+      return data
+    },
+    enabled: !!userData.agency_id,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
 
-        if (agencyData?.primary_color) {
-          setPrimaryColor(agencyData.primary_color)
-        }
-      }
+  useEffect(() => {
+    if (agencyData?.primary_color) {
+      setPrimaryColor(agencyData.primary_color)
     }
-    fetchAgencyColor()
-  }, [userData.agency_id, supabase])
+  }, [agencyData])
 
   // Check for active NIPR job on mount (for page refresh resilience)
-  useEffect(() => {
-    const checkActiveJob = async () => {
-      const savedJobId = localStorage.getItem(NIPR_JOB_STORAGE_KEY)
-      if (!savedJobId) return
+  const savedJobId = typeof window !== 'undefined' ? localStorage.getItem(NIPR_JOB_STORAGE_KEY) : null
 
-      try {
-        // Check job status from API
-        const response = await fetch(`/api/nipr/job/${savedJobId}`)
-        if (!response.ok) {
-          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
-          return
-        }
+  const { data: activeJobData } = useQuery({
+    queryKey: queryKeys.niprJob(savedJobId || ''),
+    queryFn: async () => {
+      if (!savedJobId) return null
 
-        const data = await response.json()
-
-        if (data.status === 'processing' || data.status === 'pending') {
-          // Resume polling - job is still active
-          setNiprJobId(savedJobId)
-          setNiprRunning(true)
-          setNiprProgress(data.progress || 0)
-          setNiprProgressMessage(data.progressMessage || 'Resuming verification...')
-          if (data.queuePosition) {
-            setNiprQueuePosition(data.queuePosition)
-          }
-        } else {
-          // Job completed or failed, clear storage
-          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
-        }
-      } catch (error) {
-        console.error('[ONBOARDING] Error checking active job:', error)
+      const response = await fetch(`/api/nipr/job/${savedJobId}`)
+      if (!response.ok) {
         localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
+        return null
       }
+
+      return response.json()
+    },
+    enabled: !!savedJobId,
+    staleTime: 0,
+    retry: false,
+  })
+
+  useEffect(() => {
+    if (!activeJobData) return
+
+    if (activeJobData.status === 'processing' || activeJobData.status === 'pending') {
+      // Resume polling - job is still active
+      setNiprJobId(savedJobId)
+      setNiprRunning(true)
+      setNiprProgress(activeJobData.progress || 0)
+      setNiprProgressMessage(activeJobData.progressMessage || 'Resuming verification...')
+      if (activeJobData.queuePosition) {
+        setNiprQueuePosition(activeJobData.queuePosition)
+      }
+    } else {
+      // Job completed or failed, clear storage
+      localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
     }
-    checkActiveJob()
-  }, [])
+  }, [activeJobData, savedJobId])
 
   // Agent search debounce (for upline selection)
   useEffect(() => {
@@ -334,40 +342,28 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     return () => clearTimeout(debounceTimer)
   }, [nameSearchTerm])
 
-  // Check for existing uploaded files when on step 2
-  useEffect(() => {
-    if (currentStep === 2) {
-      checkExistingFiles()
-    }
-  }, [currentStep])
-
   // Check if NIPR has already been completed for this user
+  const { data: niprStatusData } = useApiFetch<{ completed: boolean; carriers: string[] }>(
+    queryKeys.niprStatus(userData.id),
+    '/api/nipr/status',
+    {
+      enabled: !!userData.id,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      retry: false,
+    }
+  )
+
   useEffect(() => {
-    const checkNiprStatus = async () => {
-      if (!userData.id) return
-
-      try {
-        const response = await fetch('/api/nipr/status')
-        if (!response.ok) return
-
-        const { completed, carriers } = await response.json()
-
-        if (completed && carriers.length > 0) {
-          setNiprAlreadyCompleted(true)
-          setStoredCarriers(carriers)
-          // Auto-advance if on step 1
-          // Admins go to policy upload (step 2), agents skip to invite team (step 3)
-          if (currentStep === 1) {
-            setCurrentStep(3)
-          }
-        }
-      } catch (error) {
-        console.error('[ONBOARDING] Error checking NIPR status:', error)
+    if (niprStatusData?.completed && niprStatusData.carriers.length > 0) {
+      setNiprAlreadyCompleted(true)
+      setStoredCarriers(niprStatusData.carriers)
+      // Auto-advance if on step 1
+      // Admins go to policy upload (step 2), agents skip to invite team (step 3)
+      if (currentStep === 1) {
+        setCurrentStep(3)
       }
     }
-
-    checkNiprStatus()
-  }, [userData.id])
+  }, [niprStatusData, currentStep])
 
   // Auto-advance to step 3 when NIPR verification succeeds
   useEffect(() => {
@@ -381,94 +377,93 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   }, [niprResult?.success, currentStep, niprRunning, niprUploading])
 
   // Poll for NIPR job progress when we have a job ID
+  const { data: niprJobData } = useQuery({
+    queryKey: queryKeys.niprJob(niprJobId || ''),
+    queryFn: async () => {
+      if (!niprJobId) return null
+
+      const response = await fetch(`/api/nipr/job/${niprJobId}`)
+      if (!response.ok) return null
+
+      return response.json()
+    },
+    enabled: !!niprJobId && niprRunning,
+    refetchInterval: 10000, // Poll every 10 seconds
+    staleTime: 0,
+  })
+
   useEffect(() => {
-    if (!niprJobId || !niprRunning) return
+    if (!niprJobData) return
 
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/nipr/job/${niprJobId}`)
-        if (!response.ok) return
+    setNiprProgress(niprJobData.progress || 0)
+    setNiprProgressMessage(niprJobData.progressMessage || '')
+    setNiprQueuePosition(niprJobData.position || null)
 
-        const job = await response.json()
-
-        setNiprProgress(job.progress || 0)
-        setNiprProgressMessage(job.progressMessage || '')
-        setNiprQueuePosition(job.position || null)
-
-        // If job is completed or failed, stop polling and handle result
-        if (job.status === 'completed') {
-          setNiprRunning(false)
-          setNiprResult({
-            success: true,
-            message: 'NIPR verification completed successfully!',
-            files: job.resultFiles,
-            analysis: {
-              success: true,
-              carriers: job.resultCarriers || [],
-              unique_carriers: job.resultCarriers || [],
-              licensedStates: { resident: [], nonResident: [] },
-              analyzedAt: job.completedAt
-            }
-          })
-
-          // Store carriers if we have them
-          if (job.resultCarriers && job.resultCarriers.length > 0 && userData.id) {
-            await storeCarriersInDatabase(job.resultCarriers, userData.id)
-          }
-
-          // Auto-advance to next step
-          setTimeout(() => {
-            setCurrentStep(3)
-            window.scrollTo({ top: 0, behavior: 'smooth' })
-          }, 2000)
-
-          // Clear localStorage since job is complete
-          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
-          clearInterval(pollInterval)
-        } else if (job.status === 'failed') {
-          setNiprRunning(false)
-          setNiprResult({
-            success: false,
-            message: job.errorMessage || 'NIPR verification failed. Please try again.'
-          })
-          // Clear localStorage since job failed
-          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
-          clearInterval(pollInterval)
+    // If job is completed or failed, stop polling and handle result
+    if (niprJobData.status === 'completed') {
+      setNiprRunning(false)
+      setNiprResult({
+        success: true,
+        message: 'NIPR verification completed successfully!',
+        files: niprJobData.resultFiles,
+        analysis: {
+          success: true,
+          carriers: niprJobData.resultCarriers || [],
+          unique_carriers: niprJobData.resultCarriers || [],
+          licensedStates: { resident: [], nonResident: [] },
+          analyzedAt: niprJobData.completedAt
         }
-      } catch (error) {
-        console.error('[ONBOARDING] Error polling job status:', error)
-      }
-    }, 10000) // Poll every 10 seconds
+      })
 
-    return () => clearInterval(pollInterval)
-  }, [niprJobId, niprRunning, userData.id, userData.is_admin])
+      // Store carriers if we have them
+      if (niprJobData.resultCarriers && niprJobData.resultCarriers.length > 0 && userData.id) {
+        storeCarriersInDatabase(niprJobData.resultCarriers, userData.id)
+      }
+
+      // Auto-advance to next step
+      setTimeout(() => {
+        setCurrentStep(3)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }, 2000)
+
+      // Clear localStorage since job is complete
+      localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
+    } else if (niprJobData.status === 'failed') {
+      setNiprRunning(false)
+      setNiprResult({
+        success: false,
+        message: niprJobData.errorMessage || 'NIPR verification failed. Please try again.'
+      })
+      // Clear localStorage since job failed
+      localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
+    }
+  }, [niprJobData, userData.id])
 
   // Fetch active carriers and match with NIPR results when entering step 2
-  useEffect(() => {
-    const fetchAndMatchCarriers = async () => {
-      // Get carriers to match - either from NIPR result or stored carriers
-      const carriersToMatch = niprResult?.analysis?.unique_carriers || storedCarriers
+  const carriersToMatch = niprResult?.analysis?.unique_carriers || storedCarriers
 
-      if (!carriersToMatch || carriersToMatch.length === 0 || currentStep !== 2) {
+  const { data: activeCarriersData, isLoading: isLoadingCarriers } = useApiFetch<any[]>(
+    queryKeys.carriersList('active'),
+    '/api/carriers',
+    {
+      enabled: currentStep === 2 && !!carriersToMatch && carriersToMatch.length > 0,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+    }
+  )
+
+  useEffect(() => {
+    const matchCarriers = async () => {
+      if (!activeCarriersData || !carriersToMatch || carriersToMatch.length === 0) {
         return
       }
 
       setLoadingMatches(true)
       try {
-        // Fetch active carriers from API
-        const response = await fetch('/api/carriers')
-        if (!response.ok) {
-          console.error('[ONBOARDING] Failed to fetch carriers')
-          return
-        }
-
-        const activeCarriers = await response.json()
-
         // Import and use fuzzy matching
         const { findMatchingCarriers } = await import('@/lib/nipr/fuzzy-match')
         const matches = findMatchingCarriers(
           carriersToMatch,
-          activeCarriers,
+          activeCarriersData,
           0.6 // 60% threshold - more lenient for carrier name variations
         )
 
@@ -481,33 +476,31 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       }
     }
 
-    if (currentStep === 2) {
-      fetchAndMatchCarriers()
+    if (activeCarriersData) {
+      matchCarriers()
     }
-  }, [currentStep, niprResult, storedCarriers])
+  }, [activeCarriersData, carriersToMatch])
 
-  const checkExistingFiles = async () => {
-    if (!userData.agency_id) return
-
-    try {
-      setCheckingExistingFiles(true)
-      const response = await fetch('/api/upload-policy-reports/bucket', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.files && data.files.length > 0) {
-          setUploadedFilesInfo(data.files)
-        }
-      }
-    } catch (error) {
-      console.error('Error checking existing files:', error)
-    } finally {
-      setCheckingExistingFiles(false)
+  const { data: existingFilesData, isLoading: isCheckingExistingFiles } = useApiFetch<{ files: any[] }>(
+    queryKeys.policyReportsFiles(userData.agency_id || ''),
+    '/api/upload-policy-reports/bucket',
+    {
+      enabled: currentStep === 2 && !!userData.agency_id,
+      staleTime: 2 * 60 * 1000, // 2 minutes
+      retry: false,
     }
-  }
+  )
+
+  useEffect(() => {
+    if (existingFilesData?.files && existingFilesData.files.length > 0) {
+      setUploadedFilesInfo(existingFilesData.files)
+    }
+  }, [existingFilesData])
+
+  // Update the loading state to use the query loading state
+  useEffect(() => {
+    setCheckingExistingFiles(isCheckingExistingFiles)
+  }, [isCheckingExistingFiles])
 
   const validateAgentForm = () => {
     const newErrors: string[] = []
@@ -817,18 +810,20 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
       // Update user status to 'active' with timeout (Supabase client can hang)
       try {
-        const { error: updateError } = await withTimeout(
-          supabase
-            .from('users')
-            .update({
-              status: 'active',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', userData.id)
+        const result = await withTimeout(
+          Promise.resolve(
+            supabase
+              .from('users')
+              .update({
+                status: 'active',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', userData.id)
+          )
         )
 
-        if (updateError) {
-          console.error('Error updating user status:', updateError)
+        if (result.error) {
+          console.error('Error updating user status:', result.error)
         }
       } catch {
         // Timeout or error - continue to onComplete() which updates via server API

@@ -25,6 +25,8 @@ import {
   ClipboardCheck
 } from "lucide-react"
 import { createClient } from '@/lib/supabase/client'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queryKeys'
 
 const navigationItems = [
   { name: "Dashboard", href: "/", icon: Home },
@@ -68,12 +70,8 @@ export default function Navigation() {
   const { signOut, user, userData } = useAuth()
   const pathname = usePathname()
   const { resolvedTheme } = useTheme()
+  const queryClient = useQueryClient()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [agencyName, setAgencyName] = useState<string>("AgentSpace")
-  const [agencyLogo, setAgencyLogo] = useState<string | null>(null)
-  const [agencyColor, setAgencyColor] = useState<string>("217 91% 60%")
-  const [isLoadingAgency, setIsLoadingAgency] = useState(true)
   const previousResolvedThemeRef = useRef<string | null>(null)
 
   // Create stable supabase client instance for realtime subscriptions
@@ -85,71 +83,72 @@ export default function Navigation() {
   const subscriptionTier = userData?.subscription_tier || 'free'
   const agencyId = userData?.agency_id || null
 
+  // Fetch agency branding with TanStack Query
+  const { data: agencyData, isLoading: isLoadingAgency } = useQuery({
+    queryKey: queryKeys.agencyBranding(agencyId),
+    queryFn: async () => {
+      if (!agencyId) return null
+
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('agencies')
+        .select('display_name, name, logo_url, primary_color')
+        .eq('id', agencyId)
+        .maybeSingle()
+
+      return data
+    },
+    enabled: !!agencyId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  })
+
+  // Derive agency values from query data
+  const agencyName = agencyData?.display_name || agencyData?.name || "AgentSpace"
+  const agencyLogo = agencyData?.logo_url || null
+  const agencyColor = agencyData?.primary_color || "217 91% 60%"
+
+  // Apply agency color to CSS variables when data changes
   useEffect(() => {
-    const fetchAgencyBranding = async () => {
-      if (!agencyId) {
-        setIsLoadingAgency(false)
-        return
-      }
+    if (agencyData?.primary_color) {
+      document.documentElement.style.setProperty('--primary', agencyData.primary_color)
 
-      try {
-        const supabase = createClient()
-        const { data: agencyData } = await supabase
-          .from('agencies')
-          .select('display_name, name, logo_url, primary_color')
-          .eq('id', agencyId)
-          .maybeSingle()
-
-        if (agencyData) {
-          setAgencyName(agencyData.display_name || agencyData.name || "AgentSpace")
-          setAgencyLogo(agencyData.logo_url || null)
-          setAgencyColor(agencyData.primary_color || "217 91% 60%")
-
-          // Apply agency color to CSS variable
-          if (agencyData.primary_color) {
-            document.documentElement.style.setProperty('--primary', agencyData.primary_color)
-
-            // Set the foreground color based on the primary color's luminance
-            const textColor = getContrastTextColor(agencyData.primary_color)
-            document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching agency branding:', error)
-      } finally {
-        setIsLoadingAgency(false)
-      }
+      // Set the foreground color based on the primary color's luminance
+      const textColor = getContrastTextColor(agencyData.primary_color)
+      document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
     }
-
-    fetchAgencyBranding()
-  }, [agencyId])
+  }, [agencyData?.primary_color])
 
   // Handle automatic primary color switching when theme changes (from ThemeToggle)
   useEffect(() => {
-    if (!agencyId || !resolvedTheme || !agencyColor) return
-    
+    if (!agencyId || !resolvedTheme || !agencyColor || !agencyData) return
+
     const previousResolvedTheme = previousResolvedThemeRef.current
     const currentResolvedTheme = resolvedTheme
-    
+
     // Only proceed if theme actually changed from light to dark or dark to light
-    if (previousResolvedTheme && previousResolvedTheme !== currentResolvedTheme && 
+    if (previousResolvedTheme && previousResolvedTheme !== currentResolvedTheme &&
         (previousResolvedTheme === 'light' || previousResolvedTheme === 'dark') &&
         (currentResolvedTheme === 'light' || currentResolvedTheme === 'dark')) {
-      
+
       // Check if current primary color is the default for the previous mode
       const currentColor = agencyColor
       const isCurrentColorDefault = isDefaultColorForMode(currentColor, previousResolvedTheme as 'light' | 'dark')
-      
+
       // If current color was the default for the previous mode, switch to default for new mode
       if (isCurrentColorDefault) {
         const newDefaultColor = getDefaultPrimaryColor(currentResolvedTheme as 'light' | 'dark')
-        
-        // Update local state and CSS variable
-        setAgencyColor(newDefaultColor)
+
+        // Update query cache with new color
+        queryClient.setQueryData(queryKeys.agencyBranding(agencyId), {
+          ...agencyData,
+          primary_color: newDefaultColor
+        })
+
+        // Update CSS variables
         document.documentElement.style.setProperty('--primary', newDefaultColor)
         const textColor = getContrastTextColor(newDefaultColor)
         document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
-        
+
         // Update database
         const updateColor = async () => {
           try {
@@ -158,7 +157,7 @@ export default function Navigation() {
               .from('agencies')
               .update({ primary_color: newDefaultColor })
               .eq('id', agencyId)
-            
+
             if (error) {
               console.error('Error updating primary color:', error)
             }
@@ -166,23 +165,19 @@ export default function Navigation() {
             console.error('Error updating primary color:', error)
           }
         }
-        
+
         updateColor()
       }
     }
-    
+
     // Update the ref for next comparison
     previousResolvedThemeRef.current = currentResolvedTheme
-  }, [resolvedTheme, agencyId, agencyColor])
+  }, [resolvedTheme, agencyId, agencyColor, agencyData, queryClient])
 
-  // Fetch unread message count with Supabase Realtime subscription
-  useEffect(() => {
-    if (!user?.id) {
-      setUnreadCount(0)
-      return
-    }
-
-    const fetchUnreadCount = async () => {
+  // Fetch unread message count with TanStack Query
+  const { data: unreadCountData } = useQuery({
+    queryKey: queryKeys.conversationCount('self'),
+    queryFn: async () => {
       try {
         // Use countOnly=true for lightweight unread count query
         const response = await fetch('/api/sms/conversations?view=self&countOnly=true', {
@@ -190,20 +185,26 @@ export default function Navigation() {
         })
 
         if (!response.ok) {
-          setUnreadCount(0)
-          return
+          return { unreadCount: 0 }
         }
 
         const data = await response.json()
-        setUnreadCount(data.unreadCount || 0)
+        return { unreadCount: data.unreadCount || 0 }
       } catch (error) {
         console.error('Error fetching unread count:', error)
-        setUnreadCount(0)
+        return { unreadCount: 0 }
       }
-    }
+    },
+    enabled: !!user?.id,
+    staleTime: 1000 * 30, // 30 seconds
+    refetchInterval: 1000 * 60, // Refetch every minute as a fallback
+  })
 
-    // Initial fetch
-    fetchUnreadCount()
+  const unreadCount = unreadCountData?.unreadCount || 0
+
+  // Subscribe to real-time message changes
+  useEffect(() => {
+    if (!user?.id) return
 
     // Subscribe to real-time message changes
     const channelName = `nav-unread-${user.id}`
@@ -221,10 +222,10 @@ export default function Navigation() {
           table: 'messages',
         },
         (payload) => {
-          // When a new inbound message arrives, refetch the count
+          // When a new inbound message arrives, invalidate the query
           const newMessage = payload.new as { direction?: string }
           if (newMessage.direction === 'inbound') {
-            fetchUnreadCount()
+            queryClient.invalidateQueries({ queryKey: queryKeys.conversationCount('self') })
           }
         }
       )
@@ -236,11 +237,11 @@ export default function Navigation() {
           table: 'messages',
         },
         (payload) => {
-          // When a message is marked as read, refetch the count
+          // When a message is marked as read, invalidate the query
           const oldMessage = payload.old as { read_at?: string | null }
           const newMessage = payload.new as { read_at?: string | null; direction?: string }
           if (!oldMessage.read_at && newMessage.read_at && newMessage.direction === 'inbound') {
-            fetchUnreadCount()
+            queryClient.invalidateQueries({ queryKey: queryKeys.conversationCount('self') })
           }
         }
       )
@@ -249,8 +250,8 @@ export default function Navigation() {
     // Handle visibility change - refetch when tab becomes visible
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        // Refetch count when tab becomes visible (catches any missed events)
-        fetchUnreadCount()
+        // Invalidate query when tab becomes visible (catches any missed events)
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversationCount('self') })
       }
     }
 
@@ -260,7 +261,7 @@ export default function Navigation() {
       supabase.removeChannel(channel)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [user?.id])
+  }, [user?.id, supabase, queryClient])
 
   const handleLogout = async () => {
     try {

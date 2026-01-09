@@ -9,8 +9,12 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
     defaultOptions: {
       queries: {
         staleTime: 30 * 1000,
+        gcTime: 30 * 60 * 1000, // 30 minutes - garbage collect unused cache entries
         retry: 2,
         refetchOnWindowFocus: process.env.NODE_ENV === 'production',
+      },
+      mutations: {
+        retry: 0, // Never auto-retry mutations - prevents duplicate submissions
       },
     },
   }))

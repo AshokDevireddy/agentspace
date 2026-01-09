@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queryKeys'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Upload, FileText, X, TrendingUp, Loader2 } from "lucide-react"
@@ -32,9 +34,9 @@ const supportedCarriers = [
 
 export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
   const { showSuccess, showError, showWarning } = useNotification()
+  const queryClient = useQueryClient()
   const [policyReportFiles, setPolicyReportFiles] = useState<PolicyReportFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
-  const [uploadingReports, setUploadingReports] = useState(false)
 
   // Drag and drop handlers
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
@@ -107,16 +109,10 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
     setPolicyReportFiles(prev => prev.filter(f => f.id !== fileId))
   }
 
-  const handleAnalyze = async () => {
-    if (policyReportFiles.length === 0) {
-      showWarning('Please upload at least one policy report before analyzing.')
-      return
-    }
-
-    try {
-      setUploadingReports(true)
+  const uploadMutation = useMutation({
+    mutationFn: async (files: PolicyReportFile[]) => {
       // 0) Create an ingest job first
-      const expectedFiles = policyReportFiles.length
+      const expectedFiles = files.length
       const clientJobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
       // Resolve agencyId from current session
@@ -138,8 +134,7 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
       } catch {}
 
       if (!agencyId) {
-        showError('Could not resolve your agency. Please refresh and try again.')
-        return
+        throw new Error('Could not resolve your agency. Please refresh and try again.')
       }
 
       const jobResp = await fetch('/api/upload-policy-reports/create-job', {
@@ -154,8 +149,7 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
       const jobJson = await jobResp.json().catch(() => null)
       if (!jobResp.ok || !jobJson?.job?.jobId) {
         console.error('Failed to create ingest job', { status: jobResp.status, body: jobJson })
-        showError('Could not start ingest job. Please try again.')
-        return
+        throw new Error('Could not start ingest job. Please try again.')
       }
       const jobId = jobJson.job.jobId as string
       console.debug('Created ingest job', { jobId, expectedFiles })
@@ -166,7 +160,7 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           jobId,
-          files: policyReportFiles.map(({ file }) => ({
+          files: files.map(({ file }) => ({
             fileName: file.name,
             contentType: file.type || 'application/octet-stream',
             size: file.size,
@@ -176,15 +170,14 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
       const signJson = await signResp.json().catch(() => null)
       if (!signResp.ok || !Array.isArray(signJson?.files)) {
         console.error('Presign failed', { status: signResp.status, body: signJson })
-        showError('Could not generate upload URLs. Please try again.')
-        return
+        throw new Error('Could not generate upload URLs. Please try again.')
       }
 
       // 2) Upload each file via its presigned URL (no chunking; URLs expire in 60s)
       const results = await Promise.allSettled(
         (signJson.files as Array<{ fileId: string; fileName: string; presignedUrl: string }>).
           map(async (f) => {
-            const match = policyReportFiles.find(pf => pf.file.name === f.fileName)
+            const match = files.find(pf => pf.file.name === f.fileName)
             if (!match) throw new Error(`Missing file for ${f.fileName}`)
             const res = await putToSignedUrl(f.presignedUrl, match.file)
             if (!res.ok) throw new Error(`Upload failed with status ${res.status}`)
@@ -209,18 +202,38 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
       if (failures.length) console.error('Failed uploads:', failures);
 
       if (failures.length === 0) {
-        showSuccess(`Successfully uploaded ${successes.length} file(s).`)
-        setPolicyReportFiles([])
+        return { successes, failures, message: `Successfully uploaded ${successes.length} file(s).` }
       } else {
-        showWarning(`Uploaded ${successes.length} file(s), but ${failures.length} failed: ${failures.join(', ')}`)
+        throw new Error(`Uploaded ${successes.length} file(s), but ${failures.length} failed: ${failures.join(', ')}`)
       }
-    } catch (err) {
-      console.error('Unexpected error during upload:', err);
-      showError('An unexpected error occurred while uploading. Please try again.')
-    } finally {
-      setUploadingReports(false)
+    },
+    onSuccess: (data) => {
+      showSuccess(data.message)
+      setPolicyReportFiles([])
+      // Invalidate policy reports queries so the list refreshes
+      queryClient.invalidateQueries({ queryKey: queryKeys.configurationPolicyFiles() })
       onClose()
+    },
+    onError: (error: Error) => {
+      console.error('Unexpected error during upload:', error);
+
+      // If it's a partial failure (contains upload count), show warning
+      if (error.message.includes('Uploaded') && error.message.includes('failed')) {
+        showWarning(error.message)
+        onClose()
+      } else {
+        showError(error.message || 'An unexpected error occurred while uploading. Please try again.')
+      }
     }
+  })
+
+  const handleAnalyze = () => {
+    if (policyReportFiles.length === 0) {
+      showWarning('Please upload at least one policy report before analyzing.')
+      return
+    }
+
+    uploadMutation.mutate(policyReportFiles)
   }
 
 
@@ -343,16 +356,16 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
             onClick={handleCancel}
             variant="outline"
             className="px-6 py-2"
-            disabled={uploadingReports}
+            disabled={uploadMutation.isPending}
           >
             Cancel
           </Button>
           <Button
             onClick={handleAnalyze}
-            disabled={uploadingReports || policyReportFiles.length === 0}
+            disabled={uploadMutation.isPending || policyReportFiles.length === 0}
             className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {uploadingReports ? (
+            {uploadMutation.isPending ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Uploading...

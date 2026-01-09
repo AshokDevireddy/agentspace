@@ -10,6 +10,8 @@ import { Calendar as CalendarIcon, Info } from "lucide-react"
 import { useEffect, useState, useMemo } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
+import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
+import { queryKeys } from "@/hooks/queryKeys"
 
 interface AgentScore {
   rank: number
@@ -33,6 +35,12 @@ interface ScoreboardData {
   }
 }
 
+interface ScoreboardRpcResponse {
+  success: boolean
+  data?: ScoreboardData
+  error?: string
+}
+
 type TimeframeOption = 'this_week' | 'last_week' | 'past_7_days' | 'past_14_days' | 'this_month' | 'last_month' | 'past_30_days' | 'past_90_days' | 'past_180_days' | 'past_12_months' | 'ytd' | 'custom'
 
 const timeframeOptions = [
@@ -52,9 +60,6 @@ const timeframeOptions = [
 
 export default function Scoreboard() {
   const { user, userData } = useAuth()
-  const [loading, setLoading] = useState(true)
-  const [data, setData] = useState<ScoreboardData | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [timeframe, setTimeframe] = useState<TimeframeOption>('past_90_days')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
@@ -68,7 +73,7 @@ export default function Scoreboard() {
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
   const [defaultScoreboardStartDate, setDefaultScoreboardStartDate] = useState<string | null>(null)
 
-  // Fetch agency default scoreboard start date
+  // Fetch agency default scoreboard start date (keep as simple useEffect - one-time config fetch)
   useEffect(() => {
     const fetchAgencyDefaultDate = async () => {
       if (!user?.id) return
@@ -207,58 +212,40 @@ export default function Scoreboard() {
     }
   }, [timeframe, defaultScoreboardStartDate])
 
-  // Fetch scoreboard data - only depends on user and the computed date range
-  useEffect(() => {
-    const fetchScoreboardData = async () => {
-      if (!user) return
+  // Fetch scoreboard data using TanStack Query
+  const shouldFetch = !!user?.id && (timeframe !== 'custom' || (!!dateRange.startDate && !!dateRange.endDate))
 
-      // For custom timeframe, ensure both dates are set
-      if (timeframe === 'custom' && (!dateRange.startDate || !dateRange.endDate)) {
-        return
-      }
-
-      try {
-        setLoading(true)
-        setError(null)
-
-        // Use Supabase RPC function
-        const supabase = createClient()
-        const { data: rpcData, error: rpcError } = await supabase.rpc('get_scoreboard_data_updated_lapsed_deals', {
-          p_user_id: user.id,
-          p_start_date: dateRange.startDate,
-          p_end_date: dateRange.endDate,
-          assumed_months_till_lapse: assumedMonthsTillLapse
-        })
-
-        console.log('Scoreboard RPC Response:', JSON.stringify(rpcData, null, 2))
-
-        if (rpcError) {
-          console.error('RPC Error:', rpcError)
-          throw new Error(rpcError.message || 'Failed to fetch scoreboard data')
-        }
-
-        if (!rpcData) {
-          throw new Error('No data returned from RPC')
-        }
-
-        // The RPC returns a wrapper object with success and data
-        if (rpcData.success === false) {
-          setError(rpcData.error || 'Failed to load scoreboard')
-        } else if (rpcData.data) {
-          setData(rpcData.data)
-        } else {
-          throw new Error('Invalid response format from RPC')
-        }
-      } catch (err) {
-        console.error('Error fetching scoreboard:', err)
-        setError(err instanceof Error ? err.message : 'Failed to load scoreboard data')
-      } finally {
-        setLoading(false)
-      }
+  const { data: rpcResponse, isLoading, error: queryError } = useSupabaseRpc<ScoreboardRpcResponse>(
+    [
+      ...queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate),
+      'with-lapse',
+      assumedMonthsTillLapse
+    ],
+    'get_scoreboard_data_updated_lapsed_deals',
+    {
+      p_user_id: user?.id || '',
+      p_start_date: dateRange.startDate,
+      p_end_date: dateRange.endDate,
+      assumed_months_till_lapse: assumedMonthsTillLapse
+    },
+    {
+      enabled: shouldFetch,
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      gcTime: 1000 * 60 * 30, // 30 minutes (formerly cacheTime)
+      refetchOnWindowFocus: false,
     }
+  )
 
-    fetchScoreboardData()
-  }, [user, timeframe, dateRange.startDate, dateRange.endDate, assumedMonthsTillLapse])
+  // Extract data and error from RPC response
+  const data = rpcResponse?.success ? rpcResponse.data : null
+  const error = rpcResponse?.success === false ? rpcResponse.error : queryError?.message
+
+  // Log RPC response for debugging
+  useEffect(() => {
+    if (rpcResponse) {
+      console.log('Scoreboard RPC Response:', JSON.stringify(rpcResponse, null, 2))
+    }
+  }, [rpcResponse])
 
   // Calculate date range for display even when loading
   const displayDateRange = useMemo(() => {
@@ -407,12 +394,12 @@ export default function Scoreboard() {
                   const inputValue = e.target.value
                   // Update the input display value
                   setAssumedMonthsInput(inputValue)
-                  
+
                   // Parse and validate
                   if (inputValue === '') {
                     return // Allow empty while typing
                   }
-                  
+
                   const value = parseInt(inputValue, 10)
                   // Only update the actual state if it's a valid whole number between 1-10
                   if (!isNaN(value) && value >= 1 && value <= 10 && Number.isInteger(value)) {
@@ -427,7 +414,7 @@ export default function Scoreboard() {
                     setAssumedMonthsInput('5')
                     return
                   }
-                  
+
                   const value = parseInt(inputValue, 10)
                   // Reset to default if invalid
                   if (isNaN(value) || value < 1 || value > 10 || !Number.isInteger(value)) {
@@ -442,8 +429,8 @@ export default function Scoreboard() {
                 placeholder="5"
               />
               <div className="relative">
-                <Info 
-                  className="h-3 w-3 text-muted-foreground cursor-help" 
+                <Info
+                  className="h-3 w-3 text-muted-foreground cursor-help"
                   onMouseEnter={() => setShowAssumedMonthsTooltip(true)}
                   onMouseLeave={() => setShowAssumedMonthsTooltip(false)}
                 />
@@ -599,7 +586,7 @@ export default function Scoreboard() {
             <CardContent className="p-6 text-center">
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Production</h3>
               <p className="text-3xl font-bold text-foreground">
-                {loading ? (
+                {isLoading ? (
                   <span className="inline-block h-8 w-32 bg-muted animate-pulse rounded" />
                 ) : (
                   formatCurrency(data?.stats?.totalProduction || 0)
@@ -612,7 +599,7 @@ export default function Scoreboard() {
             <CardContent className="p-6 text-center">
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Policies Sold</h3>
               <p className="text-3xl font-bold text-foreground">
-                {loading ? (
+                {isLoading ? (
                   <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
                 ) : (
                   data?.stats?.totalDeals || 0
@@ -625,7 +612,7 @@ export default function Scoreboard() {
             <CardContent className="p-6 text-center">
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Active Agents</h3>
               <p className="text-3xl font-bold text-foreground">
-                {loading ? (
+                {isLoading ? (
                   <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
                 ) : (
                   data?.stats?.activeAgents || 0
@@ -637,7 +624,7 @@ export default function Scoreboard() {
       )}
 
       {/* Top 3 Winners */}
-      {loading ? (
+      {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[0, 1, 2].map((index) => (
             <Card key={index} className="professional-card rounded-md relative overflow-hidden">
@@ -688,7 +675,7 @@ export default function Scoreboard() {
           <CardTitle className="text-xl font-bold text-foreground">Production Leaderboard</CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {isLoading ? (
             <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full min-w-max">
                 <thead>

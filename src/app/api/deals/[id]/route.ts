@@ -61,6 +61,13 @@ export async function GET(
       return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
+    // Fetch beneficiaries for this deal
+    const { data: beneficiaries } = await admin
+      .from("beneficiaries")
+      .select("id, first_name, last_name, relationship")
+      .eq("deal_id", dealId)
+      .order("created_at", { ascending: true });
+
     // Fetch status_mapping separately
     const { data: statusMapping } = await admin
       .from("status_mapping")
@@ -83,7 +90,8 @@ export async function GET(
       phone_hidden: shouldHidePhone,
       is_writing_agent: isWritingAgent,
       client_email: deal.client?.email || null,
-      client_status: deal.client?.status || null
+      client_status: deal.client?.status || null,
+      beneficiaries: beneficiaries || []
     };
 
     return NextResponse.json({ deal: dealWithMaskedPhone }, { status: 200 });

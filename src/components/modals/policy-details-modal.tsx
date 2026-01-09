@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
-import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2, Mail, Check, Circle, Bot } from "lucide-react"
+import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2, Mail, Check, Circle, Bot, Users, ChevronDown, ChevronUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { useNotification } from "@/contexts/notification-context"
@@ -180,6 +180,9 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
     { value: "active", label: "Active" },
     { value: "terminated", label: "Terminated" }
   ]
+
+  // Beneficiaries section state
+  const [beneficiariesExpanded, setBeneficiariesExpanded] = useState(false)
 
   // Keep the SMS card the same height as the left widgets to avoid blank space
   useEffect(() => {
@@ -733,6 +736,52 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Beneficiaries Section */}
+              {deal.beneficiaries && deal.beneficiaries.length > 0 && (
+                <Card className="professional-card border-l-4 border-l-purple-500">
+                  <CardContent className="p-6">
+                    <button
+                      onClick={() => setBeneficiariesExpanded(!beneficiariesExpanded)}
+                      className="w-full flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Users className="h-5 w-5 text-purple-500" />
+                        <h3 className="text-xl font-bold text-foreground">Beneficiaries</h3>
+                        <Badge variant="secondary" className="ml-2">{deal.beneficiaries.length}</Badge>
+                      </div>
+                      {beneficiariesExpanded ? (
+                        <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                      )}
+                    </button>
+                    {beneficiariesExpanded && (
+                      <div className="mt-4 space-y-3">
+                        {deal.beneficiaries.map((beneficiary: { id: string; first_name: string; last_name: string; relationship: string }) => (
+                          <div key={beneficiary.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-950/30 flex items-center justify-center">
+                                <User className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                              </div>
+                              <div>
+                                <p className="font-semibold text-foreground">
+                                  {beneficiary.first_name} {beneficiary.last_name}
+                                </p>
+                                {beneficiary.relationship && (
+                                  <p className="text-sm text-muted-foreground capitalize">
+                                    {beneficiary.relationship}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* Right Column - SMS Conversation */}

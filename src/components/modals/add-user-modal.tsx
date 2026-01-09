@@ -8,8 +8,9 @@ import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { createClient } from '@/lib/supabase/client'
 import { useNotification } from "@/contexts/notification-context"
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { useSendInvite } from '@/hooks/mutations'
 
 interface AddUserModalProps {
   trigger: React.ReactNode
@@ -279,35 +280,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     }
   }, [defaultUplineData, hasSetDefaultUpline])
 
-  // Mutation: Submit form to invite agent
-  const inviteAgentMutation = useMutation({
-    mutationFn: async (data: typeof formData & { preInviteUserId: string | null }) => {
-      const response = await fetch('/api/agents/invite', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: data.email,
-          firstName: data.firstName,
-          lastName: data.lastName,
-          phoneNumber: data.phoneNumber,
-          permissionLevel: data.permissionLevel,
-          uplineAgentId: data.uplineAgentId || null,
-          positionId: data.positionId || null,
-          preInviteUserId: data.preInviteUserId
-        }),
-        credentials: 'include'
-      })
-
-      const responseData = await response.json()
-
-      if (!response.ok) {
-        throw new Error(responseData.error || 'Failed to invite agent')
-      }
-
-      return responseData
-    },
+  // Mutation: Submit form to invite agent - using centralized hook
+  const inviteAgentMutation = useSendInvite({
+    invalidateAdditional: true, // Also invalidate clients and agentsPendingPositions
     onSuccess: (data, variables) => {
       const message = selectedPreInviteUserId
         ? `User ${variables.firstName} ${variables.lastName} updated and invitation sent to ${variables.email}!`
@@ -334,11 +309,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setSelectedUplineLabel("")
       setSelectedPreInviteUserId(null)
       setHasSetDefaultUpline(false)
-
-      // Invalidate relevant queries to refresh data without page reload
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents })
-      queryClient.invalidateQueries({ queryKey: queryKeys.clients })
-      queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
     },
     onError: (error: Error) => {
       console.error('Error inviting agent:', error)
@@ -593,7 +563,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
       setSelectedPreInviteUserId(userId)
       setNameSearchTerm(selectedOption.label)
-      setNameSearchResults([])
+      // No need to clear results - TanStack Query manages this automatically when pauseNameSearch is set
 
       // If there's an upline, set the search term for upline field
       if (user.upline_id) {

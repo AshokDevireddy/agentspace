@@ -1061,9 +1061,8 @@ export default function ConfigurationPage() {
       const textColor = getContrastTextColor(newColor)
       document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
 
-      // Update agency color in background
-      const supabase = createClient()
-      supabase.from('agencies').update({ primary_color: newColor }).eq('id', agency.id)
+      // Update agency color using proper mutation (not fire-and-forget)
+      updatePrimaryColorMutation.mutate({ agencyId: agency.id, color: newColor })
     }
 
     setSavingTheme(true)

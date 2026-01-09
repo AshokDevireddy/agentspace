@@ -44,6 +44,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   supabaseRef.current ??= createClient()
   const supabase = supabaseRef.current
 
+  // Guard against concurrent signIn calls to prevent race conditions
+  const signInInProgressRef = useRef(false)
+
   // Mark as hydrated after first client-side render
   // This prevents hydration mismatch between server and client
   useEffect(() => {
@@ -135,36 +138,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [isHydrated]) // supabase client is stable via ref
 
   const signIn = useCallback(async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) throw error
-
-    const { data: userProfile, error: userError } = await supabase
-      .from('users')
-      .select('role, status, theme_mode, is_admin, agency_id, subscription_tier')
-      .eq('auth_user_id', data.user.id)
-      .single()
-
-    if (userError) throw new Error('User profile not found')
-    if (userProfile.status !== 'active') {
-      await supabase.auth.signOut()
-      throw new Error('Your account has been deactivated')
+    // Prevent concurrent signIn calls to avoid race conditions
+    if (signInInProgressRef.current) {
+      throw new Error('Sign in already in progress')
     }
-    if (expectedRole && userProfile.role !== expectedRole) {
-      await supabase.auth.signOut()
-      throw new Error(`Please use the ${userProfile.role} login tab`)
+    signInInProgressRef.current = true
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) throw error
+
+      const { data: userProfile, error: userError } = await supabase
+        .from('users')
+        .select('role, status, theme_mode, is_admin, agency_id, subscription_tier')
+        .eq('auth_user_id', data.user.id)
+        .single()
+
+      if (userError) throw new Error('User profile not found')
+      if (userProfile.status !== 'active') {
+        await supabase.auth.signOut()
+        throw new Error('Your account has been deactivated')
+      }
+      if (expectedRole && userProfile.role !== expectedRole) {
+        await supabase.auth.signOut()
+        throw new Error(`Please use the ${userProfile.role} login tab`)
+      }
+
+      setUser(data.user)
+      setUserData({
+        role: userProfile.role as 'admin' | 'agent' | 'client',
+        status: userProfile.status as 'active' | 'onboarding' | 'invited' | 'inactive',
+        theme_mode: userProfile.theme_mode as 'light' | 'dark' | 'system' | null,
+        is_admin: userProfile.is_admin || false,
+        agency_id: userProfile.agency_id || null,
+        subscription_tier: (userProfile.subscription_tier || 'free') as 'free' | 'pro' | 'expert'
+      })
+
+      router.push(userProfile.role === 'client' ? '/client/dashboard' : '/')
+    } finally {
+      signInInProgressRef.current = false
     }
-
-    setUser(data.user)
-    setUserData({
-      role: userProfile.role as 'admin' | 'agent' | 'client',
-      status: userProfile.status as 'active' | 'onboarding' | 'invited' | 'inactive',
-      theme_mode: userProfile.theme_mode as 'light' | 'dark' | 'system' | null,
-      is_admin: userProfile.is_admin || false,
-      agency_id: userProfile.agency_id || null,
-      subscription_tier: (userProfile.subscription_tier || 'free') as 'free' | 'pro' | 'expert'
-    })
-
-    router.push(userProfile.role === 'client' ? '/client/dashboard' : '/')
   }, [supabase, router])
 
   const signOut = useCallback(async () => {

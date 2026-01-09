@@ -100,13 +100,20 @@ interface SendInviteInput {
   permissionLevel: string
   uplineAgentId?: string | null
   positionId?: string | null
-  preInviteUserId: string
+  preInviteUserId?: string | null  // Optional for onboarding flow
 }
 
 /**
- * Send invite to a pre-invite user
+ * Send invite to a pre-invite user or invite a new agent
+ * This is the canonical invite mutation used by both agents page and onboarding wizard
  */
-export function useSendInvite() {
+export function useSendInvite(options?: {
+  invalidateAdditional?: boolean  // Also invalidate clients and agentsPendingPositions
+  onSuccess?: (data: unknown, variables: SendInviteInput) => void
+  onError?: (error: Error) => void
+}) {
+  const queryClient = useQueryClient()
+
   return useMutation<unknown, Error, SendInviteInput>({
     mutationFn: async (input) => {
       const response = await fetch('/api/agents/invite', {
@@ -123,6 +130,19 @@ export function useSendInvite() {
 
       return response.json()
     },
+    onSuccess: (data, variables) => {
+      // Invalidate agents list to show the new invite
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents })
+
+      // Optionally invalidate additional queries
+      if (options?.invalidateAdditional) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.clients })
+        queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
+      }
+
+      options?.onSuccess?.(data, variables)
+    },
+    onError: options?.onError,
   })
 }
 

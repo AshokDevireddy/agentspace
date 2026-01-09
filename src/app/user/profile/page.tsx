@@ -80,7 +80,11 @@ export default function ProfilePage() {
   } = useApiFetch<ProfileApiResponse>(
     queryKeys.userProfile(user?.id),
     `/api/user/profile?user_id=${user?.id}`,
-    { enabled: !!user }
+    {
+      enabled: !!user,
+      staleTime: 5 * 60 * 1000, // 5 minutes - profile rarely changes
+      placeholderData: (previousData) => previousData, // Stale-while-revalidate
+    }
   )
 
   const profileData = profileResponse?.data
@@ -175,6 +179,24 @@ export default function ProfilePage() {
       showError('Failed to update theme preference')
     }
     setSavingTheme(false)
+  }
+
+  // Show error state if profile fetch failed
+  if (profileError) {
+    return (
+      <div className="flex flex-col items-center w-full min-h-screen bg-background py-8">
+        <div className="w-full max-w-3xl bg-destructive/10 rounded-xl border border-destructive p-6">
+          <h2 className="text-lg font-semibold text-destructive mb-2">Failed to load profile</h2>
+          <p className="text-sm text-destructive/80">{profileError instanceof Error ? profileError.message : 'An unexpected error occurred'}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // Show loading skeleton until data is ready

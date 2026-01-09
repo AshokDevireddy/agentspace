@@ -7,8 +7,9 @@ import { cn } from "@/lib/utils"
 import { Loader2, MessageSquare, UserCircle } from "lucide-react"
 import { useNotification } from '@/contexts/notification-context'
 import { useApiFetch } from '@/hooks/useApiFetch'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { useApproveDrafts, useRejectDrafts } from '@/hooks/mutations'
 
 interface DraftMessage {
   id: string
@@ -46,59 +47,28 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
 
   const draftGroups = data?.drafts || []
 
-  // Approve mutation
-  const approveMutation = useMutation({
-    mutationFn: async (messageIds: string[]) => {
-      const response = await fetch('/api/sms/drafts/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageIds })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to approve drafts')
-      }
-
-      return response.json()
-    },
-    onSuccess: (_, messageIds) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.draftsList(viewMode) })
+  // Use centralized mutation hooks
+  const approveMutation = useApproveDrafts({
+    viewMode,
+    onSuccess: (messageIds) => {
       setSelectedDrafts(new Set())
       showSuccess(`Successfully approved ${messageIds.length} draft(s)`)
     },
     onError: (error) => {
       console.error('Error approving drafts:', error)
-      showError(error instanceof Error ? error.message : 'Failed to approve drafts')
+      showError(error.message || 'Failed to approve drafts')
     }
   })
 
-  // Reject mutation
-  const rejectMutation = useMutation({
-    mutationFn: async (messageIds: string[]) => {
-      const response = await fetch('/api/sms/drafts/reject', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageIds })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to reject drafts')
-      }
-
-      return response.json()
-    },
-    onSuccess: (_, messageIds) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.draftsList(viewMode) })
+  const rejectMutation = useRejectDrafts({
+    viewMode,
+    onSuccess: (messageIds) => {
       setSelectedDrafts(new Set())
       showSuccess(`Successfully rejected ${messageIds.length} draft(s)`)
     },
     onError: (error) => {
       console.error('Error rejecting drafts:', error)
-      showError(error instanceof Error ? error.message : 'Failed to reject drafts')
+      showError(error.message || 'Failed to reject drafts')
     }
   })
 
@@ -128,7 +98,7 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
 
   const handleBulkApprove = () => {
     if (selectedDrafts.size === 0) return
-    approveMutation.mutate(Array.from(selectedDrafts))
+    approveMutation.mutate({ messageIds: Array.from(selectedDrafts) })
   }
 
   const handleBulkReject = () => {
@@ -138,7 +108,7 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
       return
     }
 
-    rejectMutation.mutate(Array.from(selectedDrafts))
+    rejectMutation.mutate({ messageIds: Array.from(selectedDrafts) })
   }
 
   return (

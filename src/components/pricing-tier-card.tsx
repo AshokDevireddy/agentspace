@@ -2,8 +2,7 @@
 
 import { Check, Sparkles, Crown, Zap } from 'lucide-react';
 import { useNotification } from '@/contexts/notification-context';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { queryKeys } from '@/hooks/queryKeys';
+import { useSubscription } from '@/hooks/mutations';
 
 interface PricingTierCardProps {
   tier: 'free' | 'basic' | 'pro' | 'expert';
@@ -67,86 +66,33 @@ export function PricingTierCard({
   hasActiveSubscription,
 }: PricingTierCardProps) {
   const { showSuccess, showError } = useNotification();
-  const queryClient = useQueryClient();
 
   const colors = tierColors[tier];
   const icon = tierIcons[tier];
 
-  const subscriptionMutation = useMutation({
-    mutationFn: async () => {
-      if (tier === 'free') return;
-
-      // If user already has an active subscription, use change-subscription endpoint
-      if (hasActiveSubscription && currentTier !== 'free') {
-        console.log(`Changing subscription: ${currentTier} → ${tier}`);
-
-        const response = await fetch('/api/stripe/change-subscription', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ newTier: tier }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to change subscription');
-        }
-
-        return { type: 'change', data };
-      } else {
-        // User doesn't have subscription (Free tier) - use Stripe Checkout
-        console.log(`Creating new subscription for tier: ${tier}`);
-
-        const response = await fetch('/api/stripe/create-checkout-session', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ priceId }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to create checkout session');
-        }
-
-        if (data.url) {
-          return { type: 'checkout', data };
-        } else {
-          throw new Error('No checkout URL returned');
-        }
-      }
+  // Use centralized subscription mutation hook
+  const subscriptionMutation = useSubscription({
+    hasActiveSubscription,
+    currentTier,
+    onCheckoutRedirect: (url) => {
+      window.location.href = url;
     },
-    onSuccess: (result) => {
-      if (!result) return;
-
-      if (result.type === 'change') {
-        // If it's a downgrade, show success message
-        if (!result.data.immediate) {
-          showSuccess(`Downgrade scheduled! Your plan will change to ${tier} on ${new Date(result.data.effectiveDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
-        } else {
-          showSuccess(`Successfully upgraded to ${tier} tier!`);
-        }
-
-        // Invalidate subscription and user queries to refresh UI
-        queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() });
-        queryClient.invalidateQueries({ queryKey: queryKeys.user });
-      } else if (result.type === 'checkout') {
-        window.location.href = result.data.url;
+    onSubscriptionChanged: (data, newTier) => {
+      if (!data.immediate) {
+        showSuccess(`Downgrade scheduled! Your plan will change to ${newTier} on ${new Date(data.effectiveDate!).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
+      } else {
+        showSuccess(`Successfully upgraded to ${newTier} tier!`);
       }
     },
     onError: (err) => {
       console.error('Subscription error:', err);
-      showError(err instanceof Error ? err.message : 'Failed to update subscription');
+      showError(err.message || 'Failed to update subscription');
     },
   });
 
   const handleSubscribe = () => {
     if (tier === 'free') return;
-    subscriptionMutation.mutate();
+    subscriptionMutation.mutate({ tier, priceId });
   };
 
   // All tiers are accessible for subscription (Expert features may be admin-only, not the subscription)

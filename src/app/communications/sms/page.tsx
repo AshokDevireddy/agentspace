@@ -33,9 +33,10 @@ import {
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { useNotification } from '@/contexts/notification-context'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
+import { useSendMessage, useResolveNotification, useApproveDrafts, useRejectDrafts, useEditDraft } from '@/hooks/mutations'
 
 interface Conversation {
   id: string
@@ -597,34 +598,18 @@ function SMSMessagingPageContent() {
     }
   }, [conversationIdFromUrl, conversations, selectedConversation, handleConversationSelect])
 
-  // Send message mutation - migrated to useMutation
-  const sendMessageMutation = useMutation({
-    mutationFn: async ({ dealId, message }: { dealId: string; message: string }) => {
-      const response = await fetch('/api/sms/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ dealId, message }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to send message')
-      }
-
-      return response.json()
+  // Send message mutation - using centralized hook
+  const sendMessageMutation = useSendMessage({
+    getInvalidateFilters: () => {
+      const { effectiveViewMode, searchQuery, notificationFilter } = filtersRef.current
+      return { viewMode: effectiveViewMode, searchQuery, notificationFilter }
     },
     onSuccess: () => {
-      // Invalidate messages query to refetch
-      if (selectedConversation?.id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(selectedConversation.id) })
+      // Also invalidate messages query for the current conversation
+      const currentConversationId = selectedConversationRef.current?.id
+      if (currentConversationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
       }
-      // Invalidate conversations list to update last message
-      // Use filtersRef.current to get fresh filter values
-      const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
-      queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
     },
     onError: (error: Error) => {
       console.error('Error sending message:', error)
@@ -665,29 +650,13 @@ function SMSMessagingPageContent() {
     }
   }
 
-  // Resolve notification mutation - converted from manual state
-  const resolveNotificationMutation = useMutation({
-    mutationFn: async (dealId: string) => {
-      const response = await fetch(`/api/deals/${dealId}/resolve-notification`, {
-        method: 'POST',
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to resolve notification')
-      }
-
-      return response.json()
+  // Resolve notification mutation - using centralized hook
+  const resolveNotificationMutation = useResolveNotification({
+    getInvalidateFilters: () => {
+      const { effectiveViewMode, searchQuery, notificationFilter } = filtersRef.current
+      return { viewMode: effectiveViewMode, searchQuery, notificationFilter }
     },
-    onSuccess: (_, dealId) => {
-      // Invalidate deal details query to update UI and remove yellow indicator
-      queryClient.invalidateQueries({ queryKey: queryKeys.dealDetail(dealId) })
-
-      // Invalidate conversations list as well
-      const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
-      queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
-
+    onSuccess: () => {
       showSuccess('Notification resolved successfully')
     },
     onError: (error: Error) => {
@@ -770,27 +739,13 @@ function SMSMessagingPageContent() {
     }
   }, [queryClient, handleConversationSelect])
 
-  // Approve draft mutation - converted from manual state
-  const approveDraftMutation = useMutation({
-    mutationFn: async (messageId: string) => {
-      const response = await fetch('/api/sms/drafts/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageIds: [messageId] })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to approve draft')
-      }
-
-      return { messageId, data: await response.json() }
-    },
+  // Approve draft mutation - using centralized hook
+  const approveDraftMutation = useApproveDrafts({
     onSuccess: () => {
-      // Invalidate messages query to refetch with updated status
-      if (selectedConversation) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(selectedConversation.id) })
+      // Also invalidate messages query for the current conversation
+      const currentConversationId = selectedConversationRef.current?.id
+      if (currentConversationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
       }
       console.log('✅ Draft approved successfully')
     },
@@ -801,30 +756,16 @@ function SMSMessagingPageContent() {
   })
 
   const handleApproveDraft = (messageId: string) => {
-    approveDraftMutation.mutate(messageId)
+    approveDraftMutation.mutate({ messageIds: [messageId] })
   }
 
-  // Reject draft mutation - converted from manual state
-  const rejectDraftMutation = useMutation({
-    mutationFn: async (messageId: string) => {
-      const response = await fetch('/api/sms/drafts/reject', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageIds: [messageId] })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to reject draft')
-      }
-
-      return { messageId, data: await response.json() }
-    },
+  // Reject draft mutation - using centralized hook
+  const rejectDraftMutation = useRejectDrafts({
     onSuccess: () => {
-      // Invalidate messages query to refetch without rejected draft
-      if (selectedConversation) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(selectedConversation.id) })
+      // Also invalidate messages query for the current conversation
+      const currentConversationId = selectedConversationRef.current?.id
+      if (currentConversationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
       }
       console.log('✅ Draft rejected successfully')
     },
@@ -835,7 +776,7 @@ function SMSMessagingPageContent() {
   })
 
   const handleRejectDraft = (messageId: string) => {
-    rejectDraftMutation.mutate(messageId)
+    rejectDraftMutation.mutate({ messageIds: [messageId] })
   }
 
   const handleStartEditDraft = (messageId: string, currentBody: string) => {
@@ -848,33 +789,26 @@ function SMSMessagingPageContent() {
     setEditingDraftBody("")
   }
 
-  const handleSaveEditDraft = async (messageId: string) => {
-    try {
-      const response = await fetch('/api/sms/drafts/edit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageId, body: editingDraftBody })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to update draft')
+  // Edit draft mutation - using centralized hook
+  const editDraftMutation = useEditDraft({
+    onSuccess: () => {
+      // Also invalidate messages query for the current conversation
+      const currentConversationId = selectedConversationRef.current?.id
+      if (currentConversationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
       }
-
-      // Invalidate messages query to refetch with updated draft
-      if (selectedConversation) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(selectedConversation.id) })
-      }
-
       setEditingDraftId(null)
       setEditingDraftBody("")
-
       console.log('✅ Draft updated successfully')
-    } catch (error) {
+    },
+    onError: (error: Error) => {
       console.error('Error updating draft:', error)
-      showError(error instanceof Error ? error.message : 'Failed to update draft')
+      showError(error.message || 'Failed to update draft')
     }
+  })
+
+  const handleSaveEditDraft = (messageId: string) => {
+    editDraftMutation.mutate({ messageId, body: editingDraftBody })
   }
 
   return (
@@ -1191,10 +1125,10 @@ function SMSMessagingPageContent() {
                                     <Button
                                       size="sm"
                                       onClick={() => handleApproveDraft(message.id)}
-                                      disabled={approveDraftMutation.isPending && approveDraftMutation.variables === message.id}
+                                      disabled={approveDraftMutation.isPending && approveDraftMutation.variables?.messageIds?.includes(message.id)}
                                       className="bg-green-600 hover:bg-green-700 text-white text-xs flex-1 min-w-[110px]"
                                     >
-                                      {approveDraftMutation.isPending && approveDraftMutation.variables === message.id ? (
+                                      {approveDraftMutation.isPending && approveDraftMutation.variables?.messageIds?.includes(message.id) ? (
                                         <Loader2 className="h-3 w-3 animate-spin" />
                                       ) : (
                                         'Approve & Send'
@@ -1212,10 +1146,10 @@ function SMSMessagingPageContent() {
                                       size="sm"
                                       variant="destructive"
                                       onClick={() => handleRejectDraft(message.id)}
-                                      disabled={rejectDraftMutation.isPending && rejectDraftMutation.variables === message.id}
+                                      disabled={rejectDraftMutation.isPending && rejectDraftMutation.variables?.messageIds?.includes(message.id)}
                                       className="text-xs min-w-[60px]"
                                     >
-                                      {rejectDraftMutation.isPending && rejectDraftMutation.variables === message.id ? (
+                                      {rejectDraftMutation.isPending && rejectDraftMutation.variables?.messageIds?.includes(message.id) ? (
                                         <Loader2 className="h-3 w-3 animate-spin" />
                                       ) : (
                                         'Reject'

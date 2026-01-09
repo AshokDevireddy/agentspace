@@ -1,8 +1,7 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { queryKeys } from '@/hooks/queryKeys';
 import { useNotification } from '@/contexts/notification-context';
+import { useAddSubscriptionItem, useCreateCheckoutSession } from '@/hooks/mutations';
 
 interface SubscriptionCardProps {
   title: string;
@@ -24,74 +23,41 @@ export function SubscriptionCard({
   buttonText = 'Subscribe',
 }: SubscriptionCardProps) {
   const { showError, showSuccess } = useNotification();
-  const queryClient = useQueryClient();
 
-  const mutation = useMutation({
-    mutationFn: async () => {
-      // For AI Mode addon, add to existing subscription instead of creating new one
-      if (subscriptionType === 'ai_mode_addon') {
-        const response = await fetch('/api/stripe/add-subscription-item', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify({ priceId }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to add subscription item');
-        }
-
-        return data;
-      }
-
-      // For base subscription, create checkout session
-      const response = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          priceId,
-          subscriptionType,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create checkout session');
-      }
-
-      // Redirect to Stripe Checkout URL (modern approach)
-      if (!data.url) {
-        throw new Error('No checkout URL returned');
-      }
-
-      return data;
-    },
-    onSuccess: (data) => {
-      if (subscriptionType === 'ai_mode_addon') {
-        // Show success notification and invalidate queries
-        showSuccess('AI Mode successfully activated!');
-        queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() });
-        queryClient.invalidateQueries({ queryKey: queryKeys.user });
-      } else {
-        // Show feedback before redirect
-        showSuccess('Redirecting to checkout...');
-        // Redirect to Stripe Checkout
-        window.location.href = data.url;
-      }
+  // Use centralized mutation hooks
+  const addItemMutation = useAddSubscriptionItem({
+    onSuccess: () => {
+      showSuccess('AI Mode successfully activated!');
     },
     onError: (err) => {
       console.error('Subscription error:', err);
-      showError(err instanceof Error ? err.message : 'Failed to process subscription');
+      showError(err.message || 'Failed to add subscription item');
     },
   });
+
+  const checkoutMutation = useCreateCheckoutSession({
+    onSuccess: (url) => {
+      showSuccess('Redirecting to checkout...');
+      window.location.href = url;
+    },
+    onError: (err) => {
+      console.error('Subscription error:', err);
+      showError(err.message || 'Failed to create checkout session');
+    },
+  });
+
+  // Combined mutation state
+  const mutation = {
+    isPending: addItemMutation.isPending || checkoutMutation.isPending,
+    error: addItemMutation.error || checkoutMutation.error,
+    mutate: () => {
+      if (subscriptionType === 'ai_mode_addon') {
+        addItemMutation.mutate({ priceId });
+      } else {
+        checkoutMutation.mutate({ priceId, subscriptionType });
+      }
+    },
+  };
 
   // Wrapper function to prevent race conditions with rapid clicks
   const handleClick = () => {

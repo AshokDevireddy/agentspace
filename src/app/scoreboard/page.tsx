@@ -572,6 +572,14 @@ export default function Scoreboard() {
         </div>
       </div>
 
+      {/* Error state */}
+      {queryError && (
+        <div className="mb-6 rounded-xl border border-destructive bg-destructive/10 p-4">
+          <h3 className="font-semibold text-destructive mb-1">Failed to load scoreboard data</h3>
+          <p className="text-sm text-destructive/80">{queryError instanceof Error ? queryError.message : 'An unexpected error occurred'}</p>
+        </div>
+      )}
+
       {/* Weekly Stats - Only show for admins */}
       {userData?.role === 'admin' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

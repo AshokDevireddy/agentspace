@@ -1,7 +1,7 @@
 'use client';
 
-import { useMutation } from '@tanstack/react-query';
 import { useNotification } from '@/contexts/notification-context'
+import { useOpenBillingPortal } from '@/hooks/mutations'
 
 interface SubscriptionManagerProps {
   subscriptionStatus: string;
@@ -11,26 +11,13 @@ interface SubscriptionManagerProps {
 export function SubscriptionManager({ subscriptionStatus, hasAiAddon }: SubscriptionManagerProps) {
   const { showError } = useNotification()
 
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch('/api/stripe/create-portal-session', {
-        method: 'POST',
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to open billing portal');
-      }
-
-      return data;
-    },
-    onSuccess: (data) => {
-      window.location.href = data.url;
+  const mutation = useOpenBillingPortal({
+    onSuccess: (url) => {
+      window.location.href = url;
     },
     onError: (err) => {
       console.error('Error opening billing portal:', err);
-      showError(err instanceof Error ? err.message : 'An error occurred');
+      showError(err.message || 'An error occurred');
     },
   });
 

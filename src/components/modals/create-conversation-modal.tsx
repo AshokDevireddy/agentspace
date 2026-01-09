@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Search, Loader2, Phone, User, Building, Package } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useNotification } from '@/contexts/notification-context'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { useCheckConversation, useCreateConversation } from '@/hooks/mutations'
 
 interface Deal {
   id: string
@@ -79,72 +80,33 @@ export function CreateConversationModal({
 
   const searchResults = searchData || []
 
-  // Check if conversation exists mutation
-  const checkConversationMutation = useMutation({
-    mutationFn: async (dealId: string) => {
-      const response = await fetch('/api/sms/conversations/get-or-create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ dealId }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to check conversation')
-      }
-
-      return response.json()
+  // Check if conversation exists mutation - using centralized hook
+  const checkConversationMutation = useCheckConversation({
+    onExists: (conversationId) => {
+      // Conversation already exists, open it
+      onConversationCreated(conversationId)
+      handleClose()
     },
-    onSuccess: (data, dealId) => {
-      if (data.exists) {
-        // Conversation already exists, open it
-        onConversationCreated(data.conversationId)
-        handleClose()
-      } else {
-        // Show confirmation dialog
-        setConfirmCreate(true)
-      }
+    onNotExists: () => {
+      // Show confirmation dialog
+      setConfirmCreate(true)
     },
     onError: (error) => {
       console.error('Error checking conversation:', error)
-      showError(error instanceof Error ? error.message : 'Failed to check conversation')
+      showError(error.message || 'Failed to check conversation')
       setSelectedDeal(null)
     }
   })
 
-  // Create conversation mutation
-  const createConversationMutation = useMutation({
-    mutationFn: async (deal: Deal) => {
-      const response = await fetch('/api/sms/conversations/get-or-create', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          dealId: deal.id,
-          agentId: deal.agentId
-        }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to create conversation')
-      }
-
-      return response.json()
-    },
-    onSuccess: (data) => {
-      // Invalidate all conversations queries (base key matches all conversation-related queries)
-      queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
-      onConversationCreated(data.conversationId)
+  // Create conversation mutation - using centralized hook
+  const createConversationMutation = useCreateConversation({
+    onSuccess: (conversationId) => {
+      onConversationCreated(conversationId)
       handleClose()
     },
     onError: (error) => {
       console.error('Error creating conversation:', error)
-      showError(error instanceof Error ? error.message : 'Failed to create conversation')
+      showError(error.message || 'Failed to create conversation')
     }
   })
 
@@ -155,7 +117,7 @@ export function CreateConversationModal({
 
   const handleCreateConversation = () => {
     if (!selectedDeal) return
-    createConversationMutation.mutate(selectedDeal)
+    createConversationMutation.mutate({ dealId: selectedDeal.id, agentId: selectedDeal.agentId })
   }
 
   const handleClose = () => {

@@ -201,12 +201,20 @@ export default function BookOfBusiness() {
     effectiveDateSort?: FilterOption[]
   }>(
     queryKeys.dealsFilterOptions(),
-    '/api/deals/filter-options'
+    '/api/deals/filter-options',
+    {
+      staleTime: 15 * 60 * 1000, // 15 minutes - filter options rarely change
+      placeholderData: (previousData) => previousData, // Stale-while-revalidate
+    }
   )
 
   const { data: niprCarriers } = useApiFetch<Array<{ id: string; display_name: string }>>(
     queryKeys.carriersList('nipr'),
-    '/api/carriers?filter=nipr'
+    '/api/carriers?filter=nipr',
+    {
+      staleTime: 15 * 60 * 1000, // 15 minutes - carrier list rarely changes
+      placeholderData: (previousData) => previousData, // Stale-while-revalidate
+    }
   )
 
   // Compute filter options

@@ -1,61 +1,23 @@
 /**
  * Onboarding-related mutation hooks for TanStack Query
  * Used by onboarding wizard for all mutation operations
+ *
+ * NOTE: Some mutations are re-exported from their canonical locations
+ * to avoid duplication while maintaining the same API for onboarding components.
  */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useAuthenticatedMutation } from '../useMutations'
-import { queryKeys } from '../queryKeys'
+import { useMutation } from '@tanstack/react-query'
 
-// ============ Agent Invite Mutation ============
+// Re-export agent invite from the canonical location
+// The hook name is different but the functionality is the same
+export { useSendInvite as useInviteAgent } from './useAgentMutations'
 
-interface InviteAgentInput {
-  email: string
-  firstName: string
-  lastName: string
-  phoneNumber: string
-  permissionLevel: string
-  uplineAgentId: string | null
-  preInviteUserId?: string | null
-}
+// Re-export policy report mutations from the canonical location
+export { useCreatePolicyReportJob as useCreateOnboardingPolicyJob } from './usePolicyReportMutations'
+export { useSignPolicyReportFiles as useSignOnboardingPolicyFiles } from './usePolicyReportMutations'
 
-interface InviteAgentResponse {
-  success: boolean
-  user?: {
-    id: string
-    email: string
-  }
-  error?: string
-}
-
-/**
- * Invite an agent to the team
- */
-export function useInviteAgent() {
-  const queryClient = useQueryClient()
-
-  return useMutation<InviteAgentResponse, Error, InviteAgentInput>({
-    mutationFn: async (variables) => {
-      const response = await fetch('/api/agents/invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(variables),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to invite agent')
-      }
-
-      return data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents })
-    },
-  })
-}
+// Re-export carrier login from the canonical location
+export { useSaveCarrierLogin as useOnboardingCarrierLogin } from './useCarrierMutations'
 
 // ============ NIPR Mutations ============
 

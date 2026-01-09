@@ -461,7 +461,8 @@ export default function Agents() {
 
       return { positions, userPositionLevel }
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 10 * 60 * 1000, // 10 minutes - positions rarely change
+    placeholderData: (previousData) => previousData, // Stale-while-revalidate
   })
 
   // Compute position color map from positions data (pure transformation)
@@ -604,11 +605,12 @@ export default function Agents() {
   const pendingCount = pendingAgents.filter((a: PendingAgent) => !a.has_position).length
 
   // Compute view-specific loading state
+  // Only block on agent data - positions loading shouldn't block the main UI
   const loading = view === 'tree'
     ? agentsLoading
     : view === 'pending-positions'
       ? pendingPositionsLoading
-      : agentsLoading || positionsLoading
+      : agentsLoading // Decoupled: positions load independently
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {

@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { queryKeys } from "@/hooks/queryKeys"
 
 interface Option {
   value: string
@@ -47,7 +48,7 @@ export function AsyncSearchableSelect({
 
   // Fetch options using TanStack Query
   const { data: options = [], isLoading: loading } = useQuery<Option[]>({
-    queryKey: ['async-select', searchEndpoint, debouncedSearchTerm],
+    queryKey: queryKeys.searchAsync(searchEndpoint, debouncedSearchTerm),
     queryFn: async ({ signal }) => {
       const separator = searchEndpoint.includes('?') ? '&' : '?'
       const url = `${searchEndpoint}${separator}q=${encodeURIComponent(debouncedSearchTerm)}&limit=20`

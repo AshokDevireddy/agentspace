@@ -279,6 +279,7 @@ export default function ExpectedPayoutsPage() {
     enabled: !!appliedFilters.agent,
     staleTime: 2 * 60 * 1000, // 2 minutes
     refetchOnWindowFocus: false,
+    placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
   })
 
   const payouts = payoutsData?.payouts || []
@@ -318,6 +319,7 @@ export default function ExpectedPayoutsPage() {
     enabled: !!appliedFilters.agent,
     staleTime: 2 * 60 * 1000, // 2 minutes
     refetchOnWindowFocus: false,
+    placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
     // Return zero values on error instead of throwing
     retry: false,
     meta: {

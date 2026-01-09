@@ -203,6 +203,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
       const response = await fetch(`/api/deals/${dealId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           client_name: data.client_name,
           client_email: data.client_email,

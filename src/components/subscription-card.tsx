@@ -23,7 +23,7 @@ export function SubscriptionCard({
   isCurrentPlan = false,
   buttonText = 'Subscribe',
 }: SubscriptionCardProps) {
-  const { showError } = useNotification();
+  const { showError, showSuccess } = useNotification();
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
@@ -35,6 +35,7 @@ export function SubscriptionCard({
           headers: {
             'Content-Type': 'application/json',
           },
+          credentials: 'include',
           body: JSON.stringify({ priceId }),
         });
 
@@ -53,6 +54,7 @@ export function SubscriptionCard({
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           priceId,
           subscriptionType,
@@ -74,10 +76,13 @@ export function SubscriptionCard({
     },
     onSuccess: (data) => {
       if (subscriptionType === 'ai_mode_addon') {
-        // Invalidate subscription and user queries to refresh UI
+        // Show success notification and invalidate queries
+        showSuccess('AI Mode successfully activated!');
         queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() });
         queryClient.invalidateQueries({ queryKey: queryKeys.user });
       } else {
+        // Show feedback before redirect
+        showSuccess('Redirecting to checkout...');
         // Redirect to Stripe Checkout
         window.location.href = data.url;
       }
@@ -87,6 +92,12 @@ export function SubscriptionCard({
       showError(err instanceof Error ? err.message : 'Failed to process subscription');
     },
   });
+
+  // Wrapper function to prevent race conditions with rapid clicks
+  const handleClick = () => {
+    if (mutation.isPending || isCurrentPlan) return;
+    mutation.mutate();
+  };
 
   return (
     <div className={`rounded-lg border p-6 ${isCurrentPlan ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20' : 'border-gray-200 dark:border-gray-700'}`}>
@@ -124,7 +135,7 @@ export function SubscriptionCard({
       )}
 
       <button
-        onClick={() => mutation.mutate()}
+        onClick={handleClick}
         disabled={mutation.isPending || isCurrentPlan || buttonText === 'Requires Agent Subscription'}
         className={`w-full rounded-md px-4 py-2 font-medium transition-colors ${
           isCurrentPlan || buttonText === 'Requires Agent Subscription'

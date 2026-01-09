@@ -609,14 +609,16 @@ export default function Agents() {
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
-    applyFilters()
+    // Reset page first to ensure query uses page 1 with new filters
     setCurrentPage(1)
+    applyFilters()
   }
 
   // Clear all filters
   const handleClearFilters = () => {
-    clearFilters()
+    // Reset page first to ensure query uses page 1 with cleared filters
     setCurrentPage(1)
+    clearFilters()
     // Also hide all filter input fields
     setVisibleFilters(new Set())
   }
@@ -742,6 +744,7 @@ export default function Agents() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ agentId }),
       })
 
@@ -754,6 +757,9 @@ export default function Agents() {
       return data
     },
     onSuccess: (data) => {
+      // Invalidate agent queries to refresh the status
+      queryClient.invalidateQueries({ queryKey: ['agents'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
       showSuccess(data.message || 'Invitation resent successfully!')
     },
     onError: (err: Error) => {

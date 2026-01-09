@@ -111,6 +111,7 @@ export const queryKeys = {
   searchUsers: (query: string) => ['search', 'users', query] as const,
   searchDeals: (name: string, phone: string) => ['search', 'deals', name, phone] as const,
   searchPreInviteUsers: (query: string) => ['search', 'pre-invite', query] as const,
+  searchAsync: (endpoint: string, query: string) => ['search', 'async', endpoint, query] as const,
 
   // Notifications
   notifications: ['notifications'] as const,

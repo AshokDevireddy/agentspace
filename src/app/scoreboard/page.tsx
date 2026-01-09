@@ -240,13 +240,6 @@ export default function Scoreboard() {
   const data = rpcResponse?.success ? rpcResponse.data : null
   const error = rpcResponse?.success === false ? rpcResponse.error : queryError?.message
 
-  // Log RPC response for debugging
-  useEffect(() => {
-    if (rpcResponse) {
-      console.log('Scoreboard RPC Response:', JSON.stringify(rpcResponse, null, 2))
-    }
-  }, [rpcResponse])
-
   // Calculate date range for display even when loading
   const displayDateRange = useMemo(() => {
     if (data?.dateRange) {

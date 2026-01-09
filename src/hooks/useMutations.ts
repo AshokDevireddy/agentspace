@@ -38,6 +38,7 @@ export function useApiMutation<TData = unknown, TVariables = unknown>(
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
       })
 
@@ -75,6 +76,7 @@ export function useFormDataMutation<TData = unknown, TVariables extends FormData
     mutationFn: async (formData) => {
       const response = await fetch(url, {
         method,
+        credentials: 'include',
         body: formData,
         // Don't set Content-Type header - browser will set it with boundary for FormData
       })
@@ -121,6 +123,7 @@ export function useOptimisticMutation<TData, TVariables, TContext = unknown>(
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
       })
 

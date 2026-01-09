@@ -262,6 +262,7 @@ export default function BookOfBusiness() {
       return response.json() as Promise<{ deals: Deal[]; nextCursor?: { cursor_created_at: string; cursor_id: string } }>
     },
     staleTime: 30 * 1000, // 30 seconds
+    placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
   })
 
   // Update deals and cursor when data changes
@@ -323,7 +324,8 @@ export default function BookOfBusiness() {
 
   const handlePolicyUpdate = () => {
     // Refresh the deals list after update by invalidating the query
-    queryClient.invalidateQueries({ queryKey: queryKeys.dealsBookOfBusiness() })
+    // Use partial key to match any book-of-business query regardless of filters
+    queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business'] })
   }
 
   const getLeadSourceColor = (leadSource: string) => {

@@ -276,7 +276,7 @@ export default function Agents() {
   const { showSuccess, showError, showWarning } = useNotification()
 
   // Persisted filter state using custom hook (includes view/tab state)
-  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply] = usePersistedFilters(
+  const { localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply } = usePersistedFilters(
     'agents',
     {
       inUpline: "all",
@@ -437,14 +437,9 @@ export default function Agents() {
         }
     }, []);
 
-  // Reset loading states on component mount (handles navigation back to page)
-  // This ensures skeleton shows even when React preserves component state
+  // Reset positions loading on mount to ensure position colors load correctly
   useEffect(() => {
     setPositionsLoaded(false)
-    setLoading(true)
-    // Clear agentsData to ensure skeleton shows instead of stale empty state
-    setAgentsData([])
-    setTreeData(null)
   }, [])
 
   // Fetch all positions and user's position level on mount
@@ -537,12 +532,8 @@ export default function Agents() {
     const fetchAgents = async () => {
       try {
         setLoading(true)
-        // Clear data when starting a new fetch to ensure skeleton shows
-        if (view === 'table') {
-          setAgentsData([])
-        } else {
-          setTreeData(null)
-        }
+        // Keep existing data while loading (stale-while-revalidate pattern)
+        // This prevents skeleton flash when filters change
 
         // Build query params
         const params = new URLSearchParams()

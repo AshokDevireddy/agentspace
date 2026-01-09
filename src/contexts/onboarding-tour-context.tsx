@@ -287,21 +287,15 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [pathname, isTourActive])
 
-  const value: TourContextType = {
-    isTourActive,
-    currentStepIndex,
-    currentStep,
-    tourSteps,
-    startTour,
-    nextStep,
-    previousStep,
-    skipTour,
-    endTour,
-    isLastStep,
-    isFirstStep,
-    userRole,
-    setUserRole,
-  }
+  const contextValue = useMemo(() => ({
+    isTourActive, currentStepIndex, currentStep, tourSteps,
+    startTour, nextStep, previousStep, skipTour, endTour,
+    isLastStep, isFirstStep, userRole, setUserRole
+  }), [
+    isTourActive, currentStepIndex, currentStep, tourSteps,
+    startTour, nextStep, previousStep, skipTour, endTour,
+    isLastStep, isFirstStep, userRole
+  ])
 
-  return <TourContext.Provider value={value}>{children}</TourContext.Provider>
+  return <TourContext.Provider value={contextValue}>{children}</TourContext.Provider>
 }

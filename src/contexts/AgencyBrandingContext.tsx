@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useMemo } from 'react'
 import { AgencyBranding, getAgencyBrandingByDomain, isWhiteLabelDomain, DEFAULT_BRANDING } from '@/lib/whitelabel'
 
 interface AgencyBrandingContextType {
@@ -56,8 +56,12 @@ export function AgencyBrandingProvider({ children }: { children: React.ReactNode
     loadBranding()
   }, [])
 
+  const contextValue = useMemo(() => ({
+    branding, isWhiteLabel, loading
+  }), [branding, isWhiteLabel, loading])
+
   return (
-    <AgencyBrandingContext.Provider value={{ branding, isWhiteLabel, loading }}>
+    <AgencyBrandingContext.Provider value={contextValue}>
       {children}
     </AgencyBrandingContext.Provider>
   )

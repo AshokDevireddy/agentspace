@@ -69,7 +69,7 @@ export default function ExpectedPayoutsPage() {
 
   // Persisted filter state using custom hook
   // Changed key to 'expected-payouts-v2' to clear old cached data with wrong calculations
-  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters] = usePersistedFilters(
+  const { localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters } = usePersistedFilters(
     'expected-payouts-v2',
     {
       startMonth: defaultRange.startMonth,

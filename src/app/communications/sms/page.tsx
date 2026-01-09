@@ -104,7 +104,7 @@ function SMSMessagingPageContent() {
   const supabase = supabaseRef.current
 
   // Persisted filter state using custom hook (for real-time filters, use setAndApply)
-  const [, appliedFilters, , , , setAndApply] = usePersistedFilters(
+  const { appliedFilters, setAndApply } = usePersistedFilters(
     'communications',
     {
       searchQuery: "",

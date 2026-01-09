@@ -68,7 +68,7 @@ const generateStatusOptions = () => {
 
 export default function Clients() {
   // Persisted filter state using custom hook (includes view mode)
-  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply] = usePersistedFilters(
+  const { localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply } = usePersistedFilters(
     'clients',
     {
       clientName: "all",

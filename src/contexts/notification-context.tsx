@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, ReactNode, useEffect, useMemo } from 'react'
 import { BannerNotification, Notification, NotificationType } from '@/components/banner-notification'
 
 interface NotificationContextType {
@@ -77,7 +77,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const removeNotification = useCallback((id: string) => {
     setNotifications((prev) => {
       const filtered = prev.filter((n) => n.id !== id)
-      // Update storage when notification is removed
       if (typeof window !== 'undefined') {
         if (filtered.length === 0) {
           sessionStorage.removeItem(STORAGE_KEY)
@@ -89,16 +88,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const contextValue = useMemo(() => ({
+    showNotification, showSuccess, showError, showWarning, showInfo
+  }), [showNotification, showSuccess, showError, showWarning, showInfo])
+
   return (
-    <NotificationContext.Provider
-      value={{
-        showNotification,
-        showSuccess,
-        showError,
-        showWarning,
-        showInfo,
-      }}
-    >
+    <NotificationContext.Provider value={contextValue}>
       {children}
 
       {/* Notification Container - Fixed to top right */}

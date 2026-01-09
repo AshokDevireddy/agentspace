@@ -93,7 +93,7 @@ const billingCycleColors: Record<string, string> = {
 
 export default function BookOfBusiness() {
   // Persisted filter state using custom hook
-  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply] = usePersistedFilters(
+  const { localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply } = usePersistedFilters(
     'book-of-business',
     {
       agent: "all",

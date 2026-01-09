@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useRef } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
@@ -77,13 +77,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Refresh user data (called after theme updates)
-  const refreshUserData = async () => {
+  const refreshUserData = useCallback(async () => {
     if (user?.id) {
       const data = await fetchUserData(user.id)
       setUserData(data)
     }
-  }
+  }, [user?.id, supabase])
 
   useEffect(() => {
     // Wait for hydration before initializing auth
@@ -135,14 +134,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHydrated]) // supabase client is stable via ref
 
-  const signIn = async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+  const signIn = useCallback(async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
 
-    // Get user profile to check role and theme
     const { data: userProfile, error: userError } = await supabase
       .from('users')
       .select('role, status, theme_mode, is_admin, agency_id, subscription_tier')
@@ -150,22 +145,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .single()
 
     if (userError) throw new Error('User profile not found')
-
     if (userProfile.status !== 'active') {
       await supabase.auth.signOut()
       throw new Error('Your account has been deactivated')
     }
-
-    // Verify user is logging in with correct role if expectedRole is provided
     if (expectedRole && userProfile.role !== expectedRole) {
       await supabase.auth.signOut()
       throw new Error(`Please use the ${userProfile.role} login tab`)
     }
 
-    // Explicitly set user state (don't rely solely on onAuthStateChange)
     setUser(data.user)
-
-    // Store user data including all fields needed by Navigation
     setUserData({
       role: userProfile.role as 'admin' | 'agent' | 'client',
       status: userProfile.status as 'active' | 'onboarding' | 'invited' | 'inactive',
@@ -175,47 +164,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       subscription_tier: (userProfile.subscription_tier || 'free') as 'free' | 'pro' | 'expert'
     })
 
-    // Route based on role
-    if (userProfile.role === 'client') {
-      router.push('/client/dashboard')
-    } else {
-      router.push('/')
-    }
-  }
+    router.push(userProfile.role === 'client' ? '/client/dashboard' : '/')
+  }, [supabase, router])
 
-  const signOut = async () => {
-    // Clear all persisted filter data from localStorage before signing out
+  const signOut = useCallback(async () => {
     if (typeof window !== 'undefined') {
       const keysToRemove: string[] = []
-      // Find all filter-related keys in localStorage
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i)
-        if (key && key.startsWith('filter_')) {
-          keysToRemove.push(key)
-        }
+        if (key?.startsWith('filter_')) keysToRemove.push(key)
       }
-      // Remove all filter keys
       keysToRemove.forEach(key => localStorage.removeItem(key))
     }
 
-    // Explicitly clear auth state before signing out (don't rely solely on onAuthStateChange)
     setUser(null)
     setUserData(null)
 
     try {
-      const { error } = await supabase.auth.signOut()
-      if (error) {
-        console.error('[AuthProvider] signOut error:', error)
-      }
+      await supabase.auth.signOut()
     } catch (err) {
-      console.error('[AuthProvider] signOut exception:', err)
+      console.error('[AuthProvider] signOut error:', err)
     }
 
     window.location.href = '/login'
-  }
+  }, [supabase])
+
+  const contextValue = useMemo(() => ({
+    user, userData, loading, isHydrated, signIn, signOut, refreshUserData
+  }), [user, userData, loading, isHydrated, signIn, signOut, refreshUserData])
 
   return (
-    <AuthContext.Provider value={{ user, userData, loading, isHydrated, signIn, signOut, refreshUserData }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   )

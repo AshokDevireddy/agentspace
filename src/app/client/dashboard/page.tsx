@@ -60,7 +60,7 @@ export default function ClientDashboard() {
 
   // Query for authenticated user and their profile
   const { data: userData, isLoading: userLoading, error: userError } = useQuery({
-    queryKey: ['client', 'user'],
+    queryKey: queryKeys.clientUser(),
     queryFn: async () => {
       const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
 
@@ -108,7 +108,7 @@ export default function ClientDashboard() {
 
   // Query for client's deals
   const { data: deals = [], isLoading: dealsLoading } = useQuery({
-    queryKey: ['client', 'deals', userData?.id],
+    queryKey: queryKeys.clientDeals(userData?.id || ''),
     queryFn: async () => {
       if (!userData?.id) return []
 

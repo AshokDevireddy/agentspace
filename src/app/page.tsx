@@ -13,6 +13,7 @@ import { useCompleteOnboarding } from "@/hooks/mutations"
 import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
 import { Skeleton } from "@/components/ui/skeleton"
+import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import Link from "next/link"
 
 const PIE_CHART_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347', '#d084d0', '#84d0d0', '#d0d084'] as const
@@ -52,8 +53,8 @@ export default function Home() {
     localStorage.setItem('dashboard_view_mode', viewMode)
   }, [viewMode])
 
-  const { data: profileData, isLoading: profileLoading, isFetching: profileFetching } = useApiFetch<any>(
-    ['user-profile', user?.id],
+  const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useApiFetch<any>(
+    queryKeys.userProfile(user?.id),
     `/api/user/profile?user_id=${user?.id}`,
     {
       enabled: !!user?.id,
@@ -61,8 +62,8 @@ export default function Home() {
     }
   )
 
-  const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching } = useSupabaseRpc<any>(
-    ['scoreboard', user?.id, weekRange.startDate, weekRange.endDate],
+  const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useSupabaseRpc<any>(
+    queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate),
     'get_scoreboard_data',
     { p_user_id: user?.id, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate },
     {
@@ -72,8 +73,8 @@ export default function Home() {
     }
   )
 
-  const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching } = useSupabaseRpc<any>(
-    ['dashboard', user?.id],
+  const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching, error: dashboardError } = useSupabaseRpc<any>(
+    queryKeys.dashboard(user?.id || ''),
     'get_dashboard_data_with_agency_id',
     { p_user_id: user?.id },
     {
@@ -81,6 +82,9 @@ export default function Home() {
       placeholderData: (previousData: any) => previousData,
     }
   )
+
+  // Combined error state for main data
+  const queryError = dashboardError || scoreboardError || profileError
 
   const userData = profileData?.success ? profileData.data : null
   const firstName = userData?.firstName || user?.user_metadata?.first_name || 'User'
@@ -247,6 +251,17 @@ export default function Home() {
 
   return (
     <div className="space-y-4 dashboard-content" data-tour="dashboard">
+      {queryError && !isStatsLoading && (
+        <QueryErrorDisplay
+          error={queryError}
+          onRetry={() => {
+            queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(user?.id || '') })
+            queryClient.invalidateQueries({ queryKey: queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate) })
+            queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(user?.id) })
+          }}
+          variant="inline"
+        />
+      )}
       {isHeaderLoading ? (
         <div className="flex justify-between items-start">
           <div>

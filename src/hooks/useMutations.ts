@@ -5,8 +5,12 @@
 
 import { useMutation, useQueryClient, UseMutationOptions } from '@tanstack/react-query'
 import { QueryKeyType } from './queryKeys'
+import { createErrorFromResponse, NetworkError } from '@/lib/error-utils'
 
 type MutationMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+
+/** Default mutation timeout in milliseconds */
+const DEFAULT_MUTATION_TIMEOUT = 30000 // 30 seconds
 
 interface ApiMutationOptions<TData, TVariables> {
   /** HTTP method */
@@ -15,8 +19,57 @@ interface ApiMutationOptions<TData, TVariables> {
   invalidateKeys?: QueryKeyType[]
   /** Dynamic query keys based on mutation variables - use for invalidating detail queries */
   getInvalidateKeys?: (variables: TVariables) => QueryKeyType[]
+  /** Request timeout in milliseconds (default: 30000) */
+  timeout?: number
   /** Additional mutation options */
   options?: Omit<UseMutationOptions<TData, Error, TVariables>, 'mutationFn'>
+}
+
+/**
+ * Create a fetch request with timeout and abort handling
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number = DEFAULT_MUTATION_TIMEOUT
+): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    })
+    return response
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new NetworkError('Request timed out. Please try again.')
+    }
+    // Wrap network errors
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new NetworkError()
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+/**
+ * Parse response body, handling empty responses
+ */
+async function parseResponseBody<T>(response: Response): Promise<T> {
+  const text = await response.text()
+  if (!text) {
+    return null as T
+  }
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    // Return text as-is if not JSON
+    return text as unknown as T
+  }
 }
 
 /**
@@ -29,27 +82,30 @@ export function useApiMutation<TData = unknown, TVariables = unknown>(
   config: ApiMutationOptions<TData, TVariables> = {}
 ) {
   const queryClient = useQueryClient()
-  const { method = 'POST', invalidateKeys = [], getInvalidateKeys, options = {} } = config
+  const { method = 'POST', invalidateKeys = [], getInvalidateKeys, timeout, options = {} } = config
 
   return useMutation<TData, Error, TVariables>({
     mutationFn: async (variables) => {
       const url = typeof urlOrFn === 'function' ? urlOrFn(variables) : urlOrFn
 
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
         },
-        credentials: 'include',
-        body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
-      })
+        timeout
+      )
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || errorData.message || `Request failed with status ${response.status}`)
+        throw await createErrorFromResponse(response)
       }
 
-      return response.json()
+      return parseResponseBody<TData>(response)
     },
     onSuccess: (data, variables, context) => {
       // Invalidate static query keys
@@ -80,23 +136,26 @@ export function useFormDataMutation<TData = unknown, TVariables extends FormData
   config: Omit<ApiMutationOptions<TData, TVariables>, 'method'> & { method?: 'POST' | 'PUT' } = {}
 ) {
   const queryClient = useQueryClient()
-  const { method = 'POST', invalidateKeys = [], options = {} } = config
+  const { method = 'POST', invalidateKeys = [], timeout = 60000, options = {} } = config // 60s default for uploads
 
   return useMutation<TData, Error, TVariables>({
     mutationFn: async (formData) => {
-      const response = await fetch(url, {
-        method,
-        credentials: 'include',
-        body: formData,
-        // Don't set Content-Type header - browser will set it with boundary for FormData
-      })
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method,
+          credentials: 'include',
+          body: formData,
+          // Don't set Content-Type header - browser will set it with boundary for FormData
+        },
+        timeout
+      )
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || errorData.message || `Request failed with status ${response.status}`)
+        throw await createErrorFromResponse(response)
       }
 
-      return response.json()
+      return parseResponseBody<TData>(response)
     },
     onSuccess: (data, variables, context) => {
       invalidateKeys.forEach((key) => {
@@ -112,7 +171,7 @@ export function useFormDataMutation<TData = unknown, TVariables extends FormData
  * Optimistic update helper
  * Use this for mutations where you want immediate UI feedback
  */
-export function useOptimisticMutation<TData, TVariables, TContext = unknown>(
+export function useOptimisticMutation<TData, TVariables, TContext = { previousData: TData | undefined }>(
   urlOrFn: string | ((variables: TVariables) => string),
   config: ApiMutationOptions<TData, TVariables> & {
     /** Query key for the data being optimistically updated */
@@ -122,27 +181,30 @@ export function useOptimisticMutation<TData, TVariables, TContext = unknown>(
   }
 ) {
   const queryClient = useQueryClient()
-  const { method = 'POST', invalidateKeys = [], queryKey, getOptimisticData, options = {} } = config
+  const { method = 'POST', invalidateKeys = [], queryKey, getOptimisticData, timeout, options = {} } = config
 
   return useMutation<TData, Error, TVariables, TContext>({
     mutationFn: async (variables) => {
       const url = typeof urlOrFn === 'function' ? urlOrFn(variables) : urlOrFn
 
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
         },
-        credentials: 'include',
-        body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
-      })
+        timeout
+      )
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || errorData.message || `Request failed with status ${response.status}`)
+        throw await createErrorFromResponse(response)
       }
 
-      return response.json()
+      return parseResponseBody<TData>(response)
     },
     onMutate: async (variables) => {
       // Cancel any outgoing refetches
@@ -164,13 +226,19 @@ export function useOptimisticMutation<TData, TVariables, TContext = unknown>(
       if (context && typeof context === 'object' && 'previousData' in context) {
         queryClient.setQueryData([...queryKey], (context as { previousData: TData }).previousData)
       }
-    },
-    onSettled: () => {
-      // Always refetch after error or success
+      // Invalidate to ensure consistency after error
       queryClient.invalidateQueries({ queryKey: [...queryKey] })
+    },
+    onSuccess: (data, variables, ctx) => {
+      // Update cache with actual server response (instead of invalidating)
+      queryClient.setQueryData([...queryKey], data)
+
+      // Invalidate related queries
       invalidateKeys.forEach((key) => {
         queryClient.invalidateQueries({ queryKey: [...key] })
       })
+
+      options.onSuccess?.(data, variables, ctx)
     },
     ...options,
   })
@@ -200,40 +268,42 @@ export function useAuthenticatedMutation<TData = unknown, TVariables = unknown>(
   config: ApiMutationOptions<TData, TVariables> = {}
 ) {
   const queryClient = useQueryClient()
-  const { method = 'POST', invalidateKeys = [], getInvalidateKeys, options = {} } = config
+  const { method = 'POST', invalidateKeys = [], getInvalidateKeys, timeout, options = {} } = config
 
   return useMutation<TData, Error, TVariables>({
     mutationFn: async (variables) => {
       // Dynamic import to avoid circular dependencies
       const { createClient } = await import('@/lib/supabase/client')
+      const { AuthError } = await import('@/lib/error-utils')
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
 
       if (!accessToken) {
-        throw new Error('Authentication required. Please log in.')
+        throw new AuthError('Authentication required. Please log in.')
       }
 
       const url = typeof urlOrFn === 'function' ? urlOrFn(variables) : urlOrFn
 
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          credentials: 'include',
+          body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
         },
-        credentials: 'include',
-        body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
-      })
+        timeout
+      )
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || errorData.message || `Request failed with status ${response.status}`)
+        throw await createErrorFromResponse(response)
       }
 
-      // Handle empty responses (204 No Content)
-      const text = await response.text()
-      return text ? JSON.parse(text) : null
+      return parseResponseBody<TData>(response)
     },
     onSuccess: (data, variables, context) => {
       // Invalidate static query keys

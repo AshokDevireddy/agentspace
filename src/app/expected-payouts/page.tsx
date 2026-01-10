@@ -9,9 +9,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { DollarSign, TrendingUp, TrendingDown, Calendar } from "lucide-react"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { useApiFetch } from "@/hooks/useApiFetch"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
+import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { cn } from "@/lib/utils"
 
 interface PayoutData {
@@ -98,6 +99,7 @@ interface DebtResponse {
 
 export default function ExpectedPayoutsPage() {
   const supabase = createClient()
+  const queryClient = useQueryClient()
 
   // Calculate default date range (current year: Jan to Dec)
   const getDefaultDateRange = () => {
@@ -396,6 +398,15 @@ export default function ExpectedPayoutsPage() {
           View projected commission payouts based on posted deals
         </p>
       </div>
+
+      {/* Error Display */}
+      {payoutsError && (
+        <QueryErrorDisplay
+          error={payoutsError}
+          onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.expectedPayoutsData({ ...appliedFilters, agent: effectiveAgentId }) })}
+          variant="inline"
+        />
+      )}
 
       {/* Filters - Always interactive */}
       <Card className="professional-card relative z-[60]">

@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { useState } from 'react'
-import { categorizeError } from '@/lib/error-utils'
+import { categorizeError, getRetryDelay } from '@/lib/error-utils'
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -23,6 +23,8 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
           // Retry network and server errors up to 2 times
           return failureCount < 2
         },
+        // Exponential backoff with jitter for retries
+        retryDelay: (attemptIndex, error) => getRetryDelay(error, attemptIndex + 1),
         refetchOnWindowFocus: process.env.NODE_ENV === 'production',
         // Refetch when user comes back online to ensure fresh data
         refetchOnReconnect: true,

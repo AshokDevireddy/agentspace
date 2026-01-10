@@ -407,7 +407,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       return response.json()
     },
     enabled: !!niprJobId && niprRunning,
-    refetchInterval: 10000, // Poll every 10 seconds
+    refetchInterval: 30000, // Poll every 30 seconds - reduces server load
     staleTime: 0,
   })
 

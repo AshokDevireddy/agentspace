@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { useCompleteOnboarding } from '@/hooks/mutations/useAuthMutations'
 
 export interface TourStep {
   id: string
@@ -45,6 +46,7 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userRole, setUserRole] = useState<'admin' | 'agent' | null>(null)
   const router = useRouter()
   const pathname = usePathname()
+  const completeOnboardingMutation = useCompleteOnboarding()
 
   // Define all tour steps
   const allTourSteps: TourStep[] = [
@@ -211,13 +213,13 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Navigate to dashboard immediately
     router.push('/')
 
-    // Fire API call in background (don't await)
-    fetch('/api/user/complete-onboarding', {
-      method: 'POST',
-    }).catch(error => {
-      console.error('Error completing onboarding:', error)
+    // Use mutation for proper error handling and cache invalidation
+    completeOnboardingMutation.mutate(undefined, {
+      onError: (error) => {
+        console.error('Error completing onboarding:', error)
+      }
     })
-  }, [router])
+  }, [router, completeOnboardingMutation])
 
   const endTour = useCallback((userId?: string) => {
     setIsTourActive(false)
@@ -231,13 +233,13 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Navigate to dashboard immediately
     router.push('/')
 
-    // Fire API call in background (don't await)
-    fetch('/api/user/complete-onboarding', {
-      method: 'POST',
-    }).catch(error => {
-      console.error('Error completing onboarding:', error)
+    // Use mutation for proper error handling and cache invalidation
+    completeOnboardingMutation.mutate(undefined, {
+      onError: (error) => {
+        console.error('Error completing onboarding:', error)
+      }
     })
-  }, [router])
+  }, [router, completeOnboardingMutation])
 
   const nextStep = useCallback((userId?: string) => {
     const steps = tourStepsRef.current

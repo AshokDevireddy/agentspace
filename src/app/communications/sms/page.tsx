@@ -231,7 +231,7 @@ function SMSMessagingPageContent() {
     `/api/sms/messages?conversationId=${selectedConversation?.id}&view=${effectiveViewMode}`,
     {
       enabled: !!selectedConversation?.id,
-      staleTime: 10 * 1000, // 10 seconds
+      staleTime: 30 * 1000, // 30 seconds - prevents excessive refetches
     }
   )
 

@@ -21,6 +21,7 @@ import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_PLACEHOLDERS } from "@/lib/sms-temp
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
+import { QueryErrorDisplay } from '@/components/ui/query-error-display'
 import {
   useCreatePosition,
   useUpdatePosition,
@@ -488,7 +489,7 @@ export default function ConfigurationPage() {
   // ============ TanStack Query Hooks ============
 
   // Fetch agency data - only when user is authenticated
-  const { data: agencyData, isLoading: loadingAgencyProfile } = useQuery({
+  const { data: agencyData, isLoading: loadingAgencyProfile, error: agencyError } = useQuery({
     queryKey: queryKeys.configurationAgency(),
     queryFn: async () => {
       const supabase = createClient()
@@ -2339,6 +2340,17 @@ export default function ConfigurationPage() {
           <h1 className="text-3xl font-bold text-foreground mb-1">Settings</h1>
           <p className="text-sm text-muted-foreground">Manage your agency configuration</p>
         </div>
+
+        {/* Error Display */}
+        {agencyError && (
+          <div className="mb-6">
+            <QueryErrorDisplay
+              error={agencyError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })}
+              variant="inline"
+            />
+          </div>
+        )}
 
         {/* Horizontal Tabs Navigation */}
         <div className="mb-6">

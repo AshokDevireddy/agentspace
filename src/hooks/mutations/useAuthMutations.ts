@@ -31,7 +31,10 @@ interface RegisterResponse {
 /**
  * Register a new user
  */
-export function useRegister() {
+export function useRegister(options?: {
+  onSuccess?: (data: RegisterResponse) => void
+  onError?: (error: Error) => void
+}) {
   return useMutation<RegisterResponse, Error, RegisterInput>({
     mutationFn: async (input) => {
       const response = await fetch('/api/register', {
@@ -48,6 +51,8 @@ export function useRegister() {
 
       return data
     },
+    onSuccess: options?.onSuccess,
+    onError: options?.onError,
   })
 }
 
@@ -66,7 +71,10 @@ interface ResetPasswordResponse {
 /**
  * Request password reset email
  */
-export function useResetPassword() {
+export function useResetPassword(options?: {
+  onSuccess?: (data: ResetPasswordResponse) => void
+  onError?: (error: Error) => void
+}) {
   return useMutation<ResetPasswordResponse, Error, ResetPasswordInput>({
     mutationFn: async (input) => {
       const response = await fetch('/api/reset-password', {
@@ -83,6 +91,8 @@ export function useResetPassword() {
 
       return data
     },
+    onSuccess: options?.onSuccess,
+    onError: options?.onError,
   })
 }
 
@@ -95,7 +105,10 @@ interface CompleteOnboardingResponse {
 /**
  * Mark user onboarding as complete
  */
-export function useCompleteOnboarding() {
+export function useCompleteOnboarding(options?: {
+  onSuccess?: (data: CompleteOnboardingResponse) => void
+  onError?: (error: Error) => void
+}) {
   const { invalidateUserRelated } = useInvalidation()
 
   return useMutation<CompleteOnboardingResponse, Error, void>({
@@ -114,9 +127,11 @@ export function useCompleteOnboarding() {
 
       return data
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       await invalidateUserRelated()
+      options?.onSuccess?.(data)
     },
+    onError: options?.onError,
   })
 }
 

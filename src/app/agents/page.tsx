@@ -827,59 +827,8 @@ export default function Agents() {
   const nodeSize = { x: 220, y: 200 };
   const foreignObjectProps = { width: nodeSize.x, height: nodeSize.y, x: -110, y: 10 };
 
-  // Block render until positions are loaded to ensure colors display correctly
-  if (!positionsLoaded) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="h-10 w-32 bg-muted rounded" />
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-24 bg-muted rounded" />
-            <div className="h-9 w-24 bg-muted rounded" />
-            <div className="h-9 w-28 bg-muted rounded" />
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="bg-card rounded-lg border p-4">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-24 bg-muted rounded" />
-            <div className="h-8 w-32 bg-muted rounded" />
-            <div className="h-8 w-32 bg-muted rounded" />
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="bg-card rounded-lg border">
-          <div className="p-4 border-b">
-            <div className="flex items-center gap-4">
-              <div className="h-5 w-24 bg-muted rounded" />
-              <div className="h-5 w-20 bg-muted rounded" />
-              <div className="h-5 w-20 bg-muted rounded" />
-              <div className="h-5 w-20 bg-muted rounded" />
-              <div className="h-5 w-20 bg-muted rounded" />
-            </div>
-          </div>
-          <div className="p-4 space-y-4">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4 py-2">
-                <div className="h-10 w-10 bg-muted rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 w-40 bg-muted rounded" />
-                  <div className="h-3 w-24 bg-muted rounded" />
-                </div>
-                <div className="h-6 w-20 bg-muted rounded" />
-                <div className="h-6 w-24 bg-muted rounded" />
-                <div className="h-6 w-16 bg-muted rounded" />
-                <div className="h-4 w-20 bg-muted rounded" />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // Positions loading state - used for dropdown only, doesn't block main UI
+  const positionsReady = positionsLoaded && positions.length > 0
 
   return (
     <div className="space-y-6 agents-content" data-tour="agents">
@@ -1619,8 +1568,9 @@ export default function Agents() {
                           setSelectedAgentId(agent.agent_id)
                           setSelectedPositionId(value)
                         }}
-                        placeholder={agent.position_name ? `Current: ${agent.position_name}` : "Select position..."}
+                        placeholder={!positionsReady ? "Loading positions..." : agent.position_name ? `Current: ${agent.position_name}` : "Select position..."}
                         searchPlaceholder="Search positions..."
+                        disabled={!positionsReady}
                       />
                       <Button
                         onClick={() => {

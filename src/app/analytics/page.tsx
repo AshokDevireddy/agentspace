@@ -16,10 +16,11 @@ import {
 	SelectValue,
 } from "@/components/ui/select"
 import { Info } from "lucide-react"
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { useSupabaseRpc } from '@/hooks/useSupabaseQuery'
 import { queryKeys } from '@/hooks/queryKeys'
+import { QueryErrorDisplay } from '@/components/ui/query-error-display'
 
 // analytics_test_value: static data for the test analytics page
 const analytics_test_value = {
@@ -535,8 +536,10 @@ export default function AnalyticsTestPage() {
 		localStorage.setItem('analytics_view_mode', viewMode)
 	}, [viewMode])
 
+	const queryClient = useQueryClient()
+
 	// 1. Main analytics fetch - Get user data and analytics
-	const { data: mainAnalyticsData, isPending: isMainAnalyticsLoading } = useQuery({
+	const { data: mainAnalyticsData, isPending: isMainAnalyticsLoading, error: mainAnalyticsError } = useQuery({
 		queryKey: queryKeys.analyticsData({ view: 'initial' }),
 		queryFn: async () => {
 			const supabase = createClient()
@@ -1487,6 +1490,14 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			</div>
 		) : (
 			<div className="flex w-full flex-col gap-6 p-6 analytics-content" data-tour="analytics">
+			{/* Error Display */}
+			{mainAnalyticsError && (
+				<QueryErrorDisplay
+					error={mainAnalyticsError}
+					onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.analyticsData({ view: 'initial' }) })}
+					variant="inline"
+				/>
+			)}
 			{/* Header */}
 			<div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
 				<div className="flex items-center gap-4 flex-wrap">

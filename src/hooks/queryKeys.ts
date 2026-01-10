@@ -75,9 +75,18 @@ export const queryKeys = {
   // User & Profile
   user: ['user'] as const,
   userProfile: (id?: string) => ['user', 'profile', id] as const,
+  userById: (id: string) => ['user', 'by-id', id] as const,
   userSettings: () => ['user', 'settings'] as const,
   userAdminStatus: (id?: string) => ['user', 'admin-status', id] as const,
   userDefaultUpline: () => ['user', 'default-upline'] as const,
+
+  // Dashboard
+  dashboard: (userId: string) => ['dashboard', userId] as const,
+  dashboardStats: (userId: string) => ['dashboard', 'stats', userId] as const,
+
+  // Client Dashboard (for client-facing portal)
+  clientUser: () => ['client', 'user'] as const,
+  clientDeals: (userId: string) => ['client', 'deals', userId] as const,
 
   // Scoreboard
   scoreboard: (userId: string, startDate: string, endDate: string) =>
@@ -150,6 +159,7 @@ export const queryKeys = {
   agency: ['agency'] as const,
   agencyColor: (agencyId: string) => ['agency', 'color', agencyId] as const,
   agencyBranding: (agencyId: string | null) => ['agency', 'branding', agencyId] as const,
+  agencyBrandingByDomain: (domain: string | null) => ['agency', 'branding-by-domain', domain] as const,
   agencyOptions: (userId: string) => ['agency', 'options', userId] as const,
   agencyScoreboardSettings: (agencyId: string | null) => ['agency', 'scoreboard-settings', agencyId] as const,
 

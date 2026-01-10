@@ -1,8 +1,8 @@
 "use client"
 
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { queryKeys } from '@/hooks/queryKeys'
+import { useMutation } from '@tanstack/react-query'
+import { useCreatePolicyReportJob, useSignPolicyReportFiles } from '@/hooks/mutations/usePolicyReportMutations'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Upload, FileText, X, TrendingUp, Loader2 } from "lucide-react"
@@ -35,9 +35,12 @@ const supportedCarriers = [
 export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
   const { showSuccess, showError, showWarning } = useNotification()
   const { userData } = useAuth()
-  const queryClient = useQueryClient()
   const [policyReportFiles, setPolicyReportFiles] = useState<PolicyReportFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
+
+  // Use centralized mutation hooks
+  const createJobMutation = useCreatePolicyReportJob()
+  const signFilesMutation = useSignPolicyReportFiles({ agencyId: userData?.agency_id })
 
   // Drag and drop handlers
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
@@ -110,6 +113,7 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
     setPolicyReportFiles(prev => prev.filter(f => f.id !== fileId))
   }
 
+  // Combined upload mutation using centralized hooks
   const uploadMutation = useMutation({
     mutationFn: async (files: PolicyReportFile[]) => {
       // Use agency_id from AuthProvider (already cached)
@@ -119,73 +123,55 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
         throw new Error('Could not resolve your agency. Please refresh and try again.')
       }
 
-      // Create an ingest job first
+      // Step 1: Create an ingest job using centralized mutation
       const expectedFiles = files.length
       const clientJobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-      const jobResp = await fetch('/api/upload-policy-reports/create-job', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          agencyId,
-          expectedFiles,
-          clientJobId,
-        }),
+      const jobResult = await createJobMutation.mutateAsync({
+        agencyId,
+        expectedFiles,
+        clientJobId,
       })
-      const jobJson = await jobResp.json().catch(() => null)
-      if (!jobResp.ok || !jobJson?.job?.jobId) {
-        console.error('Failed to create ingest job', { status: jobResp.status, body: jobJson })
-        throw new Error('Could not start ingest job. Please try again.')
-      }
-      const jobId = jobJson.job.jobId as string
+
+      const jobId = jobResult.job.jobId
       console.debug('Created ingest job', { jobId, expectedFiles })
 
-      // 1) Request presigned URLs for all files in a single call (new ingestion flow)
-      const signResp = await fetch('/api/upload-policy-reports/sign', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          jobId,
-          files: files.map(({ file }) => ({
-            fileName: file.name,
-            contentType: file.type || 'application/octet-stream',
-            size: file.size,
-          })),
-        }),
+      // Step 2: Request presigned URLs using centralized mutation
+      const signResult = await signFilesMutation.mutateAsync({
+        jobId,
+        files: files.map(({ file }) => ({
+          fileName: file.name,
+          contentType: file.type || 'application/octet-stream',
+          size: file.size,
+        })),
       })
-      const signJson = await signResp.json().catch(() => null)
-      if (!signResp.ok || !Array.isArray(signJson?.files)) {
-        console.error('Presign failed', { status: signResp.status, body: signJson })
-        throw new Error('Could not generate upload URLs. Please try again.')
-      }
 
-      // 2) Upload each file via its presigned URL (no chunking; URLs expire in 60s)
+      // Step 3: Upload each file via its presigned URL (no chunking; URLs expire in 60s)
       const results = await Promise.allSettled(
-        (signJson.files as Array<{ fileId: string; fileName: string; presignedUrl: string }>).
-          map(async (f) => {
-            const match = files.find(pf => pf.file.name === f.fileName)
-            if (!match) throw new Error(`Missing file for ${f.fileName}`)
-            const res = await putToSignedUrl(f.presignedUrl, match.file)
-            if (!res.ok) throw new Error(`Upload failed with status ${res.status}`)
-            return { fileName: f.fileName, fileId: f.fileId }
-          })
+        signResult.files.map(async (f) => {
+          const match = files.find(pf => pf.file.name === f.fileName)
+          if (!match) throw new Error(`Missing file for ${f.fileName}`)
+          const res = await putToSignedUrl(f.presignedUrl, match.file)
+          if (!res.ok) throw new Error(`Upload failed with status ${res.status}`)
+          return { fileName: f.fileName, fileId: f.fileId }
+        })
       )
 
-      // 3) Summarize uploads
-      const successes: { carrier: string; file: string; paths: string[] }[] = [];
-      const failures: string[] = [];
+      // Step 4: Summarize uploads
+      const successes: { carrier: string; file: string; paths: string[] }[] = []
+      const failures: string[] = []
 
       results.forEach((r) => {
         if (r.status === 'fulfilled') {
-          successes.push({ carrier: 'n/a', file: r.value.fileName, paths: [] });
+          successes.push({ carrier: 'n/a', file: r.value.fileName, paths: [] })
         } else {
           const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
           failures.push(reason)
         }
       })
 
-      if (successes.length) console.log('Uploaded:', successes);
-      if (failures.length) console.error('Failed uploads:', failures);
+      if (successes.length) console.log('Uploaded:', successes)
+      if (failures.length) console.error('Failed uploads:', failures)
 
       if (failures.length === 0) {
         return { successes, failures, message: `Successfully uploaded ${successes.length} file(s).` }
@@ -196,12 +182,11 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
     onSuccess: (data) => {
       showSuccess(data.message)
       setPolicyReportFiles([])
-      // Invalidate policy reports queries so the list refreshes
-      queryClient.invalidateQueries({ queryKey: queryKeys.configurationPolicyFiles() })
+      // Cache invalidation is handled by the centralized mutations
       onClose()
     },
     onError: (error: Error) => {
-      console.error('Unexpected error during upload:', error);
+      console.error('Unexpected error during upload:', error)
 
       // If it's a partial failure (contains upload count), show warning
       if (error.message.includes('Uploaded') && error.message.includes('failed')) {

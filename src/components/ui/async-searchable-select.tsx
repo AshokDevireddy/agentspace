@@ -78,6 +78,8 @@ export function AsyncSearchableSelect({
     },
     enabled: open,
     staleTime: 30000,
+    // Keep previous results visible while fetching new ones (prevents flicker)
+    placeholderData: (previous) => previous ?? [],
   })
 
   // Close dropdown when clicking outside

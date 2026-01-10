@@ -7,6 +7,18 @@ import { useAuthenticatedMutation } from '../useMutations'
 import { queryKeys } from '../queryKeys'
 
 // Types
+interface CreateProductInput {
+  carrier_id: string
+  name: string
+  product_code?: string | null
+  is_active: boolean
+}
+
+interface CreateProductResponse {
+  product: Product
+  message?: string
+}
+
 interface UpdateProductInput {
   productId: string
   name: string
@@ -26,6 +38,16 @@ interface Product {
   product_code?: string
   is_active: boolean
   created_at?: string
+}
+
+/**
+ * Create a new product
+ */
+export function useCreateProduct() {
+  return useAuthenticatedMutation<CreateProductResponse, CreateProductInput>('/api/products', {
+    method: 'POST',
+    invalidateKeys: [queryKeys.configurationProducts(), queryKeys.products],
+  })
 }
 
 /**

@@ -23,6 +23,7 @@ export {
 
 // Product mutations
 export {
+  useCreateProduct,
   useUpdateProduct,
   useDeleteProduct,
   useSaveProductCommissions,
@@ -103,4 +104,5 @@ export {
 export {
   useUpdateAgencySmsEnabled,
   useUpdateAgencySmsTemplate,
+  useUpdateAgencyColor,
 } from './useAgencyMutations'

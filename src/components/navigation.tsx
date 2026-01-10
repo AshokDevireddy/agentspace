@@ -27,6 +27,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { useUpdateAgencyColor } from '@/hooks/mutations/useAgencyMutations'
 
 const navigationItems = [
   { name: "Dashboard", href: "/", icon: Home },
@@ -77,6 +78,9 @@ export default function Navigation() {
   // Create stable supabase client instance for realtime subscriptions
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
+
+  // Mutation for updating agency color (used when theme changes)
+  const updateAgencyColorMutation = useUpdateAgencyColor()
 
   // Derive admin status and subscription tier from AuthProvider context
   const isAdmin = userData?.is_admin || false
@@ -138,44 +142,30 @@ export default function Navigation() {
       if (isCurrentColorDefault) {
         const newDefaultColor = getDefaultPrimaryColor(currentResolvedTheme as 'light' | 'dark')
 
-        // Update CSS variables first (synchronous)
+        // Update CSS variables first (synchronous) for immediate visual feedback
         document.documentElement.style.setProperty('--primary', newDefaultColor)
         const textColor = getContrastTextColor(newDefaultColor)
         document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
 
-        // Use requestAnimationFrame to ensure CSS is painted before cache update
-        // This prevents visual flash by batching DOM updates before React re-render
-        requestAnimationFrame(() => {
-          queryClient.setQueryData(queryKeys.agencyBranding(agencyId), {
-            ...agencyData,
-            primary_color: newDefaultColor
-          })
-        })
-
-        // Update database
-        const updateColor = async () => {
-          try {
-            const supabase = createClient()
-            const { error } = await supabase
-              .from('agencies')
-              .update({ primary_color: newDefaultColor })
-              .eq('id', agencyId)
-
-            if (error) {
+        // Use mutation to update database - cache will be invalidated on success
+        updateAgencyColorMutation.mutate(
+          { agencyId, primaryColor: newDefaultColor },
+          {
+            onError: (error) => {
               console.error('Error updating primary color:', error)
+              // Revert CSS on error
+              document.documentElement.style.setProperty('--primary', currentColor)
+              const revertTextColor = getContrastTextColor(currentColor)
+              document.documentElement.style.setProperty('--primary-foreground', revertTextColor === 'white' ? '0 0% 100%' : '0 0% 0%')
             }
-          } catch (error) {
-            console.error('Error updating primary color:', error)
           }
-        }
-
-        updateColor()
+        )
       }
     }
 
     // Update the ref for next comparison
     previousResolvedThemeRef.current = currentResolvedTheme
-  }, [resolvedTheme, agencyId, agencyColor, agencyData, queryClient])
+  }, [resolvedTheme, agencyId, agencyColor, agencyData, updateAgencyColorMutation])
 
   // Fetch unread message count with TanStack Query
   const { data: unreadCountData } = useQuery({

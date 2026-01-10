@@ -39,6 +39,7 @@ export function useInvalidation() {
 
   /**
    * Invalidate all deal/policy-related queries
+   * Also invalidates conversations since deals drive conversations
    */
   const invalidateDealRelated = useCallback(
     async (dealId?: string) => {
@@ -47,6 +48,14 @@ export function useInvalidation() {
         queryClient.invalidateQueries({ queryKey: queryKeys.policies }),
         queryClient.invalidateQueries({ queryKey: queryKeys.expectedPayouts }),
         queryClient.invalidateQueries({ queryKey: queryKeys.analytics }),
+        // Deals drive conversations - invalidate all conversation lists
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey
+            return Array.isArray(key) && key[0] === 'conversations'
+          },
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.drafts }),
       ]
 
       if (dealId) {

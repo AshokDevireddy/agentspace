@@ -487,7 +487,7 @@ export default function ConfigurationPage() {
 
   // ============ TanStack Query Hooks ============
 
-  // Fetch agency data
+  // Fetch agency data - only when user is authenticated
   const { data: agencyData, isLoading: loadingAgencyProfile } = useQuery({
     queryKey: queryKeys.configurationAgency(),
     queryFn: async () => {
@@ -496,27 +496,29 @@ export default function ConfigurationPage() {
 
       if (!user) throw new Error('Not authenticated')
 
-      const { data: userData } = await supabase
+      const { data: userDataLocal } = await supabase
         .from('users')
         .select('agency_id')
         .eq('auth_user_id', user.id)
         .single()
 
-      if (!userData?.agency_id) throw new Error('No agency found')
+      if (!userDataLocal?.agency_id) throw new Error('No agency found')
 
       const { data: agencyInfo, error } = await supabase
         .from('agencies')
         .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template')
-        .eq('id', userData.agency_id)
+        .eq('id', userDataLocal.agency_id)
         .single()
 
       if (error) throw error
       return agencyInfo as Agency
     },
+    // Wait for auth to be ready before fetching
+    enabled: !!userData,
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
-  // Fetch carriers
+  // Fetch carriers - only when user is authenticated
   const { data: carriersData = [], isLoading: carriersLoading } = useQuery({
     queryKey: queryKeys.configurationCarriers(),
     queryFn: async () => {
@@ -542,10 +544,12 @@ export default function ConfigurationPage() {
 
       return response.json() as Promise<Carrier[]>
     },
+    // Wait for auth to be ready before fetching
+    enabled: !!userData,
     staleTime: 10 * 60 * 1000, // 10 minutes
   })
 
-  // Fetch all products
+  // Fetch all products - only when user is authenticated
   const { data: allProductsData = [], isLoading: productsLoading } = useQuery({
     queryKey: queryKeys.configurationProducts(),
     queryFn: async () => {
@@ -576,6 +580,8 @@ export default function ConfigurationPage() {
 
       return response.json() as Promise<Product[]>
     },
+    // Wait for auth to be ready before fetching
+    enabled: !!userData,
     staleTime: 10 * 60 * 1000, // 10 minutes
   })
 

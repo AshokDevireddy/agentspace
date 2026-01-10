@@ -281,7 +281,8 @@ export default function ExpectedPayoutsPage() {
 
       return response.json() as Promise<PayoutsResponse>
     },
-    enabled: !!effectiveAgentId,
+    // Wait for both effectiveAgentId AND userData to be loaded to prevent race conditions
+    enabled: !!effectiveAgentId && !!userData,
     staleTime: 2 * 60 * 1000, // 2 minutes
     refetchOnWindowFocus: false,
     placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
@@ -322,7 +323,8 @@ export default function ExpectedPayoutsPage() {
       const data = await response.json() as DebtResponse
       return data.debt
     },
-    enabled: !!effectiveAgentId,
+    // Wait for both effectiveAgentId AND userData to be loaded to prevent race conditions
+    enabled: !!effectiveAgentId && !!userData,
     staleTime: 2 * 60 * 1000, // 2 minutes
     refetchOnWindowFocus: false,
     placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker

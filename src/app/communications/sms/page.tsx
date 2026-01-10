@@ -811,6 +811,9 @@ function SMSMessagingPageContent() {
     editDraftMutation.mutate({ messageId, body: editingDraftBody })
   }
 
+  // Combined pending state for draft actions - disable all buttons when any draft mutation is in progress
+  const isDraftMutationPending = approveDraftMutation.isPending || rejectDraftMutation.isPending || editDraftMutation.isPending
+
   return (
     <div className="h-[calc(100vh-3rem)] flex bg-background relative communication-content" data-tour="communication">
       {/* Upgrade prompt overlay for Basic tier viewing downlines */}
@@ -1125,7 +1128,7 @@ function SMSMessagingPageContent() {
                                     <Button
                                       size="sm"
                                       onClick={() => handleApproveDraft(message.id)}
-                                      disabled={approveDraftMutation.isPending && approveDraftMutation.variables?.messageIds?.includes(message.id)}
+                                      disabled={isDraftMutationPending}
                                       className="bg-green-600 hover:bg-green-700 text-white text-xs flex-1 min-w-[110px]"
                                     >
                                       {approveDraftMutation.isPending && approveDraftMutation.variables?.messageIds?.includes(message.id) ? (
@@ -1138,6 +1141,7 @@ function SMSMessagingPageContent() {
                                       size="sm"
                                       variant="outline"
                                       onClick={() => handleStartEditDraft(message.id, message.body)}
+                                      disabled={isDraftMutationPending}
                                       className="text-xs min-w-[60px] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
                                     >
                                       Edit
@@ -1146,7 +1150,7 @@ function SMSMessagingPageContent() {
                                       size="sm"
                                       variant="destructive"
                                       onClick={() => handleRejectDraft(message.id)}
-                                      disabled={rejectDraftMutation.isPending && rejectDraftMutation.variables?.messageIds?.includes(message.id)}
+                                      disabled={isDraftMutationPending}
                                       className="text-xs min-w-[60px]"
                                     >
                                       {rejectDraftMutation.isPending && rejectDraftMutation.variables?.messageIds?.includes(message.id) ? (

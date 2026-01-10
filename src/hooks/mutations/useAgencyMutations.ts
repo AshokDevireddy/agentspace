@@ -98,3 +98,46 @@ export function useUpdateAgencySmsTemplate(options?: {
     onError: options?.onError,
   })
 }
+
+// ============ Update Agency Primary Color ============
+
+interface UpdateAgencyColorInput {
+  agencyId: string
+  primaryColor: string
+}
+
+interface UpdateAgencyColorResponse {
+  success: boolean
+}
+
+/**
+ * Mutation hook for updating agency primary color
+ * Used when theme changes to update the default color
+ */
+export function useUpdateAgencyColor(options?: {
+  onSuccess?: (data: UpdateAgencyColorResponse, variables: UpdateAgencyColorInput) => void
+  onError?: (error: Error) => void
+}) {
+  const { invalidateAgencyRelated } = useInvalidation()
+
+  return useMutation<UpdateAgencyColorResponse, Error, UpdateAgencyColorInput>({
+    mutationFn: async ({ agencyId, primaryColor }) => {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('agencies')
+        .update({ primary_color: primaryColor })
+        .eq('id', agencyId)
+
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      return { success: true }
+    },
+    onSuccess: async (data, variables) => {
+      await invalidateAgencyRelated(variables.agencyId)
+      options?.onSuccess?.(data, variables)
+    },
+    onError: options?.onError,
+  })
+}

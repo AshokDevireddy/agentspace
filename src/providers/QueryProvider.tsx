@@ -24,6 +24,8 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
           return failureCount < 2
         },
         refetchOnWindowFocus: process.env.NODE_ENV === 'production',
+        // Refetch when user comes back online to ensure fresh data
+        refetchOnReconnect: true,
       },
       mutations: {
         retry: 0, // Never auto-retry mutations - prevents duplicate submissions

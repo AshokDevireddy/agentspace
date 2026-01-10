@@ -137,9 +137,9 @@ export default function Home() {
       },
       onError: async (error) => {
         console.error('Error completing onboarding:', error)
-        // Still refresh state on error to show current status
+        // Don't close wizard on error - let user retry
+        // The wizard handles its own error display via setErrors()
         await queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
-        setShowWizard(false)
       },
     })
   }

@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 import { withTimeout } from '@/lib/auth/constants'
+import { RateLimitError } from '@/lib/error-utils'
 import { useQuery } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
@@ -909,24 +910,14 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
     runNiprMutation.mutate(niprForm, {
       onSuccess: async (result) => {
-        // Handle rate limit error specifically
-        if (result.error === 'rate_limit') {
-          const retryMinutes = Math.ceil((result.retryAfter || 3600) / 60)
-          setNiprResult({
-            success: false,
-            message: `Rate limit exceeded. Please try again in ${retryMinutes} minute${retryMinutes !== 1 ? 's' : ''}.`
-          })
-          setNiprRunning(false)
-          return
-        }
-
         // Handle conflict (already has pending job)
         if (result.status === 'conflict') {
           // Already has a pending job - start polling it
           if (result.jobId) {
             localStorage.setItem(NIPR_JOB_STORAGE_KEY, result.jobId)
             setNiprJobId(result.jobId)
-            setNiprProgressMessage(result.status === 'processing' ? 'Verification in progress...' : 'Waiting in queue...')
+            // Check if the existing job is processing or still queued
+            setNiprProgressMessage(result.processing ? 'Verification in progress...' : 'Waiting in queue...')
           }
           return
         }
@@ -983,6 +974,17 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       onError: (error) => {
         console.error('NIPR automation error:', error)
         setNiprRunning(false)
+
+        // Handle rate limit error with user-friendly message
+        if (error instanceof RateLimitError) {
+          const retryMinutes = Math.ceil(error.retryAfter / 60)
+          setNiprResult({
+            success: false,
+            message: `Rate limit exceeded. Please try again in ${retryMinutes} minute${retryMinutes !== 1 ? 's' : ''}.`
+          })
+          return
+        }
+
         setNiprResult({
           success: false,
           message: error.message || 'Failed to run NIPR automation. Please try again.'

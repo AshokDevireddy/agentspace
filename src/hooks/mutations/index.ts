@@ -53,6 +53,10 @@ export {
   useRegister,
   useResetPassword,
   useCompleteOnboarding,
+  useSignIn,
+  useUpdatePassword,
+  useUpdateUserProfile,
+  useUpdateUserStatus,
 } from './useAuthMutations'
 
 // SMS mutations

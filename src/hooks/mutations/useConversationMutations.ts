@@ -142,8 +142,13 @@ export function useStartConversation(options?: {
 }
 
 /**
- * Hook for getting or creating a conversation (combined operation)
+ * Hook for getting or creating a conversation (atomic operation)
+ * Uses PUT endpoint which internally handles upsert semantics
  * Returns existing conversation ID if exists, creates new one if not
+ *
+ * IMPORTANT: This replaces the previous TOCTOU-vulnerable pattern that
+ * called POST (check) then PUT (create) separately. The PUT endpoint
+ * uses getOrCreateConversation() which is atomic.
  */
 export function useGetOrCreateConversation(options?: {
   onSuccess?: (conversationId: string, wasCreated: boolean) => void
@@ -153,45 +158,32 @@ export function useGetOrCreateConversation(options?: {
 
   return useMutation<CreateConversationResponse & { wasCreated: boolean }, Error, { dealId: string; agentId: string }>({
     mutationFn: async ({ dealId, agentId }) => {
-      // First check if exists
-      const checkResponse = await fetch('/api/sms/conversations/get-or-create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ dealId }),
-      })
-
-      if (!checkResponse.ok) {
-        throw new Error('Failed to check conversation')
-      }
-
-      const checkData = await checkResponse.json()
-
-      if (checkData.exists) {
-        return { conversationId: checkData.conversationId, created: false, wasCreated: false }
-      }
-
-      // Create new conversation
-      const createResponse = await fetch('/api/sms/conversations/get-or-create', {
+      // Single atomic call - the PUT endpoint uses getOrCreateConversation
+      // which handles the upsert pattern atomically
+      const response = await fetch('/api/sms/conversations/get-or-create', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ dealId, agentId }),
       })
 
-      if (!createResponse.ok) {
-        const error = await createResponse.json()
-        throw new Error(error.error || 'Failed to create conversation')
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to get or create conversation')
       }
 
-      const createData = await createResponse.json()
-      return { ...createData, wasCreated: true }
+      const data = await response.json()
+      // The PUT endpoint returns conversationId - we treat it as potentially created
+      // since we don't know if it existed before without the check
+      return {
+        conversationId: data.conversationId,
+        created: true,
+        wasCreated: true
+      }
     },
     onSuccess: (data) => {
-      if (data.wasCreated) {
-        // Invalidate all conversation queries only if we created a new one
-        queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
-      }
+      // Always invalidate since we may have created a new conversation
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
       options?.onSuccess?.(data.conversationId, data.wasCreated)
     },
     onError: options?.onError,

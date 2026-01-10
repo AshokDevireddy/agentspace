@@ -2,16 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 import { useTheme } from "next-themes"
 import { useNotification } from '@/contexts/notification-context'
+import { useRegister } from '@/hooks/mutations'
 
 export default function RegisterPage() {
-  const supabase = createClient()
   const { showSuccess } = useNotification()
   const router = useRouter()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
@@ -26,7 +25,9 @@ export default function RegisterPage() {
   })
   const [errors, setErrors] = useState<string[]>([])
   const [errorFields, setErrorFields] = useState<Record<string, string>>({})
-  const [submitting, setSubmitting] = useState(false)
+
+  // Use TanStack Query mutation for registration
+  const registerMutation = useRegister()
 
   // Force light mode for non-white-labeled sites, use agency theme for white-labeled sites
   useEffect(() => {
@@ -87,48 +88,38 @@ export default function RegisterPage() {
       return
     }
 
-    setSubmitting(true)
+    // Clear any previous errors
+    setErrors([])
 
-    try {
-      // Call registration API (uses admin.inviteUserByEmail instead of signUp)
-      const response = await fetch('/api/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+    registerMutation.mutate(
+      {
+        email: formData.email,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        phoneNumber: formData.phoneNumber,
+        agencyName: formData.agencyName,
+      },
+      {
+        onSuccess: () => {
+          // Clear form
+          setFormData({
+            email: "",
+            firstName: "",
+            lastName: "",
+            phoneNumber: "",
+            agencyName: ""
+          })
+
+          // Show success message and redirect to login
+          showSuccess('Registration successful! Please check your email for an invitation link to complete your account setup.')
+          router.push('/login')
         },
-        body: JSON.stringify({
-          email: formData.email,
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          phoneNumber: formData.phoneNumber,
-          agencyName: formData.agencyName
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Registration failed')
+        onError: (error) => {
+          console.error('Error during registration:', error)
+          setErrors([error.message || 'Registration failed. Please try again.'])
+        },
       }
-
-      // Clear form
-      setFormData({
-        email: "",
-        firstName: "",
-        lastName: "",
-        phoneNumber: "",
-        agencyName: ""
-      })
-
-      // Show success message and redirect to login
-      showSuccess('Registration successful! Please check your email for an invitation link to complete your account setup.')
-      router.push('/login')
-    } catch (error: any) {
-      console.error('Error during registration:', error)
-      setErrors([error.message || 'Registration failed. Please try again.'])
-    } finally {
-      setSubmitting(false)
-    }
+    )
   }
 
   const handleInputChange = (field: string, value: string) => {
@@ -254,10 +245,10 @@ export default function RegisterPage() {
             <div className="pt-6">
               <Button
                 type="submit"
-                disabled={submitting}
+                disabled={registerMutation.isPending}
                 className="w-full h-12 bg-foreground hover:bg-foreground/90 text-background font-medium rounded-md disabled:opacity-50"
               >
-                {submitting ? 'Sending invitation...' : 'Create Admin Account'}
+                {registerMutation.isPending ? 'Sending invitation...' : 'Create Admin Account'}
               </Button>
               <p className="text-sm text-muted-foreground text-center">
                 You'll receive an email to set your password and complete setup

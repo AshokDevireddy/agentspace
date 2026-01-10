@@ -292,14 +292,20 @@ export default function ConfigurationPage() {
       }
       
       setAgency({ ...agency, ...updates })
-      
+
       // Update theme if changed
       if (updates.theme_mode) {
         setTheme(agencyThemeMode)
       }
-      
-      // Refresh the page to apply all changes
-      window.location.reload()
+
+      // Invalidate queries to refresh all agency-related data
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.agency }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.agencyBranding(agency.id) }),
+      ])
+
+      showSuccess('Changes saved successfully')
     } catch (error) {
       console.error('Error saving changes:', error)
       showError('Failed to save changes')

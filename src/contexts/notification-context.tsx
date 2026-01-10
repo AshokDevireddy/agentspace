@@ -48,14 +48,20 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       duration,
     }
 
-    // Replace all existing notifications with the new one (only show one at a time)
-    const newNotifications = [notification]
-    setNotifications(newNotifications)
+    // Stack up to 3 notifications, removing oldest if limit exceeded
+    setNotifications((prev) => {
+      const MAX_NOTIFICATIONS = 3
+      const updated = [...prev, notification]
+      // Remove oldest notifications if we exceed the limit
+      const newNotifications = updated.slice(-MAX_NOTIFICATIONS)
 
-    // Store in sessionStorage so it persists across navigation
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(newNotifications))
-    }
+      // Store in sessionStorage so it persists across navigation
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(newNotifications))
+      }
+
+      return newNotifications
+    })
   }, [])
 
   const showSuccess = useCallback((message: string, duration: number = 5000) => {

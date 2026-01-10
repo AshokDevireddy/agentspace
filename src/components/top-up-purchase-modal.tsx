@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Loader2, MessageSquare, Sparkles } from 'lucide-react';
 import { TOPUP_PRODUCTS, TopupProductKey } from '@/lib/topup-products';
+import { useCreateTopUpSession } from '@/hooks/mutations';
 
 interface TopUpPurchaseModalProps {
   isOpen: boolean;
@@ -25,8 +26,19 @@ export default function TopUpPurchaseModal({
   limit,
   topupCredits
 }: TopUpPurchaseModalProps) {
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Use TanStack Query mutation for top-up session creation
+  const topUpMutation = useCreateTopUpSession({
+    onSuccess: (url) => {
+      // Redirect to Stripe Checkout
+      window.location.href = url;
+    },
+    onError: (err) => {
+      console.error('Error purchasing top-up:', err);
+      setError(err.message || 'Failed to purchase top-up');
+    },
+  });
 
   // Get available top-up products for this tier
   const availableProducts = Object.entries(TOPUP_PRODUCTS).filter(([_, product]) => {
@@ -37,37 +49,9 @@ export default function TopUpPurchaseModal({
     }
   });
 
-  const handlePurchase = async (productKey: TopupProductKey) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch('/api/stripe/create-topup-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ topupProductKey: productKey }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to create checkout session');
-      }
-
-      const { url } = await response.json();
-
-      if (url) {
-        // Redirect to Stripe Checkout
-        window.location.href = url;
-      } else {
-        throw new Error('No checkout URL returned');
-      }
-    } catch (err) {
-      console.error('Error purchasing top-up:', err);
-      setError(err instanceof Error ? err.message : 'Failed to purchase top-up');
-      setLoading(false);
-    }
+  const handlePurchase = (productKey: TopupProductKey) => {
+    setError(null);
+    topUpMutation.mutate({ topupProductKey: productKey });
   };
 
   const getPrice = (productKey: string) => {
@@ -119,10 +103,10 @@ export default function TopUpPurchaseModal({
                 </div>
                 <Button
                   onClick={() => handlePurchase(key as TopupProductKey)}
-                  disabled={loading}
+                  disabled={topUpMutation.isPending}
                   className="bg-purple-600 hover:bg-purple-700 text-white"
                 >
-                  {loading ? (
+                  {topUpMutation.isPending ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Processing...

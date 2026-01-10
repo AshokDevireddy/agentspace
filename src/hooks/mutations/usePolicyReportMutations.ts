@@ -41,7 +41,12 @@ interface SignFilesResponse {
 /**
  * Create a policy report ingest job
  */
-export function useCreatePolicyReportJob() {
+export function useCreatePolicyReportJob(options?: {
+  onSuccess?: (data: CreateJobResponse) => void
+  onError?: (error: Error) => void
+}) {
+  const queryClient = useQueryClient()
+
   return useMutation<CreateJobResponse, Error, CreateJobInput>({
     mutationFn: async (variables) => {
       const response = await fetch('/api/upload-policy-reports/create-job', {
@@ -58,13 +63,23 @@ export function useCreatePolicyReportJob() {
 
       return response.json()
     },
+    onSuccess: (data) => {
+      // Invalidate policy reports query when job is created
+      queryClient.invalidateQueries({ queryKey: queryKeys.policyReports })
+      queryClient.invalidateQueries({ queryKey: queryKeys.configurationPolicyFiles() })
+      options?.onSuccess?.(data)
+    },
+    onError: options?.onError,
   })
 }
 
 /**
  * Get signed URLs for uploading policy report files
  */
-export function useSignPolicyReportFiles() {
+export function useSignPolicyReportFiles(options?: {
+  onSuccess?: (data: SignFilesResponse) => void
+  onError?: (error: Error) => void
+}) {
   const queryClient = useQueryClient()
 
   return useMutation<SignFilesResponse, Error, SignFilesInput>({
@@ -83,9 +98,14 @@ export function useSignPolicyReportFiles() {
 
       return response.json()
     },
-    onSuccess: () => {
-      // Invalidate policy files query after successful upload
+    onSuccess: (data) => {
+      // Invalidate all related queries after files are signed/uploaded
       queryClient.invalidateQueries({ queryKey: queryKeys.configurationPolicyFiles() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.policyReports })
+      // Deals will be updated after processing
+      queryClient.invalidateQueries({ queryKey: queryKeys.deals })
+      options?.onSuccess?.(data)
     },
+    onError: options?.onError,
   })
 }

@@ -42,8 +42,7 @@ interface PortalSessionResponse {
 }
 
 interface TopUpSessionInput {
-  amount: number
-  priceId?: string
+  topupProductKey: string
 }
 
 interface TopUpSessionResponse {
@@ -113,9 +112,10 @@ export function useChangeSubscription(options?: {
       return data
     },
     onSuccess: (data, variables) => {
-      // Invalidate subscription and user queries
+      // Invalidate subscription, user, and profile queries
       queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() })
       queryClient.invalidateQueries({ queryKey: queryKeys.user })
+      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
 
       options?.onSuccess?.(data, variables.newTier)
     },
@@ -150,9 +150,10 @@ export function useAddSubscriptionItem(options?: {
       return data
     },
     onSuccess: () => {
-      // Invalidate subscription and user queries
+      // Invalidate subscription, user, and profile queries
       queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() })
       queryClient.invalidateQueries({ queryKey: queryKeys.user })
+      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
 
       options?.onSuccess?.()
     },
@@ -197,12 +198,12 @@ export function useCreateTopUpSession(options?: {
   onError?: (error: Error) => void
 }) {
   return useMutation<TopUpSessionResponse, Error, TopUpSessionInput>({
-    mutationFn: async ({ amount, priceId }) => {
+    mutationFn: async ({ topupProductKey }) => {
       const response = await fetch('/api/stripe/create-topup-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ amount, priceId }),
+        body: JSON.stringify({ topupProductKey }),
       })
 
       const data = await response.json()
@@ -287,9 +288,10 @@ export function useSubscription(options?: {
     },
     onSuccess: (result, variables) => {
       if (result.type === 'change') {
-        // Invalidate queries for subscription changes
+        // Invalidate subscription, user, and profile queries for subscription changes
         queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() })
         queryClient.invalidateQueries({ queryKey: queryKeys.user })
+        queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
         options?.onSubscriptionChanged?.(result.data as ChangeSubscriptionResponse, variables.tier)
       } else {
         options?.onCheckoutRedirect?.((result.data as CheckoutSessionResponse).url)

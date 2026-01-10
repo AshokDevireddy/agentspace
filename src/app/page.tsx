@@ -10,6 +10,8 @@ import { useTour } from "@/contexts/onboarding-tour-context"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
 import { useCompleteOnboarding } from "@/hooks/mutations"
+import { useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/hooks/queryKeys"
 import { Skeleton } from "@/components/ui/skeleton"
 import Link from "next/link"
 
@@ -43,6 +45,7 @@ export default function Home() {
   })
 
   const weekRange = useMemo(() => getWeekDateRange(), [])
+  const queryClient = useQueryClient()
   const completeOnboardingMutation = useCompleteOnboarding()
 
   useEffect(() => {
@@ -113,12 +116,20 @@ export default function Home() {
 
   const handleOnboardingComplete = () => {
     completeOnboardingMutation.mutate(undefined, {
-      onSuccess: () => {
-        window.location.reload()
+      onSuccess: async () => {
+        // Invalidate all user-related queries to refresh state
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.user }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() }),
+          queryClient.invalidateQueries({ queryKey: ['user-profile'] }),
+        ])
+        setShowWizard(false)
       },
-      onError: (error) => {
+      onError: async (error) => {
         console.error('Error completing onboarding:', error)
-        window.location.reload()
+        // Still refresh state on error to show current status
+        await queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
+        setShowWizard(false)
       },
     })
   }

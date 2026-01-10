@@ -3,8 +3,8 @@
  * Handles message sending, draft approval/rejection, and notification resolution
  */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { queryKeys, QueryKeyType } from '../queryKeys'
+import { useMutation } from '@tanstack/react-query'
+import { useInvalidation } from '../useInvalidation'
 
 interface SendMessageInput {
   dealId: string
@@ -39,11 +39,10 @@ interface ResolveNotificationResponse {
  */
 export function useSendMessage(options?: {
   conversationId?: string
-  getInvalidateFilters?: () => { viewMode: string; searchQuery: string; notificationFilter: string }
-  onSuccess?: () => void
+  onSuccess?: (data: SendMessageResponse, variables: SendMessageInput) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateConversationRelated } = useInvalidation()
 
   return useMutation<SendMessageResponse, Error, SendMessageInput>({
     mutationFn: async ({ dealId, message }) => {
@@ -61,21 +60,10 @@ export function useSendMessage(options?: {
 
       return response.json()
     },
-    onSuccess: () => {
-      // Invalidate messages query if conversation ID provided
-      if (options?.conversationId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(options.conversationId) })
-      }
-
-      // Invalidate conversations list with current filters
-      if (options?.getInvalidateFilters) {
-        const { viewMode, searchQuery, notificationFilter } = options.getInvalidateFilters()
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.conversationsList(viewMode, { searchQuery, notificationFilter })
-        })
-      }
-
-      options?.onSuccess?.()
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation with predicate-based conversation list invalidation
+      await invalidateConversationRelated(options?.conversationId)
+      options?.onSuccess?.(data, variables)
     },
     onError: options?.onError,
   })
@@ -86,11 +74,10 @@ export function useSendMessage(options?: {
  */
 export function useApproveDrafts(options?: {
   conversationId?: string
-  viewMode?: string
-  onSuccess?: (messageIds: string[]) => void
+  onSuccess?: (data: DraftActionResponse, variables: DraftActionInput) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateConversationRelated } = useInvalidation()
 
   return useMutation<DraftActionResponse, Error, DraftActionInput>({
     mutationFn: async ({ messageIds }) => {
@@ -108,18 +95,10 @@ export function useApproveDrafts(options?: {
 
       return response.json()
     },
-    onSuccess: (_, variables) => {
-      // Invalidate messages query if conversation ID provided
-      if (options?.conversationId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(options.conversationId) })
-      }
-
-      // Invalidate drafts list
-      if (options?.viewMode) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.draftsList(options.viewMode) })
-      }
-
-      options?.onSuccess?.(variables.messageIds)
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation - handles conversations, drafts, and messages
+      await invalidateConversationRelated(options?.conversationId)
+      options?.onSuccess?.(data, variables)
     },
     onError: options?.onError,
   })
@@ -130,11 +109,10 @@ export function useApproveDrafts(options?: {
  */
 export function useRejectDrafts(options?: {
   conversationId?: string
-  viewMode?: string
-  onSuccess?: (messageIds: string[]) => void
+  onSuccess?: (data: DraftActionResponse, variables: DraftActionInput) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateConversationRelated } = useInvalidation()
 
   return useMutation<DraftActionResponse, Error, DraftActionInput>({
     mutationFn: async ({ messageIds }) => {
@@ -152,18 +130,10 @@ export function useRejectDrafts(options?: {
 
       return response.json()
     },
-    onSuccess: (_, variables) => {
-      // Invalidate messages query if conversation ID provided
-      if (options?.conversationId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(options.conversationId) })
-      }
-
-      // Invalidate drafts list
-      if (options?.viewMode) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.draftsList(options.viewMode) })
-      }
-
-      options?.onSuccess?.(variables.messageIds)
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation - handles conversations, drafts, and messages
+      await invalidateConversationRelated(options?.conversationId)
+      options?.onSuccess?.(data, variables)
     },
     onError: options?.onError,
   })
@@ -174,10 +144,10 @@ export function useRejectDrafts(options?: {
  */
 export function useEditDraft(options?: {
   conversationId?: string
-  onSuccess?: () => void
+  onSuccess?: (data: { success: boolean }, variables: EditDraftInput) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateConversationRelated } = useInvalidation()
 
   return useMutation<{ success: boolean }, Error, EditDraftInput>({
     mutationFn: async ({ messageId, body }) => {
@@ -195,13 +165,10 @@ export function useEditDraft(options?: {
 
       return response.json()
     },
-    onSuccess: () => {
-      // Invalidate messages query if conversation ID provided
-      if (options?.conversationId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(options.conversationId) })
-      }
-
-      options?.onSuccess?.()
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation - handles conversations, drafts, and messages
+      await invalidateConversationRelated(options?.conversationId)
+      options?.onSuccess?.(data, variables)
     },
     onError: options?.onError,
   })
@@ -211,11 +178,10 @@ export function useEditDraft(options?: {
  * Hook for resolving deal notifications (removes yellow indicator)
  */
 export function useResolveNotification(options?: {
-  getInvalidateFilters?: () => { viewMode: string; searchQuery: string; notificationFilter: string }
-  onSuccess?: (dealId: string) => void
+  onSuccess?: (data: ResolveNotificationResponse, dealId: string) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateDealRelated, invalidateConversationRelated } = useInvalidation()
 
   return useMutation<ResolveNotificationResponse, Error, string>({
     mutationFn: async (dealId) => {
@@ -231,19 +197,13 @@ export function useResolveNotification(options?: {
 
       return response.json()
     },
-    onSuccess: (_, dealId) => {
-      // Invalidate deal details query
-      queryClient.invalidateQueries({ queryKey: queryKeys.dealDetail(dealId) })
-
-      // Invalidate conversations list with current filters
-      if (options?.getInvalidateFilters) {
-        const { viewMode, searchQuery, notificationFilter } = options.getInvalidateFilters()
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.conversationsList(viewMode, { searchQuery, notificationFilter })
-        })
-      }
-
-      options?.onSuccess?.(dealId)
+    onSuccess: async (data, dealId) => {
+      // Use centralized invalidation - handles deal details and all conversation lists
+      await Promise.all([
+        invalidateDealRelated(dealId),
+        invalidateConversationRelated(),
+      ])
+      options?.onSuccess?.(data, dealId)
     },
     onError: options?.onError,
   })

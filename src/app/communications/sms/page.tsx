@@ -213,7 +213,7 @@ function SMSMessagingPageContent() {
   useEffect(() => {
     selectedConversationRef.current = selectedConversation
   }, [selectedConversation])
-  const { data: conversationsData, isLoading: loading } = useApiFetch<{ conversations: Conversation[] }>(
+  const { data: conversationsData, isPending: loading } = useApiFetch<{ conversations: Conversation[] }>(
     queryKeys.conversationsList(effectiveViewMode, { searchQuery, notificationFilter }),
     `/api/sms/conversations?view=${effectiveViewMode}`,
     {
@@ -226,7 +226,7 @@ function SMSMessagingPageContent() {
   const conversations = conversationsData?.conversations || []
 
   // Messages query - migrated to useApiFetch
-  const { data: messagesData, isLoading: messagesLoading } = useApiFetch<{ messages: Message[] }>(
+  const { data: messagesData, isPending: messagesLoading } = useApiFetch<{ messages: Message[] }>(
     queryKeys.messages(selectedConversation?.id || ''),
     `/api/sms/messages?conversationId=${selectedConversation?.id}&view=${effectiveViewMode}`,
     {
@@ -244,7 +244,7 @@ function SMSMessagingPageContent() {
   })
 
   // Deal details query - migrated to useApiFetch
-  const { data: dealData, isLoading: dealLoading } = useApiFetch<{ deal: DealDetails }>(
+  const { data: dealData, isPending: dealLoading } = useApiFetch<{ deal: DealDetails }>(
     queryKeys.dealDetail(selectedConversation?.dealId || ''),
     `/api/deals/${selectedConversation?.dealId}`,
     {

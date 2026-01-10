@@ -151,6 +151,7 @@ export const queryKeys = {
   agencyColor: (agencyId: string) => ['agency', 'color', agencyId] as const,
   agencyBranding: (agencyId: string | null) => ['agency', 'branding', agencyId] as const,
   agencyOptions: (userId: string) => ['agency', 'options', userId] as const,
+  agencyScoreboardSettings: (agencyId: string | null) => ['agency', 'scoreboard-settings', agencyId] as const,
 
   // Products
   products: ['products'] as const,

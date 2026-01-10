@@ -3,8 +3,8 @@
  * Handles Stripe checkout, subscription changes, and billing portal
  */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { queryKeys } from '../queryKeys'
+import { useMutation } from '@tanstack/react-query'
+import { useInvalidation } from '../useInvalidation'
 
 type SubscriptionTier = 'free' | 'basic' | 'pro' | 'expert'
 type SubscriptionType = 'agent_subscription' | 'ai_mode_addon'
@@ -92,7 +92,7 @@ export function useChangeSubscription(options?: {
   onSuccess?: (response: ChangeSubscriptionResponse, newTier: SubscriptionTier) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateSubscriptionRelated } = useInvalidation()
 
   return useMutation<ChangeSubscriptionResponse, Error, ChangeSubscriptionInput>({
     mutationFn: async ({ newTier }) => {
@@ -111,12 +111,8 @@ export function useChangeSubscription(options?: {
 
       return data
     },
-    onSuccess: (data, variables) => {
-      // Invalidate subscription, user, and profile queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.user })
-      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
-
+    onSuccess: async (data, variables) => {
+      await invalidateSubscriptionRelated()
       options?.onSuccess?.(data, variables.newTier)
     },
     onError: options?.onError,
@@ -130,7 +126,7 @@ export function useAddSubscriptionItem(options?: {
   onSuccess?: () => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateSubscriptionRelated } = useInvalidation()
 
   return useMutation<AddSubscriptionItemResponse, Error, AddSubscriptionItemInput>({
     mutationFn: async ({ priceId }) => {
@@ -149,12 +145,8 @@ export function useAddSubscriptionItem(options?: {
 
       return data
     },
-    onSuccess: () => {
-      // Invalidate subscription, user, and profile queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.user })
-      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
-
+    onSuccess: async () => {
+      await invalidateSubscriptionRelated()
       options?.onSuccess?.()
     },
     onError: options?.onError,
@@ -236,7 +228,7 @@ export function useSubscription(options?: {
   onSubscriptionChanged?: (data: ChangeSubscriptionResponse, newTier: SubscriptionTier) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateSubscriptionRelated } = useInvalidation()
 
   return useMutation<
     { type: 'checkout' | 'change'; data: CheckoutSessionResponse | ChangeSubscriptionResponse },
@@ -286,12 +278,9 @@ export function useSubscription(options?: {
 
       return { type: 'checkout' as const, data }
     },
-    onSuccess: (result, variables) => {
+    onSuccess: async (result, variables) => {
       if (result.type === 'change') {
-        // Invalidate subscription, user, and profile queries for subscription changes
-        queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() })
-        queryClient.invalidateQueries({ queryKey: queryKeys.user })
-        queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
+        await invalidateSubscriptionRelated()
         options?.onSubscriptionChanged?.(result.data as ChangeSubscriptionResponse, variables.tier)
       } else {
         options?.onCheckoutRedirect?.((result.data as CheckoutSessionResponse).url)

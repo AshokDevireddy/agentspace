@@ -12,8 +12,9 @@ import { Loader2, User, Calendar, DollarSign, Users, Building2, Mail, Phone, Che
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { useNotification } from "@/contexts/notification-context"
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { useSaveAgent } from '@/hooks/mutations'
 
 interface AgentDetailsModalProps {
   open: boolean
@@ -95,9 +96,29 @@ const getAgentStatusSteps = (status: string | null | undefined) => {
 
 export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: AgentDetailsModalProps) {
   const { showSuccess, showError } = useNotification()
-  const queryClient = useQueryClient()
   const [isEditing, setIsEditing] = useState(false)
   const [editedData, setEditedData] = useState<any>(null)
+
+  // Save mutation hook for both update and invite flows
+  const saveMutation = useSaveAgent({
+    onSuccess: (data) => {
+      setIsEditing(false)
+      setEditedData(null)
+
+      if (data.type === 'invite') {
+        showSuccess('Invitation sent successfully!')
+      } else {
+        showSuccess('Agent updated successfully!')
+      }
+
+      onOpenChange(false)
+      onUpdate?.()
+    },
+    onError: (err) => {
+      console.error('Error saving agent:', err)
+      showError(err.message || 'Failed to save agent')
+    },
+  })
 
   // Fetch positions for color map
   const { data: positionColorMap = new Map<number, string>() } = useQuery({
@@ -247,82 +268,6 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
     setEditedData(null)
   }
 
-  // Mutation for saving agent changes
-  const saveMutation = useMutation({
-    mutationFn: async ({ shouldSendInvite }: { shouldSendInvite: boolean }) => {
-      if (!agent || !editedData) throw new Error('Missing agent or edited data')
-
-      if (shouldSendInvite) {
-        // Send invite using the invite API
-        const nameParts = agent.name.split(' ')
-        const firstName = nameParts[0] || ''
-        const lastName = nameParts.slice(1).join(' ') || ''
-
-        // Determine permission level from role
-        const permissionLevel = editedData.role === 'admin' ? 'admin' : 'agent'
-
-        const inviteResponse = await fetch('/api/agents/invite', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            email: editedData.email,
-            firstName: firstName,
-            lastName: lastName,
-            phoneNumber: editedData.phone_number || null,
-            permissionLevel: permissionLevel,
-            uplineAgentId: editedData.upline_id && editedData.upline_id !== 'all' ? editedData.upline_id : null,
-            positionId: agent.position_id || null,
-            preInviteUserId: agent.id
-          })
-        })
-
-        if (!inviteResponse.ok) {
-          const errorData = await inviteResponse.json()
-          throw new Error(errorData.error || 'Failed to send invitation')
-        }
-
-        return { type: 'invite' }
-      } else {
-        // Regular save (without invite)
-        const response = await fetch(`/api/agents/${agent.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(editedData)
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || 'Failed to update agent')
-        }
-
-        return { type: 'update' }
-      }
-    },
-    onSuccess: (data) => {
-      // Invalidate and refetch agent queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.agentDetail(agentId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.agentDownlines(agentId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents })
-
-      setIsEditing(false)
-      setEditedData(null)
-
-      if (data.type === 'invite') {
-        showSuccess('Invitation sent successfully!')
-      } else {
-        showSuccess('Agent updated successfully!')
-      }
-
-      onOpenChange(false)
-      onUpdate?.()
-    },
-    onError: (err: Error) => {
-      console.error('Error saving agent:', err)
-      showError(err.message || 'Failed to save agent')
-    }
-  })
-
   const handleSave = () => {
     if (!agent || !editedData) return
 
@@ -332,7 +277,13 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
     const emailChanged = editedData.email !== agent.email
     const shouldSendInvite = wasPreInvite && hasEmail && emailChanged
 
-    saveMutation.mutate({ shouldSendInvite })
+    saveMutation.mutate({
+      agentId: agent.id,
+      agentName: agent.name,
+      editedData,
+      positionId: agent.position_id,
+      shouldSendInvite,
+    })
   }
 
   if (loading || (!agent && !agentError)) {

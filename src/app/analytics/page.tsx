@@ -536,7 +536,7 @@ export default function AnalyticsTestPage() {
 	}, [viewMode])
 
 	// 1. Main analytics fetch - Get user data and analytics
-	const { data: mainAnalyticsData, isLoading: isMainAnalyticsLoading } = useQuery({
+	const { data: mainAnalyticsData, isPending: isMainAnalyticsLoading } = useQuery({
 		queryKey: queryKeys.analyticsData({ view: 'initial' }),
 		queryFn: async () => {
 			const supabase = createClient()
@@ -598,7 +598,7 @@ export default function AnalyticsTestPage() {
 
 	// 3. Fetch analytics when selected agent changes
 	const targetUserId = selectedAgentId || originalUserId
-	const { data: selectedAgentAnalytics, isLoading: isSelectedAgentLoading } = useSupabaseRpc<{your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null}>(
+	const { data: selectedAgentAnalytics, isPending: isSelectedAgentLoading } = useSupabaseRpc<{your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null}>(
 		queryKeys.analyticsData({ agentId: targetUserId }),
 		'get_analytics_split_view',
 		{ p_user_id: targetUserId },

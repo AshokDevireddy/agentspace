@@ -3,8 +3,8 @@
  * Handles conversation creation, checking, and starting
  */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { queryKeys } from '../queryKeys'
+import { useMutation } from '@tanstack/react-query'
+import { useInvalidation } from '../useInvalidation'
 
 interface Deal {
   id: string
@@ -76,10 +76,10 @@ export function useCheckConversation(options?: {
  * Hook for creating a new conversation
  */
 export function useCreateConversation(options?: {
-  onSuccess?: (conversationId: string) => void
+  onSuccess?: (data: CreateConversationResponse, variables: { dealId: string; agentId: string }) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateConversationRelated } = useInvalidation()
 
   return useMutation<CreateConversationResponse, Error, { dealId: string; agentId: string }>({
     mutationFn: async ({ dealId, agentId }) => {
@@ -97,10 +97,10 @@ export function useCreateConversation(options?: {
 
       return response.json()
     },
-    onSuccess: (data) => {
-      // Invalidate all conversation queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
-      options?.onSuccess?.(data.conversationId)
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation
+      await invalidateConversationRelated()
+      options?.onSuccess?.(data, variables)
     },
     onError: options?.onError,
   })
@@ -111,10 +111,10 @@ export function useCreateConversation(options?: {
  * Used from policy details modal and other places
  */
 export function useStartConversation(options?: {
-  onSuccess?: (conversationId: string) => void
+  onSuccess?: (data: StartConversationResponse, variables: StartConversationInput) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateConversationRelated } = useInvalidation()
 
   return useMutation<StartConversationResponse, Error, StartConversationInput>({
     mutationFn: async ({ dealId, initialMessage }) => {
@@ -132,10 +132,10 @@ export function useStartConversation(options?: {
 
       return response.json()
     },
-    onSuccess: (data) => {
-      // Invalidate all conversation queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
-      options?.onSuccess?.(data.conversationId)
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation
+      await invalidateConversationRelated()
+      options?.onSuccess?.(data, variables)
     },
     onError: options?.onError,
   })
@@ -151,10 +151,10 @@ export function useStartConversation(options?: {
  * uses getOrCreateConversation() which is atomic.
  */
 export function useGetOrCreateConversation(options?: {
-  onSuccess?: (conversationId: string, wasCreated: boolean) => void
+  onSuccess?: (data: CreateConversationResponse & { wasCreated: boolean }, variables: { dealId: string; agentId: string }) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateConversationRelated } = useInvalidation()
 
   return useMutation<CreateConversationResponse & { wasCreated: boolean }, Error, { dealId: string; agentId: string }>({
     mutationFn: async ({ dealId, agentId }) => {
@@ -181,10 +181,10 @@ export function useGetOrCreateConversation(options?: {
         wasCreated: true
       }
     },
-    onSuccess: (data) => {
-      // Always invalidate since we may have created a new conversation
-      queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
-      options?.onSuccess?.(data.conversationId, data.wasCreated)
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation
+      await invalidateConversationRelated()
+      options?.onSuccess?.(data, variables)
     },
     onError: options?.onError,
   })

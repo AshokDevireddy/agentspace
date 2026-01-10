@@ -9,9 +9,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon, Info } from "lucide-react"
 import { useEffect, useState, useMemo } from "react"
 import { useAuth } from "@/providers/AuthProvider"
-import { createClient } from "@/lib/supabase/client"
 import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
 import { queryKeys } from "@/hooks/queryKeys"
+import { useAgencyScoreboardSettings } from "@/hooks/useUserQueries"
 
 interface AgentScore {
   rank: number
@@ -71,43 +71,10 @@ export default function Scoreboard() {
   const [assumedMonthsTillLapse, setAssumedMonthsTillLapse] = useState<number>(5)
   const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
-  const [defaultScoreboardStartDate, setDefaultScoreboardStartDate] = useState<string | null>(null)
 
-  // Fetch agency default scoreboard start date (keep as simple useEffect - one-time config fetch)
-  useEffect(() => {
-    const fetchAgencyDefaultDate = async () => {
-      if (!user?.id) return
-
-      try {
-        const supabase = createClient()
-        // First get the user's agency_id
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('agency_id')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        if (userError || !userData?.agency_id) {
-          return
-        }
-
-        // Then get the agency's default_scoreboard_start_date
-        const { data: agencyData, error: agencyError } = await supabase
-          .from('agencies')
-          .select('default_scoreboard_start_date')
-          .eq('id', userData.agency_id)
-          .single()
-
-        if (!agencyError && agencyData?.default_scoreboard_start_date) {
-          setDefaultScoreboardStartDate(agencyData.default_scoreboard_start_date)
-        }
-      } catch (error) {
-        console.error('Error fetching agency default scoreboard start date:', error)
-      }
-    }
-
-    fetchAgencyDefaultDate()
-  }, [user?.id])
+  // Fetch agency default scoreboard start date using TanStack Query
+  const { data: agencySettings } = useAgencyScoreboardSettings(userData?.agency_id)
+  const defaultScoreboardStartDate = agencySettings?.default_scoreboard_start_date ?? null
 
   // Calculate date range based on timeframe
   const getDateRange = (selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
@@ -215,7 +182,7 @@ export default function Scoreboard() {
   // Fetch scoreboard data using TanStack Query
   const shouldFetch = !!user?.id && (timeframe !== 'custom' || (!!dateRange.startDate && !!dateRange.endDate))
 
-  const { data: rpcResponse, isLoading, error: queryError } = useSupabaseRpc<ScoreboardRpcResponse>(
+  const { data: rpcResponse, isPending: isLoading, error: queryError } = useSupabaseRpc<ScoreboardRpcResponse>(
     [
       ...queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate),
       'with-lapse',

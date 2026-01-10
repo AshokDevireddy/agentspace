@@ -3,9 +3,10 @@
  * Used by agents page and agent modals for managing agents
  */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useAuthenticatedMutation } from '../useMutations'
 import { queryKeys } from '../queryKeys'
+import { useInvalidation } from '../useInvalidation'
 
 // ============ Assign Position Mutation ============
 
@@ -17,8 +18,11 @@ interface AssignPositionInput {
 /**
  * Assign a position to an agent
  */
-export function useAssignPosition() {
-  const queryClient = useQueryClient()
+export function useAssignPosition(options?: {
+  onSuccess?: (data: unknown, variables: AssignPositionInput) => void
+  onError?: (error: Error) => void
+}) {
+  const { invalidateAgentRelated } = useInvalidation()
 
   return useMutation<unknown, Error, AssignPositionInput>({
     mutationFn: async ({ agentId, positionId }) => {
@@ -50,13 +54,12 @@ export function useAssignPosition() {
 
       return response.json()
     },
-    onSuccess: (_data, variables) => {
-      // Invalidate list queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents })
-      // Invalidate detail query for the specific agent (fixes modal showing stale data)
-      queryClient.invalidateQueries({ queryKey: queryKeys.agentDetail(variables.agentId) })
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation - handles agents, positions, and agent details
+      await invalidateAgentRelated(variables.agentId)
+      options?.onSuccess?.(data, variables)
     },
+    onError: options?.onError,
   })
 }
 
@@ -108,11 +111,11 @@ interface SendInviteInput {
  * This is the canonical invite mutation used by both agents page and onboarding wizard
  */
 export function useSendInvite(options?: {
-  invalidateAdditional?: boolean  // Also invalidate clients and agentsPendingPositions
+  invalidateClients?: boolean  // Also invalidate clients
   onSuccess?: (data: unknown, variables: SendInviteInput) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateAgentRelated, invalidateClientRelated } = useInvalidation()
 
   return useMutation<unknown, Error, SendInviteInput>({
     mutationFn: async (input) => {
@@ -130,14 +133,13 @@ export function useSendInvite(options?: {
 
       return response.json()
     },
-    onSuccess: (data, variables) => {
-      // Invalidate agents list to show the new invite
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents })
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation - handles agents and positions
+      await invalidateAgentRelated()
 
-      // Optionally invalidate additional queries
-      if (options?.invalidateAdditional) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.clients })
-        queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
+      // Optionally invalidate client queries
+      if (options?.invalidateClients) {
+        await invalidateClientRelated()
       }
 
       options?.onSuccess?.(data, variables)
@@ -199,4 +201,93 @@ export function useDeleteAgent() {
       ],
     }
   )
+}
+
+// ============ Save Agent Mutation (Update or Invite) ============
+
+interface SaveAgentInput {
+  agentId: string
+  agentName: string
+  editedData: {
+    email: string
+    phone_number?: string
+    role: string
+    status: string
+    upline_id?: string
+  }
+  positionId?: string | null
+  shouldSendInvite: boolean
+}
+
+interface SaveAgentResponse {
+  type: 'invite' | 'update'
+}
+
+/**
+ * Save agent changes - handles both update and invite operations
+ * Used by agent-details-modal for the edit flow
+ */
+export function useSaveAgent(options?: {
+  onSuccess?: (data: SaveAgentResponse, variables: SaveAgentInput) => void
+  onError?: (error: Error) => void
+}) {
+  const { invalidateAgentRelated } = useInvalidation()
+
+  return useMutation<SaveAgentResponse, Error, SaveAgentInput>({
+    mutationFn: async ({ agentId, agentName, editedData, positionId, shouldSendInvite }) => {
+      if (shouldSendInvite) {
+        // Send invite using the invite API
+        const nameParts = agentName.split(' ')
+        const firstName = nameParts[0] || ''
+        const lastName = nameParts.slice(1).join(' ') || ''
+
+        // Determine permission level from role
+        const permissionLevel = editedData.role === 'admin' ? 'admin' : 'agent'
+
+        const inviteResponse = await fetch('/api/agents/invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            email: editedData.email,
+            firstName,
+            lastName,
+            phoneNumber: editedData.phone_number || null,
+            permissionLevel,
+            uplineAgentId: editedData.upline_id && editedData.upline_id !== 'all' ? editedData.upline_id : null,
+            positionId: positionId || null,
+            preInviteUserId: agentId,
+          }),
+        })
+
+        if (!inviteResponse.ok) {
+          const errorData = await inviteResponse.json()
+          throw new Error(errorData.error || 'Failed to send invitation')
+        }
+
+        return { type: 'invite' as const }
+      } else {
+        // Regular save (without invite)
+        const response = await fetch(`/api/agents/${agentId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(editedData),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to update agent')
+        }
+
+        return { type: 'update' as const }
+      }
+    },
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation - handles agents, positions, and agent details
+      await invalidateAgentRelated(variables.agentId)
+      options?.onSuccess?.(data, variables)
+    },
+    onError: options?.onError,
+  })
 }

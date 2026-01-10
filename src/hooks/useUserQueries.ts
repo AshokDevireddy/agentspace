@@ -154,6 +154,54 @@ export function useAgencyBranding(
   })
 }
 
+// ============ Agency Scoreboard Settings Query ============
+
+interface AgencyScoreboardSettings {
+  default_scoreboard_start_date: string | null
+}
+
+interface UseAgencyScoreboardSettingsOptions {
+  /** Whether to enable the query */
+  enabled?: boolean
+  /** Stale time in milliseconds (default: 1 hour - rarely changes) */
+  staleTime?: number
+}
+
+/**
+ * Fetch agency scoreboard settings (default start date)
+ * Used by the scoreboard page to determine default date range
+ */
+export function useAgencyScoreboardSettings(
+  agencyId: string | null | undefined,
+  options: UseAgencyScoreboardSettingsOptions = {}
+) {
+  const { enabled = true, staleTime = 60 * 60 * 1000 } = options // 1 hour - rarely changes
+
+  return useQuery({
+    queryKey: queryKeys.agencyScoreboardSettings(agencyId ?? null),
+    queryFn: async () => {
+      if (!agencyId) {
+        throw new Error('Agency ID is required')
+      }
+
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('agencies')
+        .select('default_scoreboard_start_date')
+        .eq('id', agencyId)
+        .maybeSingle()
+
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      return data as AgencyScoreboardSettings | null
+    },
+    enabled: enabled && !!agencyId,
+    staleTime,
+  })
+}
+
 // ============ User by ID Query ============
 
 interface UseUserByIdOptions {

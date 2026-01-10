@@ -419,7 +419,7 @@ export default function Agents() {
     }, []);
 
   // Fetch all positions and user's position level on mount
-  const { data: positionsData, isLoading: positionsLoading } = useQuery({
+  const { data: positionsData, isPending: positionsLoading } = useQuery({
     queryKey: queryKeys.positionsList(),
     queryFn: async ({ signal }) => {
       const supabase = createClient()
@@ -532,7 +532,7 @@ export default function Agents() {
   }
 
   // Fetch agents data from API (only when active filters change, not local filters)
-  const { data: agentsResponse, isLoading: agentsLoading, isFetching: agentsFetching, error: agentsError } = useApiFetch<{
+  const { data: agentsResponse, isPending: agentsLoading, isFetching: agentsFetching, error: agentsError } = useApiFetch<{
     agents?: Agent[]
     tree?: TreeNode
     pagination?: { totalPages: number; totalCount: number }
@@ -578,7 +578,7 @@ export default function Agents() {
     return { url: url.toString(), accessToken }
   }
 
-  const { data: pendingPositionsData, isLoading: pendingPositionsLoading } = useQuery({
+  const { data: pendingPositionsData, isPending: pendingPositionsLoading } = useQuery({
     queryKey: queryKeys.agentsPendingPositions(),
     queryFn: async ({ signal }) => {
       const { url, accessToken } = await buildPendingPositionsUrl()

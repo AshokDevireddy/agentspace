@@ -129,7 +129,7 @@ export default function ExpectedPayoutsPage() {
   const [userTier, setUserTier] = useState<string>('free')
 
   // Fetch current user data
-  const { data: userData, isLoading: userLoading } = useQuery({
+  const { data: userData, isPending: userLoading } = useQuery({
     queryKey: queryKeys.userProfile(),
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -229,7 +229,7 @@ export default function ExpectedPayoutsPage() {
   // Use effectiveAgentId to prevent race conditions when filter hasn't been set yet
   const {
     data: payoutsData,
-    isLoading: payoutsLoading,
+    isPending: payoutsLoading,
     error: payoutsError
   } = useQuery({
     queryKey: queryKeys.expectedPayoutsData({ ...appliedFilters, agent: effectiveAgentId }),
@@ -294,7 +294,7 @@ export default function ExpectedPayoutsPage() {
   // Use effectiveAgentId to prevent race conditions when filter hasn't been set yet
   const {
     data: debtData,
-    isLoading: debtLoading
+    isPending: debtLoading
   } = useQuery({
     queryKey: queryKeys.expectedPayoutsDebt(effectiveAgentId),
     queryFn: async () => {

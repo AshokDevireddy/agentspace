@@ -3,8 +3,8 @@
  * Used by auth pages (register, reset-password, onboarding, login, setup-account)
  */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { queryKeys } from '../queryKeys'
+import { useMutation } from '@tanstack/react-query'
+import { useInvalidation } from '../useInvalidation'
 import { signInWithPassword, supabaseRestFetch, updatePassword } from '@/lib/supabase/api'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
 
@@ -96,7 +96,7 @@ interface CompleteOnboardingResponse {
  * Mark user onboarding as complete
  */
 export function useCompleteOnboarding() {
-  const queryClient = useQueryClient()
+  const { invalidateUserRelated } = useInvalidation()
 
   return useMutation<CompleteOnboardingResponse, Error, void>({
     mutationFn: async () => {
@@ -114,8 +114,8 @@ export function useCompleteOnboarding() {
 
       return data
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
+    onSuccess: async () => {
+      await invalidateUserRelated()
     },
   })
 }
@@ -266,7 +266,7 @@ export function useUpdateUserProfile(options?: {
   onSuccess?: () => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateUserRelated } = useInvalidation()
 
   return useMutation<UpdateUserProfileResponse, Error, UpdateUserProfileInput>({
     mutationFn: async ({ userId, accessToken, data }) => {
@@ -288,9 +288,8 @@ export function useUpdateUserProfile(options?: {
 
       return { success: true }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.user })
-      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
+    onSuccess: async () => {
+      await invalidateUserRelated()
       options?.onSuccess?.()
     },
     onError: options?.onError,
@@ -317,7 +316,7 @@ export function useUpdateUserStatus(options?: {
   onSuccess?: () => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateUserRelated } = useInvalidation()
 
   return useMutation<UpdateUserStatusResponse, Error, UpdateUserStatusInput>({
     mutationFn: async ({ userId, accessToken, status }) => {
@@ -339,9 +338,8 @@ export function useUpdateUserStatus(options?: {
 
       return { success: true }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.user })
-      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
+    onSuccess: async () => {
+      await invalidateUserRelated()
       options?.onSuccess?.()
     },
     onError: options?.onError,

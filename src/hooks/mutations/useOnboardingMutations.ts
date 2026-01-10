@@ -6,8 +6,8 @@
  * to avoid duplication while maintaining the same API for onboarding components.
  */
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { queryKeys } from '../queryKeys'
+import { useMutation } from '@tanstack/react-query'
+import { useInvalidation } from '../useInvalidation'
 import { RateLimitError } from '@/lib/error-utils'
 
 // Re-export agent invite from the canonical location
@@ -52,10 +52,10 @@ interface NiprRunResponse {
  * Run NIPR automation verification
  */
 export function useRunNiprAutomation(options?: {
-  onSuccess?: (data: NiprRunResponse) => void
+  onSuccess?: (data: NiprRunResponse, variables: NiprRunInput) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateNiprRelated } = useInvalidation()
 
   return useMutation<NiprRunResponse, Error, NiprRunInput>({
     mutationFn: async (variables) => {
@@ -88,15 +88,10 @@ export function useRunNiprAutomation(options?: {
 
       return data
     },
-    onSuccess: (data) => {
-      // Invalidate NIPR-related queries to update UI
-      queryClient.invalidateQueries({ queryKey: queryKeys.nipr })
-      // If analysis completed successfully, also invalidate user profile
-      // since NIPR data is typically associated with the user
-      if (data.analysis?.success) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
-      }
-      options?.onSuccess?.(data)
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation - handles NIPR queries and user profile
+      await invalidateNiprRelated()
+      options?.onSuccess?.(data, variables)
     },
     onError: options?.onError,
   })
@@ -116,10 +111,10 @@ interface NiprUploadResponse {
  * Upload NIPR document for verification
  */
 export function useUploadNiprDocument(options?: {
-  onSuccess?: (data: NiprUploadResponse) => void
+  onSuccess?: (data: NiprUploadResponse, file: File) => void
   onError?: (error: Error) => void
 }) {
-  const queryClient = useQueryClient()
+  const { invalidateNiprRelated } = useInvalidation()
 
   return useMutation<NiprUploadResponse, Error, File>({
     mutationFn: async (file) => {
@@ -139,12 +134,10 @@ export function useUploadNiprDocument(options?: {
 
       return data
     },
-    onSuccess: (data) => {
-      // Invalidate NIPR-related queries to update UI
-      queryClient.invalidateQueries({ queryKey: queryKeys.nipr })
-      // Also invalidate user profile since NIPR data affects user state
-      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
-      options?.onSuccess?.(data)
+    onSuccess: async (data, file) => {
+      // Use centralized invalidation - handles NIPR queries and user profile
+      await invalidateNiprRelated()
+      options?.onSuccess?.(data, file)
     },
     onError: options?.onError,
   })

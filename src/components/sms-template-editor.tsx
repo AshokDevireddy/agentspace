@@ -3,8 +3,8 @@
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Loader2, MessageCircle, RotateCcw } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
+import { useUpdateAgencySmsEnabled, useUpdateAgencySmsTemplate } from "@/hooks/mutations"
 
 interface SmsTemplateEditorProps {
   title: string
@@ -38,9 +38,31 @@ export function SmsTemplateEditor({
   showError,
 }: SmsTemplateEditorProps) {
   const [editValue, setEditValue] = useState(template || defaultTemplate)
-  const [isSaving, setIsSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Mutation hooks for SMS template operations
+  const toggleMutation = useUpdateAgencySmsEnabled({
+    onSuccess: (_, variables) => {
+      showSuccess(`${title} ${variables.enabled ? 'enabled' : 'disabled'}`)
+    },
+    onError: () => {
+      // Revert optimistic update on error
+      onEnabledChange(!enabled)
+      showError('Failed to update setting')
+    },
+  })
+
+  const saveMutation = useUpdateAgencySmsTemplate({
+    onSuccess: () => {
+      onTemplateChange(editValue)
+      setHasChanges(false)
+      showSuccess(`${title} template saved`)
+    },
+    onError: () => {
+      showError('Failed to save template')
+    },
+  })
 
   useEffect(() => {
     const newValue = template || defaultTemplate
@@ -48,40 +70,24 @@ export function SmsTemplateEditor({
     setHasChanges(false)
   }, [template, defaultTemplate])
 
-  const handleToggle = async () => {
+  const handleToggle = () => {
+    if (!agencyId) return
     const newValue = !enabled
-    onEnabledChange(newValue)
-    try {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from('agencies')
-        .update({ [dbFieldEnabled]: newValue })
-        .eq('id', agencyId)
-      if (error) throw error
-      showSuccess(`${title} ${newValue ? 'enabled' : 'disabled'}`)
-    } catch {
-      onEnabledChange(!newValue)
-      showError('Failed to update setting')
-    }
+    onEnabledChange(newValue) // Optimistic update
+    toggleMutation.mutate({
+      agencyId,
+      dbField: dbFieldEnabled,
+      enabled: newValue,
+    })
   }
 
-  const handleSave = async () => {
-    try {
-      setIsSaving(true)
-      const supabase = createClient()
-      const { error } = await supabase
-        .from('agencies')
-        .update({ [dbFieldTemplate]: editValue })
-        .eq('id', agencyId)
-      if (error) throw error
-      onTemplateChange(editValue)
-      setHasChanges(false)
-      showSuccess(`${title} template saved`)
-    } catch {
-      showError('Failed to save template')
-    } finally {
-      setIsSaving(false)
-    }
+  const handleSave = () => {
+    if (!agencyId) return
+    saveMutation.mutate({
+      agencyId,
+      dbField: dbFieldTemplate,
+      template: editValue,
+    })
   }
 
   const handleChange = (value: string) => {
@@ -177,10 +183,10 @@ export function SmsTemplateEditor({
         </Button>
         <Button
           onClick={handleSave}
-          disabled={isSaving || !hasChanges}
+          disabled={saveMutation.isPending || !hasChanges}
           className="bg-emerald-600 hover:bg-emerald-700 text-white"
         >
-          {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
           Save changes
         </Button>
       </div>

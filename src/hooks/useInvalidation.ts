@@ -62,11 +62,18 @@ export function useInvalidation() {
 
   /**
    * Invalidate all conversation/message-related queries
+   * Uses predicate-based invalidation to catch all filter variations
    */
   const invalidateConversationRelated = useCallback(
     async (conversationId?: string) => {
       const invalidations = [
-        queryClient.invalidateQueries({ queryKey: queryKeys.conversations }),
+        // Use predicate to invalidate all conversation lists regardless of filters
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey
+            return Array.isArray(key) && key[0] === 'conversations'
+          },
+        }),
         queryClient.invalidateQueries({ queryKey: queryKeys.drafts }),
       ]
 

@@ -7,8 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button"
 import { Upload, FileText, X, TrendingUp, Loader2 } from "lucide-react"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
-import { createClient } from '@/lib/supabase/client'
 import { useNotification } from '@/contexts/notification-context'
+import { useAuth } from '@/providers/AuthProvider'
 import { cn } from '@/lib/utils'
 
 interface PolicyReportFile {
@@ -34,6 +34,7 @@ const supportedCarriers = [
 
 export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
   const { showSuccess, showError, showWarning } = useNotification()
+  const { userData } = useAuth()
   const queryClient = useQueryClient()
   const [policyReportFiles, setPolicyReportFiles] = useState<PolicyReportFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
@@ -111,31 +112,16 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
 
   const uploadMutation = useMutation({
     mutationFn: async (files: PolicyReportFile[]) => {
-      // 0) Create an ingest job first
-      const expectedFiles = files.length
-      const clientJobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-
-      // Resolve agencyId from current session
-      let agencyId: string | null = null
-      try {
-        const supabase = createClient()
-        const { data: auth } = await supabase.auth.getUser()
-        const userId = auth?.user?.id
-        if (userId) {
-          const { data: userRow, error: userError } = await supabase
-            .from('users')
-            .select('agency_id')
-            .eq('auth_user_id', userId)
-            .single()
-          if (!userError) {
-            agencyId = userRow?.agency_id ?? null
-          }
-        }
-      } catch {}
+      // Use agency_id from AuthProvider (already cached)
+      const agencyId = userData?.agency_id
 
       if (!agencyId) {
         throw new Error('Could not resolve your agency. Please refresh and try again.')
       }
+
+      // Create an ingest job first
+      const expectedFiles = files.length
+      const clientJobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
       const jobResp = await fetch('/api/upload-policy-reports/create-job', {
         method: 'POST',

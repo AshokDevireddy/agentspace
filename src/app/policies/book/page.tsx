@@ -260,7 +260,7 @@ export default function BookOfBusiness() {
   }, [appliedFilters])
 
   // Fetch deals using TanStack Query
-  const { data: dealsData, isLoading: loading, isFetching: dealsFetching, error: dealsError } = useQuery({
+  const { data: dealsData, isPending: loading, isFetching: dealsFetching, error: dealsError } = useQuery({
     queryKey: queryKeys.dealsBookOfBusiness(appliedFilters),
     queryFn: async () => {
       const params = buildDealsParams()

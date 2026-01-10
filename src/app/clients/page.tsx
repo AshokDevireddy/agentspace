@@ -96,7 +96,7 @@ export default function Clients() {
   const supabase = createClient()
 
   // Check if user is admin
-  const { data: adminData, isLoading: isAdminLoading } = useQuery({
+  const { data: adminData, isPending: isAdminLoading } = useQuery({
     queryKey: queryKeys.userAdminStatus(user?.id),
     queryFn: async () => {
       if (!user?.id) return { is_admin: false }
@@ -128,7 +128,7 @@ export default function Clients() {
   const allClients = allClientsData?.clients || []
 
   // Fetch clients data from API with pagination
-  const { data: clientsResponse, isLoading: clientsLoading, isFetching: clientsFetching, error: clientsError } = useApiFetch<{
+  const { data: clientsResponse, isPending: clientsLoading, isFetching: clientsFetching, error: clientsError } = useApiFetch<{
     clients: Client[]
     pagination: {
       totalPages: number

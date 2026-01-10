@@ -107,8 +107,9 @@ export default function Home() {
   )
 
   // Production query based on selected time period for ProductionProgressCard
+  // Note: productionMode filtering would need backend RPC support - toggle is ready for when backend supports it
   const { data: periodProductionResult, isLoading: periodProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'period', user?.id, periodDateRange.startDate, periodDateRange.endDate, timePeriod],
+    ['production', 'period', user?.id, periodDateRange.startDate, periodDateRange.endDate, timePeriod, productionMode],
     'get_agents_debt_production',
     {
       p_user_id: user?.id,

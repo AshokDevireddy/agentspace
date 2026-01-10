@@ -56,10 +56,10 @@ export function SubscriptionManager({ subscriptionStatus, hasAiAddon }: Subscrip
       {subscriptionStatus !== 'free' && (
         <button
           onClick={() => mutation.mutate()}
-          disabled={mutation.isPending}
+          disabled={mutation.isPending || mutation.isSuccess}
           className="w-full rounded-md bg-gray-600 px-4 py-2 font-medium text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
         >
-          {mutation.isPending ? 'Loading...' : 'Manage Subscription'}
+          {mutation.isPending || mutation.isSuccess ? 'Loading...' : 'Manage Subscription'}
         </button>
       )}
     </div>

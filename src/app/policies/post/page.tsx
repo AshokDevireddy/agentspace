@@ -1214,10 +1214,10 @@ export default function PostDeal() {
                   onClick={() => {
                     submitIntentRef.current = true
                   }}
-                  disabled={submitDealMutation.isPending}
+                  disabled={submitDealMutation.isPending || submitDealMutation.isSuccess}
                   className="h-12 px-6 bg-foreground hover:bg-foreground/90 text-background disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {submitDealMutation.isPending ? (
+                  {submitDealMutation.isPending || submitDealMutation.isSuccess ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Submitting...

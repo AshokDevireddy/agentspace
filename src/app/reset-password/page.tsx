@@ -105,17 +105,17 @@ export default function ResetPassword() {
                 className="h-12"
                 placeholder="Enter your email address"
                 required
-                disabled={resetPasswordMutation.isPending}
+                disabled={resetPasswordMutation.isPending || resetPasswordMutation.isSuccess}
               />
             </div>
 
             {/* Submit Button */}
             <Button
               type="submit"
-              disabled={resetPasswordMutation.isPending}
+              disabled={resetPasswordMutation.isPending || resetPasswordMutation.isSuccess}
               className="w-full h-12 bg-foreground hover:bg-foreground/90 text-background font-medium rounded-md disabled:opacity-50"
             >
-              {resetPasswordMutation.isPending ? 'Sending...' : 'Send Password Reset Email'}
+              {resetPasswordMutation.isPending || resetPasswordMutation.isSuccess ? 'Sending...' : 'Send Password Reset Email'}
             </Button>
           </form>
         </div>

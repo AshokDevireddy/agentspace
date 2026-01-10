@@ -49,6 +49,7 @@ export function SubscriptionCard({
   // Combined mutation state
   const mutation = {
     isPending: addItemMutation.isPending || checkoutMutation.isPending,
+    isSuccess: addItemMutation.isSuccess || checkoutMutation.isSuccess,
     error: addItemMutation.error || checkoutMutation.error,
     mutate: () => {
       if (subscriptionType === 'ai_mode_addon') {
@@ -61,7 +62,7 @@ export function SubscriptionCard({
 
   // Wrapper function to prevent race conditions with rapid clicks
   const handleClick = () => {
-    if (mutation.isPending || isCurrentPlan) return;
+    if (mutation.isPending || mutation.isSuccess || isCurrentPlan) return;
     mutation.mutate();
   };
 
@@ -102,14 +103,14 @@ export function SubscriptionCard({
 
       <button
         onClick={handleClick}
-        disabled={mutation.isPending || isCurrentPlan || buttonText === 'Requires Agent Subscription'}
+        disabled={mutation.isPending || mutation.isSuccess || isCurrentPlan || buttonText === 'Requires Agent Subscription'}
         className={`w-full rounded-md px-4 py-2 font-medium transition-colors ${
           isCurrentPlan || buttonText === 'Requires Agent Subscription'
             ? 'cursor-not-allowed bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
             : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
         }`}
       >
-        {mutation.isPending ? 'Loading...' : buttonText}
+        {mutation.isPending || mutation.isSuccess ? 'Loading...' : buttonText}
       </button>
     </div>
   );

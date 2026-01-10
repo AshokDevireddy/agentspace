@@ -82,12 +82,14 @@ export default function LoginPage() {
           if (!isLocalhost) {
             if (isWhiteLabel && branding) {
               if (userData.agency_id !== branding.id) {
+                signInMutation.reset()
                 setError('No account found with these credentials')
                 return
               }
             }
 
             if (!isWhiteLabel && userAgency.whitelabel_domain) {
+              signInMutation.reset()
               setError('No account found with these credentials')
               return
             }
@@ -95,16 +97,19 @@ export default function LoginPage() {
 
           // Status validation
           if (userData.status === 'invited') {
+            signInMutation.reset()
             setError('Please check your email and click the invite link to complete account setup')
             return
           }
 
           if (userData.status === 'inactive') {
+            signInMutation.reset()
             setError('Your account has been deactivated')
             return
           }
 
           if (userData.status !== 'active' && userData.status !== 'onboarding') {
+            signInMutation.reset()
             setError('Account status is invalid. Please contact support.')
             return
           }
@@ -209,9 +214,9 @@ export default function LoginPage() {
               <button
                 type="submit"
                 className="w-full py-2 rounded-md bg-foreground text-background font-semibold text-lg hover:bg-foreground/90 transition disabled:opacity-60"
-                disabled={signInMutation.isPending}
+                disabled={signInMutation.isPending || signInMutation.isSuccess}
               >
-                {signInMutation.isPending ? 'Signing in...' : 'Sign In'}
+                {signInMutation.isPending || signInMutation.isSuccess ? 'Signing in...' : 'Sign In'}
               </button>
               <button
                 type="button"

@@ -95,10 +95,10 @@ export default function TopUpPurchaseModal({
                 </div>
                 <Button
                   onClick={() => handlePurchase(key as TopupProductKey)}
-                  disabled={topUpMutation.isPending}
+                  disabled={topUpMutation.isPending || topUpMutation.isSuccess}
                   className="bg-purple-600 hover:bg-purple-700 text-white"
                 >
-                  {topUpMutation.isPending ? (
+                  {topUpMutation.isPending || topUpMutation.isSuccess ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Processing...

@@ -245,10 +245,10 @@ export default function RegisterPage() {
             <div className="pt-6">
               <Button
                 type="submit"
-                disabled={registerMutation.isPending}
+                disabled={registerMutation.isPending || registerMutation.isSuccess}
                 className="w-full h-12 bg-foreground hover:bg-foreground/90 text-background font-medium rounded-md disabled:opacity-50"
               >
-                {registerMutation.isPending ? 'Sending invitation...' : 'Create Admin Account'}
+                {registerMutation.isPending || registerMutation.isSuccess ? 'Sending invitation...' : 'Create Admin Account'}
               </Button>
               <p className="text-sm text-muted-foreground text-center">
                 You'll receive an email to set your password and complete setup

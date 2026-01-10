@@ -18,6 +18,8 @@ interface AgentDetailsModalProps {
   onOpenChange: (open: boolean) => void
   agentId: string
   onUpdate?: () => void
+  startMonth?: string
+  endMonth?: string
 }
 
 const badgeColors: { [key: string]: string } = {
@@ -91,7 +93,7 @@ const getAgentStatusSteps = (status: string | null | undefined) => {
   return steps
 }
 
-export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: AgentDetailsModalProps) {
+export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, startMonth, endMonth }: AgentDetailsModalProps) {
   const { showSuccess, showError } = useNotification()
   const [agent, setAgent] = useState<any>(null)
   const [loading, setLoading] = useState(false)
@@ -179,7 +181,12 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
   const fetchAgentDetails = async () => {
     setLoading(true)
     try {
-      const response = await fetch(`/api/agents/${agentId}`, {
+      // Build URL with optional date range parameters
+      const url = new URL(`/api/agents/${agentId}`, window.location.origin)
+      if (startMonth) url.searchParams.set('startMonth', startMonth)
+      if (endMonth) url.searchParams.set('endMonth', endMonth)
+
+      const response = await fetch(url.toString(), {
         credentials: 'include'
       })
 
@@ -192,7 +199,7 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
       // Also normalize status to lowercase for consistency
       const agentData = {
         ...data,
-        name: data.name?.includes(',') 
+        name: data.name?.includes(',')
           ? data.name.split(',').reverse().map((s: string) => s.trim()).join(' ')
           : data.name,
         status: data.status?.toLowerCase() || 'active'
@@ -634,17 +641,95 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
           {/* Performance Metrics */}
           <Card className="professional-card border-l-4 border-l-blue-500">
             <CardContent className="p-6">
-              <div className="flex items-center gap-2 mb-5">
-                <TrendingUp className="h-5 w-5 text-blue-500" />
-                <h3 className="text-xl font-bold text-foreground">Performance Metrics</h3>
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-blue-500" />
+                  <h3 className="text-xl font-bold text-foreground">Performance Metrics</h3>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {startMonth && endMonth ? (
+                    <>
+                      {new Date(startMonth + '-15').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                      {' - '}
+                      {new Date(endMonth + '-15').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                    </>
+                  ) : (
+                    'Year to Date'
+                  )}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <DollarSign className="h-3 w-3" />
-                    Earnings
-                  </label>
-                  <p className="text-2xl font-bold text-primary">{agent.earnings || '$0.00 / $0.00'}</p>
+
+              {/* Individual Metrics */}
+              <div className="mb-6">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Individual</h4>
+                <div className="grid grid-cols-3 gap-6">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" />
+                      Production
+                    </label>
+                    <p className="text-2xl font-bold text-green-500">
+                      ${(agent.individual_production || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{agent.individual_production_count || 0} deals</p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" />
+                      Debt
+                    </label>
+                    <p className="text-2xl font-bold text-red-500">
+                      ${(agent.individual_debt || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{agent.individual_debt_count || 0} deals</p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Debt Ratio
+                    </label>
+                    <p className="text-2xl font-bold text-foreground">
+                      {agent.individual_production > 0
+                        ? ((agent.individual_debt / agent.individual_production) * 100).toFixed(1) + '%'
+                        : 'N/A'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Team Metrics (Downlines Only) */}
+              <div>
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Team (Downlines)</h4>
+                <div className="grid grid-cols-3 gap-6">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" />
+                      Production
+                    </label>
+                    <p className="text-2xl font-bold text-green-500">
+                      ${(agent.hierarchy_production || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{agent.hierarchy_production_count || 0} deals</p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" />
+                      Debt
+                    </label>
+                    <p className="text-2xl font-bold text-red-500">
+                      ${(agent.hierarchy_debt || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{agent.hierarchy_debt_count || 0} deals</p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Debt Ratio
+                    </label>
+                    <p className="text-2xl font-bold text-foreground">
+                      {agent.debt_to_production_ratio != null
+                        ? (agent.debt_to_production_ratio * 100).toFixed(1) + '%'
+                        : 'N/A'}
+                    </p>
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -667,17 +752,35 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
                     {downlines.map((downline: any) => (
                       <div
                         key={downline.id}
-                        className="flex items-center justify-between p-3 border border-border rounded-lg hover:bg-accent/50 transition-colors"
+                        className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 hover:border-primary/50 transition-all cursor-pointer"
+                        onClick={() => {
+                          // Replace current modal with downline's modal
+                          onOpenChange(false);
+                          // Wait for modal to close, then open the new one
+                          setTimeout(() => {
+                            // Trigger modal open with the downline's ID
+                            const event = new CustomEvent('openAgentModal', { detail: { agentId: downline.id } });
+                            window.dispatchEvent(event);
+                          }, 100);
+                        }}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-full ${badgeColors[downline.badge] || 'bg-muted text-muted-foreground'} flex items-center justify-center text-xs font-bold border`}>
+                        <div className="flex items-center gap-4 flex-1">
+                          <div className={`w-10 h-10 rounded-full ${badgeColors[downline.badge] || 'bg-muted text-muted-foreground'} flex items-center justify-center text-sm font-bold border`}>
                             {downline.name?.split(' ').map((n: string) => n.charAt(0)).slice(0, 2).join('') || 'A'}
                           </div>
-                          <div>
-                            <p className="font-semibold text-foreground">{downline.name}</p>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-semibold text-foreground">{downline.name}</p>
+                              <Badge
+                                className={`${statusColors[downline.status?.toLowerCase()] || 'bg-muted text-muted-foreground border-border'} border text-xs`}
+                                variant="outline"
+                              >
+                                {downline.status ? downline.status.charAt(0).toUpperCase() + downline.status.slice(1).replace('-', ' ') : 'Active'}
+                              </Badge>
+                            </div>
                             {downline.position ? (
                               <Badge
-                                className={`${getPositionColorByLevel(downline.position_level, positionColorMap)} border text-xs mt-1 font-semibold`}
+                                className={`${getPositionColorByLevel(downline.position_level, positionColorMap)} border text-xs font-semibold`}
                                 variant="outline"
                               >
                                 {downline.position}
@@ -686,13 +789,29 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate }: Age
                               <p className="text-xs text-muted-foreground italic">No Position</p>
                             )}
                           </div>
+                          <div className="flex gap-6 text-sm">
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground mb-1">Production</p>
+                              <p className="font-semibold text-green-500">
+                                ${(downline.individual_production || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground mb-1">Debt</p>
+                              <p className="font-semibold text-red-500">
+                                ${(downline.individual_debt || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground mb-1">Ratio</p>
+                              <p className="font-semibold text-foreground">
+                                {downline.individual_production > 0
+                                  ? ((downline.individual_debt / downline.individual_production) * 100).toFixed(1) + '%'
+                                  : 'N/A'}
+                              </p>
+                            </div>
+                          </div>
                         </div>
-                        <Badge
-                          className={`${statusColors[downline.status?.toLowerCase()] || 'bg-muted text-muted-foreground border-border'} border`}
-                          variant="outline"
-                        >
-                          {downline.status ? downline.status.charAt(0).toUpperCase() + downline.status.slice(1).replace('-', ' ') : 'Active'}
-                        </Badge>
                       </div>
                     ))}
                   </div>

@@ -756,6 +756,22 @@ export default function Agents() {
     }
   }, [view])
 
+  // Listen for custom event to open agent modal from downline clicks
+  useEffect(() => {
+    const handleOpenAgentModal = (event: CustomEvent) => {
+      const { agentId } = event.detail;
+      if (agentId) {
+        setSelectedAgentIdForModal(agentId);
+        setAgentModalOpen(true);
+      }
+    };
+
+    window.addEventListener('openAgentModal' as any, handleOpenAgentModal as EventListener);
+    return () => {
+      window.removeEventListener('openAgentModal' as any, handleOpenAgentModal as EventListener);
+    };
+  }, [])
+
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
     applyFilters()
@@ -2014,6 +2030,8 @@ export default function Agents() {
           open={agentModalOpen}
           onOpenChange={handleAgentModalClose}
           agentId={selectedAgentIdForModal}
+          startMonth={appliedFilters.startMonth}
+          endMonth={appliedFilters.endMonth}
           onUpdate={() => {
             // Refresh agents data if needed
             const fetchAgents = async () => {

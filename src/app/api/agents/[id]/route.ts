@@ -18,6 +18,11 @@ export async function GET(
       }, { status: 400 });
     }
 
+    // Get date range from query parameters
+    const { searchParams } = new URL(request.url);
+    const startMonthParam = searchParams.get("startMonth");
+    const endMonthParam = searchParams.get("endMonth");
+
     const supabase = createAdminClient();
 
     // Get agent information
@@ -92,6 +97,46 @@ export async function GET(
       console.error("Downlines count error:", downlineError);
     }
 
+    // Calculate date range for production metrics
+    let startDate: Date;
+    let endDate: Date;
+    const now = new Date();
+
+    if (startMonthParam && endMonthParam) {
+      // Parse "YYYY-MM" format from query params
+      const [startYear, startMonthNum] = startMonthParam.split('-').map(Number);
+      const [endYear, endMonthNum] = endMonthParam.split('-').map(Number);
+      startDate = new Date(startYear, startMonthNum - 1, 1); // First day of start month
+      endDate = new Date(endYear, endMonthNum, 1); // First day of month AFTER end month
+    } else {
+      // Default: current year (Jan 1 to Dec 31) - YTD
+      startDate = new Date(now.getFullYear(), 0, 1);
+      endDate = new Date(now.getFullYear() + 1, 0, 1);
+    }
+
+    // Fetch production/debt metrics using the same RPC as the table
+    const { data: metricsData, error: metricsError } = await supabase.rpc(
+      "get_agents_debt_production",
+      {
+        p_user_id: agentId, // Use the agent's ID as the user
+        p_agent_ids: [agentId],
+        p_start_date: startDate.toISOString(),
+        p_end_date: endDate.toISOString(),
+      }
+    );
+
+    // Extract metrics from RPC result
+    const metrics = metricsData?.[0] || {};
+    const individual_production = Number(metrics.individual_production || 0);
+    const individual_debt = Number(metrics.individual_debt || 0);
+    const hierarchy_production = Number(metrics.hierarchy_production || 0);
+    const hierarchy_debt = Number(metrics.hierarchy_debt || 0);
+
+    if (metricsError) {
+      console.error("Metrics fetch error:", metricsError);
+      // Continue without metrics rather than failing the whole request
+    }
+
     // Generate random earnings between $50 and $500
     const randomEarnings = Math.floor(Math.random() * 451) + 50;
     const totalProd = parseFloat(agent.total_prod?.toString() || "0");
@@ -136,6 +181,18 @@ export async function GET(
       downlines: downlineCount || 0,
       status: agent.status || "pre-invite",
       badge: positionName,
+      // Add production/debt metrics
+      individual_debt: individual_debt,
+      individual_debt_count: Number(metrics.individual_debt_count || 0),
+      individual_production: individual_production,
+      individual_production_count: Number(metrics.individual_production_count || 0),
+      hierarchy_debt: hierarchy_debt,
+      hierarchy_debt_count: Number(metrics.hierarchy_debt_count || 0),
+      hierarchy_production: hierarchy_production,
+      hierarchy_production_count: Number(metrics.hierarchy_production_count || 0),
+      debt_to_production_ratio: metrics.debt_to_production_ratio != null
+        ? Number(metrics.debt_to_production_ratio)
+        : null,
     };
 
     return NextResponse.json(formattedAgent);

@@ -21,6 +21,7 @@ import { useApiFetch } from '@/hooks/useApiFetch'
 import { useSupabaseRpc } from '@/hooks/useSupabaseQuery'
 import { queryKeys } from '@/hooks/queryKeys'
 import { QueryErrorDisplay } from '@/components/ui/query-error-display'
+import { RefreshingIndicator } from '@/components/ui/refreshing-indicator'
 
 // analytics_test_value: static data for the test analytics page
 const analytics_test_value = {
@@ -539,7 +540,7 @@ export default function AnalyticsTestPage() {
 	const queryClient = useQueryClient()
 
 	// 1. Main analytics fetch - Get user data and analytics
-	const { data: mainAnalyticsData, isPending: isMainAnalyticsLoading, error: mainAnalyticsError } = useQuery({
+	const { data: mainAnalyticsData, isPending: isMainAnalyticsLoading, isFetching: isMainAnalyticsFetching, error: mainAnalyticsError } = useQuery({
 		queryKey: queryKeys.analyticsData({ view: 'initial' }),
 		queryFn: async () => {
 			const supabase = createClient()
@@ -623,6 +624,7 @@ export default function AnalyticsTestPage() {
 	}, [viewMode, _analyticsFullData])
 
 	const isLoading = isMainAnalyticsLoading || isSelectedAgentLoading || !_analyticsData
+	const isRefreshing = isMainAnalyticsFetching && !isMainAnalyticsLoading
 	const analyticsData = _analyticsData as AnalyticsTestValue | null
 
 	const carriers = React.useMemo(() => ["ALL", ...(_analyticsData?.meta.carriers ?? [])], [_analyticsData])
@@ -1502,6 +1504,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			<div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
 				<div className="flex items-center gap-4 flex-wrap">
 					<h1 className="text-4xl font-bold text-foreground whitespace-nowrap leading-none flex-shrink-0">Agency Analytics</h1>
+					<RefreshingIndicator isRefreshing={isRefreshing} />
 
 					<div className="flex items-center gap-2 flex-wrap xl:hidden ml-auto">
 						{/* Just Me / Downlines Toggle */}

@@ -1,7 +1,18 @@
 "use client"
 
 import React, { createContext, useContext, useEffect, useState, useMemo } from 'react'
-import { AgencyBranding, getAgencyBrandingByDomain, isWhiteLabelDomain, DEFAULT_BRANDING } from '@/lib/whitelabel'
+import { useAgencyBrandingByDomain } from '@/hooks/useUserQueries'
+import { isWhiteLabelDomain } from '@/lib/whitelabel'
+
+interface AgencyBranding {
+  id: string
+  name: string
+  display_name: string | null
+  logo_url: string | null
+  primary_color: string | null
+  theme_mode: string | null
+  whitelabel_domain: string | null
+}
 
 interface AgencyBrandingContextType {
   branding: AgencyBranding | null
@@ -20,44 +31,29 @@ export function useAgencyBranding() {
 }
 
 export function AgencyBrandingProvider({ children }: { children: React.ReactNode }) {
-  const [branding, setBranding] = useState<AgencyBranding | null>(null)
-  const [isWhiteLabel, setIsWhiteLabel] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [hostname, setHostname] = useState<string | null>(null)
 
+  // Detect hostname on client side
   useEffect(() => {
-    async function loadBranding() {
-      try {
-        const hostname = window.location.hostname
-        console.log('[AgencyBranding] Current hostname:', hostname)
-
-        const isWL = isWhiteLabelDomain(hostname)
-        console.log('[AgencyBranding] Is white-label domain:', isWL)
-        setIsWhiteLabel(isWL)
-
-        if (isWL) {
-          // Fetch agency branding for white-labeled domain
-          console.log('[AgencyBranding] Fetching branding for domain:', hostname)
-          const agencyBranding = await getAgencyBrandingByDomain(hostname)
-          console.log('[AgencyBranding] Branding data received:', agencyBranding)
-          setBranding(agencyBranding)
-        } else {
-          // Use default AgentSpace branding
-          console.log('[AgencyBranding] Using default AgentSpace branding')
-          setBranding(null)
-        }
-      } catch (error) {
-        console.error('[AgencyBranding] Error loading agency branding:', error)
-        setBranding(null)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadBranding()
+    setHostname(window.location.hostname)
   }, [])
 
+  // Determine if this is a white-label domain
+  const isWhiteLabel = hostname ? isWhiteLabelDomain(hostname) : false
+
+  // Use TanStack Query for fetching branding data
+  const { data: branding, isLoading } = useAgencyBrandingByDomain(
+    isWhiteLabel ? hostname : null,
+    { enabled: isWhiteLabel && !!hostname }
+  )
+
+  // Loading is true until hostname is detected and (if whitelabel) data is loaded
+  const loading = hostname === null || (isWhiteLabel && isLoading)
+
   const contextValue = useMemo(() => ({
-    branding, isWhiteLabel, loading
+    branding: branding || null,
+    isWhiteLabel,
+    loading,
   }), [branding, isWhiteLabel, loading])
 
   return (

@@ -14,6 +14,7 @@ import { queryKeys } from "@/hooks/queryKeys"
 import { useAgencyScoreboardSettings } from "@/hooks/useUserQueries"
 import { useQueryClient } from "@tanstack/react-query"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
+import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 
 interface AgentScore {
   rank: number
@@ -185,7 +186,7 @@ export default function Scoreboard() {
   // Fetch scoreboard data using TanStack Query
   const shouldFetch = !!user?.id && (timeframe !== 'custom' || (!!dateRange.startDate && !!dateRange.endDate))
 
-  const { data: rpcResponse, isPending: isLoading, error: queryError } = useSupabaseRpc<ScoreboardRpcResponse>(
+  const { data: rpcResponse, isPending: isLoading, isFetching, error: queryError } = useSupabaseRpc<ScoreboardRpcResponse>(
     [
       ...queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate),
       'with-lapse',
@@ -209,6 +210,9 @@ export default function Scoreboard() {
   // Extract data and error from RPC response
   const data = rpcResponse?.success ? rpcResponse.data : null
   const error = rpcResponse?.success === false ? rpcResponse.error : queryError?.message
+
+  // Background refresh indicator (stale-while-revalidate pattern)
+  const isRefreshing = isFetching && !isLoading
 
   // Calculate date range for display even when loading
   const displayDateRange = useMemo(() => {
@@ -344,7 +348,10 @@ export default function Scoreboard() {
       {/* Header */}
       <div>
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-1">
-          <h1 className="text-4xl font-bold text-foreground">Scoreboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-bold text-foreground">Scoreboard</h1>
+            <RefreshingIndicator isRefreshing={isRefreshing} />
+          </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <Input

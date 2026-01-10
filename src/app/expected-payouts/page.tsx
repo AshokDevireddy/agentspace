@@ -13,6 +13,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
+import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { cn } from "@/lib/utils"
 
 interface PayoutData {
@@ -232,6 +233,7 @@ export default function ExpectedPayoutsPage() {
   const {
     data: payoutsData,
     isPending: payoutsLoading,
+    isFetching: payoutsFetching,
     error: payoutsError
   } = useQuery({
     queryKey: queryKeys.expectedPayoutsData({ ...appliedFilters, agent: effectiveAgentId }),
@@ -383,6 +385,9 @@ export default function ExpectedPayoutsPage() {
   const uniqueMonths = new Set(payouts.map(p => p.month)).size
   const averagePerMonth = uniqueMonths > 0 ? totalExpectedPayout / uniqueMonths : 0
 
+  // Background refresh indicator (stale-while-revalidate pattern)
+  const isRefreshing = payoutsFetching && !payoutsLoading
+
   // Check if Basic tier user is viewing another agent's data
   const isViewingOtherAgent = userTier === 'basic' &&
     appliedFilters.agent &&
@@ -393,7 +398,10 @@ export default function ExpectedPayoutsPage() {
     <div className="space-y-6 relative payouts-content" data-tour="payouts">
       {/* Header */}
       <div>
-        <h1 className="text-4xl font-bold text-foreground mb-2">Expected Payouts</h1>
+        <div className="flex items-center gap-3 mb-2">
+          <h1 className="text-4xl font-bold text-foreground">Expected Payouts</h1>
+          <RefreshingIndicator isRefreshing={isRefreshing} />
+        </div>
         <p className="text-muted-foreground">
           View projected commission payouts based on posted deals
         </p>

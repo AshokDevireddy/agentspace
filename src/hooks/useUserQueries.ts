@@ -93,6 +93,7 @@ interface AgencyBrandingData {
   display_name: string | null
   logo_url: string | null
   primary_color: string | null
+  theme_mode: string | null
   whitelabel_domain: string | null
 }
 
@@ -124,7 +125,7 @@ export function useAgencyBranding(
       // If access token provided, use REST API
       if (accessToken) {
         const { data, error } = await supabaseRestFetch<AgencyBrandingData[]>(
-          `/rest/v1/agencies?id=eq.${agencyId}&select=id,name,display_name,logo_url,primary_color,whitelabel_domain`,
+          `/rest/v1/agencies?id=eq.${agencyId}&select=id,name,display_name,logo_url,primary_color,theme_mode,whitelabel_domain`,
           { accessToken }
         )
 
@@ -139,7 +140,7 @@ export function useAgencyBranding(
       const supabase = createClient()
       const { data, error } = await supabase
         .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, whitelabel_domain')
+        .select('id, name, display_name, logo_url, primary_color, theme_mode, whitelabel_domain')
         .eq('id', agencyId)
         .maybeSingle()
 
@@ -150,6 +151,46 @@ export function useAgencyBranding(
       return data as AgencyBrandingData | null
     },
     enabled: enabled && !!agencyId,
+    staleTime,
+  })
+}
+
+// ============ Agency Branding by Domain Query ============
+
+interface UseAgencyBrandingByDomainOptions {
+  /** Whether to enable the query */
+  enabled?: boolean
+  /** Stale time in milliseconds (default: 1 hour - branding rarely changes) */
+  staleTime?: number
+}
+
+/**
+ * Fetch agency branding data by whitelabel domain
+ * Used for domain-based white-label detection
+ */
+export function useAgencyBrandingByDomain(
+  domain: string | null,
+  options: UseAgencyBrandingByDomainOptions = {}
+) {
+  const { enabled = true, staleTime = 60 * 60 * 1000 } = options // 1 hour default
+
+  return useQuery({
+    queryKey: queryKeys.agencyBrandingByDomain(domain),
+    queryFn: async () => {
+      if (!domain) return null
+
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('agencies')
+        .select('id, name, display_name, logo_url, primary_color, theme_mode, whitelabel_domain')
+        .eq('whitelabel_domain', domain)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      if (error) throw new Error(error.message)
+      return data as AgencyBrandingData | null
+    },
+    enabled: enabled && !!domain,
     staleTime,
   })
 }

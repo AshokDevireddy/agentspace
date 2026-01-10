@@ -599,11 +599,9 @@ function SMSMessagingPageContent() {
   }, [conversationIdFromUrl, conversations, selectedConversation, handleConversationSelect])
 
   // Send message mutation - using centralized hook
+  // Note: The hook uses predicate-based invalidation to catch all conversation variations
   const sendMessageMutation = useSendMessage({
-    getInvalidateFilters: () => {
-      const { effectiveViewMode, searchQuery, notificationFilter } = filtersRef.current
-      return { viewMode: effectiveViewMode, searchQuery, notificationFilter }
-    },
+    conversationId: selectedConversationRef.current?.id,
     onSuccess: () => {
       // Also invalidate messages query for the current conversation
       const currentConversationId = selectedConversationRef.current?.id
@@ -651,11 +649,8 @@ function SMSMessagingPageContent() {
   }
 
   // Resolve notification mutation - using centralized hook
+  // Note: The hook uses predicate-based invalidation to catch all conversation and deal variations
   const resolveNotificationMutation = useResolveNotification({
-    getInvalidateFilters: () => {
-      const { effectiveViewMode, searchQuery, notificationFilter } = filtersRef.current
-      return { viewMode: effectiveViewMode, searchQuery, notificationFilter }
-    },
     onSuccess: () => {
       showSuccess('Notification resolved successfully')
     },

@@ -21,7 +21,6 @@ import {
   useUploadNiprDocument,
   useCreateOnboardingPolicyJob,
   useSignOnboardingPolicyFiles,
-  useOnboardingCarrierLogin,
 } from '@/hooks/mutations'
 
 interface UserData {
@@ -99,12 +98,10 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   // Agency branding state
   const [primaryColor, setPrimaryColor] = useState<string>("217 91% 60%")
 
-  // Policy reports upload state
+  // Policy reports upload state (used by uploadPolicyReports in handleComplete)
   const [uploads, setUploads] = useState<CarrierUpload[]>(
     carriers.map(carrier => ({ carrier, file: null }))
   )
-  const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
-  const [checkingExistingFiles, setCheckingExistingFiles] = useState(false)
 
   // Downline invitation state
   const [invitedAgents, setInvitedAgents] = useState<InvitedAgent[]>([])
@@ -159,25 +156,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   const [niprUploadFile, setNiprUploadFile] = useState<File | null>(null)
   const [niprDragging, setNiprDragging] = useState(false)
 
-  // Carrier upload progress state (for step-by-step upload)
-  const [currentCarrierIndex, setCurrentCarrierIndex] = useState(0)
-  const [carrierUploads, setCarrierUploads] = useState<Record<string, File | null>>({})
-  const [uploadingCarrier, setUploadingCarrier] = useState(false)
-
-  // Carrier login collection state
-  const [carrierLoginUsername, setCarrierLoginUsername] = useState('')
-  const [carrierLoginPassword, setCarrierLoginPassword] = useState('')
-  const [savedCarrierLogins, setSavedCarrierLogins] = useState<Set<string>>(new Set())
-
-  // Matched carriers state (filtered by fuzzy matching with active carriers)
-  const [matchedCarriers, setMatchedCarriers] = useState<Array<{
-    id: string
-    name: string
-    display_name: string
-    matchedWith: string
-    similarity: number
-  }>>([])
-  const [loadingMatches, setLoadingMatches] = useState(false)
+  // Note: Carrier login collection (Step 2) was intentionally removed from the onboarding flow
+  // See commit ae00c67 in main branch for details
 
   // NIPR already completed state
   const [niprAlreadyCompleted, setNiprAlreadyCompleted] = useState(false)
@@ -194,10 +174,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   const uploadNiprMutation = useUploadNiprDocument()
   const createPolicyJobMutation = useCreateOnboardingPolicyJob()
   const signPolicyFilesMutation = useSignOnboardingPolicyFiles()
-  const carrierLoginMutation = useOnboardingCarrierLogin()
 
   // Derived loading states from mutations
-  const savingCarrierLogin = carrierLoginMutation.isPending
   const niprUploading = uploadNiprMutation.isPending
 
   useEffect(() => {
@@ -458,68 +436,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     }
   }, [niprJobData, userData.id])
 
-  // Fetch active carriers and match with NIPR results when entering step 2
-  const carriersToMatch = niprResult?.analysis?.unique_carriers || storedCarriers
-
-  const { data: activeCarriersData, isLoading: isLoadingCarriers } = useApiFetch<any[]>(
-    queryKeys.carriersList('active'),
-    '/api/carriers',
-    {
-      enabled: currentStep === 2 && !!carriersToMatch && carriersToMatch.length > 0,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    }
-  )
-
-  useEffect(() => {
-    const matchCarriers = async () => {
-      if (!activeCarriersData || !carriersToMatch || carriersToMatch.length === 0) {
-        return
-      }
-
-      setLoadingMatches(true)
-      try {
-        // Import and use fuzzy matching
-        const { findMatchingCarriers } = await import('@/lib/nipr/fuzzy-match')
-        const matches = findMatchingCarriers(
-          carriersToMatch,
-          activeCarriersData,
-          0.6 // 60% threshold - more lenient for carrier name variations
-        )
-
-        console.log('[ONBOARDING] Matched carriers:', matches.length, 'out of', carriersToMatch.length, 'NIPR carriers')
-        setMatchedCarriers(matches)
-      } catch (error) {
-        console.error('[ONBOARDING] Error matching carriers:', error)
-      } finally {
-        setLoadingMatches(false)
-      }
-    }
-
-    if (activeCarriersData) {
-      matchCarriers()
-    }
-  }, [activeCarriersData, carriersToMatch])
-
-  const { data: existingFilesData, isLoading: isCheckingExistingFiles } = useApiFetch<{ files: any[] }>(
-    queryKeys.policyReportsFiles(userData.agency_id || ''),
-    '/api/upload-policy-reports/bucket',
-    {
-      enabled: currentStep === 2 && !!userData.agency_id,
-      staleTime: 2 * 60 * 1000, // 2 minutes
-      retry: false,
-    }
-  )
-
-  useEffect(() => {
-    if (existingFilesData?.files && existingFilesData.files.length > 0) {
-      setUploadedFilesInfo(existingFilesData.files)
-    }
-  }, [existingFilesData])
-
-  // Update the loading state to use the query loading state
-  useEffect(() => {
-    setCheckingExistingFiles(isCheckingExistingFiles)
-  }, [isCheckingExistingFiles])
+  // Note: Carrier login collection (Step 2) was intentionally removed - see commit ae00c67
+  // The carrier matching and policy upload queries that were here are no longer needed
 
   const validateAgentForm = () => {
     const newErrors: string[] = []
@@ -543,24 +461,6 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
     setErrors(newErrors)
     return newErrors.length === 0
-  }
-
-  const handleFileUpload = (carrierIndex: number, file: File) => {
-    const newUploads = [...uploads]
-    newUploads[carrierIndex] = {
-      ...newUploads[carrierIndex],
-      file: file
-    }
-    setUploads(newUploads)
-  }
-
-  const handleFileRemove = (carrierIndex: number) => {
-    const newUploads = [...uploads]
-    newUploads[carrierIndex] = {
-      ...newUploads[carrierIndex],
-      file: null
-    }
-    setUploads(newUploads)
   }
 
   const handleAddAgent = () => {
@@ -1062,57 +962,6 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
   const skipToComplete = () => {
     handleComplete()
-  }
-
-  // Save carrier login credentials
-  const saveCarrierLogin = async () => {
-    const currentCarrier = matchedCarriers[currentCarrierIndex]
-    if (!currentCarrier || !carrierLoginUsername || !carrierLoginPassword) {
-      setErrors(['Please enter both username and password'])
-      return
-    }
-
-    setErrors([])
-
-    carrierLoginMutation.mutate(
-      {
-        carrier_name: currentCarrier.name,
-        login: carrierLoginUsername,
-        password: carrierLoginPassword,
-      },
-      {
-        onSuccess: () => {
-          // Mark this carrier as saved
-          setSavedCarrierLogins(prev => new Set(prev).add(currentCarrier.id))
-
-          // Clear form and move to next carrier
-          setCarrierLoginUsername('')
-          setCarrierLoginPassword('')
-
-          if (currentCarrierIndex < matchedCarriers.length - 1) {
-            setCurrentCarrierIndex(i => i + 1)
-          } else {
-            goToStep(3)
-          }
-        },
-        onError: (error) => {
-          console.error('Failed to save carrier login:', error)
-          setErrors([error instanceof Error ? error.message : 'Failed to save carrier login'])
-        },
-      }
-    )
-  }
-
-  // Skip current carrier and move to next
-  const skipCarrierLogin = () => {
-    setCarrierLoginUsername('')
-    setCarrierLoginPassword('')
-
-    if (currentCarrierIndex < matchedCarriers.length - 1) {
-      setCurrentCarrierIndex(i => i + 1)
-    } else {
-      goToStep(3)
-    }
   }
 
   return (

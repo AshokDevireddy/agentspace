@@ -54,14 +54,6 @@ export default function TopUpPurchaseModal({
     topUpMutation.mutate({ topupProductKey: productKey });
   };
 
-  const getPrice = (productKey: string) => {
-    if (productKey.includes('MESSAGE_BASIC')) return '$5';
-    if (productKey.includes('MESSAGE_PRO')) return '$5';
-    if (productKey.includes('MESSAGE_EXPERT')) return '$10';
-    if (productKey.includes('AI')) return '$10';
-    return '$0';
-  };
-
   const Icon = type === 'messages' ? MessageSquare : Sparkles;
   const title = type === 'messages' ? 'Purchase Additional Messages' : 'Purchase Additional AI Requests';
   const description = type === 'messages'
@@ -112,7 +104,7 @@ export default function TopUpPurchaseModal({
                       Processing...
                     </>
                   ) : (
-                    <>Buy {getPrice(key)}</>
+                    <>Buy {product.displayPrice}</>
                   )}
                 </Button>
               </div>

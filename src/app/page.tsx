@@ -135,7 +135,6 @@ export default function Home() {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: queryKeys.user }),
           queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() }),
-          queryClient.invalidateQueries({ queryKey: ['user-profile'] }),
         ])
         setShowWizard(false)
       },

@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, Home } from "lucide-react"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
+import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 
 // Types for the RPC response
 interface DownlineProductionData {
@@ -340,10 +341,13 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
             </div>
           ) : (
             <>
-              {/* Title - only show when not embedded */}
+              {/* Title and refresh indicator - only show when not embedded */}
               {!embedded && (
-                <div className="text-center text-sm font-medium">
-                  {displayName} Direct Downline Distribution
+                <div className="flex items-center justify-center gap-2">
+                  <div className="text-center text-sm font-medium">
+                    {displayName} Direct Downline Distribution
+                  </div>
+                  <RefreshingIndicator isRefreshing={isFetching && !isLoading} />
                 </div>
               )}
 

@@ -3,6 +3,7 @@
 import { Component, ReactNode } from 'react'
 import { QueryErrorResetBoundary } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import { getUserFriendlyMessage } from '@/lib/error-utils'
 
 interface Props {
   children: ReactNode
@@ -37,13 +38,16 @@ export class ErrorBoundary extends Component<Props, State> {
               return this.props.fallback
             }
 
+            const errorMessage = getUserFriendlyMessage(this.state.error, 'Something went wrong')
+
             return (
               <div className="p-4 border border-destructive/20 rounded-lg bg-destructive/5">
-                <p className="text-sm text-destructive">Something went wrong</p>
+                <p className="text-sm font-medium text-destructive">Something went wrong</p>
+                <p className="text-sm text-destructive/80 mt-1">{errorMessage}</p>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="mt-2"
+                  className="mt-3"
                   onClick={() => {
                     // Reset both error boundary and TanStack Query errors
                     resetQueries()

@@ -31,7 +31,7 @@ function getColorFromName(name: string): string {
 }
 
 // Extract initials from name (e.g., "John Smith" -> "JS")
-function getInitials(name: string): string {
+export function getInitials(name: string): string {
   if (!name || name.trim() === '') return '?'
 
   const parts = name.trim().split(/\s+/)

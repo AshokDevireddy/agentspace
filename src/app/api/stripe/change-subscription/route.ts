@@ -4,7 +4,7 @@ import Stripe from 'stripe';
 import { TIER_PRICE_IDS } from '@/lib/subscription-tiers';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-11-17.clover',
+  apiVersion: '2024-11-20.acacia',
 });
 
 // Tier hierarchy for determining upgrades vs downgrades

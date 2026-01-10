@@ -265,7 +265,7 @@ export function useUserById(
   const { accessToken, enabled = true, staleTime = 5 * 60 * 1000 } = options
 
   return useQuery({
-    queryKey: ['user', 'by-id', userId],
+    queryKey: queryKeys.userById(userId || ''),
     queryFn: async () => {
       if (!userId) {
         throw new Error('User ID is required')

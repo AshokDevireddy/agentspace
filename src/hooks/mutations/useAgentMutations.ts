@@ -68,7 +68,12 @@ export function useAssignPosition(options?: {
 /**
  * Resend an invitation to an agent
  */
-export function useResendInvite() {
+export function useResendInvite(options?: {
+  onSuccess?: (data: { message: string }, agentId: string) => void
+  onError?: (error: Error) => void
+}) {
+  const { invalidateAgentRelated } = useInvalidation()
+
   return useMutation<
     { message: string },
     Error,
@@ -90,6 +95,12 @@ export function useResendInvite() {
 
       return data
     },
+    onSuccess: async (data, agentId) => {
+      // Invalidate agent-related queries to refresh status
+      await invalidateAgentRelated(agentId)
+      options?.onSuccess?.(data, agentId)
+    },
+    onError: options?.onError,
   })
 }
 

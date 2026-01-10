@@ -351,7 +351,7 @@ export default function Navigation() {
         ))}
 
         {/* Pro/Expert tier navigation items */}
-        {/* {(subscriptionTier === 'pro' || subscriptionTier === 'expert') && proExpertNavigationItems.map((item) => (
+        {(subscriptionTier === 'pro' || subscriptionTier === 'expert') && proExpertNavigationItems.map((item) => (
           <div key={item.name} className="relative">
             <Link
               href={item.href}
@@ -366,7 +366,7 @@ export default function Navigation() {
               {!isSidebarCollapsed && <span className="flex-1 text-left">{item.name}</span>}
             </Link>
           </div>
-        ))} */}
+        ))}
 
         {/* Admin-only navigation items */}
         {isAdmin && adminNavigationItems.map((item) => (

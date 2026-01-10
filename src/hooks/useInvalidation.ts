@@ -16,19 +16,28 @@ export function useInvalidation() {
 
   /**
    * Invalidate all agent-related queries
+   * Uses predicate-based invalidation for downlines to handle hierarchy changes
+   * (when upline changes, both old and new upline's downlines need refresh)
    */
   const invalidateAgentRelated = useCallback(
-    async (agentId?: string) => {
+    async (agentId?: string, options?: { invalidateAllDownlines?: boolean }) => {
       const invalidations = [
         queryClient.invalidateQueries({ queryKey: queryKeys.agents }),
         queryClient.invalidateQueries({ queryKey: queryKeys.positions }),
         queryClient.invalidateQueries({ queryKey: queryKeys.search }),
+        // Invalidate all downline queries to handle hierarchy changes correctly
+        // This ensures old and new uplines' downline caches are refreshed
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey
+            return Array.isArray(key) && key[0] === 'agents' && key[1] === 'downlines'
+          },
+        }),
       ]
 
       if (agentId) {
         invalidations.push(
-          queryClient.invalidateQueries({ queryKey: queryKeys.agentDetail(agentId) }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.agentDownlines(agentId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.agentDetail(agentId) })
         )
       }
 

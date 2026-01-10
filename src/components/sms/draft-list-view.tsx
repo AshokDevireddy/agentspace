@@ -48,11 +48,11 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
   const draftGroups = data?.drafts || []
 
   // Use centralized mutation hooks
+  // Note: The hooks use predicate-based invalidation to catch all conversation/draft variations
   const approveMutation = useApproveDrafts({
-    viewMode,
-    onSuccess: (messageIds) => {
+    onSuccess: (data, variables) => {
       setSelectedDrafts(new Set())
-      showSuccess(`Successfully approved ${messageIds.length} draft(s)`)
+      showSuccess(`Successfully approved ${variables.messageIds.length} draft(s)`)
     },
     onError: (error) => {
       console.error('Error approving drafts:', error)
@@ -61,10 +61,9 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
   })
 
   const rejectMutation = useRejectDrafts({
-    viewMode,
-    onSuccess: (messageIds) => {
+    onSuccess: (data, variables) => {
       setSelectedDrafts(new Set())
-      showSuccess(`Successfully rejected ${messageIds.length} draft(s)`)
+      showSuccess(`Successfully rejected ${variables.messageIds.length} draft(s)`)
     },
     onError: (error) => {
       console.error('Error rejecting drafts:', error)

@@ -107,7 +107,7 @@ export default function ClientDashboard() {
   })
 
   // Query for client's deals
-  const { data: deals = [], isLoading: dealsLoading } = useQuery({
+  const { data: deals = [], isLoading: dealsLoading, error: dealsError } = useQuery({
     queryKey: queryKeys.clientDeals(userData?.id || ''),
     queryFn: async () => {
       if (!userData?.id) return []
@@ -128,6 +128,7 @@ export default function ClientDashboard() {
     },
     enabled: !!userData?.id,
     staleTime: 2 * 60 * 1000, // 2 minutes
+    retry: 2,
   })
 
   // Handle auth errors - redirect to login
@@ -278,7 +279,16 @@ export default function ClientDashboard() {
                 Your Policies
               </CardTitle>
             </CardHeader>
-            {deals.length === 0 && (
+            {dealsError && (
+              <CardContent className="p-6 bg-white dark:bg-card">
+                <div className="p-6 text-center bg-red-50 dark:bg-red-900/20 rounded-md">
+                  <p className="text-red-600 dark:text-red-400 font-medium">
+                    Unable to load your policies. Please try again later.
+                  </p>
+                </div>
+              </CardContent>
+            )}
+            {!dealsError && deals.length === 0 && !dealsLoading && (
               <CardContent className="p-6 bg-white dark:bg-card">
                 <div className="p-12 text-center">
                   <FileText className="h-16 w-16 text-gray-400 dark:text-muted-foreground mx-auto mb-4" />
@@ -296,7 +306,7 @@ export default function ClientDashboard() {
             )}
           </Card>
 
-          {deals.length > 0 && (
+          {!dealsError && deals.length > 0 && (
             <div className="space-y-6">
               {deals.map((deal) => (
                 <Card key={deal.id} className="shadow-sm border border-gray-200 dark:border-gray-800 hover:border-black dark:hover:border-gray-600 transition-all rounded-md">

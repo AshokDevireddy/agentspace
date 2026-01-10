@@ -57,6 +57,8 @@ export function useCreateCheckoutSession(options?: {
   onSuccess?: (url: string) => void
   onError?: (error: Error) => void
 }) {
+  const { invalidateSubscriptionRelated } = useInvalidation()
+
   return useMutation<CheckoutSessionResponse, Error, CheckoutSessionInput>({
     mutationFn: async ({ priceId, subscriptionType }) => {
       const response = await fetch('/api/stripe/create-checkout-session', {
@@ -78,7 +80,9 @@ export function useCreateCheckoutSession(options?: {
 
       return data
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      // Invalidate subscription data in case user returns from checkout
+      await invalidateSubscriptionRelated()
       options?.onSuccess?.(data.url)
     },
     onError: options?.onError,
@@ -160,6 +164,8 @@ export function useOpenBillingPortal(options?: {
   onSuccess?: (url: string) => void
   onError?: (error: Error) => void
 }) {
+  const { invalidateSubscriptionRelated } = useInvalidation()
+
   return useMutation<PortalSessionResponse, Error, void>({
     mutationFn: async () => {
       const response = await fetch('/api/stripe/create-portal-session', {
@@ -175,7 +181,9 @@ export function useOpenBillingPortal(options?: {
 
       return data
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      // Invalidate subscription data in case user makes changes in portal
+      await invalidateSubscriptionRelated()
       options?.onSuccess?.(data.url)
     },
     onError: options?.onError,
@@ -189,6 +197,8 @@ export function useCreateTopUpSession(options?: {
   onSuccess?: (url: string) => void
   onError?: (error: Error) => void
 }) {
+  const { invalidateSubscriptionRelated } = useInvalidation()
+
   return useMutation<TopUpSessionResponse, Error, TopUpSessionInput>({
     mutationFn: async ({ topupProductKey }) => {
       const response = await fetch('/api/stripe/create-topup-session', {
@@ -210,7 +220,9 @@ export function useCreateTopUpSession(options?: {
 
       return data
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      // Invalidate subscription data in case user completes top-up purchase
+      await invalidateSubscriptionRelated()
       options?.onSuccess?.(data.url)
     },
     onError: options?.onError,

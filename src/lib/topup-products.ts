@@ -5,6 +5,8 @@ export const TOPUP_PRODUCTS = {
   MESSAGE_BASIC_50: {
     priceId: process.env.NEXT_PUBLIC_STRIPE_MESSAGE_BASIC_50_PRICE_ID || '',
     quantity: 50,
+    price: 500, // $5.00 in cents
+    displayPrice: '$5',
     type: 'message_topup' as const,
     requiredTier: 'basic',
     name: '50 Messages',
@@ -14,6 +16,8 @@ export const TOPUP_PRODUCTS = {
   MESSAGE_PRO_100: {
     priceId: process.env.NEXT_PUBLIC_STRIPE_MESSAGE_PRO_100_PRICE_ID || '',
     quantity: 100,
+    price: 500, // $5.00 in cents
+    displayPrice: '$5',
     type: 'message_topup' as const,
     requiredTier: 'pro',
     name: '100 Messages',
@@ -23,6 +27,8 @@ export const TOPUP_PRODUCTS = {
   MESSAGE_EXPERT_500: {
     priceId: process.env.NEXT_PUBLIC_STRIPE_MESSAGE_EXPERT_500_PRICE_ID || '',
     quantity: 500,
+    price: 1000, // $10.00 in cents
+    displayPrice: '$10',
     type: 'message_topup' as const,
     requiredTier: 'expert',
     name: '500 Messages',
@@ -32,6 +38,8 @@ export const TOPUP_PRODUCTS = {
   AI_EXPERT_50: {
     priceId: process.env.NEXT_PUBLIC_STRIPE_AI_EXPERT_50_PRICE_ID || '',
     quantity: 50,
+    price: 1000, // $10.00 in cents
+    displayPrice: '$10',
     type: 'ai_topup' as const,
     requiredTier: 'expert',
     name: '50 AI Requests',

@@ -181,6 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase, router])
 
   const signOut = useCallback(async () => {
+    // 1. Clear local state first (localStorage filters)
     if (typeof window !== 'undefined') {
       const keysToRemove: string[] = []
       for (let i = 0; i < localStorage.length; i++) {
@@ -190,15 +191,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       keysToRemove.forEach(key => localStorage.removeItem(key))
     }
 
+    // 2. Clear React state
     setUser(null)
     setUserData(null)
 
+    // 3. Invalidate server session (non-blocking - proceed with redirect on error)
     try {
       await supabase.auth.signOut()
     } catch (err) {
-      console.error('[AuthProvider] signOut error:', err)
+      // Log error but continue - local state is already cleared and user expects to be logged out
+      console.error('[AuthProvider] Server signOut failed, proceeding with redirect:', err)
     }
 
+    // 4. Hard redirect clears all React/TanStack Query state completely
+    // Using window.location.href instead of router.push to ensure full state reset
     window.location.href = '/login'
   }, [supabase])
 

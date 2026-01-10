@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
-import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2, Mail, Check, Circle } from "lucide-react"
+import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2, Mail, Check, Circle, Bot } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { useNotification } from "@/contexts/notification-context"
@@ -792,8 +792,9 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                                     </div>
                                   )}
                                   {isAutomated && !isDraft && (
-                                    <div className="text-xs opacity-75 mb-0.5 italic font-medium">
-                                      🤖 Automated
+                                    <div className="text-xs opacity-75 mb-0.5 italic font-medium flex items-center gap-1">
+                                      <Bot className="h-3 w-3" />
+                                      Automated
                                     </div>
                                   )}
                                   <p className="text-sm whitespace-pre-wrap break-words leading-snug">{message.body}</p>

@@ -37,8 +37,6 @@ export const queryKeys = {
 
   // Deals
   deals: ['deals'] as const,
-  dealsList: (page: number, view: string, filters: Record<string, unknown>) =>
-    ['deals', 'list', page, view, stableFilterKey(filters)] as const,
   dealDetail: (id: string) => ['deals', 'detail', id] as const,
   dealsFilterOptions: () => ['deals', 'filter-options'] as const,
   dealsBookOfBusiness: (filters?: Record<string, unknown>) =>
@@ -75,14 +73,11 @@ export const queryKeys = {
   // User & Profile
   user: ['user'] as const,
   userProfile: (id?: string) => ['user', 'profile', id] as const,
-  userById: (id: string) => ['user', 'by-id', id] as const,
-  userSettings: () => ['user', 'settings'] as const,
   userAdminStatus: (id?: string) => ['user', 'admin-status', id] as const,
   userDefaultUpline: () => ['user', 'default-upline'] as const,
 
   // Dashboard
   dashboard: (userId: string) => ['dashboard', userId] as const,
-  dashboardStats: (userId: string) => ['dashboard', 'stats', userId] as const,
 
   // Client Dashboard (for client-facing portal)
   clientUser: () => ['client', 'user'] as const,
@@ -96,10 +91,6 @@ export const queryKeys = {
   analytics: ['analytics'] as const,
   analyticsData: (filters: Record<string, unknown>) =>
     ['analytics', 'data', stableFilterKey(filters)] as const,
-  analyticsProduction: (filters: Record<string, unknown>) =>
-    ['analytics', 'production', stableFilterKey(filters)] as const,
-  analyticsDownlines: (filters: Record<string, unknown>) =>
-    ['analytics', 'downlines', stableFilterKey(filters)] as const,
 
   // Downline Production
   downlineProduction: (agentId: string, timeWindow: string) =>
@@ -107,11 +98,6 @@ export const queryKeys = {
 
   // Policies
   policies: ['policies'] as const,
-  policiesList: (page: number, filters: Record<string, unknown>) =>
-    ['policies', 'list', page, stableFilterKey(filters)] as const,
-  policyDetail: (id: string) => ['policies', 'detail', id] as const,
-  policiesExpectedPayouts: (page: number, filters: Record<string, unknown>) =>
-    ['policies', 'expected-payouts', page, stableFilterKey(filters)] as const,
 
   // Expected Payouts
   expectedPayouts: ['expected-payouts'] as const,
@@ -139,16 +125,9 @@ export const queryKeys = {
   // Search
   search: ['search'] as const,
   searchAgents: (query: string) => ['search', 'agents', query] as const,
-  searchClients: (query: string) => ['search', 'clients', query] as const,
-  searchUsers: (query: string) => ['search', 'users', query] as const,
   searchDeals: (name: string, phone: string) => ['search', 'deals', name, phone] as const,
   searchPreInviteUsers: (query: string) => ['search', 'pre-invite', query] as const,
   searchAsync: (endpoint: string, query: string) => ['search', 'async', endpoint, query] as const,
-
-  // Notifications
-  notifications: ['notifications'] as const,
-  notificationsList: () => ['notifications', 'list'] as const,
-  notificationsUnread: () => ['notifications', 'unread'] as const,
 
   // NIPR
   nipr: ['nipr'] as const,

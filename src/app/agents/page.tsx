@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
+import { getInitials } from "@/components/ui/initials-avatar"
 import { useNotification } from "@/contexts/notification-context"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -716,9 +717,7 @@ export default function Agents() {
   const handleResendInvite = (agentId: string) => {
     resendInviteMutation.mutate(agentId, {
       onSuccess: (data) => {
-        // Invalidate agent queries to refresh the status
-        queryClient.invalidateQueries({ queryKey: queryKeys.agents })
-        queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
+        // Note: Agent query invalidation is handled by the mutation hook
         showSuccess(data.message || 'Invitation resent successfully!')
       },
       onError: (err: Error) => {
@@ -734,9 +733,10 @@ export default function Agents() {
       return
     }
 
-    // Get the agent's name parts
-    const firstName = agent.first_name || agent.name.split(' ')[0] || ''
-    const lastName = agent.last_name || agent.name.split(' ').slice(1).join(' ') || ''
+    // Get the agent's name parts (fallback to parsing full name if first/last not available)
+    const nameParts = (agent.name || '').trim().split(/\s+/).filter(Boolean)
+    const firstName = agent.first_name || nameParts[0] || ''
+    const lastName = agent.last_name || nameParts.slice(1).join(' ') || ''
 
     sendInviteMutation.mutate(
       {
@@ -751,9 +751,7 @@ export default function Agents() {
       },
       {
         onSuccess: () => {
-          // Invalidate and refetch agents list and pending positions
-          queryClient.invalidateQueries({ queryKey: queryKeys.agents })
-          queryClient.invalidateQueries({ queryKey: queryKeys.agentsPendingPositions() })
+          // Note: Agent query invalidation is handled by the mutation hook
           showSuccess('Invitation sent successfully!')
         },
         onError: (err: Error) => {
@@ -1192,7 +1190,7 @@ export default function Agents() {
                         <div className="flex items-center space-x-3">
                           <div className="flex-shrink-0">
                             <div className={`w-9 h-9 rounded-full ${badgeColors[agent.badge] || 'bg-muted text-muted-foreground'} flex items-center justify-center text-xs font-bold border-2 shadow-sm`}>
-                              {agent.name.split(' ').map(n => n.charAt(0)).slice(0, 2).join('')}
+                              {getInitials(agent.name)}
                             </div>
                           </div>
                           <div>

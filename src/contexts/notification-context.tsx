@@ -9,6 +9,7 @@ interface NotificationContextType {
   showError: (message: string, duration?: number) => void
   showWarning: (message: string, duration?: number) => void
   showInfo: (message: string, duration?: number) => void
+  removeNotification: (id: string) => void
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined)
@@ -95,8 +96,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const contextValue = useMemo(() => ({
-    showNotification, showSuccess, showError, showWarning, showInfo
-  }), [showNotification, showSuccess, showError, showWarning, showInfo])
+    showNotification, showSuccess, showError, showWarning, showInfo, removeNotification
+  }), [showNotification, showSuccess, showError, showWarning, showInfo, removeNotification])
 
   return (
     <NotificationContext.Provider value={contextValue}>

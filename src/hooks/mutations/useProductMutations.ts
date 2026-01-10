@@ -97,23 +97,33 @@ interface SyncCommissionsResponse {
 
 /**
  * Save product commissions
+ * Also invalidates products since commission data is displayed with products
  */
 export function useSaveProductCommissions() {
   return useAuthenticatedMutation<void, SaveCommissionsInput>('/api/positions/product-commissions', {
     method: 'POST',
-    invalidateKeys: [queryKeys.configurationCommissions()],
+    invalidateKeys: [
+      queryKeys.configurationCommissions(),
+      queryKeys.configurationProducts(),
+      queryKeys.products,
+    ],
   })
 }
 
 /**
  * Sync missing commissions for a carrier
+ * Also invalidates products since commission data is displayed with products
  */
 export function useSyncCommissions() {
   return useAuthenticatedMutation<SyncCommissionsResponse, SyncCommissionsInput>(
     (variables) => `/api/positions/product-commissions/sync?carrier_id=${variables.carrierId}`,
     {
       method: 'POST',
-      invalidateKeys: [queryKeys.configurationCommissions()],
+      invalidateKeys: [
+        queryKeys.configurationCommissions(),
+        queryKeys.configurationProducts(),
+        queryKeys.products,
+      ],
     }
   )
 }

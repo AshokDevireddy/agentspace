@@ -31,36 +31,54 @@ interface Position {
 
 /**
  * Create a new position
+ * Also invalidates agents as positions affect agent display
  */
 export function useCreatePosition() {
   return useAuthenticatedMutation<Position, CreatePositionInput>('/api/positions', {
     method: 'POST',
-    invalidateKeys: [queryKeys.configurationPositions(), queryKeys.positions],
+    invalidateKeys: [
+      queryKeys.configurationPositions(),
+      queryKeys.positions,
+      queryKeys.agents,
+      queryKeys.agentsPendingPositions(),
+    ],
   })
 }
 
 /**
  * Update an existing position
+ * Also invalidates agents as position changes affect agent display
  */
 export function useUpdatePosition() {
   return useAuthenticatedMutation<Position, UpdatePositionInput & { positionId: string }>(
     (variables) => `/api/positions/${variables.positionId}`,
     {
       method: 'PUT',
-      invalidateKeys: [queryKeys.configurationPositions(), queryKeys.positions],
+      invalidateKeys: [
+        queryKeys.configurationPositions(),
+        queryKeys.positions,
+        queryKeys.agents,
+        queryKeys.agentsPendingPositions(),
+      ],
     }
   )
 }
 
 /**
  * Delete a position
+ * Also invalidates agents as deleted positions affect agent display
  */
 export function useDeletePosition() {
   return useAuthenticatedMutation<void, { positionId: string }>(
     (variables) => `/api/positions/${variables.positionId}`,
     {
       method: 'DELETE',
-      invalidateKeys: [queryKeys.configurationPositions(), queryKeys.positions],
+      invalidateKeys: [
+        queryKeys.configurationPositions(),
+        queryKeys.positions,
+        queryKeys.agents,
+        queryKeys.agentsPendingPositions(),
+      ],
     }
   )
 }

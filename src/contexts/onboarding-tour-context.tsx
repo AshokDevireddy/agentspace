@@ -296,7 +296,7 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }), [
     isTourActive, currentStepIndex, currentStep, tourSteps,
     startTour, nextStep, previousStep, skipTour, endTour,
-    isLastStep, isFirstStep, userRole
+    isLastStep, isFirstStep, userRole, setUserRole
   ])
 
   return <TourContext.Provider value={contextValue}>{children}</TourContext.Provider>

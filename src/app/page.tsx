@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ProductionProgressCard } from "@/components/production-progress-card"
 import { TimePeriodToggle } from "@/components/time-period-toggle"
-import { Users, BarChart3, FileText, Briefcase, AlertCircle } from "lucide-react"
+import { ProductionModeToggle, type ProductionMode } from "@/components/production-mode-toggle"
+import { Users, BarChart3, Briefcase, AlertCircle } from "lucide-react"
 import { getDateRangeForPeriod, formatDateRangeDisplay, getTimePeriodLabel, type TimePeriod } from "@/lib/date-utils"
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useState, useEffect, useMemo, useCallback } from "react"
@@ -64,6 +65,8 @@ export default function Home() {
       placeholderData: (previousData: any) => previousData,
     }
   )
+  // Production mode toggle state (Submitted vs Issue Paid)
+  const [productionMode, setProductionMode] = useLocalStorage<ProductionMode>('dashboard_production_mode', 'submitted')
 
   const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching, error: dashboardError } = useSupabaseRpc<any>(
     queryKeys.dashboard(user?.id || ''),
@@ -338,6 +341,9 @@ export default function Home() {
                 <span className="font-semibold">{dashboardData?.totals?.pending_positions || dashboardData?.pending_positions} Pending Position{(dashboardData?.totals?.pending_positions || dashboardData?.pending_positions) !== 1 ? 's' : ''}</span>
               </Link>
             )}
+
+            {/* Production Mode Toggle */}
+            <ProductionModeToggle value={productionMode} onChange={setProductionMode} />
 
             {/* Time Period Toggle */}
             <TimePeriodToggle value={timePeriod} onChange={setTimePeriod} />

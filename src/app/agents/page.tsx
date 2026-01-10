@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
+import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { getInitials } from "@/components/ui/initials-avatar"
 import { useNotification } from "@/contexts/notification-context"
 import { useApiFetch } from "@/hooks/useApiFetch"
@@ -554,7 +555,6 @@ export default function Agents() {
   const totalPages = agentsResponse?.pagination?.totalPages || 1
   const totalCount = agentsResponse?.pagination?.totalCount || 0
   const allAgents = agentsResponse?.allAgents || []
-  const error = agentsError?.message || null
   const isRefreshing = agentsFetching && !agentsLoading // Background refetch with stale data shown
 
   // View-specific loading states to prevent wrong spinners
@@ -775,11 +775,6 @@ export default function Agents() {
   const handleAgentModalClose = () => {
     setAgentModalOpen(false)
     setSelectedAgentIdForModal(null)
-  }
-
-  // Show error state (but still show the UI structure)
-  if (error) {
-    // Error will be shown in the content area, not blocking the whole page
   }
 
   // Generate agent options for dropdowns
@@ -1167,10 +1162,14 @@ export default function Agents() {
                       <td><div className="h-4 w-12 bg-muted rounded" /></td>
                     </tr>
                   ))
-                ) : error ? (
+                ) : agentsError ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-destructive">
-                      Error: {error}
+                    <td colSpan={7} className="p-4">
+                      <QueryErrorDisplay
+                        error={agentsError}
+                        onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.agents })}
+                        variant="inline"
+                      />
                     </td>
                   </tr>
                 ) : agentsData.length === 0 ? (
@@ -1407,9 +1406,13 @@ export default function Agents() {
                   <div className="h-4 w-32 bg-muted animate-pulse rounded mx-auto" />
                 </div>
               </div>
-            ) : error ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-destructive">Error: {error}</div>
+            ) : agentsError ? (
+              <div className="flex items-center justify-center h-full p-8">
+                <QueryErrorDisplay
+                  error={agentsError}
+                  onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.agents })}
+                  variant="card"
+                />
               </div>
             ) : treeData ? (
                 <Tree

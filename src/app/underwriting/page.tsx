@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, ClipboardCheck, Trophy, TrendingUp, DollarSign, Award, ChevronDown, ChevronUp, RotateCcw } from "lucide-react"
+import { Loader2, ClipboardCheck, Trophy, TrendingUp, DollarSign, Award, ChevronDown, ChevronUp, RotateCcw, AlertTriangle } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useMutation } from "@tanstack/react-query"
 
@@ -1265,7 +1265,7 @@ export default function UnderwritingPage() {
         <Card className="mt-6 border-2 border-destructive/50 bg-destructive/5">
           <CardHeader>
             <CardTitle className="text-destructive flex items-center gap-2">
-              <span className="text-2xl">⚠️</span> Error
+              <AlertTriangle className="h-5 w-5" /> Error
             </CardTitle>
           </CardHeader>
           <CardContent>

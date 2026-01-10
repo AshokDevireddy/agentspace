@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
 
@@ -40,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [isHydrated, setIsHydrated] = useState(false)
   const router = useRouter()
+  const queryClient = useQueryClient()
   const supabaseRef = useRef<ReturnType<typeof createClient>>(null!)
   supabaseRef.current ??= createClient()
   const supabase = supabaseRef.current
@@ -186,7 +188,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase, router])
 
   const signOut = useCallback(async () => {
-    // 1. Clear local state first (localStorage filters)
+    // 1. Clear all TanStack Query cache first (prevents stale data on re-login)
+    queryClient.clear()
+
+    // 2. Clear local state (localStorage filters)
     if (typeof window !== 'undefined') {
       const keysToRemove: string[] = []
       for (let i = 0; i < localStorage.length; i++) {
@@ -196,22 +201,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       keysToRemove.forEach(key => localStorage.removeItem(key))
     }
 
-    // 2. Clear React state
+    // 3. Clear React state
     setUser(null)
     setUserData(null)
 
-    // 3. Invalidate server session (non-blocking - proceed with redirect on error)
+    // 4. Invalidate server session (non-blocking - proceed with redirect on error)
     try {
       await supabase.auth.signOut()
     } catch (err) {
-      // Log error but continue - local state is already cleared and user expects to be logged out
-      console.error('[AuthProvider] Server signOut failed, proceeding with redirect:', err)
+      console.error('[AuthProvider] Server signOut failed:', err)
+      // Continue with redirect - local state is already cleared
     }
 
-    // 4. Hard redirect clears all React/TanStack Query state completely
-    // Using window.location.href instead of router.push to ensure full state reset
-    window.location.href = '/login'
-  }, [supabase])
+    // 5. Use Next.js router for clean navigation (no hard refresh needed)
+    router.push('/login')
+  }, [supabase, router, queryClient])
 
   const contextValue = useMemo(() => ({
     user, userData, loading, isHydrated, signIn, signOut, refreshUserData

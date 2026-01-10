@@ -520,7 +520,7 @@ export default function ConfigurationPage() {
   })
 
   // Fetch carriers - only when user is authenticated
-  const { data: carriersData = [], isLoading: carriersLoading } = useQuery({
+  const { data: carriersData = [], isLoading: carriersLoading, error: carriersError } = useQuery({
     queryKey: queryKeys.configurationCarriers(),
     queryFn: async () => {
       const supabase = createClient()
@@ -551,7 +551,7 @@ export default function ConfigurationPage() {
   })
 
   // Fetch all products - only when user is authenticated
-  const { data: allProductsData = [], isLoading: productsLoading } = useQuery({
+  const { data: allProductsData = [], isLoading: productsLoading, error: productsError } = useQuery({
     queryKey: queryKeys.configurationProducts(),
     queryFn: async () => {
       const supabase = createClient()
@@ -587,7 +587,7 @@ export default function ConfigurationPage() {
   })
 
   // Fetch positions (only when positions tab is active)
-  const { data: positionsData = [], isLoading: positionsLoading, refetch: refetchPositions } = useQuery({
+  const { data: positionsData = [], isLoading: positionsLoading, error: positionsError, refetch: refetchPositions } = useQuery({
     queryKey: queryKeys.configurationPositions(),
     queryFn: async () => {
       const supabase = createClient()
@@ -611,7 +611,7 @@ export default function ConfigurationPage() {
   })
 
   // Fetch commissions (only when commissions tab is active and carrier is selected)
-  const { data: commissionsData = [], isLoading: commissionsLoading, refetch: refetchCommissions } = useQuery({
+  const { data: commissionsData = [], isLoading: commissionsLoading, error: commissionsError, refetch: refetchCommissions } = useQuery({
     queryKey: queryKeys.configurationCommissions(selectedCommissionCarrier),
     queryFn: async () => {
       const supabase = createClient()
@@ -2341,12 +2341,48 @@ export default function ConfigurationPage() {
           <p className="text-sm text-muted-foreground">Manage your agency configuration</p>
         </div>
 
-        {/* Error Display */}
+        {/* Error Display - Show errors for any failed queries */}
         {agencyError && (
-          <div className="mb-6">
+          <div className="mb-4">
             <QueryErrorDisplay
               error={agencyError}
               onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })}
+              variant="inline"
+            />
+          </div>
+        )}
+        {carriersError && (
+          <div className="mb-4">
+            <QueryErrorDisplay
+              error={carriersError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationCarriers() })}
+              variant="inline"
+            />
+          </div>
+        )}
+        {productsError && (
+          <div className="mb-4">
+            <QueryErrorDisplay
+              error={productsError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationProducts() })}
+              variant="inline"
+            />
+          </div>
+        )}
+        {positionsError && (
+          <div className="mb-4">
+            <QueryErrorDisplay
+              error={positionsError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationPositions() })}
+              variant="inline"
+            />
+          </div>
+        )}
+        {commissionsError && (
+          <div className="mb-4">
+            <QueryErrorDisplay
+              error={commissionsError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationCommissions(selectedCommissionCarrier) })}
               variant="inline"
             />
           </div>

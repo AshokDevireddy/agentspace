@@ -115,6 +115,10 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get("limit") || "20", 10);
     const offset = (page - 1) * limit;
 
+    // Date range params for debt/production metrics (format: "YYYY-MM")
+    const startMonthParam = searchParams.get("startMonth");
+    const endMonthParam = searchParams.get("endMonth");
+
     const supabaseAdmin = createAdminClient();
     const supabaseUser = await createServerClient();
 
@@ -259,9 +263,59 @@ export async function GET(request: Request) {
       : 0;
     const totalPages = limit > 0 ? Math.ceil(totalCount / limit) : 0;
 
+    // Get agent IDs for debt/production metrics
+    const agentIds = (tableRows || []).map((row: any) => row.agent_id);
+
+    // Calculate date range for production metrics
+    let startDate: Date;
+    let endDate: Date;
+    const now = new Date();
+
+    if (startMonthParam && endMonthParam) {
+      // Parse "YYYY-MM" format from query params
+      const [startYear, startMonthNum] = startMonthParam.split('-').map(Number);
+      const [endYear, endMonthNum] = endMonthParam.split('-').map(Number);
+      startDate = new Date(startYear, startMonthNum - 1, 1); // First day of start month
+      endDate = new Date(endYear, endMonthNum, 1); // First day of month AFTER end month
+    } else {
+      // Default: current year (Jan 1 to Dec 31)
+      startDate = new Date(now.getFullYear(), 0, 1);
+      endDate = new Date(now.getFullYear() + 1, 0, 1);
+    }
+
+    // Fetch debt and production metrics for all agents
+    let debtProductionMap: Record<string, any> = {};
+    if (agentIds.length > 0) {
+      const { data: debtProductionData, error: debtProductionError } =
+        await supabaseAdmin.rpc("get_agents_debt_production", {
+          p_user_id: currentUser.id,
+          p_agent_ids: agentIds,
+          p_start_date: startDate.toISOString(),
+          p_end_date: endDate.toISOString(),
+        });
+
+      if (debtProductionError) {
+        console.error(
+          "get_agents_debt_production RPC error:",
+          debtProductionError,
+        );
+        // Don't fail the request, just log the error and continue without metrics
+      } else if (debtProductionData) {
+        console.log("[API] Debt/Production data received:", debtProductionData.length, "rows");
+        console.log("[API] Sample data:", JSON.stringify(debtProductionData[0], null, 2));
+        // Build a map for quick lookup
+        debtProductionData.forEach((row: any) => {
+          debtProductionMap[row.agent_id] = row;
+        });
+      } else {
+        console.log("[API] No debt/production data returned");
+      }
+    }
+
     const agents = (tableRows || []).map((row: any) => {
       const position = formatPosition(row.perm_level);
       const totalProd = Number(row.total_prod || 0);
+      const metrics = debtProductionMap[row.agent_id] || {};
 
       return {
         id: row.agent_id,
@@ -281,6 +335,23 @@ export async function GET(request: Request) {
         first_name: row.first_name || null,
         last_name: row.last_name || null,
         children: [],
+        // New debt/production metrics
+        individual_debt: Number(metrics.individual_debt || 0),
+        individual_debt_count: Number(metrics.individual_debt_count || 0),
+        individual_production: Number(metrics.individual_production || 0),
+        individual_production_count: Number(
+          metrics.individual_production_count || 0,
+        ),
+        hierarchy_debt: Number(metrics.hierarchy_debt || 0),
+        hierarchy_debt_count: Number(metrics.hierarchy_debt_count || 0),
+        hierarchy_production: Number(metrics.hierarchy_production || 0),
+        hierarchy_production_count: Number(
+          metrics.hierarchy_production_count || 0,
+        ),
+        debt_to_production_ratio:
+          metrics.debt_to_production_ratio != null
+            ? Number(metrics.debt_to_production_ratio)
+            : null,
       };
     });
 

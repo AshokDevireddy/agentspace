@@ -12,6 +12,8 @@ import { useAuth } from "@/providers/AuthProvider"
 import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useAgencyScoreboardSettings } from "@/hooks/useUserQueries"
+import { useQueryClient } from "@tanstack/react-query"
+import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 
 interface AgentScore {
   rank: number
@@ -60,6 +62,7 @@ const timeframeOptions = [
 
 export default function Scoreboard() {
   const { user, userData } = useAuth()
+  const queryClient = useQueryClient()
   const [timeframe, setTimeframe] = useState<TimeframeOption>('past_90_days')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
@@ -541,9 +544,13 @@ export default function Scoreboard() {
 
       {/* Error state */}
       {queryError && (
-        <div className="mb-6 rounded-xl border border-destructive bg-destructive/10 p-4">
-          <h3 className="font-semibold text-destructive mb-1">Failed to load scoreboard data</h3>
-          <p className="text-sm text-destructive/80">{queryError instanceof Error ? queryError.message : 'An unexpected error occurred'}</p>
+        <div className="mb-6">
+          <QueryErrorDisplay
+            error={queryError}
+            onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate) })}
+            variant="card"
+            title="Failed to load scoreboard data"
+          />
         </div>
       )}
 
@@ -680,10 +687,13 @@ export default function Scoreboard() {
                 </tbody>
               </table>
             </div>
-          ) : error ? (
-            <div className="text-center py-8 text-destructive">
-              {error}
-            </div>
+          ) : queryError ? (
+            <QueryErrorDisplay
+              error={queryError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate) })}
+              variant="inline"
+              className="mx-auto max-w-md"
+            />
           ) : !data || data.leaderboard.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               No deals found for this period

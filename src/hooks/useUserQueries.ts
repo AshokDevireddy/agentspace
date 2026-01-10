@@ -262,3 +262,53 @@ export function useUserById(
     staleTime,
   })
 }
+
+// ============ Admin Status Query ============
+
+interface AdminStatusData {
+  is_admin: boolean
+}
+
+interface UseAdminStatusOptions {
+  /** Whether to enable the query */
+  enabled?: boolean
+  /** Stale time in milliseconds (default: 5 minutes) */
+  staleTime?: number
+}
+
+/**
+ * Check if the current user has admin privileges
+ * Used for admin-only pages and features
+ */
+export function useAdminStatus(
+  authUserId: string | undefined,
+  options: UseAdminStatusOptions = {}
+) {
+  const { enabled = true, staleTime = 5 * 60 * 1000 } = options
+
+  return useQuery({
+    queryKey: queryKeys.userAdminStatus(authUserId),
+    queryFn: async () => {
+      if (!authUserId) {
+        throw new Error('User ID is required')
+      }
+
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('users')
+        .select('is_admin')
+        .eq('auth_user_id', authUserId)
+        .maybeSingle()
+
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      return {
+        is_admin: data?.is_admin || false
+      } as AdminStatusData
+    },
+    enabled: enabled && !!authUserId,
+    staleTime,
+  })
+}

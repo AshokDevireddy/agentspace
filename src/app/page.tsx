@@ -52,24 +52,34 @@ export default function Home() {
     localStorage.setItem('dashboard_view_mode', viewMode)
   }, [viewMode])
 
-  const { data: profileData, isLoading: profileLoading } = useApiFetch<any>(
+  const { data: profileData, isLoading: profileLoading, isFetching: profileFetching } = useApiFetch<any>(
     ['user-profile', user?.id],
     `/api/user/profile?user_id=${user?.id}`,
-    { enabled: !!user?.id }
+    {
+      enabled: !!user?.id,
+      placeholderData: (previousData: any) => previousData,
+    }
   )
 
-  const { data: scoreboardResult, isLoading: scoreboardLoading } = useSupabaseRpc<any>(
+  const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching } = useSupabaseRpc<any>(
     ['scoreboard', user?.id, weekRange.startDate, weekRange.endDate],
     'get_scoreboard_data',
     { p_user_id: user?.id, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate },
-    { enabled: !!user?.id }
+    {
+      enabled: !!user?.id,
+      staleTime: 60 * 1000, // 1 minute - scoreboard data is more static
+      placeholderData: (previousData: any) => previousData,
+    }
   )
 
-  const { data: dashboardResult, isLoading: dashboardLoading } = useSupabaseRpc<any>(
+  const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching } = useSupabaseRpc<any>(
     ['dashboard', user?.id],
     'get_dashboard_data_with_agency_id',
     { p_user_id: user?.id },
-    { enabled: !!user?.id }
+    {
+      enabled: !!user?.id,
+      placeholderData: (previousData: any) => previousData,
+    }
   )
 
   const userData = profileData?.success ? profileData.data : null
@@ -134,7 +144,14 @@ export default function Home() {
     })
   }
 
-  const isLoading = authLoading || profileLoading || scoreboardLoading || dashboardLoading
+  // Decoupled loading states per section for better UX
+  const isHeaderLoading = authLoading || profileLoading
+  const isStatsLoading = dashboardLoading
+  const isScoreboardLoading = scoreboardLoading
+  const isPieChartLoading = dashboardLoading
+
+  // Background refetch indicators for stale-while-revalidate
+  const isRefreshing = (dashboardFetching && !dashboardLoading) || (scoreboardFetching && !scoreboardLoading)
 
   const formattedDateRange = useMemo(() => {
     if (!dateRange.startDate || !dateRange.endDate) return 'This Week'
@@ -230,7 +247,7 @@ export default function Home() {
 
   return (
     <div className="space-y-4 dashboard-content" data-tour="dashboard">
-      {isLoading ? (
+      {isHeaderLoading ? (
         <div className="flex justify-between items-start">
           <div>
             <Skeleton className="h-10 w-64 mb-2" />
@@ -243,6 +260,9 @@ export default function Home() {
             <h1 className="text-4xl font-bold mb-2 text-foreground">Welcome, {firstName}.</h1>
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
               <span>This Week • {formattedDateRange}</span>
+              {isRefreshing && (
+                <span className="text-xs text-muted-foreground/70 animate-pulse">Refreshing...</span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -263,7 +283,7 @@ export default function Home() {
         </div>
       )}
 
-      {isLoading ? (
+      {isStatsLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i} className="professional-card rounded-md">
@@ -307,7 +327,7 @@ export default function Home() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {isLoading ? (
+        {isPieChartLoading ? (
           <Card className="professional-card rounded-md">
             <CardHeader>
               <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
@@ -378,10 +398,10 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             <div className="text-sm text-muted-foreground mb-4">
-              {isLoading ? <Skeleton className="h-4 w-32" /> : `Week of ${formattedDateRange}`}
+              {isScoreboardLoading ? <Skeleton className="h-4 w-32" /> : `Week of ${formattedDateRange}`}
             </div>
             <div className="space-y-4">
-              {isLoading ? (
+              {isScoreboardLoading ? (
                 Array.from({ length: 5 }).map((_, index) => (
                   <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
                     <div className="flex items-center space-x-3">

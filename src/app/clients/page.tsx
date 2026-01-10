@@ -7,14 +7,15 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { useAuth } from "@/providers/AuthProvider"
-import { createClient } from "@/lib/supabase/client"
 import { Filter, X, User } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { useApiFetch } from "@/hooks/useApiFetch"
-import { useQuery } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
+import { QueryErrorDisplay } from "@/components/ui/query-error-display"
+import { useAdminStatus } from "@/hooks/useUserQueries"
 
 // Client data type
 interface Client {
@@ -93,25 +94,10 @@ export default function Clients() {
 
   const [currentPage, setCurrentPage] = useState(1)
   const { user } = useAuth()
-  const supabase = createClient()
+  const queryClient = useQueryClient()
 
-  // Check if user is admin
-  const { data: adminData, isPending: isAdminLoading } = useQuery({
-    queryKey: queryKeys.userAdminStatus(user?.id),
-    queryFn: async () => {
-      if (!user?.id) return { is_admin: false }
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('is_admin')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      return { is_admin: userData?.is_admin || false }
-    },
-    enabled: !!user?.id,
-  })
-
+  // Check if user is admin using centralized hook
+  const { data: adminData, isPending: isAdminLoading } = useAdminStatus(user?.id)
   const isAdmin = adminData?.is_admin || false
   const isAdminChecked = !isAdminLoading
 
@@ -151,7 +137,6 @@ export default function Clients() {
   const totalCount = clientsResponse?.pagination.totalCount || 0
   const loading = isAdminLoading || clientsLoading
   const isRefreshing = clientsFetching && !clientsLoading // Background refetch with stale data shown
-  const error = clientsError?.message || null
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
@@ -378,10 +363,14 @@ export default function Clients() {
                     <td><div className="h-4 w-20 bg-muted rounded" /></td>
                   </tr>
                 ))
-              ) : error ? (
+              ) : clientsError ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-destructive">
-                    Error: {error}
+                  <td colSpan={6} className="p-4">
+                    <QueryErrorDisplay
+                      error={clientsError}
+                      onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.clientsList(currentPage, { view: effectiveViewMode }) })}
+                      variant="inline"
+                    />
                   </td>
                 </tr>
               ) : filteredClients.length === 0 ? (

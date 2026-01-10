@@ -7,6 +7,7 @@ import { queryKeys } from "@/hooks/queryKeys"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, Home } from "lucide-react"
+import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 
 // Types for the RPC response
 interface DownlineProductionData {
@@ -113,7 +114,7 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
   }, [timeWindow])
 
   // Fetch downline production data with TanStack Query
-  const { data = [], isLoading, error } = useQuery<DownlineProductionData[], Error>({
+  const { data = [], isLoading, error, refetch, isFetching } = useQuery<DownlineProductionData[], Error>({
     queryKey: queryKeys.downlineProduction(currentAgentId, timeWindow),
     queryFn: async () => {
       const supabase = createClient()
@@ -305,9 +306,13 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
 
       {/* Error Message */}
       {error && (
-        <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {error.message}
-        </div>
+        <QueryErrorDisplay
+          error={error}
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+          variant="inline"
+          className="mb-4"
+        />
       )}
 
       {/* Chart Content - always has consistent structure */}

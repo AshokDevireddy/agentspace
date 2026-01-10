@@ -9,6 +9,7 @@ import { AgencyBrandingProvider } from "@/contexts/AgencyBrandingContext";
 import { NotificationProvider } from "@/contexts/notification-context";
 import { TourProvider } from "@/contexts/onboarding-tour-context";
 import ClientLayout from "./client-layout";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { headers } from "next/headers";
 import { createServerClient } from "@/lib/supabase/server";
 import { isWhiteLabelDomain } from "@/lib/whitelabel";
@@ -82,9 +83,11 @@ export default function RootLayout({
                 <ThemeCoordinator>
                   <NotificationProvider>
                     <TourProvider>
-                      <ClientLayout>
-                        {children}
-                      </ClientLayout>
+                      <ErrorBoundary>
+                        <ClientLayout>
+                          {children}
+                        </ClientLayout>
+                      </ErrorBoundary>
                     </TourProvider>
                   </NotificationProvider>
                 </ThemeCoordinator>

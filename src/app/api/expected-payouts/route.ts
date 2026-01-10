@@ -89,7 +89,14 @@ export async function GET(req: NextRequest) {
         .select('id, agent_id, status_standardized, policy_effective_date')
         .in('id', dealIds);
 
-      if (!dealsError && deals) {
+      if (dealsError) {
+        console.error('[Expected Payouts] Failed to fetch deal info:', {
+          message: dealsError.message,
+          details: dealsError.details,
+          dealIds: dealIds.slice(0, 10) // Log first 10 for debugging
+        });
+        // Continue with empty map - payouts will be filtered out but we won't crash
+      } else if (deals) {
         dealInfoMap = deals.reduce((acc: Record<string, any>, deal: any) => {
           acc[deal.id] = {
             agent_id: deal.agent_id,
@@ -117,8 +124,9 @@ export async function GET(req: NextRequest) {
 
       // Apply Issue Paid filter if in issue_paid mode
       if (production_mode === 'issue_paid') {
-        // Must be active status AND effective date + 7 days < today
+        // Must be active status AND have valid effective date AND effective date + 7 days < today
         if (dealInfo.status_standardized !== 'active') return;
+        if (!dealInfo.policy_effective_date) return; // Skip deals with no effective date
         if (dealInfo.policy_effective_date > issuePaidCutoffDate) return;
       }
 

@@ -155,9 +155,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single()
 
       if (userError) throw new Error('User profile not found')
-      if (userProfile.status !== 'active') {
+      // Allow both 'active' and 'onboarding' statuses - onboarding users need to complete setup
+      if (userProfile.status !== 'active' && userProfile.status !== 'onboarding') {
         await supabase.auth.signOut()
-        throw new Error('Your account has been deactivated')
+        throw new Error(
+          userProfile.status === 'invited'
+            ? 'Please complete your account setup using the invitation link'
+            : 'Your account has been deactivated'
+        )
       }
       if (expectedRole && userProfile.role !== expectedRole) {
         await supabase.auth.signOut()

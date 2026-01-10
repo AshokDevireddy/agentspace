@@ -71,9 +71,8 @@ export function PricingTierCard({
   const icon = tierIcons[tier];
 
   // Use centralized subscription mutation hook
+  // Note: hasActiveSubscription and currentTier are passed in mutate() call to avoid stale closures
   const subscriptionMutation = useSubscription({
-    hasActiveSubscription,
-    currentTier,
     onCheckoutRedirect: (url) => {
       window.location.href = url;
     },
@@ -92,7 +91,8 @@ export function PricingTierCard({
 
   const handleSubscribe = () => {
     if (tier === 'free') return;
-    subscriptionMutation.mutate({ tier, priceId });
+    // Pass current subscription state at call time to avoid stale closures
+    subscriptionMutation.mutate({ tier, priceId, hasActiveSubscription, currentTier });
   };
 
   // All tiers are accessible for subscription (Expert features may be admin-only, not the subscription)

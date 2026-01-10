@@ -137,12 +137,20 @@ export function useInvalidation() {
         queryClient.invalidateQueries({ queryKey: queryKeys.user }),
         queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.subscription }),
+        // Invalidate all userById queries using predicate
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey
+            return Array.isArray(key) && key[0] === 'user' && key[1] === 'by-id'
+          },
+        }),
       ]
 
       if (userId) {
         invalidations.push(
           queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(userId) }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.userAdminStatus(userId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.userAdminStatus(userId) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.userById(userId) })
         )
       }
 
@@ -182,6 +190,54 @@ export function useInvalidation() {
     },
     [queryClient]
   )
+
+  /**
+   * Invalidate all product-related queries
+   * Includes commission configs since products drive commission structures
+   */
+  const invalidateProductRelated = useCallback(
+    async (carrierId?: string) => {
+      const invalidations = [
+        queryClient.invalidateQueries({ queryKey: queryKeys.products }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.configurationProducts() }),
+        // Products drive commission structures - invalidate all commission queries
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey
+            return Array.isArray(key) && key[0] === 'configuration' && key[1] === 'commissions'
+          },
+        }),
+      ]
+
+      if (carrierId) {
+        invalidations.push(
+          queryClient.invalidateQueries({ queryKey: queryKeys.configurationCommissions(carrierId) })
+        )
+      }
+
+      await Promise.all(invalidations)
+    },
+    [queryClient]
+  )
+
+  /**
+   * Invalidate all position-related queries
+   * Also invalidates agents since positions affect agent hierarchy
+   */
+  const invalidatePositionRelated = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.positions }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.configurationPositions() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents }),
+      // Positions affect commission structures
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey
+          return Array.isArray(key) && key[0] === 'configuration' && key[1] === 'commissions'
+        },
+      }),
+    ])
+  }, [queryClient])
 
   /**
    * Invalidate all NIPR-related queries
@@ -229,18 +285,27 @@ export function useInvalidation() {
 
   /**
    * Invalidate all agency-related queries
+   * Includes domain-based branding for white-label scenarios
    */
   const invalidateAgencyRelated = useCallback(
     async (agencyId?: string) => {
       const invalidations = [
         queryClient.invalidateQueries({ queryKey: queryKeys.agency }),
         queryClient.invalidateQueries({ queryKey: queryKeys.configuration }),
+        // Invalidate all domain-based branding queries (for white-label)
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey
+            return Array.isArray(key) && key[0] === 'agency' && key[1] === 'branding-by-domain'
+          },
+        }),
       ]
 
       if (agencyId) {
         invalidations.push(
           queryClient.invalidateQueries({ queryKey: queryKeys.agencyColor(agencyId) }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.agencyBranding(agencyId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.agencyBranding(agencyId) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.agencyScoreboardSettings(agencyId) })
         )
       }
 
@@ -276,6 +341,8 @@ export function useInvalidation() {
       invalidateUserRelated,
       invalidateSubscriptionRelated,
       invalidateConfigurationRelated,
+      invalidateProductRelated,
+      invalidatePositionRelated,
       invalidateNiprRelated,
       invalidatePolicyReportRelated,
       invalidateAgencyRelated,
@@ -292,6 +359,8 @@ export function useInvalidation() {
       invalidateUserRelated,
       invalidateSubscriptionRelated,
       invalidateConfigurationRelated,
+      invalidateProductRelated,
+      invalidatePositionRelated,
       invalidateNiprRelated,
       invalidatePolicyReportRelated,
       invalidateAgencyRelated,

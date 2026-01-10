@@ -73,6 +73,7 @@ export const queryKeys = {
   // User & Profile
   user: ['user'] as const,
   userProfile: (id?: string) => ['user', 'profile', id] as const,
+  userById: (id: string) => ['user', 'by-id', id] as const,
   userAdminStatus: (id?: string) => ['user', 'admin-status', id] as const,
   userDefaultUpline: () => ['user', 'default-upline'] as const,
 

@@ -230,12 +230,25 @@ export function useCreateTopUpSession(options?: {
 }
 
 /**
- * Combined hook for subscription management
- * Handles both new subscriptions and upgrades/downgrades
+ * Input for combined subscription mutation
+ * Includes subscription state to avoid stale closure issues
  */
-export function useSubscription(options?: {
+interface SubscriptionMutationInput {
+  tier: SubscriptionTier
+  priceId: string
+  /** Current subscription state - pass at call time to avoid stale closures */
   hasActiveSubscription: boolean
   currentTier: SubscriptionTier
+}
+
+/**
+ * Combined hook for subscription management
+ * Handles both new subscriptions and upgrades/downgrades
+ *
+ * IMPORTANT: Pass hasActiveSubscription and currentTier in the mutate() call,
+ * not in hook options, to ensure fresh values are used.
+ */
+export function useSubscription(options?: {
   onCheckoutRedirect?: (url: string) => void
   onSubscriptionChanged?: (data: ChangeSubscriptionResponse, newTier: SubscriptionTier) => void
   onError?: (error: Error) => void
@@ -245,15 +258,16 @@ export function useSubscription(options?: {
   return useMutation<
     { type: 'checkout' | 'change'; data: CheckoutSessionResponse | ChangeSubscriptionResponse },
     Error,
-    { tier: SubscriptionTier; priceId: string }
+    SubscriptionMutationInput
   >({
-    mutationFn: async ({ tier, priceId }) => {
+    mutationFn: async ({ tier, priceId, hasActiveSubscription, currentTier }) => {
       if (tier === 'free') {
         throw new Error('Cannot subscribe to free tier')
       }
 
       // If user already has an active subscription, change it
-      if (options?.hasActiveSubscription && options?.currentTier !== 'free') {
+      // These values are passed at call time to avoid stale closures
+      if (hasActiveSubscription && currentTier !== 'free') {
         const response = await fetch('/api/stripe/change-subscription', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

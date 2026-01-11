@@ -126,7 +126,10 @@ export default function LoginPage() {
           const destination = userData.role === 'client' ? '/client/dashboard' : '/'
           console.log('[Login] Navigating to', destination)
           setLoginStep('Redirecting...')
-          router.push(destination)
+          
+          // Use hard navigation instead of router.push() to ensure auth cookies are sent fresh
+          // router.push() can fail silently on Vercel when cookies haven't propagated
+          window.location.href = destination
         },
         onError: (err) => {
           console.log('[Login] onError received', err.message)

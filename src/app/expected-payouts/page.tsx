@@ -16,6 +16,7 @@ import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { cn } from "@/lib/utils"
 import { useClientDate } from "@/hooks/useClientDate"
+import { useAuth } from "@/providers/AuthProvider"
 
 interface PayoutData {
   month: string
@@ -103,6 +104,9 @@ export default function ExpectedPayoutsPage() {
   const supabase = createClient()
   const queryClient = useQueryClient()
 
+  // Get auth state - ensures Supabase client is ready before making queries
+  const { user: authUser, loading: authLoading } = useAuth()
+
   // SSR-safe date hook - returns deterministic values on server, actual values on client
   const clientDate = useClientDate()
 
@@ -128,7 +132,7 @@ export default function ExpectedPayoutsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [userTier, setUserTier] = useState<string>('free')
 
-  // Fetch current user data
+  // Fetch current user data - waits for auth to be ready to prevent race conditions
   const { data: userData, isPending: userLoading } = useQuery({
     queryKey: queryKeys.userProfile(),
     queryFn: async () => {
@@ -149,6 +153,8 @@ export default function ExpectedPayoutsPage() {
       if (error) throw error
       return data as UserData
     },
+    // Only run query when auth is ready (authLoading is false)
+    enabled: !authLoading && !!authUser,
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
@@ -192,7 +198,17 @@ export default function ExpectedPayoutsPage() {
         const { data, error } = await supabase
           .rpc('get_agent_downline', { agent_id: userData.id })
 
-        if (error) throw error
+        if (error) {
+          console.error('Error fetching downline:', error)
+          // Graceful fallback: fetch current user info only
+          const { data: selfData } = await supabase
+            .from('users')
+            .select('id, first_name, last_name')
+            .eq('id', userData.id)
+            .single()
+
+          return selfData ? [selfData] : []
+        }
         return data as AgentResponse[]
       }
     },
@@ -336,7 +352,7 @@ export default function ExpectedPayoutsPage() {
     }
   })
 
-  const loading = userLoading || payoutsLoading
+  const loading = authLoading || userLoading || payoutsLoading
   const error = payoutsError ? (payoutsError instanceof Error ? payoutsError.message : 'Failed to load payouts') : null
 
   // Apply filters handler

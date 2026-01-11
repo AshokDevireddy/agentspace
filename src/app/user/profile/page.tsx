@@ -73,6 +73,7 @@ export default function ProfilePage() {
   const [savingTheme, setSavingTheme] = useState(false);
 
   // Fetch user profile data using TanStack Query
+  // Wait for auth to be ready before fetching to prevent race conditions
   const {
     data: profileResponse,
     isLoading: profileLoading,
@@ -81,7 +82,7 @@ export default function ProfilePage() {
     queryKeys.userProfile(user?.id),
     `/api/user/profile?user_id=${user?.id}`,
     {
-      enabled: !!user,
+      enabled: !authLoading && !!user,
       staleTime: 5 * 60 * 1000, // 5 minutes - profile rarely changes
       placeholderData: (previousData) => previousData, // Stale-while-revalidate
     }
@@ -97,33 +98,43 @@ export default function ProfilePage() {
   }, [profileData?.position_id])
 
   // Fetch positions if admin using TanStack Query with custom queryFn
+  // Wrapped in try/catch to prevent errors from propagating to global error boundary
   const {
     data: positions = [],
     isLoading: positionsLoading
   } = useQuery<Position[]>({
     queryKey: queryKeys.positionsList(),
     queryFn: async () => {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const accessToken = session?.access_token;
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
 
-      if (!accessToken) {
-        throw new Error('No access token available');
-      }
-
-      const response = await fetch('/api/positions', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
+        if (!accessToken) {
+          console.warn('[Profile] No access token for positions fetch');
+          return [];
         }
-      });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch positions: ${response.status}`);
+        const response = await fetch('/api/positions', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        });
+
+        if (!response.ok) {
+          console.warn('[Profile] Positions fetch failed:', response.status);
+          return [];
+        }
+
+        return response.json();
+      } catch (err) {
+        console.error('[Profile] Positions query error:', err);
+        return [];
       }
-
-      return response.json();
     },
-    enabled: !!profileData?.is_admin
+    // Wait for auth to be ready and user to be admin
+    enabled: !authLoading && !!profileData?.is_admin,
+    retry: 1,
   })
 
   // Handle position update with mutation

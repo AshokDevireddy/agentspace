@@ -425,7 +425,7 @@ export default function Agents() {
 
   // Fetch all positions and user's position level on mount
   const { data: positionsData, isPending: positionsLoading } = useQuery({
-    queryKey: queryKeys.positionsList(),
+    queryKey: queryKeys.positionsWithUserLevel(),
     queryFn: async ({ signal }) => {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()

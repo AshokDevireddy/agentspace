@@ -64,6 +64,7 @@ export const queryKeys = {
   // Positions
   positions: ['positions'] as const,
   positionsList: () => ['positions', 'list'] as const,
+  positionsWithUserLevel: () => ['positions', 'with-user-level'] as const,
   positionsCheck: (userId: string) => ['positions', 'check', userId] as const,
 
   // Carriers

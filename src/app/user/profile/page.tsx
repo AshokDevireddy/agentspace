@@ -126,7 +126,9 @@ export default function ProfilePage() {
           return [];
         }
 
-        return response.json();
+        const data = await response.json();
+        // API returns array directly - validate to prevent cache collision issues
+        return Array.isArray(data) ? data : [];
       } catch (err) {
         console.error('[Profile] Positions query error:', err);
         return [];

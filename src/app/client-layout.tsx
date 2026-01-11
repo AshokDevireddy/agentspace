@@ -88,7 +88,8 @@ export default function ClientLayout({
 
   // Show loading screen for protected pages while auth is initializing
   // This prevents race conditions where pages try to fetch data before auth is ready
-  if (loading && !isAuthPage) {
+  // Note: Also check pathname is defined to avoid blocking during initial hydration
+  if (loading && pathname && !isAuthPage) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">

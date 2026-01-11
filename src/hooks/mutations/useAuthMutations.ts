@@ -157,6 +157,14 @@ interface SignInResponse {
   agency: SignInAgencyData
 }
 
+// Timeout wrapper for auth operations
+const withAuthTimeout = <T>(promise: Promise<T>, ms = 15000): Promise<T> => {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Login timed out. Please try again.')), ms)
+  )
+  return Promise.race([promise, timeout])
+}
+
 /**
  * Sign in user with email and password using native Supabase client
  * This properly establishes the session for both API routes AND RPC calls
@@ -170,10 +178,25 @@ export function useSignIn(options?: {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
 
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      // Clear any existing session to prevent conflicts from previous flows
+      // (e.g., incomplete setSession from confirmation flow)
+      // Short 3s timeout - if it hangs, we proceed anyway
+      try {
+        await Promise.race([
+          supabase.auth.signOut({ scope: 'local' }),
+          new Promise(resolve => setTimeout(resolve, 3000))
+        ])
+      } catch {
+        // Ignore sign-out errors - continue with sign-in
+      }
+
+      // Wrap signInWithPassword in timeout to prevent infinite hang
+      const { data: authData, error: authError } = await withAuthTimeout(
+        supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+      )
 
       if (authError || !authData.user) {
         throw new Error(authError?.message || 'Invalid login credentials')
@@ -181,21 +204,26 @@ export function useSignIn(options?: {
 
       const authUserId = authData.user.id
 
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, role, status, agency_id')
-        .eq('auth_user_id', authUserId)
-        .single()
+      // User and agency queries with timeout
+      const { data: userData, error: userError } = await withAuthTimeout(
+        supabase
+          .from('users')
+          .select('id, role, status, agency_id')
+          .eq('auth_user_id', authUserId)
+          .single()
+      )
 
       if (userError || !userData) {
         throw new Error('User profile not found')
       }
 
-      const { data: agencyData, error: agencyError } = await supabase
-        .from('agencies')
-        .select('whitelabel_domain')
-        .eq('id', userData.agency_id)
-        .single()
+      const { data: agencyData, error: agencyError } = await withAuthTimeout(
+        supabase
+          .from('agencies')
+          .select('whitelabel_domain')
+          .eq('id', userData.agency_id)
+          .single()
+      )
 
       if (agencyError || !agencyData) {
         throw new Error('Agency not found')

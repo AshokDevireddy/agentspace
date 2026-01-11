@@ -22,7 +22,7 @@ import { useHydrated } from "@/hooks/useHydrated"
 const PIE_CHART_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347', '#d084d0', '#84d0d0', '#d0d084'] as const
 
 export default function Home() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, refreshUserData } = useAuth()
   const { startTour, setUserRole, isTourActive } = useTour()
   const [showWizard, setShowWizard] = useState(false)
   const [hasStartedTour, setHasStartedTour] = useState(false)
@@ -113,6 +113,8 @@ export default function Home() {
   const handleOnboardingComplete = () => {
     completeOnboardingMutation.mutate(undefined, {
       onSuccess: async () => {
+        // Refresh AuthProvider state so client-layout shows sidebar immediately
+        await refreshUserData()
         // Invalidate all user-related queries to refresh state
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: queryKeys.user }),

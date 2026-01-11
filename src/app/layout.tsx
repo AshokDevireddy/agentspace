@@ -14,6 +14,9 @@ import { headers } from "next/headers";
 import { createServerClient } from "@/lib/supabase/server";
 import { isWhiteLabelDomain } from "@/lib/whitelabel";
 
+// Force dynamic rendering - ensures session is fetched on every request, not cached at build time
+export const dynamic = 'force-dynamic';
+
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

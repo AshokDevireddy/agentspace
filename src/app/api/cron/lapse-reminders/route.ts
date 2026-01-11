@@ -40,15 +40,15 @@ export async function GET(request: NextRequest) {
     }
 
     if (!deals || deals.length === 0) {
-      console.log('No policies with lapse_pending status found');
+      console.log('No policies eligible for lapse reminders found');
       return NextResponse.json({
         success: true,
         sent: 0,
-        message: 'No lapse pending policies',
+        message: 'No deals eligible for lapse reminders',
       });
     }
 
-    console.log(`Found ${deals.length} policies with lapse_pending status`);
+    console.log(`Found ${deals.length} policies eligible for lapse reminders`);
 
     const agencyIds = deals.map((d: { agency_id: string }) => d.agency_id);
     const agencySettingsMap = await batchFetchAgencySmsSettings(agencyIds);
@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
         // For Free/Basic tiers, skip both draft creation AND status update
         if (deal.agent_subscription_tier === 'free' || deal.agent_subscription_tier === 'basic') {
           console.log(`  ⏭️  SKIPPED: Agent is on ${deal.agent_subscription_tier} tier (automated messaging restricted to Pro/Expert only)`);
-          console.log(`  ℹ️  Status remains as 'lapse_pending' (not updating to 'lapse_notified')`);
+          console.log(`  ℹ️  Status remains unchanged (not updating to 'lapse_notified')`);
           skippedCount++;
           continue;
         }

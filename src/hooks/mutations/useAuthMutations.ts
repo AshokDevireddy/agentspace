@@ -5,8 +5,7 @@
 
 import { useMutation } from '@tanstack/react-query'
 import { useInvalidation } from '../useInvalidation'
-import { signInWithPassword, supabaseRestFetch, updatePassword } from '@/lib/supabase/api'
-import { decodeAndValidateJwt } from '@/lib/auth/jwt'
+import { supabaseRestFetch, updatePassword } from '@/lib/supabase/api'
 
 // ============ Register Mutation ============
 
@@ -154,15 +153,13 @@ interface SignInAgencyData {
 }
 
 interface SignInResponse {
-  accessToken: string
-  refreshToken: string
   user: SignInUserData
   agency: SignInAgencyData
 }
 
 /**
- * Sign in user with email and password
- * Returns access token, refresh token, user profile, and agency info
+ * Sign in user with email and password using native Supabase client
+ * This properly establishes the session for both API routes AND RPC calls
  */
 export function useSignIn(options?: {
   onSuccess?: (data: SignInResponse) => void
@@ -170,51 +167,47 @@ export function useSignIn(options?: {
 }) {
   return useMutation<SignInResponse, Error, SignInInput>({
     mutationFn: async ({ email, password }) => {
-      // Authenticate with Supabase
-      const { data: signInData, error: signInError } = await signInWithPassword(email, password)
+      // Import Supabase client dynamically to avoid SSR issues
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      
+      // Use native Supabase signInWithPassword - this properly sets up the session
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-      if (signInError || !signInData) {
-        throw new Error(signInError || 'Invalid login credentials')
+      if (authError || !authData.user) {
+        throw new Error(authError?.message || 'Invalid login credentials')
       }
 
-      const accessToken = signInData.access_token
-      const refreshToken = signInData.refresh_token
+      const authUserId = authData.user.id
 
-      // Validate and decode the JWT
-      const payload = decodeAndValidateJwt(accessToken)
-      if (!payload) {
-        throw new Error('Invalid token received')
-      }
+      // Fetch user profile using the authenticated client
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, role, status, agency_id')
+        .eq('auth_user_id', authUserId)
+        .single()
 
-      const authUserId = payload.sub
-
-      // Fetch user profile
-      const { data: users, error: userError } = await supabaseRestFetch<SignInUserData[]>(
-        `/rest/v1/users?auth_user_id=eq.${authUserId}&select=id,role,status,agency_id`,
-        { accessToken }
-      )
-
-      if (userError || !users?.[0]) {
+      if (userError || !userData) {
         throw new Error('User profile not found')
       }
 
-      const userData = users[0]
-
       // Fetch agency info
-      const { data: agencies, error: agencyError } = await supabaseRestFetch<SignInAgencyData[]>(
-        `/rest/v1/agencies?id=eq.${userData.agency_id}&select=whitelabel_domain`,
-        { accessToken }
-      )
+      const { data: agencyData, error: agencyError } = await supabase
+        .from('agencies')
+        .select('whitelabel_domain')
+        .eq('id', userData.agency_id)
+        .single()
 
-      if (agencyError || !agencies?.[0]) {
+      if (agencyError || !agencyData) {
         throw new Error('Agency not found')
       }
 
       return {
-        accessToken,
-        refreshToken,
-        user: userData,
-        agency: agencies[0],
+        user: userData as SignInUserData,
+        agency: agencyData as SignInAgencyData,
       }
     },
     onSuccess: options?.onSuccess,

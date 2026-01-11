@@ -2,14 +2,11 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
-import { TOKEN_STORAGE_KEYS, withTimeout } from "@/lib/auth/constants"
 import { useSignIn } from "@/hooks/mutations"
 
 export default function LoginPage() {
   const router = useRouter()
-  const supabase = createClient()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -69,7 +66,7 @@ export default function LoginPage() {
       { email, password },
       {
         onSuccess: async (result) => {
-          const { accessToken, refreshToken, user: userData, agency: userAgency } = result
+          const { user: userData, agency: userAgency } = result
 
           // Whitelabel validation
           const isLocalhost = typeof window !== 'undefined' &&
@@ -112,19 +109,7 @@ export default function LoginPage() {
             return
           }
 
-          // Set session
-          try {
-            await withTimeout(
-              supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken
-              })
-            )
-          } catch {
-            localStorage.setItem(TOKEN_STORAGE_KEYS.LOGIN_ACCESS, accessToken)
-            localStorage.setItem(TOKEN_STORAGE_KEYS.LOGIN_REFRESH, refreshToken)
-          }
-
+          // Session is already set by the mutation via native Supabase signInWithPassword
           const destination = userData.role === 'client' ? '/client/dashboard' : '/'
           router.push(destination)
         },

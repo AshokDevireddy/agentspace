@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useAuth } from "@/providers/AuthProvider"
-import { createClient } from "@/lib/supabase/client"
 import { useNotification } from '@/contexts/notification-context'
+import { useCreateProduct } from '@/hooks/mutations/useProductMutations'
 
 interface Product {
   id: string
@@ -37,7 +37,9 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
   const [isOpen, setIsOpen] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [errorFields, setErrorFields] = useState<Record<string, string>>({})
-  const [submitting, setSubmitting] = useState(false)
+
+  // Use TanStack Query mutation for proper cache invalidation
+  const createProductMutation = useCreateProduct()
 
   const validateForm = () => {
     const newErrors: string[] = []
@@ -62,76 +64,54 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
       return
     }
 
-        try {
-      setSubmitting(true)
-
-      // Check if user is authenticated
-      if (!user?.id) {
-        setErrors(['You must be logged in to create products'])
-        return
-      }
-
-      // Get the session to get the access token (using getSession for token only, not authentication)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        setErrors(['Authentication failed. Please log in again.'])
-        return
-      }
-
-      const response = await fetch('/api/products', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          carrier_id: carrierId,
-          name: formData.name,
-          product_code: formData.productCode || null,
-          is_active: formData.status
-        }),
-        credentials: 'include'
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        if (response.status === 409) { // 409 Conflict for duplicates
-          setErrors([data.error || 'A product with this name already exists for this carrier.']);
-        } else {
-          setErrors([data.error || 'Failed to create product. Please try again.']);
-        }
-        return;
-      }
-
-      // Add the new product to the parent component's state
-      if (onProductCreated && data.product) {
-        onProductCreated(data.product)
-      }
-
-      // Show success message about setting commissions
-      if (data.message) {
-        showSuccess(data.message)
-      }
-
-      setIsOpen(false)
-      // Reset form
-      setFormData({
-        name: "",
-        productCode: "",
-        status: true
-      })
-      setErrors([])
-      setErrorFields({})
-    } catch (error) {
-      console.error('Error creating product:', error)
-      setErrors(['Failed to create product. Please try again.'])
-    } finally {
-      setSubmitting(false)
+    // Check if user is authenticated
+    if (!user?.id) {
+      setErrors(['You must be logged in to create products'])
+      return
     }
+
+    // Use mutation for proper TanStack Query integration
+    createProductMutation.mutate(
+      {
+        carrier_id: carrierId,
+        name: formData.name,
+        product_code: formData.productCode || null,
+        is_active: formData.status
+      },
+      {
+        onSuccess: (data) => {
+          // Add the new product to the parent component's state
+          if (onProductCreated && data.product) {
+            onProductCreated(data.product)
+          }
+
+          // Show success message about setting commissions
+          if (data.message) {
+            showSuccess(data.message)
+          }
+
+          setIsOpen(false)
+          // Reset form
+          setFormData({
+            name: "",
+            productCode: "",
+            status: true
+          })
+          setErrors([])
+          setErrorFields({})
+        },
+        onError: (error) => {
+          console.error('Error creating product:', error)
+          const message = error.message || 'Failed to create product. Please try again.'
+          // Check for duplicate error
+          if (message.includes('duplicate') || message.includes('already exists')) {
+            setErrors(['A product with this name already exists for this carrier.'])
+          } else {
+            setErrors([message])
+          }
+        }
+      }
+    )
   }
 
   const handleInputChange = (field: string, value: string | boolean) => {
@@ -213,9 +193,9 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
             <button
               type="submit"
               className="w-full py-4 rounded-lg bg-blue-600 text-white font-bold text-xl hover:bg-blue-700 transition-colors shadow-lg disabled:opacity-60"
-              disabled={submitting}
+              disabled={createProductMutation.isPending}
             >
-              {submitting ? 'Creating Product...' : 'Submit'}
+              {createProductMutation.isPending ? 'Creating Product...' : 'Submit'}
             </button>
           </div>
         </form>

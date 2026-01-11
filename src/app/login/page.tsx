@@ -2,32 +2,43 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
-import { decodeAndValidateJwt } from "@/lib/auth/jwt"
-import { signInWithPassword, supabaseRestFetch } from "@/lib/supabase/api"
-import { TOKEN_STORAGE_KEYS, withTimeout } from "@/lib/auth/constants"
-
-interface UserProfile {
-  role: string
-  status: string
-  agency_id: string
-}
-
-interface AgencyInfo {
-  whitelabel_domain: string | null
-}
+import { useSignIn } from "@/hooks/mutations"
+import { createClient } from "@/lib/supabase/client"
+import { clearInviteTokens, clearRecoveryTokens } from "@/lib/auth/constants"
 
 export default function LoginPage() {
   const router = useRouter()
-  const supabase = createClient()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+  const [isNavigating, setIsNavigating] = useState(false)
 
   const processedRef = useRef(false)
+  const cleanedRef = useRef(false)
+  const signInMutation = useSignIn()
+
+  // Clean up any stale auth state on mount (fixes login after confirmation flow)
+  useEffect(() => {
+    if (cleanedRef.current) return
+    cleanedRef.current = true
+
+    const cleanup = async () => {
+      try {
+        // Clear any stored tokens from invite/recovery flows
+        clearInviteTokens()
+        clearRecoveryTokens()
+
+        // Clear Supabase session to ensure fresh state
+        const supabase = createClient()
+        await supabase.auth.signOut({ scope: 'local' })
+      } catch {
+        // Ignore errors - just ensuring clean state
+      }
+    }
+    cleanup()
+  }, [])
 
   useEffect(() => {
     if (processedRef.current) return
@@ -74,109 +85,73 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSubmitting(true)
     setError(null)
 
-    try {
-      const { data: signInData, error: signInError } = await signInWithPassword(email, password)
+    signInMutation.mutate(
+      { email, password },
+      {
+        onSuccess: async (result) => {
+          const { user: userData, agency: userAgency } = result
 
-      if (signInError || !signInData) {
-        throw new Error(signInError || 'Invalid login credentials')
-      }
+          // Whitelabel validation
+          const isLocalhost = typeof window !== 'undefined' &&
+            (window.location.hostname === 'localhost' ||
+             window.location.hostname === '127.0.0.1' ||
+             window.location.hostname.includes('localhost'))
 
-      const accessToken = signInData.access_token
-      const refreshToken = signInData.refresh_token
+          if (!isLocalhost) {
+            if (isWhiteLabel && branding) {
+              if (userData.agency_id !== branding.id) {
+                signInMutation.reset()
+                setError('No account found with these credentials')
+                return
+              }
+            }
 
-      const payload = decodeAndValidateJwt(accessToken)
-      if (!payload) {
-        throw new Error('Invalid token received')
-      }
-
-      const authUserId = payload.sub
-
-      const { data: users, error: userError } = await supabaseRestFetch<UserProfile[]>(
-        `/rest/v1/users?auth_user_id=eq.${authUserId}&select=role,status,agency_id`,
-        { accessToken }
-      )
-
-      if (userError || !users?.[0]) {
-        throw new Error('User profile not found')
-      }
-
-      const userData = users[0]
-
-      const { data: agencies, error: agencyError } = await supabaseRestFetch<AgencyInfo[]>(
-        `/rest/v1/agencies?id=eq.${userData.agency_id}&select=whitelabel_domain`,
-        { accessToken }
-      )
-
-      if (agencyError || !agencies?.[0]) {
-        throw new Error('Agency not found')
-      }
-
-      const userAgency = agencies[0]
-
-      const isLocalhost = typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' ||
-         window.location.hostname === '127.0.0.1' ||
-         window.location.hostname.includes('localhost'))
-
-      if (!isLocalhost) {
-        if (isWhiteLabel && branding) {
-          if (userData.agency_id !== branding.id) {
-            throw new Error('No account found with these credentials')
+            if (!isWhiteLabel && userAgency.whitelabel_domain) {
+              signInMutation.reset()
+              setError('No account found with these credentials')
+              return
+            }
           }
-        }
 
-        if (!isWhiteLabel && userAgency.whitelabel_domain) {
-          throw new Error('No account found with these credentials')
-        }
+          // Status validation
+          if (userData.status === 'invited') {
+            signInMutation.reset()
+            setError('Please check your email and click the invite link to complete account setup')
+            return
+          }
+
+          if (userData.status === 'inactive') {
+            signInMutation.reset()
+            setError('Your account has been deactivated')
+            return
+          }
+
+          if (userData.status !== 'active' && userData.status !== 'onboarding') {
+            signInMutation.reset()
+            setError('Account status is invalid. Please contact support.')
+            return
+          }
+
+          // Mark as navigating (disables button)
+          setIsNavigating(true)
+          const destination = userData.role === 'client' ? '/client/dashboard' : '/'
+
+          // Small delay to ensure cookies are synced, then navigate
+          // We don't wait for onAuthStateChange because it can be unreliable
+          // when there's existing auth state from previous flows
+          await new Promise(resolve => setTimeout(resolve, 500))
+
+          // Use hard navigation to ensure auth cookies are sent fresh
+          window.location.href = destination
+        },
+        onError: (err) => {
+          setIsNavigating(false)
+          setError(err.message || 'Login failed')
+        },
       }
-
-      if (userData.status === 'invited') {
-        throw new Error('Please check your email and click the invite link to complete account setup')
-      }
-
-      if (userData.status === 'inactive') {
-        throw new Error('Your account has been deactivated')
-      }
-
-      if (userData.status !== 'active' && userData.status !== 'onboarding') {
-        throw new Error('Account status is invalid. Please contact support.')
-      }
-
-      try {
-        await withTimeout(
-          supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          })
-        )
-      } catch {
-        localStorage.setItem(TOKEN_STORAGE_KEYS.LOGIN_ACCESS, accessToken)
-        localStorage.setItem(TOKEN_STORAGE_KEYS.LOGIN_REFRESH, refreshToken)
-      }
-
-      // Small delay to let session cookies propagate before redirect
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      if (userData.status === 'onboarding') {
-        if (userData.role === 'client') {
-          window.location.href = '/client/dashboard'
-        } else {
-          window.location.href = '/'
-        }
-      } else if (userData.role === 'client') {
-        window.location.href = '/client/dashboard'
-      } else {
-        window.location.href = '/'
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Login failed'
-      setError(errorMessage)
-    } finally {
-      setSubmitting(false)
-    }
+    )
   }
 
   const displayName = isWhiteLabel && branding ? branding.display_name : 'AgentSpace'
@@ -243,9 +218,9 @@ export default function LoginPage() {
               <button
                 type="submit"
                 className="w-full py-2 rounded-md bg-foreground text-background font-semibold text-lg hover:bg-foreground/90 transition disabled:opacity-60"
-                disabled={submitting}
+                disabled={signInMutation.isPending || isNavigating}
               >
-                {submitting ? 'Signing in...' : 'Sign In'}
+                {signInMutation.isPending || isNavigating ? 'Signing in...' : 'Sign In'}
               </button>
               <button
                 type="button"

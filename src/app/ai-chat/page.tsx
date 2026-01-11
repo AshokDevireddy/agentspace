@@ -7,7 +7,7 @@ import { Sparkles, Send, Loader2, CheckCircle2, Circle, ChevronDown, ChevronUp }
 import { Button } from '@/components/ui/button';
 import CodeExecutor from '@/components/ai/CodeExecutor';
 import ThinkingProgress from '@/components/ai/ThinkingProgress';
-import { createClient } from '@/lib/supabase/client';
+import { useAdminStatus } from '@/hooks/useUserQueries';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -48,7 +48,6 @@ export default function AIChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const [currentToolCalls, setCurrentToolCalls] = useState<ToolCall[]>([]);
@@ -56,39 +55,26 @@ export default function AIChat() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
 
-  // Check admin status
+  // Check admin status using TanStack Query
+  const { data: adminData, isSuccess: isAdminChecked } = useAdminStatus(user?.id, {
+    enabled: !loading && !!user,
+  });
+  const isAdmin = adminData?.is_admin || false;
+
+  // Handle auth and admin redirects
   useEffect(() => {
-    const checkAdmin = async () => {
-      if (loading) {
-        return;
-      }
+    if (loading) return;
 
-      if (!user) {
-        router.push('/login');
-        return;
-      }
+    if (!user) {
+      router.push('/login');
+      return;
+    }
 
-      try {
-        const supabase = createClient();
-        const { data: userData, error } = await supabase
-          .from('users')
-          .select('is_admin')
-          .eq('auth_user_id', user.id)
-          .maybeSingle();
-
-        if (error || !userData || !userData.is_admin) {
-          router.push('/unauthorized');
-        } else {
-          setIsAdmin(true);
-        }
-      } catch (error) {
-        console.error('Error checking admin status:', error);
-        router.push('/unauthorized');
-      }
-    };
-
-    checkAdmin();
-  }, [user, loading, router]);
+    // Only redirect after admin check is complete
+    if (isAdminChecked && !isAdmin) {
+      router.push('/unauthorized');
+    }
+  }, [user, loading, isAdmin, isAdminChecked, router]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -554,7 +540,7 @@ export default function AIChat() {
   };
 
   // Show loading spinner while auth is loading or admin check is in progress
-  if (loading || !isAdmin) {
+  if (loading || !isAdminChecked || !isAdmin) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />

@@ -7,9 +7,16 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarIcon, Info } from "lucide-react"
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
-import { createClient } from "@/lib/supabase/client"
+import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
+import { queryKeys } from "@/hooks/queryKeys"
+import { useAgencyScoreboardSettings } from "@/hooks/useUserQueries"
+import { useQueryClient } from "@tanstack/react-query"
+import { QueryErrorDisplay } from "@/components/ui/query-error-display"
+import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
+import { useHydrated } from "@/hooks/useHydrated"
+import { useClientDate } from "@/hooks/useClientDate"
 
 interface AgentScore {
   rank: number
@@ -33,6 +40,12 @@ interface ScoreboardData {
   }
 }
 
+interface ScoreboardRpcResponse {
+  success: boolean
+  data?: ScoreboardData
+  error?: string
+}
+
 type TimeframeOption = 'this_week' | 'last_week' | 'past_7_days' | 'past_14_days' | 'this_month' | 'last_month' | 'past_30_days' | 'past_90_days' | 'past_180_days' | 'past_12_months' | 'ytd' | 'custom'
 
 const timeframeOptions = [
@@ -51,70 +64,47 @@ const timeframeOptions = [
 ]
 
 export default function Scoreboard() {
-  const { user, userData } = useAuth()
-  const [loading, setLoading] = useState(true)
-  const [data, setData] = useState<ScoreboardData | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const { user, userData, loading: authLoading } = useAuth()
+  const queryClient = useQueryClient()
+
+  // SSR-safe hydration and date hooks
+  const isHydrated = useHydrated()
+  const clientDate = useClientDate()
+
   const [timeframe, setTimeframe] = useState<TimeframeOption>('ytd')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [selectingStartDate, setSelectingStartDate] = useState(true)
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
-  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth())
-  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear())
+  // SSR-safe: Initialize with clientDate values (deterministic on server, actual on client)
+  const [calendarMonth, setCalendarMonth] = useState(clientDate.month)
+  const [calendarYear, setCalendarYear] = useState(clientDate.year)
   const [assumedMonthsTillLapse, setAssumedMonthsTillLapse] = useState<number>(5)
   const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
-  const [defaultScoreboardStartDate, setDefaultScoreboardStartDate] = useState<string | null>(null)
   const [submittedFilter, setSubmittedFilter] = useState<'submitted' | 'issue_paid'>('submitted')
 
-  // Fetch agency default scoreboard start date
+  // Update calendar state when client date becomes available after hydration
   useEffect(() => {
-    const fetchAgencyDefaultDate = async () => {
-      if (!user?.id) return
-
-      try {
-        const supabase = createClient()
-        // First get the user's agency_id
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('agency_id')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        if (userError || !userData?.agency_id) {
-          return
-        }
-
-        // Then get the agency's default_scoreboard_start_date
-        const { data: agencyData, error: agencyError } = await supabase
-          .from('agencies')
-          .select('default_scoreboard_start_date')
-          .eq('id', userData.agency_id)
-          .single()
-
-        if (!agencyError && agencyData?.default_scoreboard_start_date) {
-          setDefaultScoreboardStartDate(agencyData.default_scoreboard_start_date)
-        }
-      } catch (error) {
-        console.error('Error fetching agency default scoreboard start date:', error)
-      }
+    if (isHydrated) {
+      setCalendarMonth(clientDate.month)
+      setCalendarYear(clientDate.year)
     }
+  }, [isHydrated, clientDate.month, clientDate.year])
 
-    fetchAgencyDefaultDate()
-  }, [user?.id])
+  // Fetch agency default scoreboard start date using TanStack Query
+  const { data: agencySettings } = useAgencyScoreboardSettings(userData?.agency_id)
+  const defaultScoreboardStartDate = agencySettings?.default_scoreboard_start_date ?? null
 
-  // Calculate date range based on timeframe
-  const getDateRange = (selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
-    const today = new Date()
-    const year = today.getFullYear()
+  // Calculate date range based on timeframe - SSR-safe using clientDate
+  const getDateRange = useCallback((selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
+    const { date: today, year, month, dayOfWeek } = clientDate
     let startDate: Date
     let endDate: Date = new Date(today)
 
     switch (selectedTimeframe) {
       case 'this_week': {
-        const dayOfWeek = today.getDay()
         startDate = new Date(today)
         startDate.setDate(today.getDate() - dayOfWeek)
         endDate = new Date(today)
@@ -122,7 +112,6 @@ export default function Scoreboard() {
         break
       }
       case 'last_week': {
-        const dayOfWeek = today.getDay()
         endDate = new Date(today)
         endDate.setDate(today.getDate() - dayOfWeek - 1)
         startDate = new Date(endDate)
@@ -138,12 +127,12 @@ export default function Scoreboard() {
         startDate.setDate(today.getDate() - 13)
         break
       case 'this_month':
-        startDate = new Date(year, today.getMonth(), 1)
-        endDate = new Date(year, today.getMonth() + 1, 0)
+        startDate = new Date(year, month, 1)
+        endDate = new Date(year, month + 1, 0)
         break
       case 'last_month':
-        startDate = new Date(year, today.getMonth() - 1, 1)
-        endDate = new Date(year, today.getMonth(), 0)
+        startDate = new Date(year, month - 1, 1)
+        endDate = new Date(year, month, 0)
         break
       case 'past_30_days':
         startDate = new Date(today)
@@ -159,18 +148,17 @@ export default function Scoreboard() {
         break
       case 'past_12_months':
         startDate = new Date(today)
-        startDate.setFullYear(today.getFullYear() - 1)
+        startDate.setFullYear(year - 1)
         break
       case 'ytd':
         startDate = new Date(year, 0, 1)
         break
       case 'custom':
         return {
-          startDate: customStartDate || today.toISOString().split('T')[0],
-          endDate: customEndDate || today.toISOString().split('T')[0]
+          startDate: customStartDate || clientDate.isoDate,
+          endDate: customEndDate || clientDate.isoDate
         }
       default: {
-        const dayOfWeek = today.getDay()
         startDate = new Date(today)
         startDate.setDate(today.getDate() - dayOfWeek)
         endDate = new Date(today)
@@ -186,18 +174,19 @@ export default function Scoreboard() {
       startDate: finalStartDate,
       endDate: endDate.toISOString().split('T')[0]
     }
-  }
+  }, [clientDate, customStartDate, customEndDate, defaultScoreboardStartDate])
 
   // Memoize the date range calculation to avoid unnecessary recalculations
+  // SSR-safe: uses clientDate which returns deterministic values on server
   const dateRange = useMemo(() => {
     if (timeframe === 'custom') {
       return {
-        startDate: customStartDate || new Date().toISOString().split('T')[0],
-        endDate: customEndDate || new Date().toISOString().split('T')[0]
+        startDate: customStartDate || clientDate.isoDate,
+        endDate: customEndDate || clientDate.isoDate
       }
     }
     return getDateRange(timeframe)
-  }, [timeframe, customStartDate, customEndDate, defaultScoreboardStartDate])
+  }, [timeframe, customStartDate, customEndDate, getDateRange, clientDate.isoDate])
 
   // Update custom dates when timeframe changes (only for non-custom timeframes)
   useEffect(() => {
@@ -206,61 +195,44 @@ export default function Scoreboard() {
       setCustomStartDate(range.startDate)
       setCustomEndDate(range.endDate)
     }
-  }, [timeframe, defaultScoreboardStartDate])
+  }, [timeframe, getDateRange])
 
-  // Fetch scoreboard data - only depends on user and the computed date range
-  useEffect(() => {
-    const fetchScoreboardData = async () => {
-      if (!user) return
+  // Fetch scoreboard data using TanStack Query
+  const shouldFetch = !!user?.id && (timeframe !== 'custom' || (!!dateRange.startDate && !!dateRange.endDate))
 
-      // For custom timeframe, ensure both dates are set
-      if (timeframe === 'custom' && (!dateRange.startDate || !dateRange.endDate)) {
-        return
-      }
-
-      try {
-        setLoading(true)
-        setError(null)
-
-        // Use Supabase RPC function
-        const supabase = createClient()
-        const { data: rpcData, error: rpcError } = await supabase.rpc('get_scoreboard_data_updated_lapsed_deals', {
-          p_user_id: user.id,
-          p_start_date: dateRange.startDate,
-          p_end_date: dateRange.endDate,
-          assumed_months_till_lapse: assumedMonthsTillLapse,
-          submitted: submittedFilter === 'submitted'
-        })
-
-        console.log('Scoreboard RPC Response:', JSON.stringify(rpcData, null, 2))
-
-        if (rpcError) {
-          console.error('RPC Error:', rpcError)
-          throw new Error(rpcError.message || 'Failed to fetch scoreboard data')
-        }
-
-        if (!rpcData) {
-          throw new Error('No data returned from RPC')
-        }
-
-        // The RPC returns a wrapper object with success and data
-        if (rpcData.success === false) {
-          setError(rpcData.error || 'Failed to load scoreboard')
-        } else if (rpcData.data) {
-          setData(rpcData.data)
-        } else {
-          throw new Error('Invalid response format from RPC')
-        }
-      } catch (err) {
-        console.error('Error fetching scoreboard:', err)
-        setError(err instanceof Error ? err.message : 'Failed to load scoreboard data')
-      } finally {
-        setLoading(false)
-      }
+  // Include authLoading to show proper loading state while auth initializes
+  const { data: rpcResponse, isPending: isDataLoading, isFetching, error: queryError } = useSupabaseRpc<ScoreboardRpcResponse>(
+    [
+      ...queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate),
+      'with-lapse',
+      assumedMonthsTillLapse,
+      submittedFilter
+    ],
+    'get_scoreboard_data_updated_lapsed_deals',
+    {
+      p_user_id: user?.id || '',
+      p_start_date: dateRange.startDate,
+      p_end_date: dateRange.endDate,
+      assumed_months_till_lapse: assumedMonthsTillLapse,
+      submitted: submittedFilter === 'submitted'
+    },
+    {
+      enabled: shouldFetch,
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      gcTime: 1000 * 60 * 30, // 30 minutes (formerly cacheTime)
+      refetchOnWindowFocus: false,
     }
+  )
 
-    fetchScoreboardData()
-  }, [user, timeframe, dateRange.startDate, dateRange.endDate, assumedMonthsTillLapse, submittedFilter])
+  // Extract data and error from RPC response
+  const data = rpcResponse?.success ? rpcResponse.data : null
+  const error = rpcResponse?.success === false ? rpcResponse.error : queryError?.message
+
+  // Include authLoading to show skeletons while auth initializes (prevents "no data" flash)
+  const isLoading = authLoading || isDataLoading
+
+  // Background refresh indicator (stale-while-revalidate pattern)
+  const isRefreshing = isFetching && !isDataLoading
 
   // Calculate date range for display even when loading
   const displayDateRange = useMemo(() => {
@@ -396,7 +368,10 @@ export default function Scoreboard() {
       {/* Header */}
       <div>
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-1">
-          <h1 className="text-4xl font-bold text-foreground">Scoreboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-bold text-foreground">Scoreboard</h1>
+            <RefreshingIndicator isRefreshing={isRefreshing} />
+          </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <Input
@@ -409,12 +384,12 @@ export default function Scoreboard() {
                   const inputValue = e.target.value
                   // Update the input display value
                   setAssumedMonthsInput(inputValue)
-                  
+
                   // Parse and validate
                   if (inputValue === '') {
                     return // Allow empty while typing
                   }
-                  
+
                   const value = parseInt(inputValue, 10)
                   // Only update the actual state if it's a valid whole number between 1-10
                   if (!isNaN(value) && value >= 1 && value <= 10 && Number.isInteger(value)) {
@@ -429,7 +404,7 @@ export default function Scoreboard() {
                     setAssumedMonthsInput('5')
                     return
                   }
-                  
+
                   const value = parseInt(inputValue, 10)
                   // Reset to default if invalid
                   if (isNaN(value) || value < 1 || value > 10 || !Number.isInteger(value)) {
@@ -444,8 +419,8 @@ export default function Scoreboard() {
                 placeholder="5"
               />
               <div className="relative">
-                <Info 
-                  className="h-3 w-3 text-muted-foreground cursor-help" 
+                <Info
+                  className="h-3 w-3 text-muted-foreground cursor-help"
                   onMouseEnter={() => setShowAssumedMonthsTooltip(true)}
                   onMouseLeave={() => setShowAssumedMonthsTooltip(false)}
                 />
@@ -609,18 +584,34 @@ export default function Scoreboard() {
         <div className="flex items-center space-x-2 text-sm text-muted-foreground mt-1">
           <span>{getTimeframeLabel()}</span>
           <span>•</span>
-          <span>{formatDateRange(displayDateRange.startDate, displayDateRange.endDate)}</span>
+          {isHydrated ? (
+            <span>{formatDateRange(displayDateRange.startDate, displayDateRange.endDate)}</span>
+          ) : (
+            <span className="h-4 w-48 bg-muted animate-pulse rounded inline-block" />
+          )}
         </div>
       </div>
 
-      {/* Weekly Stats - Only show for admins */}
-      {userData?.role === 'admin' && (
+      {/* Error state */}
+      {queryError && (
+        <div className="mb-6">
+          <QueryErrorDisplay
+            error={queryError}
+            onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate) })}
+            variant="card"
+            title="Failed to load scoreboard data"
+          />
+        </div>
+      )}
+
+      {/* Weekly Stats - Only show for admins (after hydration to avoid mismatch) */}
+      {isHydrated && userData?.role === 'admin' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="professional-card rounded-md">
             <CardContent className="p-6 text-center">
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Production</h3>
               <p className="text-3xl font-bold text-foreground">
-                {loading ? (
+                {isLoading ? (
                   <span className="inline-block h-8 w-32 bg-muted animate-pulse rounded" />
                 ) : (
                   formatCurrency(data?.stats?.totalProduction || 0)
@@ -633,7 +624,7 @@ export default function Scoreboard() {
             <CardContent className="p-6 text-center">
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Policies Sold</h3>
               <p className="text-3xl font-bold text-foreground">
-                {loading ? (
+                {isLoading ? (
                   <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
                 ) : (
                   data?.stats?.totalDeals || 0
@@ -646,7 +637,7 @@ export default function Scoreboard() {
             <CardContent className="p-6 text-center">
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Active Agents</h3>
               <p className="text-3xl font-bold text-foreground">
-                {loading ? (
+                {isLoading ? (
                   <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
                 ) : (
                   data?.stats?.activeAgents || 0
@@ -658,7 +649,7 @@ export default function Scoreboard() {
       )}
 
       {/* Top 3 Winners */}
-      {loading ? (
+      {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[0, 1, 2].map((index) => (
             <Card key={index} className="professional-card rounded-md relative overflow-hidden">
@@ -709,16 +700,17 @@ export default function Scoreboard() {
           <CardTitle className="text-xl font-bold text-foreground">Production Leaderboard</CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {isLoading ? (
             <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full min-w-max">
                 <thead>
                   <tr className="border-b border-border">
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-0 bg-card z-10 w-20 min-w-[80px]" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Rank</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-[80px] bg-card z-10" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Name</th>
-                    {generateDateRange(displayDateRange.startDate, displayDateRange.endDate).map(date => (
-                      <th key={date} className="text-center py-3 px-4 font-medium text-muted-foreground whitespace-nowrap">
-                        {formatDateHeader(date)}
+                    {/* Use fixed placeholder columns for loading skeleton to avoid hydration mismatch */}
+                    {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                      <th key={i} className="text-center py-3 px-4 font-medium text-muted-foreground whitespace-nowrap">
+                        <span className="h-4 w-10 bg-muted animate-pulse rounded inline-block" />
                       </th>
                     ))}
                     <th className="text-right py-3 px-4 font-medium text-muted-foreground sticky right-0 bg-card z-10" style={{ boxShadow: '-2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Total</th>
@@ -733,8 +725,9 @@ export default function Scoreboard() {
                       <td className="py-3 px-4 sticky left-[80px] bg-card z-10" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>
                         <div className="h-5 w-32 bg-muted animate-pulse rounded" />
                       </td>
-                      {generateDateRange(displayDateRange.startDate, displayDateRange.endDate).map(date => (
-                        <td key={date} className="py-3 px-4 text-center">
+                      {/* Use fixed placeholder columns for loading skeleton to avoid hydration mismatch */}
+                      {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                        <td key={i} className="py-3 px-4 text-center">
                           <div className="h-5 w-20 bg-muted animate-pulse rounded mx-auto" />
                         </td>
                       ))}
@@ -746,10 +739,13 @@ export default function Scoreboard() {
                 </tbody>
               </table>
             </div>
-          ) : error ? (
-            <div className="text-center py-8 text-destructive">
-              {error}
-            </div>
+          ) : queryError ? (
+            <QueryErrorDisplay
+              error={queryError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate) })}
+              variant="inline"
+              className="mx-auto max-w-md"
+            />
           ) : !data || data.leaderboard.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               No deals found for this period

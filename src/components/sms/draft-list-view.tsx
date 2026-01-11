@@ -1,11 +1,15 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 import { Loader2, MessageSquare, UserCircle } from "lucide-react"
 import { useNotification } from '@/contexts/notification-context'
+import { useApiFetch } from '@/hooks/useApiFetch'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queryKeys'
+import { useApproveDrafts, useRejectDrafts } from '@/hooks/mutations'
 
 interface DraftMessage {
   id: string
@@ -32,35 +36,40 @@ interface DraftListViewProps {
 
 export function DraftListView({ viewMode, onClose, onConversationClick }: DraftListViewProps) {
   const { showSuccess, showError } = useNotification()
-  const [draftGroups, setDraftGroups] = useState<DraftGroup[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [selectedDrafts, setSelectedDrafts] = useState<Set<string>>(new Set())
-  const [approving, setApproving] = useState(false)
-  const [rejecting, setRejecting] = useState(false)
 
-  useEffect(() => {
-    fetchDrafts()
-  }, [viewMode])
+  // Fetch drafts using TanStack Query
+  const { data, isLoading: loading } = useApiFetch<{ drafts: DraftGroup[] }>(
+    queryKeys.draftsList(viewMode),
+    `/api/sms/drafts?view=${viewMode}`
+  )
 
-  const fetchDrafts = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch(`/api/sms/drafts?view=${viewMode}`, {
-        credentials: 'include'
-      })
+  const draftGroups = data?.drafts || []
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch drafts')
-      }
-
-      const data = await response.json()
-      setDraftGroups(data.drafts || [])
-    } catch (error) {
-      console.error('Error fetching drafts:', error)
-    } finally {
-      setLoading(false)
+  // Use centralized mutation hooks
+  // Note: The hooks use predicate-based invalidation to catch all conversation/draft variations
+  const approveMutation = useApproveDrafts({
+    onSuccess: (data, variables) => {
+      setSelectedDrafts(new Set())
+      showSuccess(`Successfully approved ${variables.messageIds.length} draft(s)`)
+    },
+    onError: (error) => {
+      console.error('Error approving drafts:', error)
+      showError(error.message || 'Failed to approve drafts')
     }
-  }
+  })
+
+  const rejectMutation = useRejectDrafts({
+    onSuccess: (data, variables) => {
+      setSelectedDrafts(new Set())
+      showSuccess(`Successfully rejected ${variables.messageIds.length} draft(s)`)
+    },
+    onError: (error) => {
+      console.error('Error rejecting drafts:', error)
+      showError(error.message || 'Failed to reject drafts')
+    }
+  })
 
   const totalDrafts = draftGroups.reduce((sum, group) => sum + group.messages.length, 0)
   const allDraftIds = draftGroups.flatMap(group => group.messages.map(m => m.id))
@@ -86,66 +95,19 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
     })
   }
 
-  const handleBulkApprove = async () => {
+  const handleBulkApprove = () => {
     if (selectedDrafts.size === 0) return
-
-    try {
-      setApproving(true)
-      const response = await fetch('/api/sms/drafts/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageIds: Array.from(selectedDrafts) })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to approve drafts')
-      }
-
-      // Refresh the list
-      await fetchDrafts()
-      setSelectedDrafts(new Set())
-      showSuccess(`Successfully approved ${selectedDrafts.size} draft(s)`)
-    } catch (error) {
-      console.error('Error approving drafts:', error)
-      showError(error instanceof Error ? error.message : 'Failed to approve drafts')
-    } finally {
-      setApproving(false)
-    }
+    approveMutation.mutate({ messageIds: Array.from(selectedDrafts) })
   }
 
-  const handleBulkReject = async () => {
+  const handleBulkReject = () => {
     if (selectedDrafts.size === 0) return
 
     if (!confirm(`Are you sure you want to reject ${selectedDrafts.size} draft(s)?`)) {
       return
     }
 
-    try {
-      setRejecting(true)
-      const response = await fetch('/api/sms/drafts/reject', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageIds: Array.from(selectedDrafts) })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to reject drafts')
-      }
-
-      // Refresh the list
-      await fetchDrafts()
-      setSelectedDrafts(new Set())
-      showSuccess(`Successfully rejected ${selectedDrafts.size} draft(s)`)
-    } catch (error) {
-      console.error('Error rejecting drafts:', error)
-      showError(error instanceof Error ? error.message : 'Failed to reject drafts')
-    } finally {
-      setRejecting(false)
-    }
+    rejectMutation.mutate({ messageIds: Array.from(selectedDrafts) })
   }
 
   return (
@@ -178,10 +140,10 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
                 <Button
                   size="sm"
                   onClick={handleBulkApprove}
-                  disabled={approving || rejecting}
+                  disabled={approveMutation.isPending || rejectMutation.isPending}
                   className="bg-green-600 hover:bg-green-700 text-white"
                 >
-                  {approving ? (
+                  {approveMutation.isPending ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-1" />
                       Approving...
@@ -194,9 +156,9 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
                   size="sm"
                   variant="destructive"
                   onClick={handleBulkReject}
-                  disabled={approving || rejecting}
+                  disabled={approveMutation.isPending || rejectMutation.isPending}
                 >
-                  {rejecting ? (
+                  {rejectMutation.isPending ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-1" />
                       Rejecting...

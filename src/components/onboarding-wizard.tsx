@@ -11,6 +11,17 @@ import { Progress } from "@/components/ui/progress"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 import { withTimeout } from '@/lib/auth/constants'
+import { RateLimitError } from '@/lib/error-utils'
+import { useQuery } from '@tanstack/react-query'
+import { useApiFetch } from '@/hooks/useApiFetch'
+import { queryKeys } from '@/hooks/queryKeys'
+import {
+  useInviteAgent,
+  useRunNiprAutomation,
+  useUploadNiprDocument,
+  useCreateOnboardingPolicyJob,
+  useSignOnboardingPolicyFiles,
+} from '@/hooks/mutations'
 
 interface UserData {
   id: string
@@ -87,12 +98,10 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   // Agency branding state
   const [primaryColor, setPrimaryColor] = useState<string>("217 91% 60%")
 
-  // Policy reports upload state
+  // Policy reports upload state (used by uploadPolicyReports in handleComplete)
   const [uploads, setUploads] = useState<CarrierUpload[]>(
     carriers.map(carrier => ({ carrier, file: null }))
   )
-  const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
-  const [checkingExistingFiles, setCheckingExistingFiles] = useState(false)
 
   // Downline invitation state
   const [invitedAgents, setInvitedAgents] = useState<InvitedAgent[]>([])
@@ -145,29 +154,10 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   // NIPR upload mode state (alternative to automation)
   const [niprMode, setNiprMode] = useState<'upload' | 'automation'>('automation')
   const [niprUploadFile, setNiprUploadFile] = useState<File | null>(null)
-  const [niprUploading, setNiprUploading] = useState(false)
   const [niprDragging, setNiprDragging] = useState(false)
 
-  // Carrier upload progress state (for step-by-step upload)
-  const [currentCarrierIndex, setCurrentCarrierIndex] = useState(0)
-  const [carrierUploads, setCarrierUploads] = useState<Record<string, File | null>>({})
-  const [uploadingCarrier, setUploadingCarrier] = useState(false)
-
-  // Carrier login collection state
-  const [carrierLoginUsername, setCarrierLoginUsername] = useState('')
-  const [carrierLoginPassword, setCarrierLoginPassword] = useState('')
-  const [savingCarrierLogin, setSavingCarrierLogin] = useState(false)
-  const [savedCarrierLogins, setSavedCarrierLogins] = useState<Set<string>>(new Set())
-
-  // Matched carriers state (filtered by fuzzy matching with active carriers)
-  const [matchedCarriers, setMatchedCarriers] = useState<Array<{
-    id: string
-    name: string
-    display_name: string
-    matchedWith: string
-    similarity: number
-  }>>([])
-  const [loadingMatches, setLoadingMatches] = useState(false)
+  // Note: Carrier login collection (Step 2) was intentionally removed from the onboarding flow
+  // See commit ae00c67 in main branch for details
 
   // NIPR already completed state
   const [niprAlreadyCompleted, setNiprAlreadyCompleted] = useState(false)
@@ -178,6 +168,16 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   const [currentStep, setCurrentStep] = useState(1) // All users start at NIPR verification
   const errorRef = useRef<HTMLDivElement>(null)
 
+  // ============ Mutation Hooks ============
+  const inviteAgentMutation = useInviteAgent()
+  const runNiprMutation = useRunNiprAutomation()
+  const uploadNiprMutation = useUploadNiprDocument()
+  const createPolicyJobMutation = useCreateOnboardingPolicyJob()
+  const signPolicyFilesMutation = useSignOnboardingPolicyFiles()
+
+  // Derived loading states from mutations
+  const niprUploading = uploadNiprMutation.isPending
+
   useEffect(() => {
     if (errors.length > 0 && errorRef.current) {
       errorRef.current.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -185,59 +185,64 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   }, [errors])
 
   // Fetch agency primary color
-  useEffect(() => {
-    const fetchAgencyColor = async () => {
-      if (userData.agency_id) {
-        const { data: agencyData } = await supabase
-          .from('agencies')
-          .select('primary_color')
-          .eq('id', userData.agency_id)
-          .single()
+  const { data: agencyData } = useQuery({
+    queryKey: queryKeys.agencyColor(userData.agency_id || ''),
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('agencies')
+        .select('primary_color')
+        .eq('id', userData.agency_id)
+        .single()
+      return data
+    },
+    enabled: !!userData.agency_id,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
 
-        if (agencyData?.primary_color) {
-          setPrimaryColor(agencyData.primary_color)
-        }
-      }
+  useEffect(() => {
+    if (agencyData?.primary_color) {
+      setPrimaryColor(agencyData.primary_color)
     }
-    fetchAgencyColor()
-  }, [userData.agency_id, supabase])
+  }, [agencyData])
 
   // Check for active NIPR job on mount (for page refresh resilience)
-  useEffect(() => {
-    const checkActiveJob = async () => {
-      const savedJobId = localStorage.getItem(NIPR_JOB_STORAGE_KEY)
-      if (!savedJobId) return
+  const savedJobId = typeof window !== 'undefined' ? localStorage.getItem(NIPR_JOB_STORAGE_KEY) : null
 
-      try {
-        // Check job status from API
-        const response = await fetch(`/api/nipr/job/${savedJobId}`)
-        if (!response.ok) {
-          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
-          return
-        }
+  const { data: activeJobData } = useQuery({
+    queryKey: queryKeys.niprJob(savedJobId || ''),
+    queryFn: async () => {
+      if (!savedJobId) return null
 
-        const data = await response.json()
-
-        if (data.status === 'processing' || data.status === 'pending') {
-          // Resume polling - job is still active
-          setNiprJobId(savedJobId)
-          setNiprRunning(true)
-          setNiprProgress(data.progress || 0)
-          setNiprProgressMessage(data.progressMessage || 'Resuming verification...')
-          if (data.queuePosition) {
-            setNiprQueuePosition(data.queuePosition)
-          }
-        } else {
-          // Job completed or failed, clear storage
-          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
-        }
-      } catch (error) {
-        console.error('[ONBOARDING] Error checking active job:', error)
+      const response = await fetch(`/api/nipr/job/${savedJobId}`)
+      if (!response.ok) {
         localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
+        return null
       }
+
+      return response.json()
+    },
+    enabled: !!savedJobId,
+    staleTime: 0,
+    retry: false,
+  })
+
+  useEffect(() => {
+    if (!activeJobData) return
+
+    if (activeJobData.status === 'processing' || activeJobData.status === 'pending') {
+      // Resume polling - job is still active
+      setNiprJobId(savedJobId)
+      setNiprRunning(true)
+      setNiprProgress(activeJobData.progress || 0)
+      setNiprProgressMessage(activeJobData.progressMessage || 'Resuming verification...')
+      if (activeJobData.queuePosition) {
+        setNiprQueuePosition(activeJobData.queuePosition)
+      }
+    } else {
+      // Job completed or failed, clear storage
+      localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
     }
-    checkActiveJob()
-  }, [])
+  }, [activeJobData, savedJobId])
 
   // Agent search debounce (for upline selection)
   useEffect(() => {
@@ -334,40 +339,28 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     return () => clearTimeout(debounceTimer)
   }, [nameSearchTerm])
 
-  // Check for existing uploaded files when on step 2
-  useEffect(() => {
-    if (currentStep === 2) {
-      checkExistingFiles()
-    }
-  }, [currentStep])
-
   // Check if NIPR has already been completed for this user
+  const { data: niprStatusData } = useApiFetch<{ completed: boolean; carriers: string[] }>(
+    queryKeys.niprStatus(userData.id),
+    '/api/nipr/status',
+    {
+      enabled: !!userData.id,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      retry: false,
+    }
+  )
+
   useEffect(() => {
-    const checkNiprStatus = async () => {
-      if (!userData.id) return
-
-      try {
-        const response = await fetch('/api/nipr/status')
-        if (!response.ok) return
-
-        const { completed, carriers } = await response.json()
-
-        if (completed && carriers.length > 0) {
-          setNiprAlreadyCompleted(true)
-          setStoredCarriers(carriers)
-          // Auto-advance if on step 1
-          // Admins go to policy upload (step 2), agents skip to invite team (step 3)
-          if (currentStep === 1) {
-            setCurrentStep(3)
-          }
-        }
-      } catch (error) {
-        console.error('[ONBOARDING] Error checking NIPR status:', error)
+    if (niprStatusData?.completed && niprStatusData.carriers.length > 0) {
+      setNiprAlreadyCompleted(true)
+      setStoredCarriers(niprStatusData.carriers)
+      // Auto-advance if on step 1
+      // Admins go to policy upload (step 2), agents skip to invite team (step 3)
+      if (currentStep === 1) {
+        setCurrentStep(3)
       }
     }
-
-    checkNiprStatus()
-  }, [userData.id])
+  }, [niprStatusData, currentStep])
 
   // Auto-advance to step 3 when NIPR verification succeeds
   useEffect(() => {
@@ -381,133 +374,70 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   }, [niprResult?.success, currentStep, niprRunning, niprUploading])
 
   // Poll for NIPR job progress when we have a job ID
+  const { data: niprJobData } = useQuery({
+    queryKey: queryKeys.niprJob(niprJobId || ''),
+    queryFn: async () => {
+      if (!niprJobId) return null
+
+      const response = await fetch(`/api/nipr/job/${niprJobId}`)
+      if (!response.ok) return null
+
+      return response.json()
+    },
+    enabled: !!niprJobId && niprRunning,
+    refetchInterval: 30000, // Poll every 30 seconds - reduces server load
+    staleTime: 0,
+  })
+
   useEffect(() => {
-    if (!niprJobId || !niprRunning) return
+    if (!niprJobData) return
 
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/nipr/job/${niprJobId}`)
-        if (!response.ok) return
+    setNiprProgress(niprJobData.progress || 0)
+    setNiprProgressMessage(niprJobData.progressMessage || '')
+    setNiprQueuePosition(niprJobData.position || null)
 
-        const job = await response.json()
-
-        setNiprProgress(job.progress || 0)
-        setNiprProgressMessage(job.progressMessage || '')
-        setNiprQueuePosition(job.position || null)
-
-        // If job is completed or failed, stop polling and handle result
-        if (job.status === 'completed') {
-          setNiprRunning(false)
-          setNiprResult({
-            success: true,
-            message: 'NIPR verification completed successfully!',
-            files: job.resultFiles,
-            analysis: {
-              success: true,
-              carriers: job.resultCarriers || [],
-              unique_carriers: job.resultCarriers || [],
-              licensedStates: { resident: [], nonResident: [] },
-              analyzedAt: job.completedAt
-            }
-          })
-
-          // Store carriers if we have them
-          if (job.resultCarriers && job.resultCarriers.length > 0 && userData.id) {
-            await storeCarriersInDatabase(job.resultCarriers, userData.id)
-          }
-
-          // Auto-advance to next step
-          setTimeout(() => {
-            setCurrentStep(3)
-            window.scrollTo({ top: 0, behavior: 'smooth' })
-          }, 2000)
-
-          // Clear localStorage since job is complete
-          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
-          clearInterval(pollInterval)
-        } else if (job.status === 'failed') {
-          setNiprRunning(false)
-          setNiprResult({
-            success: false,
-            message: job.errorMessage || 'NIPR verification failed. Please try again.'
-          })
-          // Clear localStorage since job failed
-          localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
-          clearInterval(pollInterval)
+    // If job is completed or failed, stop polling and handle result
+    if (niprJobData.status === 'completed') {
+      setNiprRunning(false)
+      setNiprResult({
+        success: true,
+        message: 'NIPR verification completed successfully!',
+        files: niprJobData.resultFiles,
+        analysis: {
+          success: true,
+          carriers: niprJobData.resultCarriers || [],
+          unique_carriers: niprJobData.resultCarriers || [],
+          licensedStates: { resident: [], nonResident: [] },
+          analyzedAt: niprJobData.completedAt
         }
-      } catch (error) {
-        console.error('[ONBOARDING] Error polling job status:', error)
-      }
-    }, 10000) // Poll every 10 seconds
-
-    return () => clearInterval(pollInterval)
-  }, [niprJobId, niprRunning, userData.id, userData.is_admin])
-
-  // Fetch active carriers and match with NIPR results when entering step 2
-  useEffect(() => {
-    const fetchAndMatchCarriers = async () => {
-      // Get carriers to match - either from NIPR result or stored carriers
-      const carriersToMatch = niprResult?.analysis?.unique_carriers || storedCarriers
-
-      if (!carriersToMatch || carriersToMatch.length === 0 || currentStep !== 2) {
-        return
-      }
-
-      setLoadingMatches(true)
-      try {
-        // Fetch active carriers from API
-        const response = await fetch('/api/carriers')
-        if (!response.ok) {
-          console.error('[ONBOARDING] Failed to fetch carriers')
-          return
-        }
-
-        const activeCarriers = await response.json()
-
-        // Import and use fuzzy matching
-        const { findMatchingCarriers } = await import('@/lib/nipr/fuzzy-match')
-        const matches = findMatchingCarriers(
-          carriersToMatch,
-          activeCarriers,
-          0.6 // 60% threshold - more lenient for carrier name variations
-        )
-
-        console.log('[ONBOARDING] Matched carriers:', matches.length, 'out of', carriersToMatch.length, 'NIPR carriers')
-        setMatchedCarriers(matches)
-      } catch (error) {
-        console.error('[ONBOARDING] Error matching carriers:', error)
-      } finally {
-        setLoadingMatches(false)
-      }
-    }
-
-    if (currentStep === 2) {
-      fetchAndMatchCarriers()
-    }
-  }, [currentStep, niprResult, storedCarriers])
-
-  const checkExistingFiles = async () => {
-    if (!userData.agency_id) return
-
-    try {
-      setCheckingExistingFiles(true)
-      const response = await fetch('/api/upload-policy-reports/bucket', {
-        method: 'GET',
-        credentials: 'include'
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        if (data.files && data.files.length > 0) {
-          setUploadedFilesInfo(data.files)
-        }
+      // Store carriers if we have them
+      if (niprJobData.resultCarriers && niprJobData.resultCarriers.length > 0 && userData.id) {
+        storeCarriersInDatabase(niprJobData.resultCarriers, userData.id)
       }
-    } catch (error) {
-      console.error('Error checking existing files:', error)
-    } finally {
-      setCheckingExistingFiles(false)
+
+      // Auto-advance to next step
+      setTimeout(() => {
+        setCurrentStep(3)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }, 2000)
+
+      // Clear localStorage since job is complete
+      localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
+    } else if (niprJobData.status === 'failed') {
+      setNiprRunning(false)
+      setNiprResult({
+        success: false,
+        message: niprJobData.errorMessage || 'NIPR verification failed. Please try again.'
+      })
+      // Clear localStorage since job failed
+      localStorage.removeItem(NIPR_JOB_STORAGE_KEY)
     }
-  }
+  }, [niprJobData, userData.id])
+
+  // Note: Carrier login collection (Step 2) was intentionally removed - see commit ae00c67
+  // The carrier matching and policy upload queries that were here are no longer needed
 
   const validateAgentForm = () => {
     const newErrors: string[] = []
@@ -531,24 +461,6 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
     setErrors(newErrors)
     return newErrors.length === 0
-  }
-
-  const handleFileUpload = (carrierIndex: number, file: File) => {
-    const newUploads = [...uploads]
-    newUploads[carrierIndex] = {
-      ...newUploads[carrierIndex],
-      file: file
-    }
-    setUploads(newUploads)
-  }
-
-  const handleFileRemove = (carrierIndex: number) => {
-    const newUploads = [...uploads]
-    newUploads[carrierIndex] = {
-      ...newUploads[carrierIndex],
-      file: null
-    }
-    setUploads(newUploads)
   }
 
   const handleAddAgent = () => {
@@ -665,45 +577,38 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
         return { success: false, message: 'Could not resolve your agency. Please refresh and try again.' }
       }
 
-      const jobResp = await fetch('/api/upload-policy-reports/create-job', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          agencyId,
-          expectedFiles,
-          clientJobId,
-        }),
+      // Create job using mutation
+      const jobResult = await createPolicyJobMutation.mutateAsync({
+        agencyId,
+        expectedFiles,
+        clientJobId,
       })
-      const jobJson = await jobResp.json().catch(() => null)
-      if (!jobResp.ok || !jobJson?.job?.jobId) {
-        console.error('Failed to create ingest job', { status: jobResp.status, body: jobJson })
+
+      if (!jobResult?.job?.jobId) {
+        console.error('Failed to create ingest job', { body: jobResult })
         return { success: false, message: 'Could not start ingest job. Please try again.' }
       }
-      const jobId = jobJson.job.jobId as string
+      const jobId = jobResult.job.jobId
       console.debug('Created ingest job', { jobId, expectedFiles })
 
       // 1) Request presigned URLs for all files in a single call (new ingestion flow)
-      const signResp = await fetch('/api/upload-policy-reports/sign', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          jobId,
-          files: uploadedFiles.map(({ file }) => ({
-            fileName: file.name,
-            contentType: file.type || 'application/octet-stream',
-            size: file.size,
-          })),
-        }),
+      const signResult = await signPolicyFilesMutation.mutateAsync({
+        jobId,
+        files: uploadedFiles.map(({ file }) => ({
+          fileName: file.name,
+          contentType: file.type || 'application/octet-stream',
+          size: file.size,
+        })),
       })
-      const signJson = await signResp.json().catch(() => null)
-      if (!signResp.ok || !Array.isArray(signJson?.files)) {
-        console.error('Presign failed', { status: signResp.status, body: signJson })
+
+      if (!Array.isArray(signResult?.files)) {
+        console.error('Presign failed', { body: signResult })
         return { success: false, message: 'Could not generate upload URLs. Please try again.' }
       }
 
       // 2) Upload each file via its presigned URL (no chunking; URLs expire in 60s)
       const results = await Promise.allSettled(
-        (signJson.files as Array<{ fileId: string; fileName: string; presignedUrl: string }>).
+        (signResult.files as Array<{ fileId: string; fileName: string; presignedUrl: string }>).
           map(async (f) => {
             const match = uploadedFiles.find(uf => uf.file.name === f.fileName)
             if (!match) throw new Error(`Missing file for ${f.fileName}`)
@@ -751,46 +656,34 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       return { success: true, message: 'No agents to invite' }
     }
 
-    const results = []
-    const errors = []
+    const results: string[] = []
+    const inviteErrors: string[] = []
 
     for (const agent of invitedAgents) {
       try {
-        const response = await fetch('/api/agents/invite', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: agent.email,
-            firstName: agent.firstName,
-            lastName: agent.lastName,
-            phoneNumber: agent.phoneNumber,
-            permissionLevel: agent.permissionLevel,
-            uplineAgentId: agent.uplineAgentId || currentUserId,
-            preInviteUserId: agent.preInviteUserId // Include pre-invite user ID if updating
-          }),
-          credentials: 'include'
+        await inviteAgentMutation.mutateAsync({
+          email: agent.email,
+          firstName: agent.firstName,
+          lastName: agent.lastName,
+          phoneNumber: agent.phoneNumber,
+          permissionLevel: agent.permissionLevel,
+          uplineAgentId: agent.uplineAgentId || currentUserId,
+          preInviteUserId: agent.preInviteUserId // Include pre-invite user ID if updating
         })
 
-        const data = await response.json()
-
-        if (response.ok) {
-          const action = agent.preInviteUserId ? 'updated' : 'invited'
-          results.push(`✓ ${agent.firstName} ${agent.lastName} (${action})`)
-        } else {
-          errors.push(`✗ ${agent.firstName} ${agent.lastName}: ${data.error}`)
-        }
+        const action = agent.preInviteUserId ? 'updated' : 'invited'
+        results.push(`${agent.firstName} ${agent.lastName} (${action})`)
       } catch (error) {
-        errors.push(`✗ ${agent.firstName} ${agent.lastName}: Network error`)
+        const errorMessage = error instanceof Error ? error.message : 'Network error'
+        inviteErrors.push(`${agent.firstName} ${agent.lastName}: ${errorMessage}`)
       }
     }
 
     return {
-      success: errors.length === 0,
-      message: errors.length === 0
+      success: inviteErrors.length === 0,
+      message: inviteErrors.length === 0
         ? `Successfully processed ${results.length} agent(s)!`
-        : `Processed ${results.length} agent(s), ${errors.length} failed: ${errors.join(', ')}`
+        : `Processed ${results.length} agent(s), ${inviteErrors.length} failed: ${inviteErrors.join(', ')}`
     }
   }
 
@@ -817,18 +710,20 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
       // Update user status to 'active' with timeout (Supabase client can hang)
       try {
-        const { error: updateError } = await withTimeout(
-          supabase
-            .from('users')
-            .update({
-              status: 'active',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', userData.id)
+        const result = await withTimeout(
+          Promise.resolve(
+            supabase
+              .from('users')
+              .update({
+                status: 'active',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', userData.id)
+          )
         )
 
-        if (updateError) {
-          console.error('Error updating user status:', updateError)
+        if (result.error) {
+          console.error('Error updating user status:', result.error)
         }
       } catch {
         // Timeout or error - continue to onComplete() which updates via server API
@@ -897,115 +792,105 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     setNiprProgressMessage('Submitting verification request...')
     setNiprQueuePosition(null)
 
-    try {
-      // Validate form
-      const validationErrors: string[] = []
-      if (!niprForm.lastName.trim()) validationErrors.push('Last name is required')
-      if (!niprForm.npn.trim()) validationErrors.push('NPN is required')
-      if (!/^\d+$/.test(niprForm.npn)) validationErrors.push('NPN must be numeric')
-      if (!niprForm.ssn.trim()) validationErrors.push('Last 4 SSN is required')
-      if (!/^\d{4}$/.test(niprForm.ssn)) validationErrors.push('SSN must be exactly 4 digits')
-      if (!niprForm.dob.trim()) validationErrors.push('Date of birth is required')
-      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(niprForm.dob)) validationErrors.push('DOB must be in MM/DD/YYYY format')
+    // Validate form
+    const validationErrors: string[] = []
+    if (!niprForm.lastName.trim()) validationErrors.push('Last name is required')
+    if (!niprForm.npn.trim()) validationErrors.push('NPN is required')
+    if (!/^\d+$/.test(niprForm.npn)) validationErrors.push('NPN must be numeric')
+    if (!niprForm.ssn.trim()) validationErrors.push('Last 4 SSN is required')
+    if (!/^\d{4}$/.test(niprForm.ssn)) validationErrors.push('SSN must be exactly 4 digits')
+    if (!niprForm.dob.trim()) validationErrors.push('Date of birth is required')
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(niprForm.dob)) validationErrors.push('DOB must be in MM/DD/YYYY format')
 
-      if (validationErrors.length > 0) {
-        setErrors(validationErrors)
-        setNiprRunning(false)
-        return
-      }
+    if (validationErrors.length > 0) {
+      setErrors(validationErrors)
+      setNiprRunning(false)
+      return
+    }
 
-      const response = await fetch('/api/nipr/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(niprForm)
-      })
+    runNiprMutation.mutate(niprForm, {
+      onSuccess: async (result) => {
+        // Handle conflict (already has pending job)
+        if (result.status === 'conflict') {
+          // Already has a pending job - start polling it
+          if (result.jobId) {
+            localStorage.setItem(NIPR_JOB_STORAGE_KEY, result.jobId)
+            setNiprJobId(result.jobId)
+            // Check if the existing job is processing or still queued
+            setNiprProgressMessage(result.processing ? 'Verification in progress...' : 'Waiting in queue...')
+          }
+          return
+        }
 
-      const result = await response.json()
-
-      // Handle rate limit error specifically
-      if (response.status === 429) {
-        const retryMinutes = Math.ceil((result.retryAfter || 3600) / 60)
-        setNiprResult({
-          success: false,
-          message: `Rate limit exceeded. Please try again in ${retryMinutes} minute${retryMinutes !== 1 ? 's' : ''}.`
-        })
-        setNiprRunning(false)
-        return
-      }
-
-      // Handle conflict (already has pending job)
-      if (response.status === 409) {
-        // Already has a pending job - start polling it
-        if (result.jobId) {
+        // If job was queued (waiting for another job to finish), start polling
+        if (result.queued && result.jobId) {
           localStorage.setItem(NIPR_JOB_STORAGE_KEY, result.jobId)
           setNiprJobId(result.jobId)
-          setNiprProgressMessage(result.status === 'processing' ? 'Verification in progress...' : 'Waiting in queue...')
+          setNiprQueuePosition(result.position || null)
+          setNiprProgressMessage(`Waiting in queue (position ${result.position || '?'})...`)
+          // The useEffect will handle polling
+          return
         }
-        return
-      }
 
-      // Handle other errors
-      if (!response.ok && !result.queued) {
+        // If job started processing, start polling for progress
+        if (result.processing && result.jobId) {
+          localStorage.setItem(NIPR_JOB_STORAGE_KEY, result.jobId)
+          setNiprJobId(result.jobId)
+          setNiprProgressMessage('Starting verification...')
+          // The useEffect will handle polling
+          return
+        }
+
+        // Job completed immediately (legacy mode or already completed)
+        // Store carriers in database if analysis was successful
+        if (result.success && result.analysis?.unique_carriers && userData.id) {
+          // Additional validation before storage
+          if (Array.isArray(result.analysis.unique_carriers) && result.analysis.unique_carriers.length > 0) {
+            console.log('[ONBOARDING] NIPR analysis found', result.analysis.unique_carriers.length, 'carriers, storing to database...')
+            await storeCarriersInDatabase(result.analysis.unique_carriers, userData.id)
+          } else {
+            console.warn('[ONBOARDING] NIPR analysis returned no carriers to store')
+          }
+        }
+
         setNiprResult({
-          success: false,
-          message: result.error || 'NIPR verification failed. Please try again.'
+          success: result.success || false,
+          message: result.success ? 'NIPR verification completed!' : (result.error || 'NIPR verification failed'),
+          analysis: result.analysis,
         })
         setNiprRunning(false)
-        return
-      }
+        setNiprProgress(100)
+        setNiprProgressMessage('Complete!')
 
-      // If job was queued (waiting for another job to finish), start polling
-      if (result.queued && result.jobId) {
-        localStorage.setItem(NIPR_JOB_STORAGE_KEY, result.jobId)
-        setNiprJobId(result.jobId)
-        setNiprQueuePosition(result.position || null)
-        setNiprProgressMessage(`Waiting in queue (position ${result.position || '?'})...`)
-        // The useEffect will handle polling
-        return
-      }
-
-      // If job started processing, start polling for progress
-      if (result.processing && result.jobId) {
-        localStorage.setItem(NIPR_JOB_STORAGE_KEY, result.jobId)
-        setNiprJobId(result.jobId)
-        setNiprProgressMessage('Starting verification...')
-        // The useEffect will handle polling
-        return
-      }
-
-      // Job completed immediately (legacy mode or already completed)
-      // Store carriers in database if analysis was successful
-      if (result.success && result.analysis?.unique_carriers && userData.id) {
-        // Additional validation before storage
-        if (Array.isArray(result.analysis.unique_carriers) && result.analysis.unique_carriers.length > 0) {
-          console.log('[ONBOARDING] NIPR analysis found', result.analysis.unique_carriers.length, 'carriers, storing to database...')
-          await storeCarriersInDatabase(result.analysis.unique_carriers, userData.id)
-        } else {
-          console.warn('[ONBOARDING] NIPR analysis returned no carriers to store')
+        if (result.success) {
+          // Auto-advance to next step after success
+          // Admins go to policy upload (step 2), agents skip to invite team (step 3)
+          setTimeout(() => {
+            setCurrentStep(3)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }, 2000)
         }
-      }
+      },
+      onError: (error) => {
+        console.error('NIPR automation error:', error)
+        setNiprRunning(false)
 
-      setNiprResult(result)
-      setNiprRunning(false)
-      setNiprProgress(100)
-      setNiprProgressMessage('Complete!')
+        // Handle rate limit error with user-friendly message
+        if (error instanceof RateLimitError) {
+          const retryMinutes = Math.ceil(error.retryAfter / 60)
+          setNiprResult({
+            success: false,
+            message: `Rate limit exceeded. Please try again in ${retryMinutes} minute${retryMinutes !== 1 ? 's' : ''}.`
+          })
+          return
+        }
 
-      if (result.success) {
-        // Auto-advance to next step after success
-        // Admins go to policy upload (step 2), agents skip to invite team (step 3)
-        setTimeout(() => {
-          setCurrentStep(3)
-          window.scrollTo({ top: 0, behavior: 'smooth' })
-        }, 2000)
-      }
-    } catch (error) {
-      console.error('NIPR automation error:', error)
-      setNiprRunning(false)
-      setNiprResult({
-        success: false,
-        message: 'Failed to run NIPR automation. Please try again.'
-      })
-    }
+        setNiprResult({
+          success: false,
+          message: error.message || 'Failed to run NIPR automation. Please try again.'
+        })
+      },
+    })
   }
 
   // NIPR document upload handler (faster alternative to automation)
@@ -1016,65 +901,45 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     }
 
     setErrors([])
-    setNiprUploading(true)
     setNiprResult(null)
 
-    try {
-      const formData = new FormData()
-      formData.append('file', niprUploadFile)
+    uploadNiprMutation.mutate(niprUploadFile, {
+      onSuccess: async (result) => {
+        // Store carriers in database if analysis was successful
+        if (result.analysis?.carriers && userData.id) {
+          if (Array.isArray(result.analysis.carriers) && result.analysis.carriers.length > 0) {
+            console.log('[ONBOARDING] NIPR upload found', result.analysis.carriers.length, 'carriers')
+            await storeCarriersInDatabase(result.analysis.carriers, userData.id)
+          }
+        }
 
-      const response = await fetch('/api/nipr/upload', {
-        method: 'POST',
-        body: formData
-      })
+        setNiprResult({
+          success: true,
+          message: `Successfully extracted ${result.analysis?.carriers?.length || 0} carriers from your NIPR document`,
+          analysis: {
+            success: true,
+            carriers: result.analysis?.carriers || [],
+            unique_carriers: result.analysis?.carriers || [],
+            licensedStates: result.analysis?.licensedStates || { resident: [], nonResident: [] },
+            analyzedAt: result.analysis?.analyzedAt || new Date().toISOString()
+          }
+        })
+        setNiprUploadFile(null)
 
-      const result = await response.json()
-
-      if (!response.ok || !result.success) {
+        // Auto-advance to next step after success
+        setTimeout(() => {
+          setCurrentStep(3)
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }, 2000)
+      },
+      onError: (error) => {
+        console.error('NIPR upload error:', error)
         setNiprResult({
           success: false,
-          message: result.error || 'Failed to process NIPR document'
+          message: error.message || 'Failed to upload NIPR document. Please try again.'
         })
-        setNiprUploading(false)
-        return
-      }
-
-      // Store carriers in database if analysis was successful
-      if (result.analysis?.carriers && userData.id) {
-        if (Array.isArray(result.analysis.carriers) && result.analysis.carriers.length > 0) {
-          console.log('[ONBOARDING] NIPR upload found', result.analysis.carriers.length, 'carriers')
-          await storeCarriersInDatabase(result.analysis.carriers, userData.id)
-        }
-      }
-
-      setNiprResult({
-        success: true,
-        message: `Successfully extracted ${result.analysis?.carriers?.length || 0} carriers from your NIPR document`,
-        analysis: {
-          success: true,
-          carriers: result.analysis?.carriers || [],
-          unique_carriers: result.analysis?.carriers || [],
-          licensedStates: result.analysis?.licensedStates || { resident: [], nonResident: [] },
-          analyzedAt: result.analysis?.analyzedAt || new Date().toISOString()
-        }
-      })
-      setNiprUploading(false)
-      setNiprUploadFile(null)
-
-      // Auto-advance to next step after success
-      setTimeout(() => {
-        setCurrentStep(3)
-        window.scrollTo({ top: 0, behavior: 'smooth' })
-      }, 2000)
-
-    } catch (error) {
-      console.error('NIPR upload error:', error)
-      setNiprUploading(false)
-      setNiprResult({
-        success: false,
-        message: 'Failed to upload NIPR document. Please try again.'
-      })
-    }
+      },
+    })
   }
 
   const goToStep = (step: number) => {
@@ -1097,74 +962,6 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
   const skipToComplete = () => {
     handleComplete()
-  }
-
-  // Save carrier login credentials
-  const saveCarrierLogin = async () => {
-    const currentCarrier = matchedCarriers[currentCarrierIndex]
-    if (!currentCarrier || !carrierLoginUsername || !carrierLoginPassword) {
-      setErrors(['Please enter both username and password'])
-      return
-    }
-
-    setSavingCarrierLogin(true)
-    setErrors([])
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        setErrors(['Authentication required'])
-        return
-      }
-
-      const response = await fetch('/api/carrier-logins', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({
-          carrier_name: currentCarrier.name,
-          login: carrierLoginUsername,
-          password: carrierLoginPassword
-        })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to save carrier login')
-      }
-
-      // Mark this carrier as saved
-      setSavedCarrierLogins(prev => new Set(prev).add(currentCarrier.id))
-
-      // Clear form and move to next carrier
-      setCarrierLoginUsername('')
-      setCarrierLoginPassword('')
-
-      if (currentCarrierIndex < matchedCarriers.length - 1) {
-        setCurrentCarrierIndex(i => i + 1)
-      } else {
-        goToStep(3)
-      }
-    } catch (error) {
-      console.error('Failed to save carrier login:', error)
-      setErrors([error instanceof Error ? error.message : 'Failed to save carrier login'])
-    } finally {
-      setSavingCarrierLogin(false)
-    }
-  }
-
-  // Skip current carrier and move to next
-  const skipCarrierLogin = () => {
-    setCarrierLoginUsername('')
-    setCarrierLoginPassword('')
-
-    if (currentCarrierIndex < matchedCarriers.length - 1) {
-      setCurrentCarrierIndex(i => i + 1)
-    } else {
-      goToStep(3)
-    }
   }
 
   return (

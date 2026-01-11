@@ -7,10 +7,12 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
-import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2, Mail, Check, Circle } from "lucide-react"
+import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2, Mail, Check, Circle, Bot } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { useNotification } from "@/contexts/notification-context"
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queryKeys'
 
 interface PolicyDetailsModalProps {
   open: boolean
@@ -86,41 +88,98 @@ const getClientStatusSteps = (status: string | null | undefined) => {
 
 export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewMode = 'downlines' }: PolicyDetailsModalProps) {
   const { showSuccess, showError, showWarning, showInfo } = useNotification()
-  const [deal, setDeal] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
+  const queryClient = useQueryClient()
   const [isEditing, setIsEditing] = useState(false)
   const [editedData, setEditedData] = useState<any>(null)
-  const [saving, setSaving] = useState(false)
 
   // Layout refs/state to sync right column height with left widgets
   const leftColumnRef = useRef<HTMLDivElement | null>(null)
   const [rightColumnHeight, setRightColumnHeight] = useState<number | undefined>(undefined)
 
-  // Status options state
-  const [statusOptions, setStatusOptions] = useState<StatusOption[]>([
+  // Conversation state
+  const [startConversationDialogOpen, setStartConversationDialogOpen] = useState(false)
+
+  // Fetch deal details with TanStack Query
+  const { data: dealData, isLoading: dealLoading, error: dealError, refetch: refetchDeal } = useQuery({
+    queryKey: queryKeys.dealDetail(dealId),
+    queryFn: async () => {
+      const response = await fetch(`/api/deals/${dealId}?view=${viewMode}`, {
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch deal details')
+      }
+
+      const data = await response.json()
+      return data.deal
+    },
+    enabled: open && !!dealId,
+  })
+
+  const deal = dealData
+
+  // Fetch conversation with TanStack Query
+  const { data: conversationData, isLoading: conversationLoading } = useQuery({
+    queryKey: queryKeys.conversationDetail(dealId),
+    queryFn: async () => {
+      const response = await fetch(`/api/conversations/by-deal?dealId=${dealId}`, {
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch conversation')
+      }
+
+      return response.json()
+    },
+    enabled: open && !!dealId,
+  })
+
+  const conversation = conversationData?.conversation || null
+  const existingConversation = conversationData?.existingConversation || null
+  const messages = conversationData?.messages || []
+
+  // Fetch status options with TanStack Query
+  const { data: statusOptionsData } = useQuery({
+    queryKey: queryKeys.dealsFilterOptions(),
+    queryFn: async () => {
+      const response = await fetch('/api/deals/filter-options', {
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch status options')
+      }
+
+      const data = await response.json()
+      if (data.statuses && data.statuses.length > 0) {
+        // Remove the "all" option and just use the actual statuses
+        const actualStatuses = data.statuses.filter((s: StatusOption) => s.value !== 'all')
+        if (actualStatuses.length > 0) {
+          return actualStatuses
+        }
+      }
+      // Return default options if none found
+      return [
+        { value: "draft", label: "Draft" },
+        { value: "pending", label: "Pending Approval" },
+        { value: "verified", label: "Verified" },
+        { value: "active", label: "Active" },
+        { value: "terminated", label: "Terminated" }
+      ]
+    },
+    enabled: open, // Only fetch when modal is open
+    staleTime: 5 * 60 * 1000, // 5 minutes - status options don't change often
+  })
+
+  const statusOptions = statusOptionsData || [
     { value: "draft", label: "Draft" },
     { value: "pending", label: "Pending Approval" },
     { value: "verified", label: "Verified" },
     { value: "active", label: "Active" },
     { value: "terminated", label: "Terminated" }
-  ])
-
-  // Conversation state
-  const [conversation, setConversation] = useState<Conversation | null>(null)
-  const [existingConversation, setExistingConversation] = useState<Conversation | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [conversationLoading, setConversationLoading] = useState(false)
-  const [startConversationDialogOpen, setStartConversationDialogOpen] = useState(false)
-  const [startingConversation, setStartingConversation] = useState(false)
-  const [sendingInvite, setSendingInvite] = useState(false)
-
-  useEffect(() => {
-    if (open && dealId) {
-      fetchDealDetails()
-      fetchConversation()
-      fetchStatusOptions()
-    }
-  }, [open, dealId])
+  ]
 
   // Keep the SMS card the same height as the left widgets to avoid blank space
   useEffect(() => {
@@ -138,71 +197,161 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
     }
   }, [deal, isEditing, messages, conversationLoading])
 
-  const fetchDealDetails = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch(`/api/deals/${dealId}?view=${viewMode}`, {
-        credentials: 'include'
+  // Mutation for saving deal updates
+  const saveDealMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await fetch(`/api/deals/${dealId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          client_name: data.client_name,
+          client_email: data.client_email,
+          client_phone: data.client_phone,
+          policy_effective_date: data.policy_effective_date,
+          annual_premium: parseFloat(data.annual_premium),
+          monthly_premium: parseFloat(data.annual_premium) / 12,
+          status: data.status
+        })
       })
 
       if (!response.ok) {
-        throw new Error('Failed to fetch deal details')
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to update policy')
       }
 
-      const data = await response.json()
-      setDeal(data.deal)
-    } catch (err) {
-      console.error('Error fetching deal:', err)
-    } finally {
-      setLoading(false)
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.dealDetail(dealId) })
+      setIsEditing(false)
+      setEditedData(null)
+      onUpdate?.()
+    },
+    onError: (error: Error) => {
+      console.error('Error updating policy:', error)
+      showError(error.message || 'Failed to update policy')
     }
-  }
+  })
 
-  const fetchConversation = async () => {
-    setConversationLoading(true)
-    try {
-      const response = await fetch(`/api/conversations/by-deal?dealId=${dealId}`, {
-        credentials: 'include'
+  // Mutation for starting conversation
+  const startConversationMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/conversations/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ dealId })
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error('Failed to fetch conversation')
+        // Handle 409 Conflict - conversation already exists
+        if (response.status === 409 && data.existingConversation) {
+          return { conflict: true, data }
+        }
+        throw new Error(data.error || 'Failed to start conversation')
       }
 
-      const data = await response.json()
-      setConversation(data.conversation)
-      setExistingConversation(data.existingConversation)
-      setMessages(data.messages || [])
-    } catch (err) {
-      console.error('Error fetching conversation:', err)
-    } finally {
-      setConversationLoading(false)
+      return { conflict: false, data }
+    },
+    onSuccess: (result) => {
+      if (result.conflict) {
+        setStartConversationDialogOpen(false)
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversationDetail(dealId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
+        showInfo('A conversation with this phone number already exists. Showing existing conversation.')
+      } else {
+        setStartConversationDialogOpen(false)
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversationDetail(dealId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversations })
+      }
+    },
+    onError: (error: Error) => {
+      console.error('Error starting conversation:', error)
+      showError(error.message || 'Failed to start conversation')
     }
-  }
+  })
 
-  const fetchStatusOptions = async () => {
-    try {
-      const response = await fetch('/api/deals/filter-options', {
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch status options')
+  // Mutation for sending invite
+  const sendInviteMutation = useMutation({
+    mutationFn: async () => {
+      if (!deal || !deal.client_email) {
+        throw new Error('Client email is required to send an invitation')
       }
 
+      const response = await fetch(`/api/clients/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: deal.client_email,
+          firstName: deal.client_name?.split(' ')[0] || 'Client',
+          lastName: deal.client_name?.split(' ').slice(1).join(' ') || '',
+          phoneNumber: deal.client_phone || null
+        })
+      })
+
       const data = await response.json()
-      if (data.statuses && data.statuses.length > 0) {
-        // Remove the "all" option and just use the actual statuses
-        const actualStatuses = data.statuses.filter((s: StatusOption) => s.value !== 'all')
-        if (actualStatuses.length > 0) {
-          setStatusOptions(actualStatuses)
+
+      if (response.ok) {
+        return { success: true, message: data.message }
+      } else {
+        // If client exists but not invited, try resend endpoint
+        if (data.status) {
+          throw new Error(`Client already has status: ${data.status}. ${data.error}`)
+        } else {
+          throw new Error(data.error || 'Failed to send invitation')
         }
       }
-    } catch (err) {
-      console.error('Error fetching status options:', err)
-      // Keep default options if fetch fails
+    },
+    onSuccess: (data) => {
+      showSuccess(data.message || 'Invitation sent successfully!')
+      queryClient.invalidateQueries({ queryKey: queryKeys.dealDetail(dealId) })
+    },
+    onError: (error: Error) => {
+      console.error('Error sending invite:', error)
+      if (error.message.includes('already has status')) {
+        showWarning(error.message)
+      } else {
+        showError(error.message || 'Failed to send invitation')
+      }
     }
-  }
+  })
+
+  // Mutation for resending client invite
+  const resendInviteMutation = useMutation({
+    mutationFn: async () => {
+      if (!deal || !deal.client_email) {
+        throw new Error('Client email is required to resend invitation')
+      }
+
+      const response = await fetch('/api/clients/resend-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: deal.client_email
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to resend invitation')
+      }
+
+      return data
+    },
+    onSuccess: (data) => {
+      showSuccess(data.message || 'Invitation resent successfully!')
+    },
+    onError: (error: Error) => {
+      console.error('Error resending invite:', error)
+      showError(error.message || 'Failed to resend invitation')
+    }
+  })
 
   const handleEdit = () => {
     if (!deal) return
@@ -224,78 +373,28 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
 
   const handleSave = async () => {
     if (!deal || !editedData) return
-
-    setSaving(true)
-    try {
-      const response = await fetch(`/api/deals/${deal.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_name: editedData.client_name,
-          client_email: editedData.client_email,
-          client_phone: editedData.client_phone,
-          policy_effective_date: editedData.policy_effective_date,
-          annual_premium: parseFloat(editedData.annual_premium),
-          monthly_premium: parseFloat(editedData.annual_premium) / 12,
-          status: editedData.status
-        })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to update policy')
-      }
-
-      await fetchDealDetails()
-      setIsEditing(false)
-      setEditedData(null)
-      onUpdate?.()
-    } catch (err) {
-      console.error('Error updating policy:', err)
-      showError(err instanceof Error ? err.message : 'Failed to update policy')
-    } finally {
-      setSaving(false)
-    }
+    saveDealMutation.mutate(editedData)
   }
 
   const handleStartConversation = async () => {
     if (!deal) return
+    startConversationMutation.mutate()
+  }
 
-    setStartingConversation(true)
-    try {
-      const response = await fetch('/api/conversations/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ dealId: deal.id })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        // Handle 409 Conflict - conversation already exists
-        if (response.status === 409 && data.existingConversation) {
-          // Close the dialog and refresh to show the existing conversation
-          setStartConversationDialogOpen(false)
-          await fetchConversation()
-          showInfo('A conversation with this phone number already exists. Showing existing conversation.')
-          return
-        }
-
-        throw new Error(data.error || 'Failed to start conversation')
-      }
-
-      setConversation(data.conversation)
-      setStartConversationDialogOpen(false)
-
-      // Refresh messages
-      await fetchConversation()
-    } catch (err) {
-      console.error('Error starting conversation:', err)
-      showError(err instanceof Error ? err.message : 'Failed to start conversation')
-    } finally {
-      setStartingConversation(false)
+  const handleSendInvite = async () => {
+    if (!deal || !deal.client_email) {
+      showWarning('Client email is required to send an invitation')
+      return
     }
+    sendInviteMutation.mutate()
+  }
+
+  const handleResendClientInvite = async () => {
+    if (!deal || !deal.client_email) {
+      showWarning('Client email is required to resend invitation')
+      return
+    }
+    resendInviteMutation.mutate()
   }
 
   const formatMessageTime = (timestamp: string) => {
@@ -315,81 +414,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
     });
   }
 
-  const handleSendInvite = async () => {
-    if (!deal || !deal.client_email) {
-      showWarning('Client email is required to send an invitation')
-      return
-    }
-
-    setSendingInvite(true)
-    try {
-      // First check if client already has an invite or account
-      const checkResponse = await fetch(`/api/clients/invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: deal.client_email,
-          firstName: deal.client_name?.split(' ')[0] || 'Client',
-          lastName: deal.client_name?.split(' ').slice(1).join(' ') || '',
-          phoneNumber: deal.client_phone || null
-        })
-      })
-
-      const data = await checkResponse.json()
-
-      if (checkResponse.ok) {
-        showSuccess(data.message || 'Invitation sent successfully!')
-        await fetchDealDetails() // Refresh deal details
-      } else {
-        // If client exists but not invited, try resend endpoint
-        if (data.status) {
-          showWarning(`Client already has status: ${data.status}. ${data.error}`)
-        } else {
-          throw new Error(data.error || 'Failed to send invitation')
-        }
-      }
-    } catch (err) {
-      console.error('Error sending invite:', err)
-      showError(err instanceof Error ? err.message : 'Failed to send invitation')
-    } finally {
-      setSendingInvite(false)
-    }
-  }
-
-  const handleResendClientInvite = async () => {
-    if (!deal || !deal.client_email) {
-      showWarning('Client email is required to resend invitation')
-      return
-    }
-
-    setSendingInvite(true)
-    try {
-      const response = await fetch('/api/clients/resend-invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: deal.client_email
-        })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to resend invitation')
-      }
-
-      showSuccess(data.message || 'Invitation resent successfully!')
-    } catch (err) {
-      console.error('Error resending invite:', err)
-      showError(err instanceof Error ? err.message : 'Failed to resend invitation')
-    } finally {
-      setSendingInvite(false)
-    }
-  }
-
-  if (!deal && loading) {
+  if (!deal && dealLoading) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
@@ -405,7 +430,34 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
     )
   }
 
+  if (dealError) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <VisuallyHidden>
+            <DialogTitle>Error Loading Policy</DialogTitle>
+            <DialogDescription>There was an error loading the policy details</DialogDescription>
+          </VisuallyHidden>
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+            <h3 className="text-lg font-semibold text-foreground mb-2">Failed to Load Policy</h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              {dealError instanceof Error ? dealError.message : 'An unexpected error occurred'}
+            </p>
+            <Button onClick={() => refetchDeal()} variant="outline">
+              Try Again
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
   if (!deal) return null
+
+  const saving = saveDealMutation.isPending
+  const startingConversation = startConversationMutation.isPending
+  const sendingInvite = sendInviteMutation.isPending || resendInviteMutation.isPending
 
   return (
     <>
@@ -740,8 +792,9 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                                     </div>
                                   )}
                                   {isAutomated && !isDraft && (
-                                    <div className="text-xs opacity-75 mb-0.5 italic font-medium">
-                                      🤖 Automated
+                                    <div className="text-xs opacity-75 mb-0.5 italic font-medium flex items-center gap-1">
+                                      <Bot className="h-3 w-3" />
+                                      Automated
                                     </div>
                                   )}
                                   <p className="text-sm whitespace-pre-wrap break-words leading-snug">{message.body}</p>
@@ -893,4 +946,3 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
     </>
   )
 }
-

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import Link from "next/link"
 import { Tree, CustomNodeElementProps } from 'react-d3-tree';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,7 +20,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
+import { QueryErrorDisplay } from "@/components/ui/query-error-display"
+import { getInitials } from "@/components/ui/initials-avatar"
 import { useNotification } from "@/contexts/notification-context"
+import { useApiFetch } from "@/hooks/useApiFetch"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/hooks/queryKeys"
+import { useAssignPosition, useResendInvite, useSendInvite } from "@/hooks/mutations"
 
 // Agent data type
 interface Agent {
@@ -314,12 +321,13 @@ const getDefaultDateRange = () => {
 
 export default function Agents() {
   const { showSuccess, showError, showWarning } = useNotification()
+  const queryClient = useQueryClient()
 
   // Get default date range (memoized to prevent re-renders)
   const defaultDateRange = getDefaultDateRange()
 
   // Persisted filter state using custom hook (includes view/tab state)
-  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply] = usePersistedFilters(
+  const { localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply } = usePersistedFilters(
     'agents',
     {
       inUpline: "all",
@@ -341,56 +349,43 @@ export default function Agents() {
     setAndApply({ view: value })
   }
 
-  const [agentsData, setAgentsData] = useState<Agent[]>([])
-  const [allAgents, setAllAgents] = useState<Array<{ id: string; name: string }>>([])
-  const [treeData, setTreeData] = useState<TreeNode | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [totalCount, setTotalCount] = useState(0)
   const [translate, setTranslate] = useState({ x: 0, y: 0 })
-  const [positionColorMap, setPositionColorMap] = useState<Map<number, string>>(new Map())
 
-  // Pending positions state
-  const [pendingAgents, setPendingAgents] = useState<PendingAgent[]>([])
-  const [pendingCount, setPendingCount] = useState(0)
-  const [positions, setPositions] = useState<Position[]>([]) // For pending positions assignment (filtered by user level)
-  const [filterPositions, setFilterPositions] = useState<Position[]>([]) // For filter dropdown (all agency positions)
-  const [assigningAgentId, setAssigningAgentId] = useState<string | null>(null)
+  // Local UI state (not managed by queries)
   const [selectedPositionId, setSelectedPositionId] = useState<string>("")
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null) // Track which agent we're working on
-  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
-  const [agentToInvite, setAgentToInvite] = useState<Agent | null>(null)
-  const [sendingInvite, setSendingInvite] = useState(false)
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [pendingSearchTerm, setPendingSearchTerm] = useState("")
   const [selectedAgentIdForModal, setSelectedAgentIdForModal] = useState<string | null>(null)
   const [agentModalOpen, setAgentModalOpen] = useState(false)
 
-  // Track which filters are visible (showing input fields) - load from localStorage
-  const [visibleFilters, setVisibleFilters] = useState<Set<string>>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('agents-visible-filters')
-      if (stored) {
-        try {
-          return new Set(JSON.parse(stored))
-        } catch {
-          return new Set()
-        }
-      }
-    }
-    return new Set()
-  })
+  // Track which filters are visible (showing input fields)
+  // Initialize to empty Set for SSR safety, hydrate from localStorage in useEffect
+  const [visibleFilters, setVisibleFilters] = useState<Set<string>>(() => new Set())
+  const [filtersHydrated, setFiltersHydrated] = useState(false)
 
   // Track if the add filter menu is open
   const [addFilterMenuOpen, setAddFilterMenuOpen] = useState(false)
 
-  // Persist visible filters to localStorage whenever they change
+  // Hydrate visible filters from localStorage on client mount (SSR-safe)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('agents-visible-filters')
+    if (stored) {
+      try {
+        setVisibleFilters(new Set(JSON.parse(stored)))
+      } catch {
+        // Invalid JSON, keep empty set
+      }
+    }
+    setFiltersHydrated(true)
+  }, [])
+
+  // Persist visible filters to localStorage whenever they change (skip initial hydration)
+  useEffect(() => {
+    if (filtersHydrated) {
       localStorage.setItem('agents-visible-filters', JSON.stringify(Array.from(visibleFilters)))
     }
-  }, [visibleFilters])
+  }, [visibleFilters, filtersHydrated])
 
   const formatUplineLabel = (upline?: string | null) => {
     if (!upline) return 'None'
@@ -473,288 +468,206 @@ export default function Agents() {
         }
     }, []);
 
-  // Fetch all positions for the agency and build color map based on rank
-  useEffect(() => {
-    const fetchPositionsForColorMap = async () => {
-      try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
+  // Fetch all positions and user's position level on mount
+  const { data: positionsData, isPending: positionsLoading } = useQuery({
+    queryKey: queryKeys.positionsWithUserLevel(),
+    queryFn: async ({ signal }) => {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
 
-        if (!accessToken) return
-
-        // Fetch all positions for the agency
-        const response = await fetch('/api/positions', {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-
-          // Sort positions by level (descending - highest level first)
-          const sortedPositions = [...data].sort((a, b) => b.level - a.level)
-
-          // Create a map of level -> color based on rank
-          const colorMap = new Map<number, string>()
-          sortedPositions.forEach((position, index) => {
-            // Top 10 positions get distinct colors, rest get gray
-            if (index < 10) {
-              colorMap.set(position.level, positionLevelColors[index])
-            } else {
-              colorMap.set(position.level, "bg-gray-500/20 text-gray-400 border-gray-500/30")
-            }
-          })
-
-          setPositionColorMap(colorMap)
-        }
-      } catch (err) {
-        console.error('Error fetching positions for color map:', err)
+      if (!accessToken) {
+        return { positions: [], userPositionLevel: null }
       }
+
+      const response = await fetch('/api/positions', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        },
+        signal
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch positions')
+      }
+
+      const positions = await response.json()
+
+      // Fetch current user's position level (for filtering assignment dropdown)
+      const { data: { user } } = await supabase.auth.getUser()
+      let userPositionLevel = null
+
+      if (user) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('position_id, position:positions(level)')
+          .eq('auth_user_id', user.id)
+          .single()
+
+        if (userData?.position?.level !== undefined) {
+          userPositionLevel = userData.position.level
+        }
+      }
+
+      return { positions, userPositionLevel }
+    },
+    staleTime: 10 * 60 * 1000, // 10 minutes - positions rarely change
+    placeholderData: (previousData) => previousData, // Stale-while-revalidate
+  })
+
+  // Compute position color map from positions data (pure transformation)
+  const positionColorMap = useMemo(() => {
+    if (!positionsData?.positions) return new Map<number, string>()
+
+    const sortedPositions = [...positionsData.positions].sort((a: Position, b: Position) => b.level - a.level)
+    const colorMap = new Map<number, string>()
+
+    sortedPositions.forEach((position: Position, index: number) => {
+      // Top 10 positions get distinct colors, rest get gray
+      if (index < 10) {
+        colorMap.set(position.level, positionLevelColors[index])
+      } else {
+        colorMap.set(position.level, "bg-gray-500/20 text-gray-400 border-gray-500/30")
+      }
+    })
+
+    return colorMap
+  }, [positionsData?.positions])
+
+  // Derived positions data
+  const allPositions = positionsData?.positions || []
+  const userPositionLevel = positionsData?.userPositionLevel || null
+  const positions = allPositions.filter((p: Position) =>
+    userPositionLevel === null || userPositionLevel === undefined
+      ? true
+      : p.level < userPositionLevel
+  ) // For pending positions assignment (filtered by user level)
+  const filterPositions = allPositions // For filter dropdown (all agency positions)
+  const positionsLoaded = !positionsLoading
+
+  // Build query params for agents fetch
+  const buildAgentsUrl = () => {
+    const params = new URLSearchParams()
+    if (view === 'table') {
+      params.append('page', currentPage.toString())
+      params.append('limit', '20')
+    } else if (view === 'tree') {
+      params.append('view', 'tree')
     }
 
-    fetchPositionsForColorMap()
-  }, [])
+    // Add active filter parameters
+    if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
+      params.append('inUpline', appliedFilters.inUpline)
+    }
+    if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
+      params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
+    }
+    if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
+      params.append('inDownline', appliedFilters.inDownline)
+    }
+    if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
+      params.append('directDownline', appliedFilters.directDownline)
+    }
+    if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
+      params.append('agentName', appliedFilters.agentName)
+    }
+    if (appliedFilters.status && appliedFilters.status !== 'all') {
+      params.append('status', appliedFilters.status)
+    }
+    if (appliedFilters.position && appliedFilters.position !== 'all') {
+      params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
+    }
+
+    // Add date range params for debt/production metrics
+    if (appliedFilters.startMonth) {
+      params.append('startMonth', appliedFilters.startMonth)
+    }
+    if (appliedFilters.endMonth) {
+      params.append('endMonth', appliedFilters.endMonth)
+    }
+
+    return `/api/agents?${params.toString()}`
+  }
 
   // Fetch agents data from API (only when active filters change, not local filters)
-  useEffect(() => {
-    const fetchAgents = async () => {
-      try {
-        setLoading(true)
-
-        // Build query params
-        const params = new URLSearchParams()
-        if (view === 'table') {
-          params.append('page', currentPage.toString())
-          params.append('limit', '20')
-        } else {
-          params.append('view', 'tree')
-        }
-
-        // Add active filter parameters
-        if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
-          params.append('inUpline', appliedFilters.inUpline)
-        }
-        if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
-          params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
-        }
-        if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
-          params.append('inDownline', appliedFilters.inDownline)
-        }
-        if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
-          params.append('directDownline', appliedFilters.directDownline)
-        }
-        if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
-          params.append('agentName', appliedFilters.agentName)
-        }
-        if (appliedFilters.status && appliedFilters.status !== 'all') {
-          params.append('status', appliedFilters.status)
-        }
-        if (appliedFilters.position && appliedFilters.position !== 'all') {
-          params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
-        }
-
-        // Add date range params for debt/production metrics
-        if (appliedFilters.startMonth) {
-          params.append('startMonth', appliedFilters.startMonth)
-        }
-        if (appliedFilters.endMonth) {
-          params.append('endMonth', appliedFilters.endMonth)
-        }
-
-        const url = `/api/agents?${params.toString()}`
-        const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error('Failed to fetch agents')
-        }
-        const data = await response.json()
-
-        if(view === 'table') {
-            // For pre-invite agents without email, fetch email from agent details
-            const agentsWithEmail = await Promise.all(
-              data.agents.map(async (agent: Agent) => {
-                if (agent.status?.toLowerCase() === 'pre-invite' && !agent.email) {
-                  try {
-                    const response = await fetch(`/api/agents/${agent.id}`, {
-                      credentials: 'include'
-                    })
-                    if (response.ok) {
-                      const agentData = await response.json()
-                      return { ...agent, email: agentData.email || null }
-                    }
-                  } catch (err) {
-                    console.error('Error fetching agent email:', err)
-                  }
-                }
-                return agent
-              })
-            )
-
-            // Agents are already sorted hierarchically by the database RPC
-            setAgentsData(agentsWithEmail)
-            setTotalPages(data.pagination.totalPages)
-            setTotalCount(data.pagination.totalCount)
-            if (data.allAgents) {
-              setAllAgents(data.allAgents)
-            }
-        } else {
-            setTreeData(data.tree)
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred')
-        console.error('Error fetching agents:', err)
-      } finally {
-        setLoading(false)
-      }
+  const { data: agentsResponse, isPending: agentsLoading, isFetching: agentsFetching, error: agentsError } = useApiFetch<{
+    agents?: Agent[]
+    tree?: TreeNode
+    pagination?: { totalPages: number; totalCount: number }
+    allAgents?: Array<{ id: string; name: string }>
+  }>(
+    queryKeys.agentsList(currentPage, view, appliedFilters),
+    buildAgentsUrl(),
+    {
+      enabled: view === 'table' || view === 'tree',
+      staleTime: 30 * 1000, // 30 seconds
+      placeholderData: (previousData) => previousData, // Keep previous data while fetching new data (stale-while-revalidate)
     }
+  )
 
-    fetchAgents()
-  }, [currentPage, view, appliedFilters])
+  // Derived agents data
+  const agentsData = agentsResponse?.agents || []
+  const treeData = agentsResponse?.tree || null
+  const totalPages = agentsResponse?.pagination?.totalPages || 1
+  const totalCount = agentsResponse?.pagination?.totalCount || 0
+  const allAgents = agentsResponse?.allAgents || []
+  const isRefreshing = agentsFetching && !agentsLoading // Background refetch with stale data shown
+
+  // View-specific loading states to prevent wrong spinners
+  // - Table view: needs both agents and positions
+  // - Tree view: only needs agents (positions data not used in tree)
+  // - Pending positions view: only needs pendingPositionsData
 
   // Fetch all agents for pending positions view (with and without positions)
   // This loads all data upfront so we can filter client-side without API calls
-  useEffect(() => {
-    const fetchAllAgents = async () => {
-      if (view !== 'pending-positions') return
+  const buildPendingPositionsUrl = async () => {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const accessToken = session?.access_token
 
-      try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
+    if (!accessToken) {
+      throw new Error('No access token available')
+    }
 
-        if (!accessToken) {
-          console.error('No access token available')
-          return
-        }
+    const url = new URL('/api/agents/without-positions', window.location.origin)
+    url.searchParams.set('all', 'true') // Special parameter to fetch all agents
 
-        // Fetch ALL agents (with and without positions) by using special 'all' parameter
-        // This triggers the API's search path which returns all agents (with and without positions)
-        const url = new URL('/api/agents/without-positions', window.location.origin)
-        url.searchParams.set('all', 'true') // Special parameter to fetch all agents
+    return { url: url.toString(), accessToken }
+  }
 
-        const response = await fetch(url.toString(), {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        })
+  const { data: pendingPositionsData, isPending: pendingPositionsLoading } = useQuery({
+    queryKey: queryKeys.agentsPendingPositions(),
+    queryFn: async ({ signal }) => {
+      const { url, accessToken } = await buildPendingPositionsUrl()
 
-        if (response.ok) {
-          const data = await response.json()
-          console.log('[Frontend] Received agents data:', data.agents?.length || 0, 'agents')
-          console.log('[Frontend] Sample agent created_at values:', data.agents?.slice(0, 3).map((a: PendingAgent) => ({
-            id: a.agent_id,
-            name: `${a.first_name} ${a.last_name}`,
-            created_at: a.created_at,
-            type: typeof a.created_at,
-            has_position: a.has_position
-          })))
-          setPendingAgents(data.agents || [])
-          // Count only those without positions for the badge
-          const withoutPositionsCount = (data.agents || []).filter((a: PendingAgent) => !a.has_position).length
-          setPendingCount(withoutPositionsCount)
-        } else {
-          console.error('Failed to fetch agents:', response.status, await response.text())
-        }
-      } catch (err) {
-        console.error('Error fetching agents:', err)
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        },
+        signal
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch pending positions')
       }
-    }
 
-    fetchAllAgents()
-  }, [view])
+      return response.json()
+    },
+    enabled: view === 'pending-positions',
+    staleTime: 30 * 1000, // 30 seconds
+  })
 
-  // Fetch positions for assignment dropdown (filtered by user's level)
-  useEffect(() => {
-    const fetchPositions = async () => {
-      try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
+  // Derived pending positions data
+  const pendingAgents = pendingPositionsData?.agents || []
+  const pendingCount = pendingAgents.filter((a: PendingAgent) => !a.has_position).length
 
-        if (!accessToken) {
-          console.error('No access token available')
-          return
-        }
-
-        // Fetch positions with Bearer token
-        const response = await fetch('/api/positions', {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-
-          // Fetch current user's position level to filter positions
-          const { data: { user } } = await supabase.auth.getUser()
-          if (user) {
-            const { data: userData } = await supabase
-              .from('users')
-              .select('position_id, position:positions(level)')
-              .eq('auth_user_id', user.id)
-              .single()
-
-            const currentUserPositionLevel = userData?.position?.level
-
-            // Filter positions: only show positions BELOW current user's level (not including their level)
-            const filteredData = currentUserPositionLevel !== null && currentUserPositionLevel !== undefined
-              ? data.filter((pos: any) => pos.level < currentUserPositionLevel)
-              : data
-
-            setPositions(filteredData || [])
-          } else {
-            setPositions(data || [])
-          }
-        } else {
-          console.error('Failed to fetch positions:', response.status, await response.text())
-        }
-      } catch (err) {
-        console.error('Error fetching positions:', err)
-      }
-    }
-
-    if (view === 'pending-positions') {
-      fetchPositions()
-    }
-  }, [view])
-
-  // Fetch all positions for filter dropdown (table view) - no filtering, just all agency positions
-  useEffect(() => {
-    const fetchFilterPositions = async () => {
-      try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
-
-        if (!accessToken) {
-          console.error('No access token available')
-          return
-        }
-
-        // Fetch all positions for the agency (no level filtering)
-        const response = await fetch('/api/positions', {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          setFilterPositions(data || [])
-        } else {
-          console.error('Failed to fetch filter positions:', response.status, await response.text())
-        }
-      } catch (err) {
-        console.error('Error fetching filter positions:', err)
-      }
-    }
-
-    if (view === 'table') {
-      fetchFilterPositions()
-    }
-  }, [view])
+  // Compute view-specific loading state
+  // Only block on agent data - positions loading shouldn't block the main UI
+  const loading = view === 'tree'
+    ? agentsLoading
+    : view === 'pending-positions'
+      ? pendingPositionsLoading
+      : agentsLoading // Decoupled: positions load independently
 
   // Listen for custom event to open agent modal from downline clicks
   useEffect(() => {
@@ -774,14 +687,16 @@ export default function Agents() {
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
-    applyFilters()
+    // Reset page first to ensure query uses page 1 with new filters
     setCurrentPage(1)
+    applyFilters()
   }
 
   // Clear all filters
   const handleClearFilters = () => {
-    clearFilters()
+    // Reset page first to ensure query uses page 1 with cleared filters
     setCurrentPage(1)
+    clearFilters()
     // Also hide all filter input fields
     setVisibleFilters(new Set())
   }
@@ -849,191 +764,80 @@ export default function Agents() {
     appliedFilters.startMonth !== defaultDateRange.startMonth ||
     appliedFilters.endMonth !== defaultDateRange.endMonth
 
-  // Handle position assignment
-  const handleAssignPosition = async (agentId: string, positionId: string) => {
+  // ============ Mutation Hooks ============
+  const assignPositionMutation = useAssignPosition()
+  const resendInviteMutation = useResendInvite()
+  const sendInviteMutation = useSendInvite()
+
+  const handleAssignPosition = (agentId: string, positionId: string) => {
     if (!positionId) {
       showWarning('Please select a position')
       return
     }
 
-    try {
-      setAssigningAgentId(agentId)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        throw new Error('Unable to assign position without a valid session. Please log in again.')
-      }
-
-      const response = await fetch('/api/agents/assign-position', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
+    assignPositionMutation.mutate(
+      { agentId, positionId },
+      {
+        onSuccess: () => {
+          // Clear selection state after successful assignment
+          setSelectedPositionId("")
+          setSelectedAgentId(null)
+          showSuccess('Position assigned successfully!')
         },
-        body: JSON.stringify({
-          agent_id: agentId,
-          position_id: positionId,
-        }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to assign position')
+        onError: (err: Error) => {
+          console.error('Error assigning position:', err)
+          showError(err.message || 'Failed to assign position')
+        },
       }
-
-      // Refresh the agents list to get updated position information
-      // Fetch all agents again (with and without positions)
-      const refreshUrl = new URL('/api/agents/without-positions', window.location.origin)
-      refreshUrl.searchParams.set('all', 'true') // Special parameter to fetch all agents
-
-      const refreshResponse = await fetch(refreshUrl.toString(), {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      if (refreshResponse.ok) {
-        const refreshData = await refreshResponse.json()
-        setPendingAgents(refreshData.agents || [])
-        setPendingCount(refreshData.count || 0)
-      }
-
-      // Clear selection state after successful assignment
-      setSelectedPositionId("")
-      setSelectedAgentId(null)
-      setAssigningAgentId(null)
-
-      showSuccess('Position assigned successfully!')
-    } catch (err) {
-      console.error('Error assigning position:', err)
-      showError(err instanceof Error ? err.message : 'Failed to assign position')
-    } finally {
-      setAssigningAgentId(null)
-    }
+    )
   }
 
-  // Handle resend invite
-  const handleResendInvite = async (agentId: string) => {
-    try {
-      setResendingInviteId(agentId)
-      const response = await fetch('/api/agents/resend-invite', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ agentId }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to resend invitation')
-      }
-
-      showSuccess(data.message || 'Invitation resent successfully!')
-    } catch (err) {
-      console.error('Error resending invite:', err)
-      showError(err instanceof Error ? err.message : 'Failed to resend invitation')
-    } finally {
-      setResendingInviteId(null)
-    }
+  const handleResendInvite = (agentId: string) => {
+    resendInviteMutation.mutate(agentId, {
+      onSuccess: (data) => {
+        // Note: Agent query invalidation is handled by the mutation hook
+        showSuccess(data.message || 'Invitation resent successfully!')
+      },
+      onError: (err: Error) => {
+        console.error('Error resending invite:', err)
+        showError(err.message || 'Failed to resend invitation')
+      },
+    })
   }
 
-  // Handle send invite for pre-invite users
-  const handleSendInvite = async (agent: Agent) => {
+  const handleSendInvite = (agent: Agent) => {
     if (!agent.email) {
       showWarning('Agent email is required to send invitation')
       return
     }
 
-    setAgentToInvite(agent)
-    setSendingInvite(true)
-    
-    try {
-      // Get the agent's name parts
-      const firstName = agent.first_name || agent.name.split(' ')[0] || ''
-      const lastName = agent.last_name || agent.name.split(' ').slice(1).join(' ') || ''
+    // Get the agent's name parts (fallback to parsing full name if first/last not available)
+    const nameParts = (agent.name || '').trim().split(/\s+/).filter(Boolean)
+    const firstName = agent.first_name || nameParts[0] || ''
+    const lastName = agent.last_name || nameParts.slice(1).join(' ') || ''
 
-      // Determine permission level from role (default to agent)
-      const permissionLevel = 'agent'
-
-      const response = await fetch('/api/agents/invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: agent.email,
-          firstName: firstName,
-          lastName: lastName,
-          phoneNumber: null,
-          permissionLevel: permissionLevel,
-          uplineAgentId: null,
-          positionId: agent.position_id || null,
-          preInviteUserId: agent.id
-        })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to send invitation')
+    sendInviteMutation.mutate(
+      {
+        email: agent.email,
+        firstName,
+        lastName,
+        phoneNumber: null,
+        permissionLevel: 'agent',
+        uplineAgentId: null,
+        positionId: agent.position_id || null,
+        preInviteUserId: agent.id,
+      },
+      {
+        onSuccess: () => {
+          // Note: Agent query invalidation is handled by the mutation hook
+          showSuccess('Invitation sent successfully!')
+        },
+        onError: (err: Error) => {
+          console.error('Error sending invite:', err)
+          showError(err.message || 'Failed to send invitation')
+        },
       }
-
-      // Refresh the agents list
-      const params = new URLSearchParams()
-      if (view === 'table') {
-        params.append('page', currentPage.toString())
-        params.append('limit', '20')
-      } else {
-        params.append('view', 'tree')
-      }
-
-      // Add active filter parameters
-      if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
-        params.append('inUpline', appliedFilters.inUpline)
-      }
-      if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
-        params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
-      }
-      if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
-        params.append('inDownline', appliedFilters.inDownline)
-      }
-      if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
-        params.append('directDownline', appliedFilters.directDownline)
-      }
-      if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
-        params.append('agentName', appliedFilters.agentName)
-      }
-      if (appliedFilters.status && appliedFilters.status !== 'all') {
-        params.append('status', appliedFilters.status)
-      }
-      if (appliedFilters.position && appliedFilters.position !== 'all') {
-        params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
-      }
-
-      const url = `/api/agents?${params.toString()}`
-      const refreshResponse = await fetch(url)
-      if (refreshResponse.ok) {
-        const refreshData = await refreshResponse.json()
-        if (view === 'table') {
-          setAgentsData(refreshData.agents)
-          setTotalPages(refreshData.pagination.totalPages)
-          setTotalCount(refreshData.pagination.totalCount)
-          if (refreshData.allAgents) {
-            setAllAgents(refreshData.allAgents)
-          }
-        }
-      }
-
-      showSuccess('Invitation sent successfully!')
-    } catch (err) {
-      console.error('Error sending invite:', err)
-      showError(err instanceof Error ? err.message : 'Failed to send invitation')
-    } finally {
-      setSendingInvite(false)
-      setAgentToInvite(null)
-    }
+    )
   }
 
   // Handle row click to open modal
@@ -1049,11 +853,6 @@ export default function Agents() {
   const handleAgentModalClose = () => {
     setAgentModalOpen(false)
     setSelectedAgentIdForModal(null)
-  }
-
-  // Show error state (but still show the UI structure)
-  if (error) {
-    // Error will be shown in the content area, not blocking the whole page
   }
 
   // Generate agent options for dropdowns
@@ -1073,7 +872,7 @@ export default function Agents() {
   const positionOptions = [
     { value: "all", label: "All Positions" },
     { value: "not_set", label: "Not Set" },
-    ...filterPositions.map(p => ({ value: p.position_id, label: p.name }))
+    ...filterPositions.map((p: Position) => ({ value: p.position_id, label: p.name }))
   ]
 
   // Generate status options
@@ -1089,7 +888,7 @@ export default function Agents() {
   // Filter agents client-side based on search term (all data is already loaded)
   const normalizedPendingSearch = pendingSearchTerm.trim().toLowerCase()
   const visiblePendingAgents = normalizedPendingSearch
-    ? pendingAgents.filter((agent) => {
+    ? pendingAgents.filter((agent: PendingAgent) => {
         const fullName = `${agent.first_name} ${agent.last_name}`.toLowerCase()
         const email = (agent.email || "").toLowerCase()
         return fullName.includes(normalizedPendingSearch) || email.includes(normalizedPendingSearch)
@@ -1099,12 +898,18 @@ export default function Agents() {
   const nodeSize = { x: 220, y: 200 };
   const foreignObjectProps = { width: nodeSize.x, height: nodeSize.y, x: -110, y: 10 };
 
+  // Positions loading state - used for dropdown only, doesn't block main UI
+  const positionsReady = positionsLoaded && positions.length > 0
+
   return (
     <div className="space-y-6 agents-content" data-tour="agents">
       {/* Header */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-4xl font-bold text-foreground">Agents</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-bold text-foreground">Agents</h1>
+            <RefreshingIndicator isRefreshing={isRefreshing} />
+          </div>
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
               <Button
@@ -1489,10 +1294,14 @@ export default function Agents() {
                       <td><div className="h-4 w-12 bg-muted rounded" /></td>
                     </tr>
                   ))
-                ) : error ? (
+                ) : agentsError ? (
                   <tr>
-                    <td colSpan={12} className="py-8 text-center text-destructive">
-                      Error: {error}
+                    <td colSpan={12} className="p-4">
+                      <QueryErrorDisplay
+                        error={agentsError}
+                        onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.agents })}
+                        variant="inline"
+                      />
                     </td>
                   </tr>
                 ) : agentsData.length === 0 ? (
@@ -1512,7 +1321,7 @@ export default function Agents() {
                         <div className="flex items-center space-x-3">
                           <div className="flex-shrink-0">
                             <div className={`w-9 h-9 rounded-full ${badgeColors[agent.badge] || 'bg-muted text-muted-foreground'} flex items-center justify-center text-xs font-bold border-2 shadow-sm`}>
-                              {agent.name.split(' ').map(n => n.charAt(0)).slice(0, 2).join('')}
+                              {getInitials(agent.name)}
                             </div>
                           </div>
                           <div>
@@ -1534,38 +1343,17 @@ export default function Agents() {
                             <div className="mt-2">
                               {agent.status?.toLowerCase() === 'pre-invite' && agent.email && (
                                 <Button
-                                  onClick={async (e) => {
+                                  onClick={(e) => {
                                     e.stopPropagation()
-                                    // Fetch full agent details if needed
-                                    let agentWithEmail = agent
-                                    if (!agent.first_name || !agent.last_name) {
-                                      try {
-                                        const response = await fetch(`/api/agents/${agent.id}`, {
-                                          credentials: 'include'
-                                        })
-                                        if (response.ok) {
-                                          const agentData = await response.json()
-                                          const nameParts = agentData.name.split(' ')
-                                          agentWithEmail = { 
-                                            ...agent, 
-                                            email: agentData.email || agent.email,
-                                            first_name: agentData.name.split(',')[1]?.trim() || nameParts[0] || '',
-                                            last_name: agentData.name.split(',')[0]?.trim() || nameParts.slice(1).join(' ') || ''
-                                          }
-                                        }
-                                      } catch (err) {
-                                        console.error('Error fetching agent details:', err)
-                                      }
-                                    }
-                                    await handleSendInvite(agentWithEmail)
+                                    handleSendInvite(agent)
                                   }}
-                                  disabled={sendingInvite && agentToInvite?.id === agent.id}
+                                  disabled={sendInviteMutation.isPending}
                                   variant="outline"
                                   size="sm"
                                   className="h-7 px-3 text-xs gap-1.5 bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30 hover:border-blue-500/40"
                                 >
                                   <Send className="h-3 w-3" />
-                                  {sendingInvite && agentToInvite?.id === agent.id ? 'Sending...' : 'Send Invitation'}
+                                  {sendInviteMutation.isPending ? 'Sending...' : 'Send Invitation'}
                                 </Button>
                               )}
                               {(agent.status?.toLowerCase() === 'invited' || agent.status?.toLowerCase() === 'onboarding') && (
@@ -1574,13 +1362,13 @@ export default function Agents() {
                                     e.stopPropagation()
                                     handleResendInvite(agent.id)
                                   }}
-                                  disabled={resendingInviteId === agent.id}
+                                  disabled={resendInviteMutation.isPending}
                                   variant="outline"
                                   size="sm"
                                   className="h-7 px-3 text-xs gap-1.5 bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30 hover:border-blue-500/40"
                                 >
                                   <Mail className="h-3 w-3" />
-                                  {resendingInviteId === agent.id ? 'Sending...' : 'Resend Invite'}
+                                  {resendInviteMutation.isPending ? 'Sending...' : 'Resend Invite'}
                                 </Button>
                               )}
                             </div>
@@ -1805,9 +1593,13 @@ export default function Agents() {
                   <div className="h-4 w-32 bg-muted animate-pulse rounded mx-auto" />
                 </div>
               </div>
-            ) : error ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-destructive">Error: {error}</div>
+            ) : agentsError ? (
+              <div className="flex items-center justify-center h-full p-8">
+                <QueryErrorDisplay
+                  error={agentsError}
+                  onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.agents })}
+                  variant="card"
+                />
               </div>
             ) : treeData ? (
                 <Tree
@@ -1890,7 +1682,6 @@ export default function Agents() {
                         if (!value) {
                           setSelectedAgentId(null)
                           setSelectedPositionId("")
-                          setAssigningAgentId(null)
                         }
                       }}
                       placeholder="Search by name or email to find and modify agent positions..."
@@ -1917,7 +1708,7 @@ export default function Agents() {
                   </div>
                 ) : (
                   <>
-                    {visiblePendingAgents.map((agent) => (
+                    {visiblePendingAgents.map((agent: PendingAgent) => (
                   <div
                     key={agent.agent_id}
                     className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
@@ -1954,9 +1745,9 @@ export default function Agents() {
                     <div className="flex items-center gap-3 ml-4">
                       <SimpleSearchableSelect
                         options={positions
-                          .filter(p => p.is_active)
-                          .sort((a, b) => b.level - a.level)
-                          .map(p => ({
+                          .filter((p: Position) => p.is_active)
+                          .sort((a: Position, b: Position) => b.level - a.level)
+                          .map((p: Position) => ({
                             value: p.position_id,
                             label: `${p.name} (Level ${p.level})`
                           }))}
@@ -1965,47 +1756,48 @@ export default function Agents() {
                           setSelectedAgentId(agent.agent_id)
                           setSelectedPositionId(value)
                         }}
-                        placeholder={agent.position_name ? `Current: ${agent.position_name}` : "Select position..."}
+                        placeholder={!positionsReady ? "Loading positions..." : agent.position_name ? `Current: ${agent.position_name}` : "Select position..."}
                         searchPlaceholder="Search positions..."
+                        disabled={!positionsReady}
                       />
                       <Button
                         onClick={() => {
                           // Prevent clicks if currently assigning
-                          if (assigningAgentId === agent.agent_id) {
+                          if (assignPositionMutation.isPending) {
                             return
                           }
-                          
+
                           // Must be working on this agent and have a selected position
                           if (selectedAgentId !== agent.agent_id || !selectedPositionId) {
                             return
                           }
-                          
+
                           // If agent has position, only allow if the selected position is different
                           if (agent.has_position && selectedPositionId === agent.position_id) {
                             return
                           }
-                          
+
                           handleAssignPosition(agent.agent_id, selectedPositionId)
                         }}
                         disabled={
-                          // Disable if currently assigning this agent
-                          assigningAgentId === agent.agent_id ||
+                          // Disable if currently assigning
+                          assignPositionMutation.isPending ||
                           // For agents with position: enable only if working on this agent AND selected a DIFFERENT position
                           (agent.has_position && (
-                            selectedAgentId !== agent.agent_id || 
-                            !selectedPositionId || 
+                            selectedAgentId !== agent.agent_id ||
+                            !selectedPositionId ||
                             selectedPositionId === agent.position_id
                           )) ||
                           // For agents without position: enable only if working on this agent AND selected a position
                           (!agent.has_position && (
-                            selectedAgentId !== agent.agent_id || 
+                            selectedAgentId !== agent.agent_id ||
                             !selectedPositionId
                           ))
                         }
                         className="bg-foreground hover:bg-foreground/90 text-background disabled:opacity-50 disabled:cursor-not-allowed"
                         size="sm"
                       >
-                        {assigningAgentId === agent.agent_id
+                        {assignPositionMutation.isPending
                           ? 'Assigning...'
                           : agent.has_position && selectedAgentId === agent.agent_id && selectedPositionId && selectedPositionId !== agent.position_id
                           ? 'Update Position'
@@ -2033,65 +1825,8 @@ export default function Agents() {
           startMonth={appliedFilters.startMonth}
           endMonth={appliedFilters.endMonth}
           onUpdate={() => {
-            // Refresh agents data if needed
-            const fetchAgents = async () => {
-              try {
-                setLoading(true)
-                const params = new URLSearchParams()
-                if (view === 'table') {
-                  params.append('page', currentPage.toString())
-                  params.append('limit', '20')
-                } else {
-                  params.append('view', 'tree')
-                }
-
-                if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
-                  params.append('inUpline', appliedFilters.inUpline)
-                }
-                if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
-                  params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
-                }
-                if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
-                  params.append('inDownline', appliedFilters.inDownline)
-                }
-                if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
-                  params.append('directDownline', appliedFilters.directDownline)
-                }
-                if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
-                  params.append('agentName', appliedFilters.agentName)
-                }
-                if (appliedFilters.status && appliedFilters.status !== 'all') {
-                  params.append('status', appliedFilters.status)
-                }
-                if (appliedFilters.position && appliedFilters.position !== 'all') {
-                  params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
-                }
-
-                const url = `/api/agents?${params.toString()}`
-                const response = await fetch(url)
-                if (!response.ok) {
-                  throw new Error('Failed to fetch agents')
-                }
-                const data = await response.json()
-
-                if(view === 'table') {
-                    setAgentsData(data.agents)
-                    setTotalPages(data.pagination.totalPages)
-                    setTotalCount(data.pagination.totalCount)
-                    if (data.allAgents) {
-                      setAllAgents(data.allAgents)
-                    }
-                } else {
-                    setTreeData(data.tree)
-                }
-              } catch (err) {
-                setError(err instanceof Error ? err.message : 'An error occurred')
-                console.error('Error fetching agents:', err)
-              } finally {
-                setLoading(false)
-              }
-            }
-            fetchAgents()
+            // Invalidate and refetch agents data
+            queryClient.invalidateQueries({ queryKey: queryKeys.agents })
           }}
         />
       )}

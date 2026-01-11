@@ -4,7 +4,7 @@ import Stripe from 'stripe';
 import { getTierFromPriceId, TIER_PRICE_IDS } from '@/lib/subscription-tiers';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-12-18.acacia',
+  apiVersion: '2024-11-20.acacia',
 });
 
 // Helper function to get price ID from tier name

@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, ReactNode, useEffect, useMemo } from 'react'
 import { BannerNotification, Notification, NotificationType } from '@/components/banner-notification'
 
 interface NotificationContextType {
@@ -9,6 +9,7 @@ interface NotificationContextType {
   showError: (message: string, duration?: number) => void
   showWarning: (message: string, duration?: number) => void
   showInfo: (message: string, duration?: number) => void
+  removeNotification: (id: string) => void
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined)
@@ -48,14 +49,20 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       duration,
     }
 
-    // Replace all existing notifications with the new one (only show one at a time)
-    const newNotifications = [notification]
-    setNotifications(newNotifications)
+    // Stack up to 3 notifications, removing oldest if limit exceeded
+    setNotifications((prev) => {
+      const MAX_NOTIFICATIONS = 3
+      const updated = [...prev, notification]
+      // Remove oldest notifications if we exceed the limit
+      const newNotifications = updated.slice(-MAX_NOTIFICATIONS)
 
-    // Store in sessionStorage so it persists across navigation
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(newNotifications))
-    }
+      // Store in sessionStorage so it persists across navigation
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(newNotifications))
+      }
+
+      return newNotifications
+    })
   }, [])
 
   const showSuccess = useCallback((message: string, duration: number = 5000) => {
@@ -77,7 +84,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const removeNotification = useCallback((id: string) => {
     setNotifications((prev) => {
       const filtered = prev.filter((n) => n.id !== id)
-      // Update storage when notification is removed
       if (typeof window !== 'undefined') {
         if (filtered.length === 0) {
           sessionStorage.removeItem(STORAGE_KEY)
@@ -89,16 +95,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const contextValue = useMemo(() => ({
+    showNotification, showSuccess, showError, showWarning, showInfo, removeNotification
+  }), [showNotification, showSuccess, showError, showWarning, showInfo, removeNotification])
+
   return (
-    <NotificationContext.Provider
-      value={{
-        showNotification,
-        showSuccess,
-        showError,
-        showWarning,
-        showInfo,
-      }}
-    >
+    <NotificationContext.Provider value={contextValue}>
       {children}
 
       {/* Notification Container - Fixed to top right */}

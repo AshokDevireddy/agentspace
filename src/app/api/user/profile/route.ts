@@ -1,26 +1,33 @@
-import { createAdminClient } from '@/lib/supabase/server'
+import { createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-
-// THIS ENDPOINT SHOULD BE USING SUPABASE/SSR BC AUTH HELPER IS DEPRECATED
-// https://supabase.com/docs/guides/auth/server-side/nextjs?queryGroups=router&router=hybrid
-// https://supabase.com/docs/guides/auth/auth-helpers/nextjs
 
 export async function GET(request: Request) {
   try {
-    // Get user_id from URL search params
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('user_id')
+    const supabase = await createServerClient()
 
-    if (!userId) {
+    // Authenticate the request
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
       return NextResponse.json(
-        { error: 'user_id parameter is required' },
-        { status: 400 }
+        { error: 'Unauthorized' },
+        { status: 401 }
       )
     }
 
-    // ⚠️  SECURITY WARNING: Using admin client for TESTING ONLY
-    // This bypasses ALL RLS policies - replace with proper server client later
-    const supabase = createAdminClient()
+    // Get user_id from URL search params (optional - defaults to current user)
+    const { searchParams } = new URL(request.url)
+    const requestedUserId = searchParams.get('user_id')
+
+    // Use the authenticated user's ID (users can only fetch their own profile)
+    // If user_id is provided, it must match the authenticated user
+    const userId = user.id
+    if (requestedUserId && requestedUserId !== userId) {
+      return NextResponse.json(
+        { error: 'Forbidden - can only access your own profile' },
+        { status: 403 }
+      )
+    }
 
     const { data: userData, error: userError } = await supabase
       .from('users')
@@ -95,10 +102,12 @@ export async function GET(request: Request) {
   }
 }
 
-// PUT endpoint to update user's position (admin only)
+// PUT endpoint to update user profile
+// - All authenticated users can update: first_name, last_name, phone_number, theme_mode
+// - Only admins can update: position_id
 export async function PUT(request: Request) {
   try {
-    const supabase = createAdminClient()
+    const supabase = await createServerClient()
 
     // Get the authorization header
     const authHeader = request.headers.get('authorization')
@@ -122,7 +131,7 @@ export async function PUT(request: Request) {
       )
     }
 
-    // Get user details to check if admin
+    // Get user details
     const { data: currentUser, error: userError } = await supabase
       .from('users')
       .select('id, is_admin, role, perm_level, agency_id')
@@ -136,65 +145,88 @@ export async function PUT(request: Request) {
       )
     }
 
-    // Check if user is admin
-    const isAdmin = currentUser.role === 'admin'
+    const body = await request.json()
+    const { first_name, last_name, phone_number, theme_mode, position_id } = body
 
-    if (!isAdmin) {
-      return NextResponse.json(
-        { error: 'Only admins can update positions' },
-        { status: 403 }
-      )
+    // Build update object with allowed fields
+    const updateData: Record<string, unknown> = {
+      updated_at: new Date().toISOString()
     }
 
-    // Get the position_id from request body
-    const body = await request.json()
-    const { position_id } = body
+    // Profile fields - any authenticated user can update their own
+    if (first_name !== undefined) {
+      updateData.first_name = first_name
+    }
+    if (last_name !== undefined) {
+      updateData.last_name = last_name
+    }
+    if (phone_number !== undefined) {
+      updateData.phone_number = phone_number
+    }
+    if (theme_mode !== undefined) {
+      updateData.theme_mode = theme_mode
+    }
 
-    if (!position_id) {
+    // Position update - admin only
+    if (position_id !== undefined) {
+      const isAdmin = currentUser.role === 'admin'
+
+      if (!isAdmin) {
+        return NextResponse.json(
+          { error: 'Only admins can update positions' },
+          { status: 403 }
+        )
+      }
+
+      // Verify the position belongs to the same agency
+      const { data: position, error: positionError } = await supabase
+        .from('positions')
+        .select('id, agency_id')
+        .eq('id', position_id)
+        .single()
+
+      if (positionError || !position) {
+        return NextResponse.json(
+          { error: 'Position not found' },
+          { status: 404 }
+        )
+      }
+
+      if (position.agency_id !== currentUser.agency_id) {
+        return NextResponse.json(
+          { error: 'Position does not belong to your agency' },
+          { status: 403 }
+        )
+      }
+
+      updateData.position_id = position_id
+    }
+
+    // Check if there's anything to update
+    if (Object.keys(updateData).length === 1) {
       return NextResponse.json(
-        { error: 'position_id is required' },
+        { error: 'No valid fields to update' },
         { status: 400 }
       )
     }
 
-    // Verify the position belongs to the same agency
-    const { data: position, error: positionError } = await supabase
-      .from('positions')
-      .select('id, agency_id')
-      .eq('id', position_id)
-      .single()
-
-    if (positionError || !position) {
-      return NextResponse.json(
-        { error: 'Position not found' },
-        { status: 404 }
-      )
-    }
-
-    if (position.agency_id !== currentUser.agency_id) {
-      return NextResponse.json(
-        { error: 'Position does not belong to your agency' },
-        { status: 403 }
-      )
-    }
-
-    // Update the user's position
+    // Update the user's profile
     const { error: updateError } = await supabase
       .from('users')
-      .update({ position_id: position_id, updated_at: new Date().toISOString() })
+      .update(updateData)
       .eq('id', currentUser.id)
 
     if (updateError) {
-      console.error('Error updating position:', updateError)
+      console.error('Error updating profile:', updateError)
       return NextResponse.json(
-        { error: 'Failed to update position' },
+        { error: 'Failed to update profile' },
         { status: 500 }
       )
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Position updated successfully'
+      message: 'Profile updated successfully'
     })
 
   } catch (error) {

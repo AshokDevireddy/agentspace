@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, createAdminClient } from '@/lib/supabase/server';
-import Stripe from 'stripe';
 import { TIER_PRICE_IDS } from '@/lib/subscription-tiers';
 import { stripe } from '@/lib/stripe';
+import Stripe from 'stripe';
 
 // Tier hierarchy for determining upgrades vs downgrades
 const TIER_HIERARCHY = {

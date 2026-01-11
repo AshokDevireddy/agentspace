@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useAuth } from "@/providers/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
 import { PricingTierCard } from "@/components/pricing-tier-card";
@@ -11,6 +11,9 @@ import { useTheme } from "next-themes"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
 import { Sun, Moon, Monitor, Check, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useApiFetch } from '@/hooks/useApiFetch'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queryKeys'
 
 interface ProfileData {
   id: string;
@@ -45,6 +48,11 @@ interface Position {
   is_active: boolean;
 }
 
+interface ProfileApiResponse {
+  success: boolean;
+  data: ProfileData;
+}
+
 // Helper function to format date as "Month DD, YYYY"
 const formatRenewalDate = (dateString: string | null | undefined): string => {
   if (!dateString) return 'Not available';
@@ -60,60 +68,51 @@ export default function ProfilePage() {
   const { user, userData, refreshUserData, loading: authLoading } = useAuth();
   const { showSuccess, showError } = useNotification()
   const { setTheme } = useTheme()
-  const [profileData, setProfileData] = useState<ProfileData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [positions, setPositions] = useState<Position[]>([]);
+  const queryClient = useQueryClient()
   const [selectedPositionId, setSelectedPositionId] = useState<string>("");
-  const [updatingPosition, setUpdatingPosition] = useState(false);
   const [savingTheme, setSavingTheme] = useState(false);
 
+  // Fetch user profile data using TanStack Query
+  // Wait for auth to be ready before fetching to prevent race conditions
+  const {
+    data: profileResponse,
+    isLoading: profileLoading,
+    error: profileError
+  } = useApiFetch<ProfileApiResponse>(
+    queryKeys.userProfile(user?.id),
+    `/api/user/profile?user_id=${user?.id}`,
+    {
+      enabled: !authLoading && !!user,
+      staleTime: 5 * 60 * 1000, // 5 minutes - profile rarely changes
+      placeholderData: (previousData) => previousData, // Stale-while-revalidate
+    }
+  )
 
-  // Fetch user profile data from API
-  useEffect(() => {
-    const fetchProfileData = async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
+  const profileData = profileResponse?.data
 
-      try {
-        const response = await fetch(`/api/user/profile?user_id=${user.id}`);
+  // Update selectedPositionId when profileData changes
+  React.useEffect(() => {
+    if (profileData?.position_id) {
+      setSelectedPositionId(profileData.position_id)
+    }
+  }, [profileData?.position_id])
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch profile data');
-        }
-
-        const result = await response.json();
-
-        if (result.success) {
-          setProfileData(result.data);
-          setSelectedPositionId(result.data.position_id || "");
-        } else {
-          console.error('API Error:', result.error);
-        }
-      } catch (error) {
-        console.error('Error fetching profile data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProfileData();
-  }, [user]);
-
-  // Fetch positions if admin
-  useEffect(() => {
-    const fetchPositions = async () => {
-      if (!profileData?.is_admin) return;
-
+  // Fetch positions if admin using TanStack Query with custom queryFn
+  // Wrapped in try/catch to prevent errors from propagating to global error boundary
+  const {
+    data: positions = [],
+    isLoading: positionsLoading
+  } = useQuery<Position[]>({
+    queryKey: queryKeys.positionsList(),
+    queryFn: async () => {
       try {
         const supabase = createClient();
         const { data: { session } } = await supabase.auth.getSession();
         const accessToken = session?.access_token;
 
         if (!accessToken) {
-          console.error('No access token available');
-          return;
+          console.warn('[Profile] No access token for positions fetch');
+          return [];
         }
 
         const response = await fetch('/api/positions', {
@@ -122,33 +121,33 @@ export default function ProfilePage() {
           }
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          setPositions(data || []);
-        } else {
-          console.error('Failed to fetch positions:', response.status, await response.text());
+        if (!response.ok) {
+          console.warn('[Profile] Positions fetch failed:', response.status);
+          return [];
         }
-      } catch (error) {
-        console.error('Error fetching positions:', error);
+
+        const data = await response.json();
+        // API returns array directly - validate to prevent cache collision issues
+        return Array.isArray(data) ? data : [];
+      } catch (err) {
+        console.error('[Profile] Positions query error:', err);
+        return [];
       }
-    };
+    },
+    // Wait for auth to be ready and user to be admin
+    enabled: !authLoading && !!profileData?.is_admin,
+    retry: 1,
+  })
 
-    fetchPositions();
-  }, [profileData?.is_admin]);
-
-  // Handle position update
-  const handlePositionUpdate = async () => {
-    if (!selectedPositionId) return;
-
-    setUpdatingPosition(true);
-    try {
+  // Handle position update with mutation
+  const updatePositionMutation = useMutation({
+    mutationFn: async (positionId: string) => {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       const accessToken = session?.access_token;
 
       if (!accessToken) {
-        showError('Not authenticated');
-        return;
+        throw new Error('Not authenticated');
       }
 
       const response = await fetch('/api/user/profile', {
@@ -157,29 +156,30 @@ export default function ProfilePage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${accessToken}`
         },
-        body: JSON.stringify({ position_id: selectedPositionId }),
+        body: JSON.stringify({ position_id: positionId }),
       });
 
       const result = await response.json();
 
-      if (result.success) {
-        // Refresh profile data
-        const profileResponse = await fetch(`/api/user/profile?user_id=${user?.id}`);
-        const profileResult = await profileResponse.json();
-        if (profileResult.success) {
-          setProfileData(profileResult.data);
-        }
-        showSuccess('Position updated successfully!');
-      } else {
-        console.error('Failed to update position:', result.error);
-        showError('Failed to update position: ' + result.error);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update position');
       }
-    } catch (error) {
+
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(user?.id) })
+      showSuccess('Position updated successfully!');
+    },
+    onError: (error: Error) => {
       console.error('Error updating position:', error);
-      showError('Error updating position');
-    } finally {
-      setUpdatingPosition(false);
+      showError('Failed to update position: ' + error.message);
     }
+  })
+
+  const handlePositionUpdate = () => {
+    if (!selectedPositionId) return;
+    updatePositionMutation.mutate(selectedPositionId);
   };
 
   const handleThemeChange = async (newTheme: ThemeMode) => {
@@ -194,11 +194,37 @@ export default function ProfilePage() {
     setSavingTheme(false)
   }
 
-  // Show loading screen until data is ready
-  if (authLoading || loading || !profileData) {
+  // Show error state if profile fetch failed
+  if (profileError) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
+      <div className="flex flex-col items-center w-full min-h-screen bg-background py-8">
+        <div className="w-full max-w-3xl bg-destructive/10 rounded-xl border border-destructive p-6">
+          <h2 className="text-lg font-semibold text-destructive mb-2">Failed to load profile</h2>
+          <p className="text-sm text-destructive/80">{profileError instanceof Error ? profileError.message : 'An unexpected error occurred'}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading skeleton until data is ready
+  if (authLoading || profileLoading || !profileData) {
+    return (
+      <div className="flex flex-col items-center w-full min-h-screen bg-background py-8 animate-pulse">
+        <div className="w-full max-w-3xl bg-card rounded-2xl shadow-md p-8 mb-8 border border-border">
+          <div className="flex items-center">
+            <div className="w-32 h-32 bg-muted rounded-lg mr-8" />
+            <div className="space-y-3">
+              <div className="h-10 w-64 bg-muted rounded" />
+              <div className="h-4 w-48 bg-muted rounded" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -257,10 +283,10 @@ export default function ProfilePage() {
             </div>
             <button
               onClick={handlePositionUpdate}
-              disabled={updatingPosition || !selectedPositionId || selectedPositionId === profileData.position_id}
+              disabled={updatePositionMutation.isPending || !selectedPositionId || selectedPositionId === profileData.position_id}
               className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {updatingPosition ? 'Updating...' : 'Update Position'}
+              {updatePositionMutation.isPending ? 'Updating...' : 'Update Position'}
             </button>
           </div>
         </div>

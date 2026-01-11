@@ -33,6 +33,10 @@ import {
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { useNotification } from '@/contexts/notification-context'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useApiFetch } from '@/hooks/useApiFetch'
+import { queryKeys } from '@/hooks/queryKeys'
+import { useSendMessage, useResolveNotification, useApproveDrafts, useRejectDrafts, useEditDraft } from '@/hooks/mutations'
 
 interface Conversation {
   id: string
@@ -99,12 +103,13 @@ function SMSMessagingPageContent() {
   const searchParams = useSearchParams()
   const conversationIdFromUrl = searchParams.get('conversation')
   const { user } = useAuth()
+  const queryClient = useQueryClient()
   // Create stable supabase client instance
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
 
   // Persisted filter state using custom hook (for real-time filters, use setAndApply)
-  const [, appliedFilters, , , , setAndApply] = usePersistedFilters(
+  const { appliedFilters, setAndApply } = usePersistedFilters(
     'communications',
     {
       searchQuery: "",
@@ -133,34 +138,122 @@ function SMSMessagingPageContent() {
     setAndApply({ selectedConversationId: value })
   }
 
-  const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [dealDetails, setDealDetails] = useState<DealDetails | null>(null)
   const [messageInput, setMessageInput] = useState("")
-  const [loading, setLoading] = useState(true)
-  const [messagesLoading, setMessagesLoading] = useState(false)
-  const [dealLoading, setDealLoading] = useState(false)
-  const [sending, setSending] = useState(false)
-  const [resolving, setResolving] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(320)
   const [rightPanelWidth, setRightPanelWidth] = useState(350)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const [isResizingRightPanel, setIsResizingRightPanel] = useState(false)
   const [dealPanelCollapsed, setDealPanelCollapsed] = useState(false)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [isAdminChecked, setIsAdminChecked] = useState(false)
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
   const [editingDraftBody, setEditingDraftBody] = useState("")
-  const [approvingDrafts, setApprovingDrafts] = useState<Set<string>>(new Set())
-  const [rejectingDrafts, setRejectingDrafts] = useState<Set<string>>(new Set())
   const [isHydrated, setIsHydrated] = useState(false)
-  const [userTier, setUserTier] = useState<string>('free')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const conversationRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const messageInputRef = useRef<HTMLTextAreaElement>(null)
+  const messageReadTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
+
+  // Event deduplication to prevent double-processing of real-time events
+  // Events are tracked by messageId + eventType and cleared after 2 seconds
+  const processedEventsRef = useRef<Set<string>>(new Set())
+  const DEDUP_WINDOW_MS = 2000
+
+  // Refs to hold current filter values for use in real-time subscription callbacks
+  // This prevents stale closures when filters change but subscriptions remain active
+  const filtersRef = useRef({ effectiveViewMode: 'self', searchQuery: '', notificationFilter: 'all' as 'all' | 'lapse' | 'needs_info' | 'drafts' | 'unread' })
+
+  // Ref for selected conversation to avoid stale closures in subscriptions
+  const selectedConversationRef = useRef<Conversation | null>(null)
+
+  // Check if user is admin - migrated to useQuery
+  const { data: adminData, isSuccess: isAdminChecked } = useQuery({
+    queryKey: queryKeys.userProfile(user?.id),
+    queryFn: async () => {
+      if (!user?.id) {
+        throw new Error('No user ID found')
+      }
+
+      const { data: userData, error } = await supabase
+        .from('users')
+        .select('id, is_admin, subscription_tier')
+        .eq('auth_user_id', user.id)
+        .single()
+
+      if (error) {
+        console.error('❌ Error checking admin status:', error)
+        throw error
+      }
+
+      const isAdmin = userData?.is_admin || false
+      const userTier = userData?.subscription_tier || 'free'
+      const currentUserId = userData?.id || null
+
+      console.log('🔐 Admin status:', isAdmin, 'Tier:', userTier)
+
+      return { isAdmin, userTier, currentUserId }
+    },
+    enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  const isAdmin = adminData?.isAdmin || false
+  const userTier = adminData?.userTier || 'free'
+  const currentUserId = adminData?.currentUserId || null
+
+  // Conversations query - migrated to useApiFetch
+  const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
+
+  // Keep filtersRef in sync with current values to prevent stale closures in subscriptions
+  useEffect(() => {
+    filtersRef.current = { effectiveViewMode, searchQuery, notificationFilter }
+  }, [effectiveViewMode, searchQuery, notificationFilter])
+
+  // Keep selectedConversationRef in sync to avoid stale closures in subscriptions
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation
+  }, [selectedConversation])
+  const { data: conversationsData, isPending: loading } = useApiFetch<{ conversations: Conversation[] }>(
+    queryKeys.conversationsList(effectiveViewMode, { searchQuery, notificationFilter }),
+    `/api/sms/conversations?view=${effectiveViewMode}`,
+    {
+      enabled: isAdminChecked,
+      staleTime: 30 * 1000, // 30 seconds
+      placeholderData: (previousData) => previousData, // Keep previous data while fetching (stale-while-revalidate)
+    }
+  )
+
+  const conversations = conversationsData?.conversations || []
+
+  // Messages query - migrated to useApiFetch
+  const { data: messagesData, isPending: messagesLoading } = useApiFetch<{ messages: Message[] }>(
+    queryKeys.messages(selectedConversation?.id || ''),
+    `/api/sms/messages?conversationId=${selectedConversation?.id}&view=${effectiveViewMode}`,
+    {
+      enabled: !!selectedConversation?.id,
+      staleTime: 30 * 1000, // 30 seconds - prevents excessive refetches
+    }
+  )
+
+  // Sort messages: sent messages by sent_at, drafts (sent_at=null) always at bottom
+  const messages = (messagesData?.messages || []).sort((a: Message, b: Message) => {
+    if (!a.sent_at && !b.sent_at) return 0
+    if (!a.sent_at) return 1
+    if (!b.sent_at) return -1
+    return new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
+  })
+
+  // Deal details query - migrated to useApiFetch
+  const { data: dealData, isPending: dealLoading } = useApiFetch<{ deal: DealDetails }>(
+    queryKeys.dealDetail(selectedConversation?.dealId || ''),
+    `/api/deals/${selectedConversation?.dealId}`,
+    {
+      enabled: !!selectedConversation?.dealId,
+      staleTime: 60 * 1000, // 1 minute
+    }
+  )
+
+  const dealDetails = dealData?.deal || null
 
   // Update showDrafts based on filter selection
   const shouldShowDrafts = notificationFilter === 'drafts'
@@ -182,9 +275,8 @@ function SMSMessagingPageContent() {
     if (conversations.length > 0 && !selectedConversation && isHydrated && persistedConversationId && isAdminChecked) {
       const conversation = conversations.find(c => c.id === persistedConversationId)
       if (conversation) {
-        // Directly set the conversation and fetch data
+        // Directly set the conversation - queries will automatically fetch
         setSelectedConversation(conversation)
-        // Fetch messages and deal details will be triggered by another useEffect
       } else {
         // Clear the persisted conversation ID if it's not in the current list
         // This happens when switching view modes or when the conversation is no longer accessible
@@ -192,14 +284,6 @@ function SMSMessagingPageContent() {
       }
     }
   }, [conversations, selectedConversation, isHydrated, persistedConversationId, isAdminChecked])
-
-  // Fetch messages and deal details when selectedConversation changes
-  useEffect(() => {
-    if (selectedConversation) {
-      fetchMessages(selectedConversation.id)
-      fetchDealDetails(selectedConversation.dealId)
-    }
-  }, [selectedConversation])
 
   const filteredConversations = conversations.filter(conv => {
     const matchesSearch = conv.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -270,38 +354,6 @@ function SMSMessagingPageContent() {
     }
   }, [isResizingSidebar, isResizingRightPanel, handleMouseMove, handleMouseUp])
 
-  // Check if user is admin
-  useEffect(() => {
-    const checkAdminStatus = async () => {
-      if (!user?.id) {
-        console.log('⚠️  No user ID found')
-        return
-      }
-
-      console.log('👤 Checking admin status for user:', user.id)
-
-      const { data: userData, error } = await supabase
-        .from('users')
-        .select('id, is_admin, subscription_tier')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      if (error) {
-        console.error('❌ Error checking admin status:', error)
-      }
-
-      const adminStatus = userData?.is_admin || false
-      const tier = userData?.subscription_tier || 'free'
-      console.log('🔐 Admin status:', adminStatus, 'Tier:', tier)
-      setIsAdmin(adminStatus)
-      setUserTier(tier)
-      setCurrentUserId(userData?.id || null)
-      setIsAdminChecked(true)
-    }
-
-    checkAdminStatus()
-  }, [user?.id])
-
   useEffect(() => {
     scrollToBottom()
   }, [messages])
@@ -316,122 +368,16 @@ function SMSMessagingPageContent() {
     }
   }, [messageInput])
 
-  const fetchConversations = useCallback(async () => {
-    if (!isAdminChecked) return
-
-    try {
-      // For admins viewing "downlines", we actually fetch "all"
-      const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
-      console.log('🔄 Fetching conversations with view mode:', effectiveViewMode)
-
-      const response = await fetch(`/api/sms/conversations?view=${effectiveViewMode}`, {
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        console.error('❌ Response not OK:', response.status, response.statusText)
-        throw new Error('Failed to fetch conversations')
-      }
-
-      const data = await response.json()
-      console.log('✅ Received conversations:', data.conversations?.length || 0)
-
-      if (data.conversations?.length > 0) {
-        console.log('📝 Sample conversation:', data.conversations[0])
-      }
-
-      setConversations(data.conversations || [])
-    } catch (error) {
-      console.error('❌ Error fetching conversations:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [isAdmin, viewMode, isAdminChecked])
-
-  // Initial fetch and when view mode changes
+  // Clear selected conversation when view mode changes to avoid permission issues
   useEffect(() => {
-    fetchConversations()
-    // Clear selected conversation when view mode changes to avoid permission issues
     setSelectedConversation(null)
-  }, [fetchConversations]) // Include fetchConversations in dependencies
+  }, [viewMode])
 
-  // Debounced conversation refresh to avoid hammering the API
-  const debouncedRefreshConversations = useCallback(() => {
-    if (conversationRefreshTimeoutRef.current) {
-      clearTimeout(conversationRefreshTimeoutRef.current)
-    }
-    conversationRefreshTimeoutRef.current = setTimeout(() => {
-      fetchConversations()
-    }, 500) // Wait 500ms before refreshing
-  }, [fetchConversations])
-
-  const fetchMessages = useCallback(async (conversationId: string) => {
-    try {
-      setMessagesLoading(true)
-      // Use same view mode logic as conversations
-      const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
-      console.log('🔄 Fetching messages:', { conversationId, effectiveViewMode, isAdmin, viewMode })
-
-      const response = await fetch(
-        `/api/sms/messages?conversationId=${conversationId}&view=${effectiveViewMode}`,
-        { credentials: 'include' }
-      )
-
-      if (!response.ok) {
-        console.error('❌ Failed to fetch messages:', response.status, response.statusText)
-        // If unauthorized, clear the persisted conversation to prevent retry loops
-        if (response.status === 403) {
-          console.log('🚫 Unauthorized - clearing persisted conversation')
-          setPersistedConversationId(null)
-          setSelectedConversation(null)
-        }
-        throw new Error('Failed to fetch messages')
-      }
-
-      const data = await response.json()
-      // Sort messages: sent messages by sent_at, drafts (sent_at=null) always at bottom
-      const sortedMessages = (data.messages || []).sort((a: Message, b: Message) => {
-        if (!a.sent_at && !b.sent_at) return 0
-        if (!a.sent_at) return 1
-        if (!b.sent_at) return -1
-        return new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
-      })
-      setMessages(sortedMessages)
-      console.log('✅ Messages fetched successfully:', sortedMessages.length)
-    } catch (error) {
-      console.error('Error fetching messages:', error)
-    } finally {
-      setMessagesLoading(false)
-    }
-  }, [isAdmin, viewMode])
-
-  const fetchDealDetails = async (dealId: string) => {
-    try {
-      setDealLoading(true)
-      const response = await fetch(`/api/deals/${dealId}`, {
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch deal details')
-      }
-
-      const data = await response.json()
-      setDealDetails(data.deal || null)
-    } catch (error) {
-      console.error('Error fetching deal details:', error)
-      setDealDetails(null)
-    } finally {
-      setDealLoading(false)
-    }
-  }
-
-  const handleConversationSelect = useCallback(async (conversation: Conversation) => {
+  const handleConversationSelect = useCallback((conversation: Conversation) => {
     setSelectedConversation(conversation)
-    await fetchMessages(conversation.id)
-    fetchDealDetails(conversation.dealId)
+    // Queries will automatically fetch when selectedConversation changes
     // Real-time subscription will handle updating unread counts
-  }, [fetchMessages])
+  }, [])
 
   // Subscribe to real-time updates - Global subscription for all conversations
   useEffect(() => {
@@ -462,18 +408,23 @@ function SMSMessagingPageContent() {
           console.log('📨 New message in any conversation:', payload.new)
           const newMessage = payload.new as Message
 
-          // If this message is for a conversation that's not selected, update unread count
-          if (newMessage.conversation_id !== selectedConversation?.id && newMessage.direction === 'inbound') {
-            setConversations(prev => prev.map(conv =>
-              conv.id === newMessage.conversation_id
-                ? {
-                    ...conv,
-                    unreadCount: conv.unreadCount + 1,
-                    lastMessage: newMessage.body,
-                    lastMessageAt: newMessage.sent_at
-                  }
-                : conv
-            ))
+          // Event deduplication - prevent double-processing
+          const eventKey = `global-${newMessage.id}-INSERT`
+          if (processedEventsRef.current.has(eventKey)) {
+            console.log('🔄 Skipping duplicate global event:', eventKey)
+            return
+          }
+          processedEventsRef.current.add(eventKey)
+          setTimeout(() => processedEventsRef.current.delete(eventKey), DEDUP_WINDOW_MS)
+
+          // Use ref to get current selected conversation and avoid stale closures
+          const currentSelectedId = selectedConversationRef.current?.id
+
+          // If this message is for a conversation that's not selected, invalidate conversations
+          // Use filtersRef.current to get fresh filter values and avoid stale closures
+          if (newMessage.conversation_id !== currentSelectedId && newMessage.direction === 'inbound') {
+            const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
+            queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
           }
         }
       )
@@ -491,7 +442,7 @@ function SMSMessagingPageContent() {
       console.log('🔕 Cleaning up global real-time subscription')
       supabase.removeChannel(allConversationsChannel)
     }
-  }, [user?.id, selectedConversation?.id])
+  }, [user?.id]) // Removed selectedConversation?.id - using ref instead to avoid re-subscriptions
 
   // Subscribe to real-time updates - Only for the selected conversation
   useEffect(() => {
@@ -523,84 +474,60 @@ function SMSMessagingPageContent() {
           console.log('📨 New message received via real-time:', payload.new)
           const newMessage = payload.new as Message
 
-          console.log('✅ Message belongs to current conversation - adding to UI')
+          // Event deduplication - prevent double-processing
+          const eventKey = `specific-${newMessage.id}-INSERT`
+          if (processedEventsRef.current.has(eventKey)) {
+            console.log('🔄 Skipping duplicate specific event:', eventKey)
+            return
+          }
+          processedEventsRef.current.add(eventKey)
+          setTimeout(() => processedEventsRef.current.delete(eventKey), DEDUP_WINDOW_MS)
 
-          setMessages(prev => {
-            // Check if message already exists (avoid duplicates)
-            const exists = prev.some(m => m.id === newMessage.id)
-            if (exists) {
-              console.log('⚠️ Message already exists - skipping')
-              return prev
-            }
+          console.log('✅ Message belongs to current conversation - invalidating queries')
 
-            // Check if this is replacing an optimistic message
-            // Look for messages with matching body and direction sent recently (within 10 seconds)
-            const recentOptimisticIndex = prev.findIndex(m =>
-              m.id.startsWith('temp-') &&
-              m.body === newMessage.body &&
-              m.direction === newMessage.direction &&
-              m.conversation_id === newMessage.conversation_id
-            )
+          // Invalidate messages query to refetch
+          queryClient.invalidateQueries({ queryKey: queryKeys.messages(selectedConversation.id) })
 
-            if (recentOptimisticIndex !== -1) {
-              console.log('🔄 Replacing optimistic message with real message')
-              // Replace the optimistic message with the real one
-              const updated = [...prev]
-              updated[recentOptimisticIndex] = newMessage
-              return updated.sort((a, b) => {
-                if (!a.sent_at && !b.sent_at) return 0
-                if (!a.sent_at) return 1
-                if (!b.sent_at) return -1
-                return new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
-              })
-            }
-
-            // Add new message and sort: sent messages by sent_at, drafts (sent_at=null) always at bottom
-            const updated = [...prev, newMessage].sort((a, b) => {
-              // Drafts (null sent_at) always go to the bottom
-              if (!a.sent_at && !b.sent_at) return 0
-              if (!a.sent_at) return 1
-              if (!b.sent_at) return -1
-              // Both have sent_at, sort by time
-              return new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
-            })
-            console.log('✅ Added message to UI, total messages:', updated.length)
-            return updated
-          })
+          // Invalidate conversations list to update last message
+          // Use filtersRef.current to get fresh filter values and avoid stale closures
+          const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
+          queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
 
           // If it's an inbound message, mark it as read after a short delay
+          // Track timeout to prevent race conditions on rapid messages or unmount
           if (newMessage.direction === 'inbound') {
-            setTimeout(async () => {
+            const messageId = newMessage.id
+
+            // Clear any existing timeout for this message to prevent duplicates
+            const existingTimeout = messageReadTimeoutsRef.current.get(messageId)
+            if (existingTimeout) {
+              clearTimeout(existingTimeout)
+            }
+
+            const timeoutId = setTimeout(async () => {
+              // Remove from tracking after execution
+              messageReadTimeoutsRef.current.delete(messageId)
+
               try {
                 await supabase
                   .from('messages')
                   .update({ read_at: new Date().toISOString() })
-                  .eq('id', newMessage.id)
+                  .eq('id', messageId)
                   .is('read_at', null)
                 console.log('✅ Marked message as read')
 
-                // Update local conversation state to reflect read status
-                setConversations(prev => prev.map(conv =>
-                  conv.id === selectedConversation.id
-                    ? { ...conv, unreadCount: 0 }
-                    : conv
-                ))
+                // Invalidate conversations to update unread count
+                // Get fresh filter values at the time of invalidation
+                const { effectiveViewMode: currentMode, searchQuery: currentSearch, notificationFilter: currentFilter } = filtersRef.current
+                queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(currentMode, { searchQuery: currentSearch, notificationFilter: currentFilter }) })
               } catch (error) {
                 console.error('❌ Error marking message as read:', error)
               }
             }, 1000)
-          }
 
-          // Update the current conversation's last message in local state
-          setConversations(prev => prev.map(conv =>
-            conv.id === selectedConversation.id
-              ? {
-                  ...conv,
-                  lastMessage: newMessage.body,
-                  lastMessageAt: newMessage.sent_at
-                }
-              : conv
-          ))
+            // Track the timeout so it can be cleaned up
+            messageReadTimeoutsRef.current.set(messageId, timeoutId)
+          }
         }
       )
       .on(
@@ -613,24 +540,8 @@ function SMSMessagingPageContent() {
         },
         (payload) => {
           console.log('📝 Message updated:', payload.new)
-          const updatedMessage = payload.new as Message
-
-          // Update the message in the current view if it's visible and re-sort
-          setMessages(prev => {
-            const index = prev.findIndex(m => m.id === updatedMessage.id)
-            if (index !== -1) {
-              const updated = [...prev]
-              updated[index] = updatedMessage
-              // Re-sort after update (important for when drafts get approved)
-              return updated.sort((a, b) => {
-                if (!a.sent_at && !b.sent_at) return 0
-                if (!a.sent_at) return 1
-                if (!b.sent_at) return -1
-                return new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
-              })
-            }
-            return prev
-          })
+          // Invalidate messages query to refetch and re-sort
+          queryClient.invalidateQueries({ queryKey: queryKeys.messages(selectedConversation.id) })
         }
       )
       .on(
@@ -643,19 +554,10 @@ function SMSMessagingPageContent() {
         },
         (payload) => {
           console.log('🔄 Current conversation updated:', payload)
-          // Only refresh if it's a meaningful update (not just last_message changes which we handle above)
-          const updatedConv = payload.new as any
-          setConversations(prev => prev.map(conv =>
-            conv.id === selectedConversation.id
-              ? {
-                  ...conv,
-                  // Update relevant fields that might have changed
-                  smsOptInStatus: updatedConv.sms_opt_in_status,
-                  optedInAt: updatedConv.opted_in_at,
-                  optedOutAt: updatedConv.opted_out_at,
-                }
-              : conv
-          ))
+          // Invalidate conversations list to update opt-in/opt-out status
+          // Use filtersRef.current to get fresh filter values and avoid stale closures
+          const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
+          queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
         }
       )
       .subscribe((status, err) => {
@@ -677,6 +579,11 @@ function SMSMessagingPageContent() {
       if (conversationRefreshTimeoutRef.current) {
         clearTimeout(conversationRefreshTimeoutRef.current)
       }
+      // Clear all pending message read timeouts to prevent race conditions
+      messageReadTimeoutsRef.current.forEach((timeout) => {
+        clearTimeout(timeout)
+      })
+      messageReadTimeoutsRef.current.clear()
       supabase.removeChannel(channel)
     }
   }, [user?.id, selectedConversation?.id]) // Removed debouncedRefreshConversations to avoid re-subscriptions
@@ -691,64 +598,48 @@ function SMSMessagingPageContent() {
     }
   }, [conversationIdFromUrl, conversations, selectedConversation, handleConversationSelect])
 
+  // Send message mutation - using centralized hook
+  // Note: The hook uses predicate-based invalidation to catch all conversation variations
+  const sendMessageMutation = useSendMessage({
+    conversationId: selectedConversationRef.current?.id,
+    onSuccess: () => {
+      // Also invalidate messages query for the current conversation
+      const currentConversationId = selectedConversationRef.current?.id
+      if (currentConversationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
+      }
+    },
+    onError: (error: Error) => {
+      console.error('Error sending message:', error)
+      showError(error.message || 'Failed to send message')
+    }
+  })
+
   const handleSendMessage = async () => {
-    if (!messageInput.trim() || !selectedConversation || sending) return
+    if (!messageInput.trim() || !selectedConversation || sendMessageMutation.isPending) return
 
     const messageText = messageInput.trim()
-    const tempId = `temp-${Date.now()}`
+
+    // Clear input immediately for better UX
+    setMessageInput("")
+
+    // Reset textarea height after sending
+    if (messageInputRef.current) {
+      messageInputRef.current.style.height = 'auto'
+    }
 
     try {
-      setSending(true)
-
-      // Optimistically add message to UI immediately
-      const optimisticMessage: Message = {
-        id: tempId,
-        conversation_id: selectedConversation.id,
-        sender_id: user?.id || '',
-        receiver_id: user?.id || '',
-        body: messageText,
-        direction: 'outbound',
-        sent_at: new Date().toISOString(),
-        status: 'sending',
-        metadata: { temp_id: tempId }, // Store temp ID for matching
-      }
-
-      setMessages(prev => [...prev, optimisticMessage])
-      setMessageInput("")
-
-      // Reset textarea height after sending
-      if (messageInputRef.current) {
-        messageInputRef.current.style.height = 'auto'
-      }
-
-      const response = await fetch('/api/sms/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          dealId: selectedConversation.dealId,
-          message: messageText,
-        }),
+      await sendMessageMutation.mutateAsync({
+        dealId: selectedConversation.dealId,
+        message: messageText,
       })
-
-      if (!response.ok) {
-        const error = await response.json()
-        // Remove optimistic message on error
-        setMessages(prev => prev.filter(m => m.id !== tempId))
-        throw new Error(error.error || 'Failed to send message')
-      }
-
-      // Don't remove optimistic message here - let real-time replace it
     } catch (error) {
-      console.error('Error sending message:', error)
-      showError(error instanceof Error ? error.message : 'Failed to send message')
-      setMessageInput(messageText) // Restore message input on error
-    } finally {
-      setSending(false)
+      // Restore message input on error
+      setMessageInput(messageText)
     }
   }
+
+  const sending = sendMessageMutation.isPending
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -757,34 +648,24 @@ function SMSMessagingPageContent() {
     }
   }
 
-  const handleResolveNotification = async () => {
-    if (!dealDetails || resolving) return
-
-    try {
-      setResolving(true)
-
-      const response = await fetch(`/api/deals/${dealDetails.id}/resolve-notification`, {
-        method: 'POST',
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to resolve notification')
-      }
-
-      // Refresh deal details to update UI and remove yellow indicator
-      // Real-time subscription will handle updating conversations list
-      await fetchDealDetails(dealDetails.id)
-
+  // Resolve notification mutation - using centralized hook
+  // Note: The hook uses predicate-based invalidation to catch all conversation and deal variations
+  const resolveNotificationMutation = useResolveNotification({
+    onSuccess: () => {
       showSuccess('Notification resolved successfully')
-    } catch (error) {
+    },
+    onError: (error: Error) => {
       console.error('Error resolving notification:', error)
-      showError(error instanceof Error ? error.message : 'Failed to resolve notification')
-    } finally {
-      setResolving(false)
+      showError(error.message || 'Failed to resolve notification')
     }
+  })
+
+  const handleResolveNotification = () => {
+    if (!dealDetails || resolveNotificationMutation.isPending) return
+    resolveNotificationMutation.mutate(dealDetails.id)
   }
+
+  const resolving = resolveNotificationMutation.isPending
 
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp)
@@ -833,91 +714,64 @@ function SMSMessagingPageContent() {
     return nextBilling.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
-  const handleConversationCreated = async (conversationId: string) => {
-    // Refresh conversations list to include the new conversation
-    await fetchConversations()
+  const handleConversationCreated = useCallback(async (conversationId: string) => {
+    // Use filtersRef.current to get fresh filter values
+    const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
 
-    // Find and select the new conversation
-    const conversation = conversations.find(c => c.id === conversationId)
+    // Invalidate conversations query and wait for refetch to complete
+    await queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
+
+    // Refetch and get the updated data directly
+    const data = await queryClient.fetchQuery({
+      queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }),
+      staleTime: 0, // Force fresh fetch
+    }) as { conversations: Conversation[] } | undefined
+
+    // Find and select the new conversation from the fresh data
+    const conversation = data?.conversations?.find(c => c.id === conversationId)
     if (conversation) {
       handleConversationSelect(conversation)
-    } else {
-      // If not in the list yet, wait a bit and try again
-      setTimeout(async () => {
-        await fetchConversations()
-        const conv = conversations.find(c => c.id === conversationId)
-        if (conv) {
-          handleConversationSelect(conv)
-        }
-      }, 500)
     }
-  }
+  }, [queryClient, handleConversationSelect])
 
-  const handleApproveDraft = async (messageId: string) => {
-    try {
-      setApprovingDrafts(prev => new Set(prev).add(messageId))
-
-      const response = await fetch('/api/sms/drafts/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageIds: [messageId] })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to approve draft')
+  // Approve draft mutation - using centralized hook
+  const approveDraftMutation = useApproveDrafts({
+    onSuccess: () => {
+      // Also invalidate messages query for the current conversation
+      const currentConversationId = selectedConversationRef.current?.id
+      if (currentConversationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
       }
-
-      // Remove the draft from the messages list (it will be updated via real-time)
-      // Or refresh messages to get updated status
-      if (selectedConversation) {
-        await fetchMessages(selectedConversation.id)
-      }
-
       console.log('✅ Draft approved successfully')
-    } catch (error) {
+    },
+    onError: (error: Error) => {
       console.error('Error approving draft:', error)
-      showError(error instanceof Error ? error.message : 'Failed to approve draft')
-    } finally {
-      setApprovingDrafts(prev => {
-        const next = new Set(prev)
-        next.delete(messageId)
-        return next
-      })
+      showError(error.message || 'Failed to approve draft')
     }
+  })
+
+  const handleApproveDraft = (messageId: string) => {
+    approveDraftMutation.mutate({ messageIds: [messageId] })
   }
 
-  const handleRejectDraft = async (messageId: string) => {
-    try {
-      setRejectingDrafts(prev => new Set(prev).add(messageId))
-
-      const response = await fetch('/api/sms/drafts/reject', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageIds: [messageId] })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to reject draft')
+  // Reject draft mutation - using centralized hook
+  const rejectDraftMutation = useRejectDrafts({
+    onSuccess: () => {
+      // Also invalidate messages query for the current conversation
+      const currentConversationId = selectedConversationRef.current?.id
+      if (currentConversationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
       }
-
-      // Remove from messages list
-      setMessages(prev => prev.filter(m => m.id !== messageId))
-
       console.log('✅ Draft rejected successfully')
-    } catch (error) {
+    },
+    onError: (error: Error) => {
       console.error('Error rejecting draft:', error)
-      showError(error instanceof Error ? error.message : 'Failed to reject draft')
-    } finally {
-      setRejectingDrafts(prev => {
-        const next = new Set(prev)
-        next.delete(messageId)
-        return next
-      })
+      showError(error.message || 'Failed to reject draft')
     }
+  })
+
+  const handleRejectDraft = (messageId: string) => {
+    rejectDraftMutation.mutate({ messageIds: [messageId] })
   }
 
   const handleStartEditDraft = (messageId: string, currentBody: string) => {
@@ -930,34 +784,30 @@ function SMSMessagingPageContent() {
     setEditingDraftBody("")
   }
 
-  const handleSaveEditDraft = async (messageId: string) => {
-    try {
-      const response = await fetch('/api/sms/drafts/edit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageId, body: editingDraftBody })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to update draft')
+  // Edit draft mutation - using centralized hook
+  const editDraftMutation = useEditDraft({
+    onSuccess: () => {
+      // Also invalidate messages query for the current conversation
+      const currentConversationId = selectedConversationRef.current?.id
+      if (currentConversationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
       }
-
-      // Update local message
-      setMessages(prev => prev.map(m =>
-        m.id === messageId ? { ...m, body: editingDraftBody } : m
-      ))
-
       setEditingDraftId(null)
       setEditingDraftBody("")
-
       console.log('✅ Draft updated successfully')
-    } catch (error) {
+    },
+    onError: (error: Error) => {
       console.error('Error updating draft:', error)
-      showError(error instanceof Error ? error.message : 'Failed to update draft')
+      showError(error.message || 'Failed to update draft')
     }
+  })
+
+  const handleSaveEditDraft = (messageId: string) => {
+    editDraftMutation.mutate({ messageId, body: editingDraftBody })
   }
+
+  // Combined pending state for draft actions - disable all buttons when any draft mutation is in progress
+  const isDraftMutationPending = approveDraftMutation.isPending || rejectDraftMutation.isPending || editDraftMutation.isPending
 
   return (
     <div className="h-[calc(100vh-3rem)] flex bg-background relative communication-content" data-tour="communication">
@@ -1077,10 +927,8 @@ function SMSMessagingPageContent() {
               if (conversation) {
                 handleConversationSelect(conversation)
               } else {
-                // If conversation not in current list, fetch it
-                fetchMessages(conversationId)
-                // Also try to get deal details by fetching conversations again
-                fetchConversations()
+                // If conversation not in current list, invalidate to refetch
+                queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(effectiveViewMode, { searchQuery, notificationFilter }) })
               }
             }}
           />
@@ -1089,9 +937,18 @@ function SMSMessagingPageContent() {
             "flex-1 overflow-y-auto custom-scrollbar",
             userTier === 'basic' && viewMode === 'downlines' && "blur-sm pointer-events-none"
           )}>
-          {loading ? (
-            <div className="flex items-center justify-center p-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          {(loading || !isAdminChecked) ? (
+            <div className="p-2 space-y-2 animate-pulse">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 p-3 rounded-lg">
+                  <div className="h-10 w-10 bg-muted rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-32 bg-muted rounded" />
+                    <div className="h-3 w-48 bg-muted rounded" />
+                  </div>
+                  <div className="h-3 w-12 bg-muted rounded" />
+                </div>
+              ))}
             </div>
           ) : filteredConversations.length === 0 ? (
             <div className="p-8 text-center">
@@ -1266,10 +1123,10 @@ function SMSMessagingPageContent() {
                                     <Button
                                       size="sm"
                                       onClick={() => handleApproveDraft(message.id)}
-                                      disabled={approvingDrafts.has(message.id)}
+                                      disabled={isDraftMutationPending}
                                       className="bg-green-600 hover:bg-green-700 text-white text-xs flex-1 min-w-[110px]"
                                     >
-                                      {approvingDrafts.has(message.id) ? (
+                                      {approveDraftMutation.isPending && approveDraftMutation.variables?.messageIds?.includes(message.id) ? (
                                         <Loader2 className="h-3 w-3 animate-spin" />
                                       ) : (
                                         'Approve & Send'
@@ -1279,6 +1136,7 @@ function SMSMessagingPageContent() {
                                       size="sm"
                                       variant="outline"
                                       onClick={() => handleStartEditDraft(message.id, message.body)}
+                                      disabled={isDraftMutationPending}
                                       className="text-xs min-w-[60px] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
                                     >
                                       Edit
@@ -1287,10 +1145,10 @@ function SMSMessagingPageContent() {
                                       size="sm"
                                       variant="destructive"
                                       onClick={() => handleRejectDraft(message.id)}
-                                      disabled={rejectingDrafts.has(message.id)}
+                                      disabled={isDraftMutationPending}
                                       className="text-xs min-w-[60px]"
                                     >
-                                      {rejectingDrafts.has(message.id) ? (
+                                      {rejectDraftMutation.isPending && rejectDraftMutation.variables?.messageIds?.includes(message.id) ? (
                                         <Loader2 className="h-3 w-3 animate-spin" />
                                       ) : (
                                         'Reject'

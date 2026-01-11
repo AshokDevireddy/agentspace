@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import { Check, Sparkles, Crown, Zap } from 'lucide-react';
-import { useNotification } from '@/contexts/notification-context'
+import { useNotification } from '@/contexts/notification-context';
+import { useSubscription } from '@/hooks/mutations';
 
 interface PricingTierCardProps {
   tier: 'free' | 'basic' | 'pro' | 'expert';
@@ -65,80 +65,38 @@ export function PricingTierCard({
   currentTier,
   hasActiveSubscription,
 }: PricingTierCardProps) {
-  const { showSuccess, showError } = useNotification()
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { showSuccess, showError } = useNotification();
 
   const colors = tierColors[tier];
   const icon = tierIcons[tier];
 
-  // All tiers are accessible for subscription (Expert features may be admin-only, not the subscription)
-  const isDisabled = loading || isCurrentPlan || tier === 'free';
-
-  const handleSubscribe = async () => {
-    if (tier === 'free') return;
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      // If user already has an active subscription, use change-subscription endpoint
-      if (hasActiveSubscription && currentTier !== 'free') {
-        console.log(`Changing subscription: ${currentTier} → ${tier}`);
-
-        const response = await fetch('/api/stripe/change-subscription', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ newTier: tier }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to change subscription');
-        }
-
-        // If it's a downgrade, show success message
-        if (!data.immediate) {
-          showSuccess(`Downgrade scheduled! Your plan will change to ${tier} on ${new Date(data.effectiveDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
-        } else {
-          showSuccess(`Successfully upgraded to ${tier} tier!`);
-        }
-
-        // Reload page to reflect changes
-        window.location.reload();
+  // Use centralized subscription mutation hook
+  // Note: hasActiveSubscription and currentTier are passed in mutate() call to avoid stale closures
+  const subscriptionMutation = useSubscription({
+    onCheckoutRedirect: (url) => {
+      window.location.href = url;
+    },
+    onSubscriptionChanged: (data, newTier) => {
+      if (!data.immediate) {
+        showSuccess(`Downgrade scheduled! Your plan will change to ${newTier} on ${new Date(data.effectiveDate!).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
       } else {
-        // User doesn't have subscription (Free tier) - use Stripe Checkout
-        console.log(`Creating new subscription for tier: ${tier}`);
-
-        const response = await fetch('/api/stripe/create-checkout-session', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ priceId }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to create checkout session');
-        }
-
-        if (data.url) {
-          window.location.href = data.url;
-        } else {
-          throw new Error('No checkout URL returned');
-        }
+        showSuccess(`Successfully upgraded to ${newTier} tier!`);
       }
-    } catch (err) {
+    },
+    onError: (err) => {
       console.error('Subscription error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      setLoading(false);
-    }
+      showError(err.message || 'Failed to update subscription');
+    },
+  });
+
+  const handleSubscribe = () => {
+    if (tier === 'free') return;
+    // Pass current subscription state at call time to avoid stale closures
+    subscriptionMutation.mutate({ tier, priceId, hasActiveSubscription, currentTier });
   };
+
+  // All tiers are accessible for subscription (Expert features may be admin-only, not the subscription)
+  const isDisabled = subscriptionMutation.isPending || isCurrentPlan || tier === 'free';
 
   return (
     <div className={`relative flex flex-col rounded-2xl border-2 ${colors.border} ${colors.bg} p-6 shadow-lg transition-all hover:shadow-xl ${recommended ? 'scale-105 ring-2 ring-purple-500 ring-offset-2 dark:ring-offset-gray-900' : ''}`}>
@@ -188,9 +146,9 @@ export function PricingTierCard({
       </ul>
 
       {/* Error Message */}
-      {error && (
+      {subscriptionMutation.error && (
         <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {error}
+          {subscriptionMutation.error.message}
         </div>
       )}
 
@@ -206,7 +164,7 @@ export function PricingTierCard({
             : colors.button
         } disabled:opacity-50`}
       >
-        {loading ? (
+        {subscriptionMutation.isPending ? (
           'Loading...'
         ) : isCurrentPlan ? (
           'Current Plan'

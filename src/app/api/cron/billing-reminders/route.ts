@@ -23,14 +23,21 @@ export async function GET(request: NextRequest) {
     console.log('🔐 Auth header:', authHeader ? 'Present' : 'Not present');
     console.log('🔐 CRON_SECRET set:', process.env.CRON_SECRET ? 'Yes' : 'No');
 
+    // CRON_SECRET is required for security - must be configured
+    if (!process.env.CRON_SECRET) {
+      console.log('❌ Unauthorized - CRON_SECRET not configured');
+      return NextResponse.json(
+        { error: 'Server configuration error - CRON_SECRET not set' },
+        { status: 500 }
+      );
+    }
+
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      if (process.env.CRON_SECRET) {
-        console.log('❌ Unauthorized - CRON_SECRET mismatch');
-        return NextResponse.json(
-          { error: 'Unauthorized' },
-          { status: 401 }
-        );
-      }
+      console.log('❌ Unauthorized - CRON_SECRET mismatch');
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
     console.log('✅ Authorization passed');
 

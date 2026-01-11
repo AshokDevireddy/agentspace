@@ -1,11 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { FileText, User, Mail, Phone, MapPin, Calendar, DollarSign, CreditCard, Hash, Building2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queryKeys'
+import { useAuth } from '@/providers/AuthProvider'
 
 interface Deal {
   id: string
@@ -36,64 +39,82 @@ interface Deal {
   }
 }
 
+interface UserData {
+  id: string
+  first_name: string
+  last_name: string
+  email: string
+  phone_number?: string
+  role: string
+  agency_id?: string
+}
+
+interface AgencyData {
+  display_name?: string
+  name?: string
+  logo_url?: string
+}
+
 export default function ClientDashboard() {
   const router = useRouter()
   const supabase = createClient()
-  const [user, setUser] = useState<any>(null)
-  const [deals, setDeals] = useState<Deal[]>([])
-  const [loading, setLoading] = useState(true)
-  const [agencyName, setAgencyName] = useState<string>("AgentSpace")
-  const [agencyLogo, setAgencyLogo] = useState<string | null>(null)
+  const { user: authUser, userData: authUserData, loading: authLoading } = useAuth()
 
-  useEffect(() => {
-    fetchUserAndDeals()
-  }, [])
-
-  const fetchUserAndDeals = async () => {
-    try {
-      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
-
-      if (authError || !authUser) {
-        router.push('/login')
-        return
+  // Query for full user profile data (extends AuthProvider's basic userData)
+  const { data: userData, isLoading: userLoading, error: userError } = useQuery({
+    queryKey: queryKeys.clientUser(),
+    queryFn: async () => {
+      if (!authUser) {
+        throw new Error('Not authenticated')
       }
 
-      // Get user profile
-      const { data: userData, error: userError } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('users')
         .select('*')
         .eq('auth_user_id', authUser.id)
         .single()
 
-      if (userError || !userData) {
-        router.push('/login')
-        return
+      if (profileError || !profile) {
+        throw new Error('Profile not found')
       }
 
-      // Verify user is a client
-      if (userData.role !== 'client') {
-        router.push('/')
-        return
+      if (profile.role !== 'client') {
+        throw new Error('Not a client')
       }
 
-      setUser(userData)
+      return profile as UserData
+    },
+    // Wait for AuthProvider to complete before running this query
+    enabled: !authLoading && !!authUser,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: 2, // Allow retries for resilience
+  })
 
-      // Fetch agency data if user has an agency
-      if (userData.agency_id) {
-        const { data: agencyData } = await supabase
-          .from('agencies')
-          .select('display_name, name, logo_url')
-          .eq('id', userData.agency_id)
-          .maybeSingle()
+  // Query for agency data
+  const { data: agencyData } = useQuery({
+    queryKey: queryKeys.agencyBranding(userData?.agency_id ?? null),
+    queryFn: async () => {
+      if (!userData?.agency_id) return null
 
-        if (agencyData) {
-          setAgencyName(agencyData.display_name || agencyData.name || "AgentSpace")
-          setAgencyLogo(agencyData.logo_url || null)
-        }
-      }
+      const { data } = await supabase
+        .from('agencies')
+        .select('display_name, name, logo_url')
+        .eq('id', userData.agency_id)
+        .maybeSingle()
 
-      // Fetch deals for this client
-      const { data: dealsData, error: dealsError } = await supabase
+      return data as AgencyData | null
+    },
+    enabled: !!userData?.agency_id,
+    staleTime: 60 * 60 * 1000, // 1 hour
+  })
+
+  // Query for client's deals
+  const { data: deals = [], isLoading: dealsLoading, error: dealsError } = useQuery({
+    queryKey: queryKeys.clientDeals(userData?.id || ''),
+    queryFn: async () => {
+      if (!userData?.id) return []
+
+      const { data, error } = await supabase
         .from('deals')
         .select(`
           *,
@@ -104,17 +125,48 @@ export default function ClientDashboard() {
         .eq('client_id', userData.id)
         .order('created_at', { ascending: false })
 
-      if (!dealsError && dealsData) {
-        setDeals(dealsData as any)
-      }
+      if (error) throw error
+      return (data || []) as Deal[]
+    },
+    enabled: !!userData?.id,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    retry: 2,
+  })
 
-    } catch (error) {
-      console.error('Error fetching data:', error)
+  // Handle auth errors - redirect to login
+  useEffect(() => {
+    // Wait for auth to complete before making redirect decisions
+    if (authLoading) return
+
+    // If no user after auth completes, redirect to login
+    if (!authUser) {
       router.push('/login')
-    } finally {
-      setLoading(false)
+      return
     }
-  }
+
+    // If user is not a client (from AuthProvider), redirect to main dashboard
+    if (authUserData?.role && authUserData.role !== 'client') {
+      router.push('/')
+      return
+    }
+
+    // Handle query errors
+    if (userError) {
+      const errorMessage = userError.message
+      if (errorMessage === 'Not authenticated' || errorMessage === 'Profile not found') {
+        router.push('/login')
+      } else if (errorMessage === 'Not a client') {
+        router.push('/')
+      }
+    }
+  }, [authLoading, authUser, authUserData, userError, router])
+
+  // Derived values
+  const user = userData
+  const agencyName = agencyData?.display_name || agencyData?.name || "AgentSpace"
+  const agencyLogo = agencyData?.logo_url || null
+  // Include authLoading to prevent rendering before auth state is known
+  const loading = authLoading || userLoading || (!!userData && dealsLoading)
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -246,7 +298,16 @@ export default function ClientDashboard() {
                 Your Policies
               </CardTitle>
             </CardHeader>
-            {deals.length === 0 && (
+            {dealsError && (
+              <CardContent className="p-6 bg-white dark:bg-card">
+                <div className="p-6 text-center bg-red-50 dark:bg-red-900/20 rounded-md">
+                  <p className="text-red-600 dark:text-red-400 font-medium">
+                    Unable to load your policies. Please try again later.
+                  </p>
+                </div>
+              </CardContent>
+            )}
+            {!dealsError && deals.length === 0 && !dealsLoading && (
               <CardContent className="p-6 bg-white dark:bg-card">
                 <div className="p-12 text-center">
                   <FileText className="h-16 w-16 text-gray-400 dark:text-muted-foreground mx-auto mb-4" />
@@ -264,7 +325,7 @@ export default function ClientDashboard() {
             )}
           </Card>
 
-          {deals.length > 0 && (
+          {!dealsError && deals.length > 0 && (
             <div className="space-y-6">
               {deals.map((deal) => (
                 <Card key={deal.id} className="shadow-sm border border-gray-200 dark:border-gray-800 hover:border-black dark:hover:border-gray-600 transition-all rounded-md">

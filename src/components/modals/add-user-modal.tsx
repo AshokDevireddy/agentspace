@@ -8,6 +8,9 @@ import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { createClient } from '@/lib/supabase/client'
 import { useNotification } from "@/contexts/notification-context"
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queryKeys'
+import { useSendInvite } from '@/hooks/mutations'
 
 interface AddUserModalProps {
   trigger: React.ReactNode
@@ -37,79 +40,63 @@ const allPermissionLevels = [
   { value: "admin", label: "Admin" }
 ]
 
-// Custom hook for debounced agent search
+// Custom hook for debounced agent search using TanStack Query
+// Uses proper abort signals to prevent race conditions from slow responses
 function useAgentSearch(pauseSearch = false) {
   const [searchTerm, setSearchTerm] = useState("")
-  const [searchResults, setSearchResults] = useState<SearchOption[]>([])
-  const [isSearching, setIsSearching] = useState(false)
-  const [searchError, setSearchError] = useState<string | null>(null)
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
 
-  // Debounce search functionality
+  // Debounce search term to prevent excessive API calls
   useEffect(() => {
-    if (pauseSearch) {
-      setIsSearching(false)
-      return
-    }
-
-    // Don't search if term is too short
-    if (searchTerm.length < 2) {
-      setSearchResults([])
-      return
-    }
-
-    // Debounce timer
-    const debounceTimer = setTimeout(async () => {
-      try {
-        setIsSearching(true)
-        setSearchError(null)
-
-        // API ROUTE CALL - This calls the secure endpoint for upline search (current user + downline)
-        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(searchTerm)}&limit=10&type=downline`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include' // Include authentication cookies
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => null);
-          const errorMessage = errorData?.error || `HTTP ${response.status}: ${response.statusText}`;
-          throw new Error(`Failed to search agents: ${errorMessage}`)
-        }
-
-        const agents: AgentSearchResult[] = await response.json()
-
-        // Handle empty results gracefully
-        if (!Array.isArray(agents)) {
-          console.warn('Search API returned non-array result:', agents);
-          setSearchResults([]);
-          return;
-        }
-
-        // Transform search results into select options
-        const options: SearchOption[] = agents.map(agent => ({
-          value: agent.id,
-          label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
-          status: agent.status
-        }))
-
-        setSearchResults(options)
-      } catch (error) {
-        console.error('Agent search error:', error)
-        // Only show error to user if it's not related to auto-population
-        if (searchTerm.length > 0) {
-          setSearchError('Failed to search agents. Please try again.')
-        }
-        setSearchResults([])
-      } finally {
-        setIsSearching(false)
-      }
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm)
     }, 400) // 400ms debounce delay
+    return () => clearTimeout(timer)
+  }, [searchTerm])
 
-    // Cleanup timer on searchTerm change
-    return () => clearTimeout(debounceTimer)
-  }, [searchTerm, pauseSearch])
+  // Use TanStack Query with abort signal for proper request cancellation
+  const { data: searchResults = [], isLoading: isSearching, error } = useQuery<SearchOption[]>({
+    queryKey: queryKeys.searchAgents(debouncedSearchTerm),
+    queryFn: async ({ signal }) => {
+      // API ROUTE CALL - This calls the secure endpoint for upline search (current user + downline)
+      const response = await fetch(
+        `/api/search-agents?q=${encodeURIComponent(debouncedSearchTerm)}&limit=10&type=downline`,
+        {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          signal, // Abort signal cancels in-flight requests when search term changes
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        const errorMessage = errorData?.error || `HTTP ${response.status}: ${response.statusText}`
+        throw new Error(`Failed to search agents: ${errorMessage}`)
+      }
+
+      const agents: AgentSearchResult[] = await response.json()
+
+      // Handle empty results gracefully
+      if (!Array.isArray(agents)) {
+        console.warn('Search API returned non-array result:', agents)
+        return []
+      }
+
+      // Transform search results into select options
+      return agents.map(agent => ({
+        value: agent.id,
+        label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+        status: agent.status
+      }))
+    },
+    // Only fetch when: not paused, and search term is at least 2 characters
+    enabled: !pauseSearch && debouncedSearchTerm.length >= 2,
+    staleTime: 30000, // Cache results for 30 seconds
+    retry: false, // Don't retry failed searches
+  })
+
+  const searchError = error ? 'Failed to search agents. Please try again.' : null
 
   return {
     searchTerm,
@@ -122,6 +109,7 @@ function useAgentSearch(pauseSearch = false) {
 
 export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const { showSuccess } = useNotification()
+  const queryClient = useQueryClient()
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -134,18 +122,12 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [errorFields, setErrorFields] = useState<Record<string, string>>({})
-  const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(false)
   const [selectedPreInviteUserId, setSelectedPreInviteUserId] = useState<string | null>(null)
   const [nameSearchTerm, setNameSearchTerm] = useState("")
-  const [nameSearchResults, setNameSearchResults] = useState<SearchOption[]>([])
-  const [isNameSearching, setIsNameSearching] = useState(false)
-  const [positions, setPositions] = useState<SearchOption[]>([])
-  const [positionsLoading, setPositionsLoading] = useState(false)
-  const [currentUserPositionLevel, setCurrentUserPositionLevel] = useState<number | null>(null)
+  const [debouncedNameSearchTerm, setDebouncedNameSearchTerm] = useState("")
   const [selectedUplineLabel, setSelectedUplineLabel] = useState<string>("")
   const [hasSetDefaultUpline, setHasSetDefaultUpline] = useState(false)
-  const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState<boolean>(false)
   const [pauseNameSearch, setPauseNameSearch] = useState(false)
   const [pauseUplineSearch, setPauseUplineSearch] = useState(false)
   const [uplineInputValue, setUplineInputValue] = useState("")
@@ -159,92 +141,17 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     searchError: uplineSearchError
   } = useAgentSearch(pauseUplineSearch)
 
-  // Filter permission levels based on current user's admin status
-  // Admins can add both agents and admins, but agents can only add agents
-  const permissionLevels = isCurrentUserAdmin
-    ? allPermissionLevels
-    : allPermissionLevels.filter(level => level.value === 'agent')
-
-  // Name search for pre-invite users
-  useEffect(() => {
-    if (pauseNameSearch) {
-      return
-    }
-
-    if (nameSearchTerm.length < 2) {
-      setNameSearchResults([])
-      return
-    }
-
-    const debounceTimer = setTimeout(async () => {
-      try {
-        setIsNameSearching(true)
-        console.log('[ADD-USER-MODAL] Starting name search for:', nameSearchTerm)
-
-        const response = await fetch(`/api/search-agents?q=${encodeURIComponent(nameSearchTerm)}&limit=10&type=pre-invite`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include'
-        })
-
-        console.log('[ADD-USER-MODAL] Response status:', response.status, response.statusText)
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => null);
-          const errorMessage = errorData?.error || `Search failed`;
-          console.error('[ADD-USER-MODAL] Name search error:', errorMessage, errorData?.detail)
-          console.error('[ADD-USER-MODAL] Full error data:', errorData)
-          // Don't throw error, just set empty results
-          setNameSearchResults([])
-          return
-        }
-
-        const agents: AgentSearchResult[] = await response.json()
-        console.log('[ADD-USER-MODAL] Received', agents?.length || 0, 'agents')
-
-        // Handle empty results gracefully
-        if (!Array.isArray(agents)) {
-          console.warn('[ADD-USER-MODAL] Search API returned non-array result:', agents);
-          setNameSearchResults([]);
-          return;
-        }
-
-        const options: SearchOption[] = agents.map(agent => ({
-          value: agent.id,
-          label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
-          status: agent.status
-        }))
-
-        console.log('[ADD-USER-MODAL] Mapped to', options.length, 'options')
-        setNameSearchResults(options)
-      } catch (error) {
-        console.error('[ADD-USER-MODAL] Name search exception:', error)
-        setNameSearchResults([])
-      } finally {
-        setIsNameSearching(false)
-      }
-    }, 400)
-
-    return () => clearTimeout(debounceTimer)
-  }, [nameSearchTerm, pauseNameSearch])
-
-  // Fetch positions when modal opens
-  useEffect(() => {
-    if (isOpen && !positionsLoading && positions.length === 0) {
-      fetchPositions()
-    }
-  }, [isOpen])
-
-  const fetchPositions = async () => {
-    try {
-      setPositionsLoading(true)
+  // Query: Fetch positions when modal opens
+  const { data: positionsData, isLoading: positionsLoading } = useQuery({
+    queryKey: queryKeys.positionsList(),
+    queryFn: async () => {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
 
-      if (!accessToken) return
+      if (!accessToken) {
+        throw new Error('No access token available')
+      }
 
       // Fetch current user's position level
       let userPositionLevel: number | null = null
@@ -255,7 +162,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           const profileData = await profileResponse.json()
           if (profileData.success && profileData.data.position) {
             userPositionLevel = profileData.data.position.level
-            setCurrentUserPositionLevel(userPositionLevel)
           }
         }
       }
@@ -267,26 +173,198 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         }
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        // Filter positions: only show positions BELOW current user's level (not including their level)
-        const filteredData = userPositionLevel !== null
-          ? data.filter((pos: any) => pos.level < userPositionLevel)
-          : data
+      if (!response.ok) {
+        throw new Error('Failed to fetch positions')
+      }
 
-        const positionOptions: SearchOption[] = filteredData.map((pos: any) => ({
+      const data = await response.json()
+
+      // Filter positions: only show positions BELOW current user's level (not including their level)
+      const filteredData = userPositionLevel !== null
+        ? data.filter((pos: any) => pos.level < userPositionLevel)
+        : data
+
+      return {
+        positions: filteredData.map((pos: any) => ({
           value: pos.position_id,
           label: `${pos.name} (Level ${pos.level})`,
           level: pos.level
-        }))
-        setPositions(positionOptions)
+        })) as SearchOption[],
+        currentUserPositionLevel: userPositionLevel
       }
-    } catch (error) {
-      console.error('Error fetching positions:', error)
-    } finally {
-      setPositionsLoading(false)
+    },
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
+  })
+
+  const positions = positionsData?.positions || []
+  const currentUserPositionLevel = positionsData?.currentUserPositionLevel || null
+
+  // Query: Fetch current user's admin status when modal opens
+  const { data: adminStatusData } = useQuery({
+    queryKey: queryKeys.userAdminStatus(),
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        throw new Error('No user found')
+      }
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('is_admin, perm_level')
+        .eq('auth_user_id', user.id)
+        .single()
+
+      if (!userData) {
+        throw new Error('User data not found')
+      }
+
+      return {
+        isAdmin: userData.is_admin || userData.perm_level === 'admin'
+      }
+    },
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const isCurrentUserAdmin = adminStatusData?.isAdmin || false
+
+  // Effect to auto-set permission level for non-admin users
+  useEffect(() => {
+    if (isOpen && !isCurrentUserAdmin && !formData.permissionLevel) {
+      setFormData(prev => ({ ...prev, permissionLevel: 'agent' }))
     }
-  }
+  }, [isOpen, isCurrentUserAdmin, formData.permissionLevel])
+
+  // Query: Fetch current user as default upline when no upline is provided
+  const { data: defaultUplineData } = useQuery({
+    queryKey: queryKeys.userDefaultUpline(),
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        throw new Error('No user found')
+      }
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email, is_admin, perm_level')
+        .eq('auth_user_id', user.id)
+        .single()
+
+      if (!userData) {
+        throw new Error('User data not found')
+      }
+
+      return {
+        userId: userData.id,
+        userLabel: `${userData.first_name} ${userData.last_name} - ${userData.email}`,
+        isAdmin: userData.is_admin || userData.perm_level === 'admin'
+      }
+    },
+    enabled: !upline && isOpen && !hasSetDefaultUpline,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Effect to apply default upline when fetched
+  useEffect(() => {
+    if (defaultUplineData && !hasSetDefaultUpline) {
+      applyUplineSelection({
+        value: defaultUplineData.userId,
+        label: defaultUplineData.userLabel
+      })
+      setHasSetDefaultUpline(true)
+    }
+  }, [defaultUplineData, hasSetDefaultUpline])
+
+  // Mutation: Submit form to invite agent - using centralized hook
+  const inviteAgentMutation = useSendInvite({
+    invalidateAdditional: true, // Also invalidate clients and agentsPendingPositions
+    onSuccess: (data, variables) => {
+      const message = selectedPreInviteUserId
+        ? `User ${variables.firstName} ${variables.lastName} updated and invitation sent to ${variables.email}!`
+        : `Invitation sent successfully to ${variables.email}!`
+      showSuccess(message, 7000)
+
+      setIsOpen(false)
+      // Reset form
+      setFormData({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phoneNumber: "",
+        permissionLevel: "",
+        uplineAgentId: "",
+        positionId: ""
+      })
+      setErrors([])
+      setErrorFields({})
+      setPauseNameSearch(false)
+      setPauseUplineSearch(false)
+      setUplineSearchTerm("")
+      setUplineInputValue("")
+      setSelectedUplineLabel("")
+      setSelectedPreInviteUserId(null)
+      setHasSetDefaultUpline(false)
+    },
+    onError: (error: Error) => {
+      console.error('Error inviting agent:', error)
+      setErrors([error.message || 'An unexpected error occurred. Please try again.'])
+    }
+  })
+
+  // Filter permission levels based on current user's admin status
+  // Admins can add both agents and admins, but agents can only add agents
+  const permissionLevels = isCurrentUserAdmin
+    ? allPermissionLevels
+    : allPermissionLevels.filter(level => level.value === 'agent')
+
+  // Debounce name search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedNameSearchTerm(nameSearchTerm)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [nameSearchTerm])
+
+  // Name search for pre-invite users using TanStack Query with abort signal
+  const { data: nameSearchResults = [], isLoading: isNameSearching } = useQuery<SearchOption[]>({
+    queryKey: queryKeys.searchPreInviteUsers(debouncedNameSearchTerm),
+    queryFn: async ({ signal }) => {
+      const response = await fetch(
+        `/api/search-agents?q=${encodeURIComponent(debouncedNameSearchTerm)}&limit=10&type=pre-invite`,
+        {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          signal, // Abort signal cancels in-flight requests
+        }
+      )
+
+      if (!response.ok) {
+        // Return empty results on error instead of throwing
+        return []
+      }
+
+      const agents: AgentSearchResult[] = await response.json()
+
+      if (!Array.isArray(agents)) {
+        return []
+      }
+
+      return agents.map(agent => ({
+        value: agent.id,
+        label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+        status: agent.status
+      }))
+    },
+    enabled: !pauseNameSearch && debouncedNameSearchTerm.length >= 2,
+    staleTime: 30000,
+    retry: false,
+  })
 
   // Reset default upline flag when modal closes
   useEffect(() => {
@@ -294,74 +372,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setHasSetDefaultUpline(false)
     }
   }, [isOpen])
-
-  // Fetch current user's admin status when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      const fetchCurrentUserAdminStatus = async () => {
-        try {
-          const supabase = createClient()
-          const { data: { user } } = await supabase.auth.getUser()
-
-          if (user) {
-            const { data: userData } = await supabase
-              .from('users')
-              .select('is_admin, perm_level')
-              .eq('auth_user_id', user.id)
-              .single()
-
-            if (userData) {
-              const isAdmin = userData.is_admin || userData.perm_level === 'admin'
-              setIsCurrentUserAdmin(isAdmin)
-
-              // If not an admin, automatically set permission level to 'agent' (the only option)
-              if (!isAdmin && !formData.permissionLevel) {
-                setFormData(prev => ({ ...prev, permissionLevel: 'agent' }))
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching current user admin status:', error)
-        }
-      }
-
-      fetchCurrentUserAdminStatus()
-    }
-  }, [isOpen])
-
-  // Fetch current user as default upline when no upline is provided (only once per modal open)
-  useEffect(() => {
-    if (!upline && isOpen && !hasSetDefaultUpline) {
-      const fetchCurrentUser = async () => {
-        try {
-          const supabase = createClient()
-          const { data: { user } } = await supabase.auth.getUser()
-
-          if (user) {
-            const { data: userData } = await supabase
-              .from('users')
-              .select('id, first_name, last_name, email, is_admin, perm_level')
-              .eq('auth_user_id', user.id)
-              .single()
-
-            if (userData) {
-              // Set current user as default upline
-              const userLabel = `${userData.first_name} ${userData.last_name} - ${userData.email}`
-              applyUplineSelection({ value: userData.id, label: userLabel })
-              setHasSetDefaultUpline(true)
-
-              // Check if current user is admin
-              setIsCurrentUserAdmin(userData.is_admin || userData.perm_level === 'admin')
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching current user for default upline:', error)
-        }
-      }
-
-      fetchCurrentUser()
-    }
-  }, [upline, isOpen, hasSetDefaultUpline])
 
   // When upline is provided from graph view, trigger search to find the user
   useEffect(() => {
@@ -479,71 +489,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       return
     }
 
-    try {
-      setSubmitting(true)
-
-      // Call the API to invite the agent (will update pre-invite if selectedPreInviteUserId is set)
-      const response = await fetch('/api/agents/invite', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          phoneNumber: formData.phoneNumber,
-          permissionLevel: formData.permissionLevel,
-          uplineAgentId: formData.uplineAgentId || null,
-          positionId: formData.positionId || null,
-          preInviteUserId: selectedPreInviteUserId // Include pre-invite user ID if updating
-        }),
-        credentials: 'include'
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        // Display the error message from the API
-        setErrors([data.error || 'Failed to invite agent'])
-        return
-      }
-
-      // Show success message
-      const message = selectedPreInviteUserId
-        ? `User ${formData.firstName} ${formData.lastName} updated and invitation sent to ${formData.email}!`
-        : `Invitation sent successfully to ${formData.email}!`
-      showSuccess(message, 7000)
-
-      setIsOpen(false)
-      // Reset form
-      setFormData({
-        firstName: "",
-        lastName: "",
-        email: "",
-        phoneNumber: "",
-        permissionLevel: "",
-        uplineAgentId: "",
-        positionId: ""
-      })
-      setErrors([])
-      setErrorFields({})
-      setPauseNameSearch(false)
-      setPauseUplineSearch(false)
-      setUplineSearchTerm("") // Reset upline search term
-      setUplineInputValue("")
-      setSelectedUplineLabel("") // Reset selected upline label
-      setSelectedPreInviteUserId(null)
-      setHasSetDefaultUpline(false) // Reset default upline flag
-
-      // Refresh the page to show new agent
-      window.location.reload()
-    } catch (error) {
-      console.error('Error inviting agent:', error)
-      setErrors(['An unexpected error occurred. Please try again.'])
-    } finally {
-      setSubmitting(false)
-    }
+    inviteAgentMutation.mutate({
+      ...formData,
+      preInviteUserId: selectedPreInviteUserId
+    })
   }
 
   const handleInputChange = (field: string, value: string) => {
@@ -614,7 +563,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
       setSelectedPreInviteUserId(userId)
       setNameSearchTerm(selectedOption.label)
-      setNameSearchResults([])
+      // No need to clear results - TanStack Query manages this automatically when pauseNameSearch is set
 
       // If there's an upline, set the search term for upline field
       if (user.upline_id) {
@@ -958,9 +907,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             <Button
               type="submit"
               className="w-full py-2 btn-gradient font-semibold text-lg disabled:opacity-60"
-              disabled={submitting || loading}
+              disabled={inviteAgentMutation.isPending || loading}
             >
-              {submitting ? 'Creating User...' : 'Submit'}
+              {inviteAgentMutation.isPending ? 'Creating User...' : 'Submit'}
             </Button>
           </div>
         </form>

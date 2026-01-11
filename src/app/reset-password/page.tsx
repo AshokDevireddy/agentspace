@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 import { useTheme } from "next-themes"
+import { useResetPassword } from '@/hooks/mutations'
 
 export default function ResetPassword() {
   const router = useRouter()
@@ -14,8 +15,10 @@ export default function ResetPassword() {
   const { setTheme } = useTheme()
 
   const [email, setEmail] = useState("")
-  const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+
+  // Use TanStack Query mutation for password reset
+  const resetPasswordMutation = useResetPassword()
 
   // Force light mode for non-white-labeled sites, use agency theme for white-labeled sites
   useEffect(() => {
@@ -36,6 +39,14 @@ export default function ResetPassword() {
   // Intentionally avoid pre-checking if the email exists to prevent account enumeration
   // and to allow invited (but not yet onboarded) users to request a reset.
 
+  const showSuccessAndRedirect = () => {
+    // Always show success message to prevent email enumeration
+    setMessage({ type: 'success', text: 'If an account exists for this email, a reset link has been sent. Check your inbox.' })
+    setTimeout(() => {
+      router.push('/login')
+    }, 3000)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -47,41 +58,19 @@ export default function ResetPassword() {
       return
     }
 
-    setLoading(true)
     setMessage(null)
 
-    try {
-      // Call API route to send password reset email via admin client
-      const response = await fetch('/api/reset-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+    resetPasswordMutation.mutate(
+      { email },
+      {
+        onSuccess: showSuccessAndRedirect,
+        onError: (error) => {
+          console.error('Error in password reset:', error)
+          // Even on error, show generic success message to prevent email enumeration
+          showSuccessAndRedirect()
         },
-        body: JSON.stringify({ email }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to send reset email')
       }
-
-      // Always show success message to prevent email enumeration
-      setMessage({ type: 'success', text: 'If an account exists for this email, a reset link has been sent. Check your inbox.' })
-      setTimeout(() => {
-        router.push('/login')
-      }, 3000)
-
-    } catch (error: any) {
-      console.error('Error in password reset:', error)
-      // Even on error, show generic success message to prevent email enumeration
-      setMessage({ type: 'success', text: 'If an account exists for this email, a reset link has been sent. Check your inbox.' })
-      setTimeout(() => {
-        router.push('/login')
-      }, 3000)
-    } finally {
-      setLoading(false)
-    }
+    )
   }
 
   return (
@@ -116,17 +105,17 @@ export default function ResetPassword() {
                 className="h-12"
                 placeholder="Enter your email address"
                 required
-                disabled={loading}
+                disabled={resetPasswordMutation.isPending || resetPasswordMutation.isSuccess}
               />
             </div>
 
             {/* Submit Button */}
             <Button
               type="submit"
-              disabled={loading}
+              disabled={resetPasswordMutation.isPending || resetPasswordMutation.isSuccess}
               className="w-full h-12 bg-foreground hover:bg-foreground/90 text-background font-medium rounded-md disabled:opacity-50"
             >
-              {loading ? 'Sending...' : 'Send Password Reset Email'}
+              {resetPasswordMutation.isPending || resetPasswordMutation.isSuccess ? 'Sending...' : 'Send Password Reset Email'}
             </Button>
           </form>
         </div>

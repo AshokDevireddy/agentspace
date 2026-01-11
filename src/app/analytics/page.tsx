@@ -16,6 +16,12 @@ import {
 	SelectValue,
 } from "@/components/ui/select"
 import { Info } from "lucide-react"
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useApiFetch } from '@/hooks/useApiFetch'
+import { useSupabaseRpc } from '@/hooks/useSupabaseQuery'
+import { queryKeys } from '@/hooks/queryKeys'
+import { QueryErrorDisplay } from '@/components/ui/query-error-display'
+import { RefreshingIndicator } from '@/components/ui/refreshing-indicator'
 
 // analytics_test_value: static data for the test analytics page
 const analytics_test_value = {
@@ -515,15 +521,10 @@ export default function AnalyticsTestPage() {
 	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
 	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
 	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
-	const [userId, setUserId] = React.useState<string | null>(null)
-	const [subscriptionTier, setSubscriptionTier] = React.useState<string>('free')
 	const [downlineTitle, setDownlineTitle] = React.useState<string | null>(null)
 	const [downlineBreadcrumbInfo, setDownlineBreadcrumbInfo] = React.useState<{ currentAgentName: string; breadcrumbs: Array<{ agentId: string; agentName: string }>; isAtRoot: boolean } | null>(null)
 	const downlineChartRef = React.useRef<DownlineProductionChartHandle>(null)
-	const [allAgents, setAllAgents] = React.useState<Array<{ id: string; name: string }>>([])
 	const [selectedAgentId, setSelectedAgentId] = React.useState<string>("")
-	const [originalUserId, setOriginalUserId] = React.useState<string | null>(null)
-	const [userRole, setUserRole] = React.useState<string | null>(null)
 	const [viewMode, setViewMode] = React.useState<'just_me' | 'downlines'>(() => {
 		if (typeof window !== 'undefined') {
 			return (localStorage.getItem('analytics_view_mode') as 'just_me' | 'downlines') || 'downlines'
@@ -531,164 +532,99 @@ export default function AnalyticsTestPage() {
 		return 'downlines'
 	})
 
-	const [_analyticsData, setAnalyticsData] = React.useState<AnalyticsTestValue | null>(null)
-	const [_analyticsFullData, setAnalyticsFullData] = React.useState<{your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null} | null>(null)
-
 	// Save view mode to localStorage
 	React.useEffect(() => {
 		localStorage.setItem('analytics_view_mode', viewMode)
 	}, [viewMode])
 
-	React.	useEffect(() => {
-		let isMounted = true
-		;(async () => {
-			try {
-                console.log('hello gindha')
-				const supabase = createClient()
-				const { data: auth } = await supabase.auth.getUser()
-				const userId = auth?.user?.id
-				if (!userId) return
-                console.log("userId", userId)
+	const queryClient = useQueryClient()
 
-				const { data: userRow, error: userError } = await supabase
-					.from("users")
-					.select("id, agency_id, subscription_tier, role")
-					.eq("auth_user_id", userId)
-					.single()
-				if (userError || !userRow?.id) return
-                console.log("userRow", userRow)
-				console.log("🏢 Current User Agency ID:", userRow.agency_id)
+	// 1. Main analytics fetch - Get user data and analytics
+	const { data: mainAnalyticsData, isPending: isMainAnalyticsLoading, isFetching: isMainAnalyticsFetching, error: mainAnalyticsError } = useQuery({
+		queryKey: queryKeys.analyticsData({ view: 'initial' }),
+		queryFn: async () => {
+			const supabase = createClient()
+			const { data: auth } = await supabase.auth.getUser()
+			const userId = auth?.user?.id
+			if (!userId) throw new Error('No authenticated user')
 
-				const { data: rpcData, error: rpcError } = await supabase
-					.rpc("get_analytics_split_view", { p_user_id: userRow.id })
+			const { data: userRow, error: userError } = await supabase
+				.from("users")
+				.select("id, agency_id, subscription_tier, role")
+				.eq("auth_user_id", userId)
+				.single()
+			if (userError || !userRow?.id) throw userError || new Error('User not found')
 
-				if (rpcError || !rpcData) return
+			console.log("🏢 Current User Agency ID:", userRow.agency_id)
 
-                console.log("rpcData", rpcData)
-                console.log("rpcError", rpcError)
-                console.log("userRow", userRow)
-                console.log("user_id", userRow.id)
+			const { data: rpcData, error: rpcError } = await supabase
+				.rpc("get_analytics_split_view", { p_user_id: userRow.id })
 
-				if (isMounted) {
-					setAnalyticsFullData(rpcData)
-					setAnalyticsData(rpcData.your_deals as AnalyticsTestValue)
-					setUserId(userRow.id)
-					setOriginalUserId(userRow.id)
-					setSubscriptionTier(userRow.subscription_tier || 'free')
-					setUserRole(userRow.role || null)
-				}
-			} catch (_) {
-				// swallow for now; can add toast/logging later
+			if (rpcError) throw rpcError
+			if (!rpcData) throw new Error('No analytics data returned')
+
+			return {
+				analyticsFullData: rpcData as {your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null},
+				userId: userRow.id,
+				subscriptionTier: userRow.subscription_tier || 'free',
+				userRole: userRow.role || null,
 			}
-		})()
-		return () => { isMounted = false }
-	}, [])
+		},
+		staleTime: 5 * 60 * 1000, // 5 minutes
+		gcTime: 10 * 60 * 1000, // 10 minutes
+	})
 
-	// Fetch all agents for the search dropdown
-	React.useEffect(() => {
-		const fetchAgents = async () => {
-			try {
-				// Fetch agents using the API endpoint which calls get_agent_options
-				// Using view=table ensures the same admin logic as the agents page:
-				// - Admins get full agency access (p_include_full_agency: true)
-				// - Regular agents only see their downlines (p_include_full_agency: false)
-				const params = new URLSearchParams()
-				params.append('view', 'table')
-				params.append('page', '1')
-				params.append('limit', '1') // We only need the allAgents array
-				
-				const response = await fetch(`/api/agents?${params.toString()}`)
-				if (!response.ok) {
-					throw new Error('Failed to fetch agents')
-				}
-				const data = await response.json()
-				if (data.allAgents && originalUserId) {
-					// Filter out the current user from the agents list
-					const filteredAgents = data.allAgents.filter((agent: { id: string }) => agent.id !== originalUserId)
-					setAllAgents(filteredAgents)
-				} else if (data.allAgents) {
-					setAllAgents(data.allAgents)
-				}
-			} catch (err) {
-				console.error('Error fetching agents:', err)
-			}
+	// Derive state directly from query data (no useState/useEffect sync needed)
+	const originalUserId = mainAnalyticsData?.userId || null
+	const subscriptionTier = mainAnalyticsData?.subscriptionTier || 'free'
+	const userRole = mainAnalyticsData?.userRole || null
+	const userId = selectedAgentId || originalUserId
+
+	// 2. Fetch all agents for the search dropdown
+	const { data: agentsData } = useApiFetch<{ allAgents?: Array<{ id: string; name: string }> }>(
+		queryKeys.agents,
+		'/api/agents?view=table&page=1&limit=1',
+		{
+			enabled: !!originalUserId,
+			staleTime: 5 * 60 * 1000, // 5 minutes
 		}
+	)
 
+	// Filter agents list - exclude current user (pure transformation, no side effects)
+	const allAgents = React.useMemo(() => {
+		if (!agentsData?.allAgents) return []
 		if (originalUserId) {
-			fetchAgents()
+			// Filter out the current user from the agents list
+			return agentsData.allAgents.filter((agent: { id: string }) => agent.id !== originalUserId)
 		}
-	}, [originalUserId])
+		return agentsData.allAgents
+	}, [agentsData?.allAgents, originalUserId])
 
-	// Fetch analytics when selected agent changes
-	React.useEffect(() => {
-		let isMounted = true
-		
-		const fetchAnalyticsForAgent = async () => {
-			if (!selectedAgentId) {
-				// If no agent selected, use original user
-				if (originalUserId) {
-					const supabase = createClient()
-					const { data: rpcData, error: rpcError } = await supabase
-						.rpc("get_analytics_split_view", { p_user_id: originalUserId })
-
-					if (!rpcError && rpcData && isMounted) {
-						setAnalyticsFullData(rpcData)
-						setAnalyticsData(rpcData.your_deals as AnalyticsTestValue)
-						setUserId(originalUserId)
-					}
-				}
-				return
-			}
-
-			// Clear analytics data while loading
-			if (isMounted) {
-				setAnalyticsData(null)
-			}
-
-			try {
-				const supabase = createClient()
-				console.log('[Analytics] Fetching analytics for agent ID:', selectedAgentId)
-				const { data: rpcData, error: rpcError } = await supabase
-					.rpc("get_analytics_split_view", { p_user_id: selectedAgentId })
-
-				if (rpcError) {
-					console.error('[Analytics] RPC Error:', rpcError)
-					return
-				}
-
-				if (!rpcData) {
-					console.warn('[Analytics] No data returned from RPC')
-					return
-				}
-
-				if (isMounted) {
-					console.log('[Analytics] Successfully fetched analytics for agent:', selectedAgentId)
-					setAnalyticsFullData(rpcData)
-					setAnalyticsData(rpcData.your_deals as AnalyticsTestValue)
-					setUserId(selectedAgentId)
-				}
-			} catch (err) {
-				console.error('[Analytics] Error fetching analytics:', err)
-			}
+	// 3. Fetch analytics when selected agent changes
+	const targetUserId = selectedAgentId || originalUserId
+	const { data: selectedAgentAnalytics, isPending: isSelectedAgentLoading } = useSupabaseRpc<{your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null}>(
+		queryKeys.analyticsData({ agentId: targetUserId }),
+		'get_analytics_split_view',
+		{ p_user_id: targetUserId },
+		{
+			enabled: !!targetUserId,
+			staleTime: 5 * 60 * 1000, // 5 minutes
 		}
+	)
 
-		fetchAnalyticsForAgent()
-		
-		return () => { isMounted = false }
-	}, [selectedAgentId, originalUserId])
-
-	// Update analytics data when viewMode changes
-	React.useEffect(() => {
-		if (_analyticsFullData) {
-			if (viewMode === 'just_me') {
-				setAnalyticsData(_analyticsFullData.your_deals as AnalyticsTestValue)
-			} else {
-				setAnalyticsData(_analyticsFullData.downline_production as AnalyticsTestValue)
-			}
+	// Compute the active analytics data based on viewMode and selectedAgentAnalytics
+	const _analyticsFullData = selectedAgentAnalytics || mainAnalyticsData?.analyticsFullData || null
+	const _analyticsData = React.useMemo(() => {
+		if (!_analyticsFullData) return null
+		if (viewMode === 'just_me') {
+			return _analyticsFullData.your_deals as AnalyticsTestValue
+		} else {
+			return _analyticsFullData.downline_production as AnalyticsTestValue
 		}
 	}, [viewMode, _analyticsFullData])
 
-	const isLoading = !_analyticsData
+	const isLoading = isMainAnalyticsLoading || isSelectedAgentLoading || !_analyticsData
+	const isRefreshing = isMainAnalyticsFetching && !isMainAnalyticsLoading
 	const analyticsData = _analyticsData as AnalyticsTestValue | null
 
 	const carriers = React.useMemo(() => ["ALL", ...(_analyticsData?.meta.carriers ?? [])], [_analyticsData])
@@ -1556,10 +1492,19 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			</div>
 		) : (
 			<div className="flex w-full flex-col gap-6 p-6 analytics-content" data-tour="analytics">
+			{/* Error Display */}
+			{mainAnalyticsError && (
+				<QueryErrorDisplay
+					error={mainAnalyticsError}
+					onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.analyticsData({ view: 'initial' }) })}
+					variant="inline"
+				/>
+			)}
 			{/* Header */}
 			<div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
 				<div className="flex items-center gap-4 flex-wrap">
 					<h1 className="text-4xl font-bold text-foreground whitespace-nowrap leading-none flex-shrink-0">Agency Analytics</h1>
+					<RefreshingIndicator isRefreshing={isRefreshing} />
 
 					<div className="flex items-center gap-2 flex-wrap xl:hidden ml-auto">
 						{/* Just Me / Downlines Toggle */}

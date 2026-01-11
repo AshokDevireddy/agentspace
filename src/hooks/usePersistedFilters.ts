@@ -1,114 +1,191 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useSyncExternalStore, useCallback, useRef, useEffect } from 'react'
 
 /**
- * Custom hook for persisting filter state in localStorage
- * @param key - Unique key for localStorage (e.g., 'agents-filters', 'clients-filters')
- * @param initialState - Default state object when no persisted data exists
- * @param preserveOnClear - Keys to preserve when clearFilters is called (e.g., ['viewMode'])
- * @returns [localState, appliedState, setLocalState, applyFilters, clearFilters, setAndApply]
+ * SSR-safe persisted filters hook using useSyncExternalStore.
+ * Returns initialState on server, synced localStorage value on client.
  */
-export function usePersistedFilters<T extends Record<string, any>>(
+export function usePersistedFilters<T extends Record<string, unknown>>(
   key: string,
   initialState: T,
   preserveOnClear: (keyof T)[] = []
-): [
-  T, // localState
-  T, // appliedState
-  (updater: Partial<T> | ((prev: T) => T)) => void, // setLocalState
-  () => void, // applyFilters
-  () => void, // clearFilters
-  (updater: Partial<T>) => void // setAndApply - updates both local and applied immediately
-] {
-  // Initialize state from localStorage or use initial state
-  const [localState, setLocalStateInternal] = useState<T>(() => {
-    if (typeof window === 'undefined') return initialState;
+) {
+  // Keep refs to avoid stale closures
+  const initialRef = useRef(initialState)
+  initialRef.current = initialState
 
-    try {
-      const stored = localStorage.getItem(`filter_${key}_local`);
-      return stored ? { ...initialState, ...JSON.parse(stored) } : initialState;
-    } catch (error) {
-      console.error(`Error loading persisted filters for ${key}:`, error);
-      return initialState;
-    }
-  });
+  const preserveRef = useRef(preserveOnClear)
+  preserveRef.current = preserveOnClear
 
-  const [appliedState, setAppliedState] = useState<T>(() => {
-    if (typeof window === 'undefined') return initialState;
+  // Cache refs for snapshot results - critical for useSyncExternalStore
+  const localCacheRef = useRef<{ raw: string | null; parsed: T } | null>(null)
+  const appliedCacheRef = useRef<{ raw: string | null; parsed: T } | null>(null)
 
-    try {
-      const stored = localStorage.getItem(`filter_${key}_applied`);
-      return stored ? { ...initialState, ...JSON.parse(stored) } : initialState;
-    } catch (error) {
-      console.error(`Error loading persisted filters for ${key}:`, error);
-      return initialState;
-    }
-  });
-
-  // Save local state to localStorage whenever it changes
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    try {
-      localStorage.setItem(`filter_${key}_local`, JSON.stringify(localState));
-    } catch (error) {
-      console.error(`Error saving local filters for ${key}:`, error);
-    }
-  }, [key, localState]);
-
-  // Save applied state to localStorage whenever it changes
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    try {
-      localStorage.setItem(`filter_${key}_applied`, JSON.stringify(appliedState));
-    } catch (error) {
-      console.error(`Error saving applied filters for ${key}:`, error);
-    }
-  }, [key, appliedState]);
-
-  // Enhanced setState that accepts both partial updates and updater functions
-  const setLocalState = useCallback((updater: Partial<T> | ((prev: T) => T)) => {
-    setLocalStateInternal(prev => {
-      if (typeof updater === 'function') {
-        return updater(prev);
+  // Subscribe function for localStorage changes
+  const subscribe = useCallback((callback: () => void) => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key?.startsWith(`filter_${key}`) || e.key === null) {
+        callback()
       }
-      return { ...prev, ...updater };
-    });
-  }, []);
+    }
 
-  // Apply filters: copy local state to applied state
+    const handleCustom = (e: Event) => {
+      const customEvent = e as CustomEvent
+      if (customEvent.detail?.key?.startsWith(`filter_${key}`)) {
+        callback()
+      }
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener('localStorage-update', handleCustom)
+
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('localStorage-update', handleCustom)
+    }
+  }, [key])
+
+  // Snapshot functions - MUST return cached value if data hasn't changed
+  const getLocalSnapshot = useCallback(() => {
+    try {
+      const stored = localStorage.getItem(`filter_${key}_local`)
+      // Return cached value if raw string is the same
+      if (localCacheRef.current && localCacheRef.current.raw === stored) {
+        return localCacheRef.current.parsed
+      }
+      const parsed = stored ? { ...initialRef.current, ...JSON.parse(stored) } : initialRef.current
+      localCacheRef.current = { raw: stored, parsed }
+      return parsed
+    } catch {
+      return initialRef.current
+    }
+  }, [key])
+
+  const getAppliedSnapshot = useCallback(() => {
+    try {
+      const stored = localStorage.getItem(`filter_${key}_applied`)
+      // Return cached value if raw string is the same
+      if (appliedCacheRef.current && appliedCacheRef.current.raw === stored) {
+        return appliedCacheRef.current.parsed
+      }
+      const parsed = stored ? { ...initialRef.current, ...JSON.parse(stored) } : initialRef.current
+      appliedCacheRef.current = { raw: stored, parsed }
+      return parsed
+    } catch {
+      return initialRef.current
+    }
+  }, [key])
+
+  const getServerSnapshot = useCallback(() => initialRef.current, [])
+
+  // Use useSyncExternalStore for SSR-safe state
+  const localState = useSyncExternalStore(subscribe, getLocalSnapshot, getServerSnapshot)
+  const appliedState = useSyncExternalStore(subscribe, getAppliedSnapshot, getServerSnapshot)
+
+  // Debounced save for local state
+  const saveTimeoutRef = useRef<NodeJS.Timeout>()
+
+  // Helper to save and notify
+  const saveToStorage = useCallback((storageKey: string, value: T) => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(value))
+      window.dispatchEvent(new CustomEvent('localStorage-update', {
+        detail: { key: storageKey }
+      }))
+    } catch (error) {
+      console.error(`Error saving filters for ${storageKey}:`, error)
+    }
+  }, [])
+
+  // Set local filters (with debounced save)
+  const setLocalFilters = useCallback((updater: Partial<T> | ((prev: T) => T)) => {
+    clearTimeout(saveTimeoutRef.current)
+
+    const currentLocal = (() => {
+      try {
+        const stored = localStorage.getItem(`filter_${key}_local`)
+        return stored ? { ...initialRef.current, ...JSON.parse(stored) } : initialRef.current
+      } catch {
+        return initialRef.current
+      }
+    })()
+
+    const newState = typeof updater === 'function'
+      ? updater(currentLocal)
+      : { ...currentLocal, ...updater }
+
+    // Debounce the save
+    saveTimeoutRef.current = setTimeout(() => {
+      saveToStorage(`filter_${key}_local`, newState)
+    }, 300)
+
+    // Immediately notify for UI update
+    saveToStorage(`filter_${key}_local`, newState)
+  }, [key, saveToStorage])
+
+  // Apply filters (copy local to applied)
   const applyFilters = useCallback(() => {
-    setAppliedState(localState);
-  }, [localState]);
+    const currentLocal = (() => {
+      try {
+        const stored = localStorage.getItem(`filter_${key}_local`)
+        return stored ? { ...initialRef.current, ...JSON.parse(stored) } : initialRef.current
+      } catch {
+        return initialRef.current
+      }
+    })()
 
-  // Clear filters: reset both local and applied state to initial values
-  // but preserve specified keys (e.g., viewMode)
-  const clearFilters = useCallback(() => {
-    setLocalStateInternal(prev => {
-      const preserved: Partial<T> = {};
-      preserveOnClear.forEach(key => {
-        preserved[key] = prev[key];
-      });
-      return { ...initialState, ...preserved };
-    });
-    setAppliedState(prev => {
-      const preserved: Partial<T> = {};
-      preserveOnClear.forEach(key => {
-        preserved[key] = prev[key];
-      });
-      return { ...initialState, ...preserved };
-    });
-  }, [initialState, preserveOnClear]);
+    saveToStorage(`filter_${key}_applied`, currentLocal)
+  }, [key, saveToStorage])
 
-  // Set and apply immediately: update both local and applied state at once
-  // Use this for real-time filters like tabs, view modes, etc.
+  // Set and apply in one action
   const setAndApply = useCallback((updater: Partial<T>) => {
-    setLocalStateInternal(prev => {
-      const newState = { ...prev, ...updater };
-      setAppliedState(newState);
-      return newState;
-    });
-  }, []);
+    const currentLocal = (() => {
+      try {
+        const stored = localStorage.getItem(`filter_${key}_local`)
+        return stored ? { ...initialRef.current, ...JSON.parse(stored) } : initialRef.current
+      } catch {
+        return initialRef.current
+      }
+    })()
 
-  return [localState, appliedState, setLocalState, applyFilters, clearFilters, setAndApply];
+    const newState = { ...currentLocal, ...updater }
+
+    saveToStorage(`filter_${key}_local`, newState)
+    saveToStorage(`filter_${key}_applied`, newState)
+  }, [key, saveToStorage])
+
+  // Clear filters (preserving specified keys)
+  const clearFilters = useCallback(() => {
+    const currentLocal = (() => {
+      try {
+        const stored = localStorage.getItem(`filter_${key}_local`)
+        return stored ? { ...initialRef.current, ...JSON.parse(stored) } : initialRef.current
+      } catch {
+        return initialRef.current
+      }
+    })()
+
+    const preserved: Partial<T> = {}
+    preserveRef.current.forEach(k => {
+      preserved[k] = currentLocal[k]
+    })
+
+    const newState = { ...initialRef.current, ...preserved } as T
+
+    saveToStorage(`filter_${key}_local`, newState)
+    saveToStorage(`filter_${key}_applied`, newState)
+  }, [key, saveToStorage])
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => clearTimeout(saveTimeoutRef.current)
+  }, [])
+
+  return {
+    localFilters: localState,
+    appliedFilters: appliedState,
+    setLocalFilters,
+    applyFilters,
+    setAndApply,
+    clearFilters,
+  }
 }

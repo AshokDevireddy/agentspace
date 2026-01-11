@@ -77,50 +77,74 @@ export default function SetupAccount() {
 
   // Master timeout to prevent infinite loading state
   useEffect(() => {
-    if (!loading) return
+    if (!loading) {
+      console.log(`[setup-account] MASTER TIMEOUT: Skipped (loading=false)`)
+      return
+    }
+
+    const timeoutStart = Date.now()
+    console.log(`[setup-account] MASTER TIMEOUT: Started at ${timeoutStart}, will fire in 15000ms`)
 
     const masterTimeout = setTimeout(() => {
+      console.log(`[setup-account] MASTER TIMEOUT: FIRED at +${Date.now() - timeoutStart}ms, loading=${loading}`)
       if (loading) {
+        console.log(`[setup-account] MASTER TIMEOUT: Setting error and loading=false`)
         setErrors(['Loading timed out. Please try using your invitation link again or contact support.'])
         setLoading(false)
       }
     }, 15000)
 
-    return () => clearTimeout(masterTimeout)
+    return () => {
+      console.log(`[setup-account] MASTER TIMEOUT: Cleanup called at +${Date.now() - timeoutStart}ms`)
+      clearTimeout(masterTimeout)
+    }
   }, [loading])
 
   const fetchUserData = async () => {
+    const startTime = Date.now()
+    console.log(`[setup-account] fetchUserData START at ${startTime}`)
+
     try {
       let authUserId: string | null = null
       let accessToken: string | null = null
 
-      // PRIORITY 1: Check for session from server (fastest and most reliable after invite flow)
-      try {
-        const { data: { session } } = await withTimeout(supabase.auth.getSession())
-        if (session?.user) {
-          authUserId = session.user.id
-          accessToken = session.access_token
+      // PRIORITY 1: Check stored invite tokens FIRST (instant - no network call)
+      // This is the fast path when coming from /auth/confirm which stores tokens before navigating
+      console.log(`[setup-account] PRIORITY 1: Checking stored tokens at +${Date.now() - startTime}ms`)
+      const { accessToken: storedAccessToken } = getInviteTokens()
+      console.log(`[setup-account] PRIORITY 1: hasStoredToken=${!!storedAccessToken}`)
+      if (storedAccessToken) {
+        const payload = decodeAndValidateJwt(storedAccessToken)
+        console.log(`[setup-account] PRIORITY 1: JWT valid=${!!payload}`)
+        if (payload) {
+          authUserId = payload.sub
+          accessToken = storedAccessToken
+          console.log(`[setup-account] PRIORITY 1: Got authUserId from stored token`)
+        } else {
+          console.log(`[setup-account] PRIORITY 1: Clearing invalid tokens`)
+          clearInviteTokens()
         }
-      } catch (sessionError) {
-        console.error('Error getting session:', sessionError)
       }
 
-      // PRIORITY 2: Check stored invite tokens as fallback
+      // PRIORITY 2: Try getSession() if no stored tokens (e.g., page refresh after setup)
       if (!authUserId) {
-        const { accessToken: storedAccessToken } = getInviteTokens()
-        if (storedAccessToken) {
-          const payload = decodeAndValidateJwt(storedAccessToken)
-          if (payload) {
-            authUserId = payload.sub
-            accessToken = storedAccessToken
-          } else {
-            clearInviteTokens()
+        console.log(`[setup-account] PRIORITY 2: Starting getSession() at +${Date.now() - startTime}ms`)
+        try {
+          const { data: { session } } = await withTimeout(supabase.auth.getSession())
+          console.log(`[setup-account] PRIORITY 2: getSession() completed at +${Date.now() - startTime}ms, hasSession=${!!session?.user}`)
+          if (session?.user) {
+            authUserId = session.user.id
+            accessToken = session.access_token
+            console.log(`[setup-account] PRIORITY 2: Got authUserId from session`)
           }
+        } catch (sessionError) {
+          console.error(`[setup-account] PRIORITY 2: getSession() FAILED at +${Date.now() - startTime}ms:`, sessionError)
         }
       }
 
       // PRIORITY 3: Try getUser() with timeout as last resort
       if (!authUserId) {
+        console.log(`[setup-account] PRIORITY 3: Trying getUser() at +${Date.now() - startTime}ms`)
         try {
           const getUserPromise = supabase.auth.getUser()
           const timeoutPromise = new Promise<never>((_, reject) =>
@@ -129,27 +153,34 @@ export default function SetupAccount() {
           const result = await Promise.race([getUserPromise, timeoutPromise])
           if (result?.data?.user) {
             authUserId = result.data.user.id
+            console.log(`[setup-account] PRIORITY 3: Got authUserId from getUser()`)
           }
-        } catch {
-          // Timeout or error, continue to redirect
+        } catch (err) {
+          console.log(`[setup-account] PRIORITY 3: getUser() failed at +${Date.now() - startTime}ms:`, err)
         }
       }
 
       if (!authUserId) {
+        console.log(`[setup-account] NO AUTH: Redirecting to login at +${Date.now() - startTime}ms`)
         router.push('/login?error=Session expired. Please use your invitation link again.')
         return
       }
 
+      console.log(`[setup-account] AUTH SUCCESS: Got authUserId at +${Date.now() - startTime}ms`)
+
       // Fetch user data
+      console.log(`[setup-account] FETCH USER: Starting at +${Date.now() - startTime}ms`)
       let userRecord: UserData | null = null
 
       if (accessToken) {
+        console.log(`[setup-account] FETCH USER: Using REST API with token`)
         const { data } = await supabaseRestFetch<UserData[]>(
           `/rest/v1/users?auth_user_id=eq.${authUserId}&status=eq.onboarding&select=*`,
           { accessToken }
         )
         userRecord = data?.[0] || null
       } else {
+        console.log(`[setup-account] FETCH USER: Using Supabase client`)
         const { data } = await supabase
           .from('users')
           .select('*')
@@ -159,12 +190,16 @@ export default function SetupAccount() {
         userRecord = data
       }
 
+      console.log(`[setup-account] FETCH USER: Completed at +${Date.now() - startTime}ms, hasUser=${!!userRecord}`)
+
       if (!userRecord) {
+        console.log(`[setup-account] FETCH USER: No user found, setting error`)
         setErrors(['Failed to load user data. Your account setup may have already been completed.'])
         setLoading(false)
         return
       }
 
+      console.log(`[setup-account] SUCCESS: Setting user data at +${Date.now() - startTime}ms`)
       setUserData(userRecord)
       setFormData({
         firstName: userRecord.first_name || "",
@@ -197,9 +232,11 @@ export default function SetupAccount() {
           setAgencyName(agencyData.display_name || agencyData.name || "AgentSpace")
         }
       }
-    } catch {
+    } catch (err) {
+      console.error(`[setup-account] CATCH: Error at +${Date.now() - startTime}ms:`, err)
       setErrors(['Failed to load user data'])
     } finally {
+      console.log(`[setup-account] FINALLY: Setting loading=false at +${Date.now() - startTime}ms`)
       setLoading(false)
     }
   }

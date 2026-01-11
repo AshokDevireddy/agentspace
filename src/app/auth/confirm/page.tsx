@@ -13,7 +13,8 @@ interface UserRecord {
   status: string
 }
 
-const MASTER_TIMEOUT_MS = 15000
+// 35s master timeout: 3 retries at 5+8+12 = 25s of waiting, plus ~10s for JWT/API processing
+const MASTER_TIMEOUT_MS = 35000
 
 export default function ConfirmSession() {
   const supabase = createClient()
@@ -170,21 +171,26 @@ export default function ConfirmSession() {
         .eq('id', user.id)
     }
 
-    // Try to establish session, store tokens as fallback
+    // Store tokens and navigate immediately - don't wait for setSession()
+    // The setup-account page will use stored tokens directly (fast path)
+    // setSession() can complete in the background
     if (accessToken && initialHashTokens?.refreshToken) {
-      try {
-        await withTimeout(
-          supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: initialHashTokens.refreshToken
-          })
-        )
-      } catch (err) {
-        console.error('Error setting session, storing tokens as fallback:', err)
-        storeInviteTokens(accessToken, initialHashTokens.refreshToken)
-      }
+      console.log(`[ConfirmSession] Storing tokens to localStorage`)
+      storeInviteTokens(accessToken, initialHashTokens.refreshToken)
+
+      // Fire and forget - setSession will complete in background
+      // This avoids the 25s wait when setSession hangs
+      supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: initialHashTokens.refreshToken
+      }).then(() => {
+        console.log(`[ConfirmSession] setSession completed in background`)
+      }).catch((err) => {
+        console.log(`[ConfirmSession] setSession failed in background:`, err)
+      })
     }
 
+    console.log(`[ConfirmSession] Navigating to /setup-account`)
     completedRef.current = true
     setMessage('Setting up your account...')
     router.push('/setup-account')

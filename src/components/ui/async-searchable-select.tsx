@@ -2,9 +2,11 @@
 
 import * as React from "react"
 import { Check, ChevronDown, Loader2 } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { queryKeys } from "@/hooks/queryKeys"
 
 interface Option {
   value: string
@@ -32,29 +34,38 @@ export function AsyncSearchableSelect({
 }: AsyncSearchableSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [searchTerm, setSearchTerm] = React.useState("")
-  const [options, setOptions] = React.useState<Option[]>([])
-  const [loading, setLoading] = React.useState(false)
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = React.useState("")
   const [selectedLabel, setSelectedLabel] = React.useState<string | null>(defaultLabel || null)
   const dropdownRef = React.useRef<HTMLDivElement>(null)
-  const abortControllerRef = React.useRef<AbortController | null>(null)
 
-  // Fetch options based on search term
-  const fetchOptions = React.useCallback(async (search: string) => {
-    // Cancel previous request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
+  // Track endpoint changes to reset state
+  const prevEndpointRef = React.useRef(searchEndpoint)
+  React.useEffect(() => {
+    if (prevEndpointRef.current !== searchEndpoint) {
+      // Reset search state when endpoint changes to prevent stale cache issues
+      setSearchTerm("")
+      setDebouncedSearchTerm("")
+      setSelectedLabel(defaultLabel || null)
+      prevEndpointRef.current = searchEndpoint
     }
+  }, [searchEndpoint, defaultLabel])
 
-    // Create new abort controller
-    abortControllerRef.current = new AbortController()
+  // Debounce search term
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchTerm])
 
-    try {
-      setLoading(true)
-      // Check if searchEndpoint already has query params
+  // Fetch options using TanStack Query
+  const { data: options = [], isLoading: loading } = useQuery<Option[]>({
+    queryKey: queryKeys.searchAsync(searchEndpoint, debouncedSearchTerm),
+    queryFn: async ({ signal }) => {
       const separator = searchEndpoint.includes('?') ? '&' : '?'
-      const url = `${searchEndpoint}${separator}q=${encodeURIComponent(search)}&limit=20`
+      const url = `${searchEndpoint}${separator}q=${encodeURIComponent(debouncedSearchTerm)}&limit=20`
       const response = await fetch(url, {
-        signal: abortControllerRef.current.signal,
+        signal,
         credentials: 'include'
       })
 
@@ -63,27 +74,13 @@ export function AsyncSearchableSelect({
       }
 
       const data = await response.json()
-      setOptions(data || [])
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        console.error('Error fetching options:', err)
-        setOptions([])
-      }
-    } finally {
-      setLoading(false)
-    }
-  }, [searchEndpoint])
-
-  // Debounced search
-  React.useEffect(() => {
-    if (!open) return
-
-    const timer = setTimeout(() => {
-      fetchOptions(searchTerm)
-    }, 300) // 300ms debounce
-
-    return () => clearTimeout(timer)
-  }, [searchTerm, open, fetchOptions])
+      return data || []
+    },
+    enabled: open,
+    staleTime: 30000,
+    // Keep previous results visible while fetching new ones (prevents flicker)
+    placeholderData: (previous) => previous ?? [],
+  })
 
   // Close dropdown when clicking outside
   React.useEffect(() => {
@@ -98,13 +95,6 @@ export function AsyncSearchableSelect({
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [])
-
-  // When dropdown opens, fetch initial results
-  React.useEffect(() => {
-    if (open) {
-      fetchOptions('')
-    }
-  }, [open, fetchOptions])
 
   const handleSelect = (option: Option) => {
     onValueChange?.(option.value === value ? "all" : option.value)

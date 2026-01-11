@@ -1,12 +1,15 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Search, Loader2, Phone, User, Building, Package } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useNotification } from '@/contexts/notification-context'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queryKeys'
+import { useCheckConversation, useCreateConversation } from '@/hooks/mutations'
 
 interface Deal {
   id: string
@@ -32,27 +35,32 @@ export function CreateConversationModal({
   onConversationCreated,
 }: CreateConversationModalProps) {
   const { showSuccess, showError } = useNotification()
+  const queryClient = useQueryClient()
+
   const [clientNameSearch, setClientNameSearch] = useState("")
   const [clientPhoneSearch, setClientPhoneSearch] = useState("")
-  const [searchResults, setSearchResults] = useState<Deal[]>([])
-  const [loading, setLoading] = useState(false)
+  const [debouncedNameSearch, setDebouncedNameSearch] = useState("")
+  const [debouncedPhoneSearch, setDebouncedPhoneSearch] = useState("")
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null)
-  const [creating, setCreating] = useState(false)
   const [confirmCreate, setConfirmCreate] = useState(false)
 
-  // Debounced search function
-  const performSearch = useCallback(async (name: string, phone: string) => {
-    // Don't search if both fields are empty
-    if (!name.trim() && !phone.trim()) {
-      setSearchResults([])
-      return
-    }
+  // Debounce search terms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedNameSearch(clientNameSearch)
+      setDebouncedPhoneSearch(clientPhoneSearch)
+    }, 300) // 300ms debounce
 
-    try {
-      setLoading(true)
+    return () => clearTimeout(timer)
+  }, [clientNameSearch, clientPhoneSearch])
+
+  // Search deals query
+  const { data: searchData, isLoading: loading } = useQuery({
+    queryKey: queryKeys.searchDeals(debouncedNameSearch.trim(), debouncedPhoneSearch.trim()),
+    queryFn: async () => {
       const params = new URLSearchParams()
-      if (name.trim()) params.append('client_name', name.trim())
-      if (phone.trim()) params.append('client_phone', phone.trim())
+      if (debouncedNameSearch.trim()) params.append('client_name', debouncedNameSearch.trim())
+      if (debouncedPhoneSearch.trim()) params.append('client_phone', debouncedPhoneSearch.trim())
       params.append('limit', '20')
 
       const response = await fetch(`/api/deals/search-for-conversation?${params.toString()}`, {
@@ -64,100 +72,59 @@ export function CreateConversationModal({
       }
 
       const data = await response.json()
-      setSearchResults(data.deals || [])
-    } catch (error) {
-      console.error('Search error:', error)
-      setSearchResults([])
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+      return data.deals || []
+    },
+    enabled: !!(debouncedNameSearch.trim() || debouncedPhoneSearch.trim()),
+    staleTime: 30000, // 30 seconds
+  })
 
-  // Debounce the search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      performSearch(clientNameSearch, clientPhoneSearch)
-    }, 300) // 300ms debounce
+  const searchResults = searchData || []
 
-    return () => clearTimeout(timer)
-  }, [clientNameSearch, clientPhoneSearch, performSearch])
-
-  const handleDealSelect = async (deal: Deal) => {
-    try {
-      setSelectedDeal(deal)
-      setCreating(true)
-
-      // Check if conversation already exists
-      const response = await fetch('/api/sms/conversations/get-or-create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ dealId: deal.id }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to check conversation')
-      }
-
-      const data = await response.json()
-
-      if (data.exists) {
-        // Conversation already exists, open it
-        onConversationCreated(data.conversationId)
-        handleClose()
-      } else {
-        // Show confirmation dialog
-        setConfirmCreate(true)
-      }
-    } catch (error) {
+  // Check if conversation exists mutation - using centralized hook
+  const checkConversationMutation = useCheckConversation({
+    onExists: (conversationId) => {
+      // Conversation already exists, open it
+      onConversationCreated(conversationId)
+      handleClose()
+    },
+    onNotExists: () => {
+      // Show confirmation dialog
+      setConfirmCreate(true)
+    },
+    onError: (error) => {
       console.error('Error checking conversation:', error)
-      showError(error instanceof Error ? error.message : 'Failed to check conversation')
+      showError(error.message || 'Failed to check conversation')
       setSelectedDeal(null)
-    } finally {
-      setCreating(false)
     }
+  })
+
+  // Create conversation mutation - using centralized hook
+  const createConversationMutation = useCreateConversation({
+    onSuccess: (conversationId) => {
+      onConversationCreated(conversationId)
+      handleClose()
+    },
+    onError: (error) => {
+      console.error('Error creating conversation:', error)
+      showError(error.message || 'Failed to create conversation')
+    }
+  })
+
+  const handleDealSelect = (deal: Deal) => {
+    setSelectedDeal(deal)
+    checkConversationMutation.mutate(deal.id)
   }
 
-  const handleCreateConversation = async () => {
+  const handleCreateConversation = () => {
     if (!selectedDeal) return
-
-    try {
-      setCreating(true)
-
-      const response = await fetch('/api/sms/conversations/get-or-create', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          dealId: selectedDeal.id,
-          agentId: selectedDeal.agentId // Use the deal's agent_id
-        }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to create conversation')
-      }
-
-      const data = await response.json()
-      onConversationCreated(data.conversationId)
-      handleClose()
-    } catch (error) {
-      console.error('Error creating conversation:', error)
-      showError(error instanceof Error ? error.message : 'Failed to create conversation')
-    } finally {
-      setCreating(false)
-    }
+    createConversationMutation.mutate({ dealId: selectedDeal.id, agentId: selectedDeal.agentId })
   }
 
   const handleClose = () => {
     setClientNameSearch("")
     setClientPhoneSearch("")
-    setSearchResults([])
+    setDebouncedNameSearch("")
+    setDebouncedPhoneSearch("")
     setSelectedDeal(null)
     setConfirmCreate(false)
     onOpenChange(false)
@@ -173,6 +140,8 @@ export function CreateConversationModal({
     }
     return phone;
   }
+
+  const creating = checkConversationMutation.isPending || createConversationMutation.isPending
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>

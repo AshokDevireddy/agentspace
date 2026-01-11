@@ -11,6 +11,7 @@ import { Loader2, Plus, X } from "lucide-react"
 import { PolicyDetailsModal } from "@/components/modals/policy-details-modal"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { cn } from "@/lib/utils"
+import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import {
   Popover,
   PopoverContent,
@@ -18,6 +19,9 @@ import {
 } from "@/components/ui/popover"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { createClient } from "@/lib/supabase/client"
+import { useApiFetch } from "@/hooks/useApiFetch"
+import { queryKeys } from "@/hooks/queryKeys"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 // Types for the API responses
 interface Deal {
@@ -93,7 +97,7 @@ const billingCycleColors: Record<string, string> = {
 
 export default function BookOfBusiness() {
   // Persisted filter state using custom hook
-  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply] = usePersistedFilters(
+  const { localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply } = usePersistedFilters(
     'book-of-business',
     {
       agent: "all",
@@ -150,154 +154,162 @@ export default function BookOfBusiness() {
     }
   }, [visibleFilters])
 
+  const queryClient = useQueryClient()
+
   // Modal state
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
 
-  // State for API data
+  // State for load-more pagination
   const [deals, setDeals] = useState<Deal[]>([])
   const [nextCursor, setNextCursor] = useState<{ cursor_created_at: string; cursor_id: string } | null>(null)
   const nextCursorRef = useRef<{ cursor_created_at: string; cursor_id: string } | null>(null)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    carriers: [{ value: "all", label: "All Carriers" }],
-    products: [{ value: "all", label: "All Products" }],
-    statuses: [],
-    billingCycles: [{ value: "all", label: "All Billing Cycles" }],
-    leadSources: [{ value: "all", label: "All Lead Sources" }],
-    effectiveDateSort: []
-  })
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [userTier, setUserTier] = useState<string>('free')
-
-  // Fetch user subscription tier
-  useEffect(() => {
-    const fetchUserTier = async () => {
-      try {
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          const { data: userData } = await supabase
-            .from('users')
-            .select('subscription_tier')
-            .eq('auth_user_id', user.id)
-            .single()
-
-          setUserTier(userData?.subscription_tier || 'free')
-        }
-      } catch (error) {
-        console.error('Error fetching user tier:', error)
-      }
-    }
-    fetchUserTier()
-  }, [])
-
-  // Fetch filter options on component mount
-  useEffect(() => {
-    const fetchFilterOptions = async () => {
-      try {
-        // Fetch both filter options and NIPR-filtered carriers in parallel
-        const [filterResponse, carriersResponse] = await Promise.all([
-          fetch('/api/deals/filter-options'),
-          fetch('/api/carriers?filter=nipr')
-        ])
-
-        if (!filterResponse.ok) {
-          throw new Error('Failed to fetch filter options')
-        }
-        const data = await filterResponse.json()
-
-        // Get NIPR-filtered carriers if available
-        let filteredCarriers = data.carriers || [{ value: "all", label: "All Carriers" }]
-        if (carriersResponse.ok) {
-          const niprCarriers = await carriersResponse.json()
-          if (Array.isArray(niprCarriers) && niprCarriers.length > 0) {
-            // Map carriers to filter option format and add "All" option
-            filteredCarriers = [
-              { value: "all", label: "All Carriers" },
-              ...niprCarriers.map((c: { id: string; display_name: string }) => ({
-                value: c.id,
-                label: c.display_name
-              }))
-            ]
-          }
-        }
-
-        // Ensure all required fields exist
-        setFilterOptions({
-          carriers: filteredCarriers,
-          products: data.products || [{ value: "all", label: "All Products" }],
-          statuses: data.statusStandardized || [],
-          billingCycles: data.billingCycles || [{ value: "all", label: "All Billing Cycles" }],
-          leadSources: data.leadSources || [{ value: "all", label: "All Lead Sources" }],
-          effectiveDateSort: data.effectiveDateSort || []
-        })
-      } catch (err) {
-        console.error('Error fetching filter options:', err)
-        setError('Failed to load filter options')
-      }
-    }
-
-    fetchFilterOptions()
-  }, [])
 
   // Update ref when nextCursor changes
   useEffect(() => {
     nextCursorRef.current = nextCursor
   }, [nextCursor])
 
-  // Fetch deals data
-  const fetchDeals = useCallback(async (reset: boolean = true) => {
-    if (reset) setLoading(true)
-    else setIsLoadingMore(true)
-    try {
-      const params = new URLSearchParams()
-      if (appliedFilters.agent !== 'all') params.append('agent_id', appliedFilters.agent)
-      if (appliedFilters.carrier !== 'all') params.append('carrier_id', appliedFilters.carrier)
-      if (appliedFilters.product !== 'all') params.append('product_id', appliedFilters.product)
-      if (appliedFilters.client !== 'all') params.append('client_id', appliedFilters.client)
-      if (appliedFilters.policyNumber !== 'all') params.append('policy_number', appliedFilters.policyNumber)
-      if (appliedFilters.statusMode && appliedFilters.statusMode !== 'all') params.append('status_mode', appliedFilters.statusMode)
-      if (appliedFilters.billingCycle !== 'all') params.append('billing_cycle', appliedFilters.billingCycle)
-      if (appliedFilters.leadSource !== 'all') params.append('lead_source', appliedFilters.leadSource)
-      if (appliedFilters.status !== 'all') params.append('status_standardized', appliedFilters.status)
-      if (appliedFilters.effectiveDateSort !== 'all') params.append('effective_date_sort', appliedFilters.effectiveDateSort)
-      if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
-      if (appliedFilters.effectiveDateEnd) params.append('effective_date_end', appliedFilters.effectiveDateEnd)
-      if (appliedFilters.viewMode) params.append('view', appliedFilters.viewMode)
-      params.append('limit', '50')
-      if (!reset && nextCursorRef.current) {
-        params.append('cursor_created_at', nextCursorRef.current.cursor_created_at)
-        params.append('cursor_id', nextCursorRef.current.cursor_id)
-      }
+  // Fetch user subscription tier using TanStack Query
+  const { data: userTier = 'free' } = useQuery({
+    queryKey: queryKeys.userProfile(),
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('subscription_tier')
+          .eq('auth_user_id', user.id)
+          .single()
 
-      const response = await fetch(`/api/deals/book-of-business?${params.toString()}`)
+        return userData?.subscription_tier || 'free'
+      }
+      return 'free'
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  // Fetch filter options using parallel queries
+  const { data: filterOptionsData } = useApiFetch<{
+    carriers?: FilterOption[]
+    products?: FilterOption[]
+    statusStandardized?: FilterOption[]
+    billingCycles?: FilterOption[]
+    leadSources?: FilterOption[]
+    effectiveDateSort?: FilterOption[]
+  }>(
+    queryKeys.dealsFilterOptions(),
+    '/api/deals/filter-options',
+    {
+      staleTime: 15 * 60 * 1000, // 15 minutes - filter options rarely change
+      placeholderData: (previousData) => previousData, // Stale-while-revalidate
+    }
+  )
+
+  const { data: niprCarriers } = useApiFetch<Array<{ id: string; display_name: string }>>(
+    queryKeys.carriersList('nipr'),
+    '/api/carriers?filter=nipr',
+    {
+      staleTime: 15 * 60 * 1000, // 15 minutes - carrier list rarely changes
+      placeholderData: (previousData) => previousData, // Stale-while-revalidate
+    }
+  )
+
+  // Compute filter options
+  const filterOptions: FilterOptions = {
+    carriers: niprCarriers && niprCarriers.length > 0
+      ? [
+          { value: "all", label: "All Carriers" },
+          ...niprCarriers.map((c) => ({
+            value: c.id,
+            label: c.display_name
+          }))
+        ]
+      : filterOptionsData?.carriers || [{ value: "all", label: "All Carriers" }],
+    products: filterOptionsData?.products || [{ value: "all", label: "All Products" }],
+    statuses: filterOptionsData?.statusStandardized || [],
+    billingCycles: filterOptionsData?.billingCycles || [{ value: "all", label: "All Billing Cycles" }],
+    leadSources: filterOptionsData?.leadSources || [{ value: "all", label: "All Lead Sources" }],
+    effectiveDateSort: filterOptionsData?.effectiveDateSort || []
+  }
+
+  // Build query params for deals API
+  const buildDealsParams = useCallback((cursor?: { cursor_created_at: string; cursor_id: string }) => {
+    const params = new URLSearchParams()
+    if (appliedFilters.agent !== 'all') params.append('agent_id', appliedFilters.agent)
+    if (appliedFilters.carrier !== 'all') params.append('carrier_id', appliedFilters.carrier)
+    if (appliedFilters.product !== 'all') params.append('product_id', appliedFilters.product)
+    if (appliedFilters.client !== 'all') params.append('client_id', appliedFilters.client)
+    if (appliedFilters.policyNumber !== 'all') params.append('policy_number', appliedFilters.policyNumber)
+    if (appliedFilters.statusMode && appliedFilters.statusMode !== 'all') params.append('status_mode', appliedFilters.statusMode)
+    if (appliedFilters.billingCycle !== 'all') params.append('billing_cycle', appliedFilters.billingCycle)
+    if (appliedFilters.leadSource !== 'all') params.append('lead_source', appliedFilters.leadSource)
+    if (appliedFilters.status !== 'all') params.append('status_standardized', appliedFilters.status)
+    if (appliedFilters.effectiveDateSort !== 'all') params.append('effective_date_sort', appliedFilters.effectiveDateSort)
+    if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
+    if (appliedFilters.effectiveDateEnd) params.append('effective_date_end', appliedFilters.effectiveDateEnd)
+    if (appliedFilters.viewMode) params.append('view', appliedFilters.viewMode)
+    params.append('limit', '50')
+    if (cursor) {
+      params.append('cursor_created_at', cursor.cursor_created_at)
+      params.append('cursor_id', cursor.cursor_id)
+    }
+    return params.toString()
+  }, [appliedFilters])
+
+  // Fetch deals using TanStack Query
+  const { data: dealsData, isPending: loading, isFetching: dealsFetching, error: dealsError } = useQuery({
+    queryKey: queryKeys.dealsBookOfBusiness(appliedFilters),
+    queryFn: async () => {
+      const params = buildDealsParams()
+      const response = await fetch(`/api/deals/book-of-business?${params}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch deals')
+      }
+      return response.json() as Promise<{ deals: Deal[]; nextCursor?: { cursor_created_at: string; cursor_id: string } }>
+    },
+    staleTime: 30 * 1000, // 30 seconds
+    placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
+  })
+
+  const isRefreshing = dealsFetching && !loading // Background refetch with stale data shown
+
+  // Update deals and cursor when data changes
+  useEffect(() => {
+    if (dealsData) {
+      setDeals(dealsData.deals)
+      setNextCursor(dealsData.nextCursor || null)
+    }
+  }, [dealsData])
+
+  // Load more deals function
+  const fetchDeals = useCallback(async (reset: boolean = true) => {
+    if (reset) {
+      // Reset is handled by the query above
+      return
+    }
+
+    // Load more
+    setIsLoadingMore(true)
+    try {
+      const params = buildDealsParams(nextCursorRef.current || undefined)
+      const response = await fetch(`/api/deals/book-of-business?${params}`)
       if (!response.ok) {
         throw new Error('Failed to fetch deals')
       }
       const data = await response.json()
-      if (reset) {
-        setDeals(data.deals)
-      } else {
-        setDeals(prev => [...prev, ...data.deals])
-      }
+      setDeals(prev => [...prev, ...data.deals])
       setNextCursor(data.nextCursor || null)
-      setError(null)
     } catch (err) {
-      console.error('Error fetching deals:', err)
-      setError('Failed to load deals data')
+      console.error('Error fetching more deals:', err)
     } finally {
-      if (reset) setLoading(false)
-      else setIsLoadingMore(false)
+      setIsLoadingMore(false)
     }
-  }, [appliedFilters])
+  }, [buildDealsParams])
 
-  // Fetch deals when active filters change
-  useEffect(() => {
-    setNextCursor(null)
-    fetchDeals(true)
-  }, [fetchDeals])
+  const error = dealsError ? 'Failed to load deals data' : null
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
@@ -322,8 +334,9 @@ export default function BookOfBusiness() {
   }
 
   const handlePolicyUpdate = () => {
-    // Refresh the deals list after update
-    fetchDeals(true)
+    // Refresh the deals list after update by invalidating the query
+    // Use partial key prefix ['deals', 'book-of-business'] to match all filter variations
+    queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business'] })
   }
 
   const getLeadSourceColor = (leadSource: string) => {
@@ -449,7 +462,10 @@ export default function BookOfBusiness() {
 
       {/* Header with Status Slider and View Mode Slider - Always interactive */}
       <div className="flex items-center justify-between relative z-50">
-        <h1 className="text-4xl font-bold text-foreground">Book of Business</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-4xl font-bold text-foreground">Book of Business</h1>
+          <RefreshingIndicator isRefreshing={isRefreshing} />
+        </div>
 
         <div className="flex items-center gap-4">
           {/* View Mode Slider */}

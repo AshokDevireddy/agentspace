@@ -18,6 +18,22 @@ import { useAuth } from "@/providers/AuthProvider"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
 import { SmsTemplateEditor } from "@/components/sms-template-editor"
 import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_PLACEHOLDERS } from "@/lib/sms-template-helpers"
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useApiFetch } from '@/hooks/useApiFetch'
+import { queryKeys } from '@/hooks/queryKeys'
+import { QueryErrorDisplay } from '@/components/ui/query-error-display'
+import {
+  useCreatePosition,
+  useUpdatePosition,
+  useDeletePosition,
+  useUpdateProduct,
+  useDeleteProduct,
+  useSaveProductCommissions,
+  useSyncCommissions,
+  useSaveCarrierLogin,
+  useCreatePolicyReportJob,
+  useSignPolicyReportFiles,
+} from '@/hooks/mutations'
 
 // Types for carrier data
 interface Carrier {
@@ -52,6 +68,17 @@ interface Agency {
   primary_color?: string
   theme_mode?: 'light' | 'dark' | 'system'
   whitelabel_domain?: string
+  sms_welcome_enabled?: boolean
+  sms_welcome_template?: string
+  sms_billing_reminder_enabled?: boolean
+  sms_billing_reminder_template?: string
+  sms_lapse_reminder_enabled?: boolean
+  sms_lapse_reminder_template?: string
+  sms_birthday_enabled?: boolean
+  sms_birthday_template?: string
+  lapse_email_notifications_enabled?: boolean
+  lapse_email_subject?: string
+  lapse_email_body?: string
 }
 
 // Types for position data
@@ -102,6 +129,7 @@ export default function ConfigurationPage() {
   const { showSuccess, showError, showWarning } = useNotification()
   const { theme, setTheme, resolvedTheme } = useTheme()
   const { userData, refreshUserData } = useAuth()
+  const queryClient = useQueryClient()
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>("agency-profile")
@@ -168,32 +196,23 @@ export default function ConfigurationPage() {
       // If current color was the default for the previous mode, switch to default for new mode
       if (isCurrentColorDefault) {
         const newDefaultColor = getDefaultPrimaryColor(currentResolvedTheme as 'light' | 'dark')
-        
+
         // Update local state and CSS variable
         setPrimaryColor(newDefaultColor)
         setPendingColor(null)
         document.documentElement.style.setProperty('--primary', newDefaultColor)
         const textColor = getContrastTextColor(newDefaultColor)
         document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
-        
-        // Update database
-        const supabase = createClient()
-        supabase
-          .from('agencies')
-          .update({ primary_color: newDefaultColor })
-          .eq('id', agency.id)
-          .then(({ error }) => {
-            if (error) {
-              console.error('Error updating primary color:', error)
-            } else {
-              setAgency({ ...agency, primary_color: newDefaultColor })
-            }
-          })
+
+        // Update database using mutation
+        updatePrimaryColorMutation.mutate({ agencyId: agency.id, color: newDefaultColor })
       }
     }
     
     // Update the ref for next comparison
     previousResolvedThemeRef.current = currentResolvedTheme
+    // Note: updatePrimaryColorMutation is stable (from useMutation), so we don't include it in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedTheme, agency, primaryColor])
   
   // Track color changes (don't auto-save)
@@ -274,14 +293,20 @@ export default function ConfigurationPage() {
       }
       
       setAgency({ ...agency, ...updates })
-      
+
       // Update theme if changed
       if (updates.theme_mode) {
         setTheme(agencyThemeMode)
       }
-      
-      // Refresh the page to apply all changes
-      window.location.reload()
+
+      // Invalidate queries to refresh all agency-related data
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.agency }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.agencyBranding(agency.id) }),
+      ])
+
+      showSuccess('Changes saved successfully')
     } catch (error) {
       console.error('Error saving changes:', error)
       showError('Failed to save changes')
@@ -331,7 +356,6 @@ export default function ConfigurationPage() {
   }
   const [agencyThemeMode, setAgencyThemeMode] = useState<'light' | 'dark' | 'system'>('system')
   const [savingTheme, setSavingTheme] = useState(false)
-  const [loadingAgencyProfile, setLoadingAgencyProfile] = useState(true)
 
   // White-label Domain state
   const [whitelabelDomain, setWhitelabelDomain] = useState("")
@@ -390,8 +414,6 @@ export default function ConfigurationPage() {
   const [selectedCarrierLogin, setSelectedCarrierLogin] = useState<string>("")
   const [carrierLoginUsername, setCarrierLoginUsername] = useState<string>("")
   const [carrierLoginPassword, setCarrierLoginPassword] = useState<string>("")
-  const [loadingCarrierNames, setLoadingCarrierNames] = useState(false)
-  const [savingCarrierLogin, setSavingCarrierLogin] = useState(false)
   const [carrierDropdownOpen, setCarrierDropdownOpen] = useState(false)
   const carrierDropdownRef = useRef<HTMLDivElement | null>(null)
 
@@ -405,7 +427,6 @@ export default function ConfigurationPage() {
   const [isDraggingPolicyReports, setIsDraggingPolicyReports] = useState(false)
   const [uploadingReports, setUploadingReports] = useState(false)
   const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
-  const [checkingExistingFiles, setCheckingExistingFiles] = useState(false)
   
   // All supported carriers
   const supportedCarriers = [
@@ -426,11 +447,9 @@ export default function ConfigurationPage() {
 
   // Carriers and Products state with caching
   const [carriers, setCarriers] = useState<Carrier[]>([])
-  const [carriersLoading, setCarriersLoading] = useState(false)
   const [carriersLoaded, setCarriersLoaded] = useState(false)
   const [allProducts, setAllProducts] = useState<Product[]>([]) // Cache all products
   const [products, setProducts] = useState<Product[]>([]) // Filtered products for display
-  const [productsLoading, setProductsLoading] = useState(false)
   const [allProductsLoaded, setAllProductsLoaded] = useState(false)
 
   // Product editing state
@@ -447,12 +466,9 @@ export default function ConfigurationPage() {
   } | null>(null)
   const [deleteProductConfirmOpen, setDeleteProductConfirmOpen] = useState(false)
   const [productToDelete, setProductToDelete] = useState<Product | null>(null)
-  const [updatingProduct, setUpdatingProduct] = useState(false)
-  const [deletingProduct, setDeletingProduct] = useState(false)
 
   // Positions state
   const [positions, setPositions] = useState<Position[]>([])
-  const [positionsLoading, setPositionsLoading] = useState(false)
   const [newPosition, setNewPosition] = useState({ name: "", level: 0, description: "" })
   const [editingPositionId, setEditingPositionId] = useState<string | null>(null)
   const [editPositionFormData, setEditPositionFormData] = useState<{
@@ -461,25 +477,314 @@ export default function ConfigurationPage() {
     description: string
     is_active: boolean
   }>({ name: "", level: 0, description: "", is_active: true })
-  const [savingPosition, setSavingPosition] = useState(false)
   const [deletePositionConfirmOpen, setDeletePositionConfirmOpen] = useState(false)
   const [positionToDelete, setPositionToDelete] = useState<Position | null>(null)
-  const [deletingPosition, setDeletingPosition] = useState(false)
 
   // Commissions state
   const [commissions, setCommissions] = useState<Commission[]>([])
-  const [commissionsLoading, setCommissionsLoading] = useState(false)
   const [selectedCommissionCarrier, setSelectedCommissionCarrier] = useState<string>("")
   const [commissionEdits, setCommissionEdits] = useState<Record<string, number | null>>({})
-  const [savingCommissions, setSavingCommissions] = useState(false)
   const [focusedInputKey, setFocusedInputKey] = useState<string | null>(null)
-  const [syncingMissingCommissions, setSyncingMissingCommissions] = useState(false)
 
-  // Load data on mount
+  // ============ TanStack Query Hooks ============
+
+  // Fetch agency data - only when user is authenticated
+  const { data: agencyData, isLoading: loadingAgencyProfile, error: agencyError } = useQuery({
+    queryKey: queryKeys.configurationAgency(),
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) throw new Error('Not authenticated')
+
+      const { data: userDataLocal } = await supabase
+        .from('users')
+        .select('agency_id')
+        .eq('auth_user_id', user.id)
+        .single()
+
+      if (!userDataLocal?.agency_id) throw new Error('No agency found')
+
+      const { data: agencyInfo, error } = await supabase
+        .from('agencies')
+        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template')
+        .eq('id', userDataLocal.agency_id)
+        .single()
+
+      if (error) throw error
+      return agencyInfo as Agency
+    },
+    // Wait for auth to be ready before fetching
+    enabled: !!userData,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  // Fetch carriers - only when user is authenticated
+  const { data: carriersData = [], isLoading: carriersLoading, error: carriersError } = useQuery({
+    queryKey: queryKeys.configurationCarriers(),
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) throw new Error('No access token')
+
+      const response = await fetch('/api/carriers/agency', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to fetch carriers')
+      }
+
+      return response.json() as Promise<Carrier[]>
+    },
+    // Wait for auth to be ready before fetching
+    enabled: !!userData,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  })
+
+  // Fetch all products - only when user is authenticated
+  const { data: allProductsData = [], isLoading: productsLoading, error: productsError } = useQuery({
+    queryKey: queryKeys.configurationProducts(),
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) throw new Error('No access token')
+
+      const response = await fetch('/api/products/all', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        if (response.status === 403) {
+          throw new Error('You are not associated with an agency. Please contact your administrator.')
+        } else if (response.status === 401) {
+          throw new Error('Please log in to view products.')
+        }
+        throw new Error(errorData.error || 'Failed to fetch products')
+      }
+
+      return response.json() as Promise<Product[]>
+    },
+    // Wait for auth to be ready before fetching
+    enabled: !!userData,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  })
+
+  // Fetch positions (only when positions tab is active)
+  const { data: positionsData = [], isLoading: positionsLoading, error: positionsError, refetch: refetchPositions } = useQuery({
+    queryKey: queryKeys.configurationPositions(),
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) return []
+
+      const response = await fetch('/api/positions', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+
+      if (!response.ok) return []
+      return response.json() as Promise<Position[]>
+    },
+    enabled: activeTab === 'positions',
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  // Fetch commissions (only when commissions tab is active and carrier is selected)
+  const { data: commissionsData = [], isLoading: commissionsLoading, error: commissionsError, refetch: refetchCommissions } = useQuery({
+    queryKey: queryKeys.configurationCommissions(selectedCommissionCarrier),
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) return []
+
+      const url = selectedCommissionCarrier
+        ? `/api/positions/product-commissions?carrier_id=${selectedCommissionCarrier}`
+        : '/api/positions/product-commissions'
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+
+      if (!response.ok) return []
+      return response.json() as Promise<Commission[]>
+    },
+    enabled: activeTab === 'commissions' && !!selectedCommissionCarrier,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  // Fetch carrier names (only when carrier-logins tab is active)
+  const { data: carrierNamesData = [], isLoading: loadingCarrierNames } = useApiFetch<string[]>(
+    queryKeys.configurationCarrierNames(),
+    '/api/carriers/names',
+    {
+      enabled: activeTab === 'carrier-logins',
+      staleTime: 10 * 60 * 1000, // 10 minutes
+    }
+  )
+
+  // Fetch existing policy files (only when policy-reports tab is active)
+  const { data: policyFilesData, isLoading: checkingExistingFiles, refetch: refetchPolicyFiles } = useApiFetch<{files: any[]}>(
+    queryKeys.configurationPolicyFiles(),
+    '/api/upload-policy-reports/bucket',
+    {
+      enabled: activeTab === 'policy-reports',
+      staleTime: 2 * 60 * 1000, // 2 minutes
+    }
+  )
+
+  // ============ Mutations ============
+
+  // Mutation for updating agency primary color (used for automatic theme sync)
+  const updatePrimaryColorMutation = useMutation({
+    mutationFn: async ({ agencyId, color }: { agencyId: string; color: string }) => {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('agencies')
+        .update({ primary_color: color })
+        .eq('id', agencyId)
+
+      if (error) throw error
+      return { color }
+    },
+    onSuccess: (data) => {
+      // Update local state
+      if (agency) {
+        setAgency({ ...agency, primary_color: data.color })
+      }
+      // Invalidate agency query to ensure cache is consistent
+      queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+    },
+    onError: (error) => {
+      console.error('Error updating primary color:', error)
+    }
+  })
+
+  // Position mutations
+  const createPositionMutation = useCreatePosition()
+  const updatePositionMutation = useUpdatePosition()
+  const deletePositionMutation = useDeletePosition()
+
+  // Product mutations
+  const updateProductMutation = useUpdateProduct()
+  const deleteProductMutation = useDeleteProduct()
+  const saveCommissionsMutation = useSaveProductCommissions()
+  const syncCommissionsMutation = useSyncCommissions()
+
+  // Carrier mutations
+  const saveCarrierLoginMutation = useSaveCarrierLogin()
+
+  // Policy report mutations
+  const createPolicyJobMutation = useCreatePolicyReportJob()
+  const signPolicyFilesMutation = useSignPolicyReportFiles()
+
+  // Derived loading states from mutations (replaces useState-based loading states)
+  const savingPosition = createPositionMutation.isPending || updatePositionMutation.isPending
+  const deletingPosition = deletePositionMutation.isPending
+  const updatingProduct = updateProductMutation.isPending
+  const deletingProduct = deleteProductMutation.isPending
+  const savingCommissions = saveCommissionsMutation.isPending
+  const syncingMissingCommissions = syncCommissionsMutation.isPending
+
+  // ============ Sync query data to local state ============
+
+  // Sync agency data to local state
   useEffect(() => {
-    fetchAllData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (agencyData) {
+      setAgency(agencyData)
+      setDisplayName(agencyData.display_name || agencyData.name)
+      setPrimaryColor(agencyData.primary_color || "217 91% 60%")
+      setLeadSources(agencyData.lead_sources || [])
+      setAgencyPhoneNumber(agencyData.phone_number || "")
+      setMessagingEnabled(agencyData.messaging_enabled || false)
+      setDiscordWebhookUrl(agencyData.discord_webhook_url || "")
+      setWhitelabelDomain(agencyData.whitelabel_domain || "")
+      setSmsWelcomeEnabled(agencyData.sms_welcome_enabled ?? true)
+      setSmsWelcomeTemplate(agencyData.sms_welcome_template || "")
+      setSmsBillingReminderEnabled(agencyData.sms_billing_reminder_enabled ?? true)
+      setSmsBillingReminderTemplate(agencyData.sms_billing_reminder_template || "")
+      setSmsLapseReminderEnabled(agencyData.sms_lapse_reminder_enabled ?? true)
+      setSmsLapseReminderTemplate(agencyData.sms_lapse_reminder_template || "")
+      setSmsBirthdayEnabled(agencyData.sms_birthday_enabled ?? true)
+      setSmsBirthdayTemplate(agencyData.sms_birthday_template || "")
+      setLapseEmailEnabled(agencyData.lapse_email_notifications_enabled || false)
+      setLapseEmailSubject(agencyData.lapse_email_subject || "Policy Lapse Alert: {{client_name}}")
+      setLapseEmailBody(agencyData.lapse_email_body || "")
+      setLapseSubjectValue(agencyData.lapse_email_subject || "Policy Lapse Alert: {{client_name}}")
+      setLapseBodyValue(agencyData.lapse_email_body || "")
+    }
+  }, [agencyData])
+
+  // Sync carriers to local state
+  useEffect(() => {
+    if (carriersData.length > 0) {
+      setCarriers(carriersData)
+      setCarriersLoaded(true)
+    }
+  }, [carriersData])
+
+  // Sync products to local state
+  useEffect(() => {
+    if (allProductsData.length > 0) {
+      setAllProducts(allProductsData)
+      setAllProductsLoaded(true)
+    }
+  }, [allProductsData])
+
+  // Sync positions to local state
+  useEffect(() => {
+    if (positionsData.length > 0) {
+      setPositions(positionsData)
+    }
+  }, [positionsData])
+
+  // Sync commissions to local state
+  useEffect(() => {
+    if (commissionsData.length > 0) {
+      setCommissions(commissionsData)
+    }
+  }, [commissionsData])
+
+  // Sync carrier names to local state
+  useEffect(() => {
+    if (carrierNamesData.length > 0) {
+      setCarrierNames(carrierNamesData)
+    }
+  }, [carrierNamesData])
+
+  // Sync policy files to local state
+  useEffect(() => {
+    if (policyFilesData?.files) {
+      setUploadedFilesInfo(policyFilesData.files)
+    }
+  }, [policyFilesData])
+
+  // ============ Original useEffects (keeping non-fetch logic) ============
 
   // Sync theme state when userData changes (e.g., after login or theme update)
   useEffect(() => {
@@ -487,61 +792,6 @@ export default function ConfigurationPage() {
       setAgencyThemeMode(userData.theme_mode)
     }
   }, [userData?.theme_mode])
-
-  // Check for existing policy files when policy reports tab is opened (only if we haven't checked yet)
-  useEffect(() => {
-    if (activeTab === 'policy-reports' && uploadedFilesInfo.length === 0 && !checkingExistingFiles) {
-      checkExistingPolicyFiles()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab])
-
-  // Load positions when positions tab is opened
-  useEffect(() => {
-    if (activeTab === 'positions') {
-      fetchPositions()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab])
-
-  // Load commissions when commissions tab is opened
-  useEffect(() => {
-    if (activeTab === 'commissions' && !commissionsLoading && selectedCommissionCarrier) {
-      // Only fetch if we don't have commissions loaded yet, or if we have a carrier selected
-      // but no commissions for that carrier
-      if (commissions.length === 0) {
-        fetchCommissions(selectedCommissionCarrier)
-      } else if (!commissions.some(c => c.carrier_id === selectedCommissionCarrier)) {
-        // We have commissions but not for the selected carrier, fetch for that carrier
-        fetchCommissions(selectedCommissionCarrier)
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, selectedCommissionCarrier])
-
-  // Fetch carrier names when carrier-logins tab is opened
-  useEffect(() => {
-    if (activeTab === 'carrier-logins' && carrierNames.length === 0 && !loadingCarrierNames) {
-      const fetchCarrierNames = async () => {
-        try {
-          setLoadingCarrierNames(true)
-          const response = await fetch('/api/carriers/names')
-          if (!response.ok) {
-            throw new Error('Failed to fetch carrier names')
-          }
-          const names = await response.json()
-          setCarrierNames(names)
-        } catch (error) {
-          console.error('Error fetching carrier names:', error)
-          showError('Failed to load carrier names')
-        } finally {
-          setLoadingCarrierNames(false)
-        }
-      }
-      fetchCarrierNames()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab])
 
   // Close carrier dropdown when clicking outside
   useEffect(() => {
@@ -571,216 +821,6 @@ export default function ConfigurationPage() {
       setProducts([])
     }
   }, [selectedCarrier, allProducts])
-
-  const fetchAllData = async () => {
-    try {
-      // Get the current user to verify authentication
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (!user) {
-        throw new Error('Not authenticated. Please log in again.')
-      }
-
-      // Get session for access token
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        throw new Error('No access token available. Please log in again.')
-      }
-
-      setCarriersLoading(true)
-      setProductsLoading(true)
-
-      // Fetch the current user's agency info
-      let agencyData: Agency | null = null
-      if (user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('agency_id')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        if (userData?.agency_id) {
-          const { data: agencyInfo } = await supabase
-            .from('agencies')
-            .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template')
-            .eq('id', userData.agency_id)
-            .single()
-
-          if (agencyInfo) {
-            agencyData = agencyInfo
-            setAgency(agencyInfo)
-            setDisplayName(agencyInfo.display_name || agencyInfo.name)
-            setPrimaryColor(agencyInfo.primary_color || "217 91% 60%")
-            setLeadSources(agencyInfo.lead_sources || [])
-            setAgencyPhoneNumber(agencyInfo.phone_number || "")
-            setMessagingEnabled(agencyInfo.messaging_enabled || false)
-            setDiscordWebhookUrl(agencyInfo.discord_webhook_url || "")
-            setWhitelabelDomain(agencyInfo.whitelabel_domain || "")
-            // Initialize SMS template state
-            setSmsWelcomeEnabled(agencyInfo.sms_welcome_enabled ?? true)
-            setSmsWelcomeTemplate(agencyInfo.sms_welcome_template || "")
-            setSmsBillingReminderEnabled(agencyInfo.sms_billing_reminder_enabled ?? true)
-            setSmsBillingReminderTemplate(agencyInfo.sms_billing_reminder_template || "")
-            setSmsLapseReminderEnabled(agencyInfo.sms_lapse_reminder_enabled ?? true)
-            setSmsLapseReminderTemplate(agencyInfo.sms_lapse_reminder_template || "")
-            setSmsBirthdayEnabled(agencyInfo.sms_birthday_enabled ?? true)
-            setSmsBirthdayTemplate(agencyInfo.sms_birthday_template || "")
-            setLapseEmailEnabled(agencyInfo.lapse_email_notifications_enabled || false)
-            setLapseEmailSubject(agencyInfo.lapse_email_subject || "Policy Lapse Alert: {{client_name}}")
-            setLapseEmailBody(agencyInfo.lapse_email_body || "")
-            // Initialize edit values for always-editable fields
-            setLapseSubjectValue(agencyInfo.lapse_email_subject || "Policy Lapse Alert: {{client_name}}")
-            setLapseBodyValue(agencyInfo.lapse_email_body || "")
-            setLoadingAgencyProfile(false)
-          }
-        }
-      }
-
-      const [carriersResponse, productsResponse] = await Promise.all([
-        // Only fetch carriers that actually have products for this agency
-        fetch('/api/carriers/agency', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
-          },
-          credentials: 'include'
-        }),
-        fetch('/api/products/all', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
-          },
-          credentials: 'include'
-        })
-      ])
-
-      if (!carriersResponse.ok) {
-        const errorData = await carriersResponse.json()
-        throw new Error(errorData.error || 'Failed to fetch carriers')
-      }
-
-      if (!productsResponse.ok) {
-        const errorData = await productsResponse.json()
-        // Handle specific agency-related errors
-        if (productsResponse.status === 403) {
-          throw new Error('You are not associated with an agency. Please contact your administrator.')
-        } else if (productsResponse.status === 401) {
-          throw new Error('Please log in to view products.')
-        } else {
-          throw new Error(errorData.error || 'Failed to fetch products')
-        }
-      }
-
-      const [carriersData, productsData] = await Promise.all([
-        carriersResponse.json(),
-        productsResponse.json()
-      ])
-
-      setCarriers(carriersData)
-      setAllProducts(productsData)
-      setCarriersLoaded(true)
-      setAllProductsLoaded(true)
-
-    } catch (error) {
-      console.error('Error fetching data:', error)
-      showError(`Error loading data: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    } finally {
-      setCarriersLoading(false)
-      setProductsLoading(false)
-    }
-  }
-
-  const fetchPositions = async () => {
-    try {
-      setPositionsLoading(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) return
-
-      const response = await fetch('/api/positions', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setPositions(data)
-      }
-    } catch (error) {
-      console.error('Error fetching positions:', error)
-    } finally {
-      setPositionsLoading(false)
-    }
-  }
-
-  const fetchCommissions = async (carrierId?: string) => {
-    try {
-      setCommissionsLoading(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) return
-
-      const url = carrierId
-        ? `/api/positions/product-commissions?carrier_id=${carrierId}`
-        : '/api/positions/product-commissions'
-
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        
-        console.log('[Commission Fetch] API response received:', {
-          count: data?.length || 0,
-          sample: data?.[0] ? {
-            commission_id: data[0].commission_id,
-            position_id: data[0].position_id,
-            position_id_length: data[0].position_id?.length,
-            position_id_type: typeof data[0].position_id,
-            product_id: data[0].product_id,
-            product_id_length: data[0].product_id?.length,
-            product_id_type: typeof data[0].product_id,
-          } : null,
-          allPositionIds: data?.map((c: Commission) => ({
-            id: c.position_id,
-            length: c.position_id?.length,
-            type: typeof c.position_id
-          })) || [],
-          allProductIds: data?.map((c: Commission) => ({
-            id: c.product_id,
-            length: c.product_id?.length,
-            type: typeof c.product_id
-          })) || [],
-        })
-        
-        setCommissions(data)
-        
-        console.log('[Commission Fetch] Commissions set to state, first entry:', {
-          position_id: data?.[0]?.position_id,
-          product_id: data?.[0]?.product_id,
-        })
-      }
-    } catch (error) {
-      console.error('Error fetching commissions:', error)
-    } finally {
-      setCommissionsLoading(false)
-    }
-  }
 
   // Agency Profile Management Functions
   const handleEditDisplayName = () => {
@@ -1034,9 +1074,8 @@ export default function ConfigurationPage() {
       const textColor = getContrastTextColor(newColor)
       document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
 
-      // Update agency color in background
-      const supabase = createClient()
-      supabase.from('agencies').update({ primary_color: newColor }).eq('id', agency.id)
+      // Update agency color using proper mutation (not fire-and-forget)
+      updatePrimaryColorMutation.mutate({ agencyId: agency.id, color: newColor })
     }
 
     setSavingTheme(true)
@@ -1165,45 +1204,25 @@ export default function ConfigurationPage() {
       return
     }
 
-    try {
-      setSavingPosition(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) return
-
-      const response = await fetch('/api/positions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+    createPositionMutation.mutate(
+      {
+        name: newPosition.name.trim(),
+        level: newPosition.level,
+        description: newPosition.description.trim() || null,
+      },
+      {
+        onSuccess: async () => {
+          setNewPosition({ name: "", level: 0, description: "" })
+          // Auto-sync commissions for all carriers when a new position is added
+          console.log('New position added, auto-syncing commissions for all carriers...')
+          await syncCommissionsForAllCarriers()
         },
-        body: JSON.stringify({
-          name: newPosition.name.trim(),
-          level: newPosition.level,
-          description: newPosition.description.trim() || null
-        })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create position')
+        onError: (error) => {
+          console.error('Error creating position:', error)
+          showError(error instanceof Error ? error.message : 'Failed to create position')
+        },
       }
-
-      setNewPosition({ name: "", level: 0, description: "" })
-      await fetchPositions()
-      
-      // Auto-sync commissions for all carriers when a new position is added
-      console.log('New position added, auto-syncing commissions for all carriers...')
-      await syncCommissionsForAllCarriers()
-    } catch (error) {
-      console.error('Error creating position:', error)
-      showError(error instanceof Error ? error.message : 'Failed to create position')
-    } finally {
-      setSavingPosition(false)
-    }
+    )
   }
 
   const [originalPositionData, setOriginalPositionData] = useState<{
@@ -1228,48 +1247,32 @@ export default function ConfigurationPage() {
   const handleSavePositionEdit = async () => {
     if (!editingPositionId) return
 
-    try {
-      setSavingPosition(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+    const shouldSyncCommissions = originalPositionData && editPositionFormData.is_active !== originalPositionData.is_active
 
-      if (!accessToken) return
-
-      const response = await fetch(`/api/positions/${editingPositionId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+    updatePositionMutation.mutate(
+      {
+        positionId: editingPositionId,
+        name: editPositionFormData.name,
+        level: editPositionFormData.level,
+        description: editPositionFormData.description || null,
+        is_active: editPositionFormData.is_active,
+      },
+      {
+        onSuccess: async () => {
+          // Auto-sync commissions for all carriers if position was activated/deactivated
+          if (shouldSyncCommissions) {
+            console.log('Position activation changed, auto-syncing commissions for all carriers...')
+            await syncCommissionsForAllCarriers()
+          }
+          setEditingPositionId(null)
+          setOriginalPositionData(null)
         },
-        body: JSON.stringify({
-          name: editPositionFormData.name,
-          level: editPositionFormData.level,
-          description: editPositionFormData.description || null,
-          is_active: editPositionFormData.is_active
-        })
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to update position')
+        onError: (error) => {
+          console.error('Error updating position:', error)
+          showError(error instanceof Error ? error.message : 'Failed to update position')
+        },
       }
-
-      // Auto-sync commissions for all carriers if position was activated/deactivated
-      if (originalPositionData && editPositionFormData.is_active !== originalPositionData.is_active) {
-        console.log('Position activation changed, auto-syncing commissions for all carriers...')
-        await syncCommissionsForAllCarriers()
-      }
-
-      setEditingPositionId(null)
-      setOriginalPositionData(null)
-      await fetchPositions()
-    } catch (error) {
-      console.error('Error updating position:', error)
-      showError(error instanceof Error ? error.message : 'Failed to update position')
-    } finally {
-      setSavingPosition(false)
-    }
+    )
   }
 
   const handleDeletePosition = (position: Position) => {
@@ -1280,35 +1283,19 @@ export default function ConfigurationPage() {
   const handleConfirmPositionDelete = async () => {
     if (!positionToDelete) return
 
-    try {
-      setDeletingPosition(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) return
-
-      const response = await fetch(`/api/positions/${positionToDelete.position_id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to delete position')
+    deletePositionMutation.mutate(
+      { positionId: positionToDelete.position_id },
+      {
+        onSuccess: () => {
+          setDeletePositionConfirmOpen(false)
+          setPositionToDelete(null)
+        },
+        onError: (error) => {
+          console.error('Error deleting position:', error)
+          showError(error instanceof Error ? error.message : 'Failed to delete position')
+        },
       }
-
-      setDeletePositionConfirmOpen(false)
-      setPositionToDelete(null)
-      fetchPositions()
-    } catch (error) {
-      console.error('Error deleting position:', error)
-      showError(error instanceof Error ? error.message : 'Failed to delete position')
-    } finally {
-      setDeletingPosition(false)
-    }
+    )
   }
 
   // Commission management functions
@@ -1368,76 +1355,52 @@ export default function ConfigurationPage() {
       return
     }
 
-    try {
-      setSavingCommissions(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+    const commissionsToSave = Object.entries(commissionEdits)
+      .filter(([_, percentage]) => percentage !== null) // Filter out null values (empty cells)
+      .map(([key, percentage]) => {
+        // UUIDs are 36 characters long. Split by taking first 36 chars as position_id
+        // and everything after the separator dash (position 37+) as product_id
+        const position_id = key.substring(0, 36)
+        const product_id = key.substring(37) // Skip the dash separator at position 36
 
-      if (!accessToken) return
+        // If percentage is null or undefined, default to 0
+        const result = { position_id, product_id, commission_percentage: percentage ?? 0 }
 
-      const commissionsToSave = Object.entries(commissionEdits)
-        .filter(([_, percentage]) => percentage !== null) // Filter out null values (empty cells)
-        .map(([key, percentage]) => {
-          // UUIDs are 36 characters long. Split by taking first 36 chars as position_id
-          // and everything after the separator dash (position 37+) as product_id
-          const position_id = key.substring(0, 36)
-          const product_id = key.substring(37) // Skip the dash separator at position 36
-          
-          // If percentage is null or undefined, default to 0
-          const result = { position_id, product_id, commission_percentage: percentage ?? 0 }
-          
-          // Log each commission entry to debug key splitting issues
-          console.log('[Commission Save] Parsed commission entry:', {
-            originalKey: key,
-            originalKeyLength: key.length,
-            position_id,
-            position_id_length: position_id.length,
-            product_id,
-            product_id_length: product_id.length,
-            commission_percentage: percentage ?? 0,
-          })
-          
-          return result
+        // Log each commission entry to debug key splitting issues
+        console.log('[Commission Save] Parsed commission entry:', {
+          originalKey: key,
+          originalKeyLength: key.length,
+          position_id,
+          position_id_length: position_id.length,
+          product_id,
+          product_id_length: product_id.length,
+          commission_percentage: percentage ?? 0,
         })
 
-      console.log('[Commission Save] Sending commissions to API:', {
-        totalCommissions: commissionsToSave.length,
-        commissions: commissionsToSave,
-        uniquePositionIds: [...new Set(commissionsToSave.map(c => c.position_id))],
-        uniqueProductIds: [...new Set(commissionsToSave.map(c => c.product_id))]
+        return result
       })
 
-      const response = await fetch('/api/positions/product-commissions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+    console.log('[Commission Save] Sending commissions to API:', {
+      totalCommissions: commissionsToSave.length,
+      commissions: commissionsToSave,
+      uniquePositionIds: [...new Set(commissionsToSave.map(c => c.position_id))],
+      uniqueProductIds: [...new Set(commissionsToSave.map(c => c.product_id))]
+    })
+
+    saveCommissionsMutation.mutate(
+      { commissions: commissionsToSave },
+      {
+        onSuccess: () => {
+          setCommissionEdits({})
+          refetchCommissions()
+          showSuccess('Commissions saved successfully!')
         },
-        body: JSON.stringify({ commissions: commissionsToSave })
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        console.error('[Commission Save] API error response:', {
-          status: response.status,
-          error: data.error,
-          detail: data.detail,
-          missingPositionIds: data.missingPositionIds,
-          missingProductIds: data.missingProductIds
-        })
-        throw new Error(data.error || 'Failed to save commissions')
+        onError: (error) => {
+          console.error('Error saving commissions:', error)
+          showError(error instanceof Error ? error.message : 'Failed to save commissions')
+        },
       }
-
-      setCommissionEdits({})
-      fetchCommissions(selectedCommissionCarrier || undefined)
-      showSuccess('Commissions saved successfully!')
-    } catch (error) {
-      console.error('Error saving commissions:', error)
-      showError(error instanceof Error ? error.message : 'Failed to save commissions')
-    } finally {
-      setSavingCommissions(false)
-    }
+    )
   }
 
   // Helper function to sync commissions for a specific carrier (silently)
@@ -1466,7 +1429,7 @@ export default function ConfigurationPage() {
         // Refresh commissions only when we added new entries and this carrier is active.
         // Avoid forcing a refetch here to prevent double-loading; the tab/useEffect will handle initial fetch.
         if (data.created > 0 && selectedCommissionCarrier === carrierId) {
-          await fetchCommissions(carrierId)
+          await refetchCommissions()
         }
       } else {
         const errorData = await response.json()
@@ -1512,50 +1475,30 @@ export default function ConfigurationPage() {
       return
     }
 
-    try {
-      setSyncingMissingCommissions(true)
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        throw new Error('No access token available')
+    syncCommissionsMutation.mutate(
+      { carrierId: selectedCommissionCarrier },
+      {
+        onSuccess: async (data) => {
+          if (!silent) {
+            if (data.created === 0) {
+              showWarning('All products for this carrier already have commission entries!')
+            } else {
+              showSuccess(`Successfully created ${data.created} missing commission entries for this carrier!`)
+            }
+          }
+          // Only refresh the commissions view if new commissions were created
+          if (data.created > 0) {
+            await refetchCommissions()
+          }
+        },
+        onError: (error) => {
+          console.error('Error syncing commissions:', error)
+          if (!silent) {
+            showError(error instanceof Error ? error.message : 'Failed to sync commissions')
+          }
+        },
       }
-
-      const response = await fetch(`/api/positions/product-commissions/sync?carrier_id=${selectedCommissionCarrier}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to sync commissions')
-      }
-
-      if (!silent) {
-        if (data.created === 0) {
-          showWarning('All products for this carrier already have commission entries!')
-        } else {
-          showSuccess(`Successfully created ${data.created} missing commission entries for this carrier!`)
-        }
-      }
-      
-      // Only refresh the commissions view if new commissions were created
-      // If nothing was created, the data is already up to date
-      if (data.created > 0) {
-        await fetchCommissions(selectedCommissionCarrier)
-      }
-    } catch (error) {
-      console.error('Error syncing commissions:', error)
-      if (!silent) {
-        showError(error instanceof Error ? error.message : 'Failed to sync commissions')
-      }
-    } finally {
-      setSyncingMissingCommissions(false)
-    }
+    )
   }
 
   // Product management functions (keeping existing code)
@@ -1631,77 +1574,57 @@ export default function ConfigurationPage() {
       return
     }
 
-    try {
-      setUpdatingProduct(true)
+    const wasActivationChange = editProductFormData.is_active !== originalProductData.is_active
+    const productCarrierId = allProducts.find(p => p.id === editingProductId)?.carrier_id
+    const productIdToUpdate = editingProductId
 
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        throw new Error('No access token available')
-      }
-
-      const response = await fetch(`/api/products/${editingProductId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          name: editProductFormData.name,
-          product_code: editProductFormData.product_code || null,
-          is_active: editProductFormData.is_active
-        }),
-        credentials: 'include'
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update product')
-      }
-
-      const updatedProduct = {
+    updateProductMutation.mutate(
+      {
+        productId: editingProductId,
         name: editProductFormData.name,
-        product_code: editProductFormData.product_code || undefined,
-        is_active: editProductFormData.is_active
+        product_code: editProductFormData.product_code || null,
+        is_active: editProductFormData.is_active,
+      },
+      {
+        onSuccess: async () => {
+          const updatedProduct = {
+            name: editProductFormData.name,
+            product_code: editProductFormData.product_code || undefined,
+            is_active: editProductFormData.is_active,
+          }
+
+          setAllProducts(prev =>
+            prev.map(product =>
+              product.id === productIdToUpdate
+                ? { ...product, ...updatedProduct }
+                : product
+            )
+          )
+
+          setProducts(prev =>
+            prev.map(product =>
+              product.id === productIdToUpdate
+                ? { ...product, ...updatedProduct }
+                : product
+            )
+          )
+
+          setEditingProductId(null)
+          setEditProductFormData({ name: "", product_code: "", is_active: true })
+          setOriginalProductData(null)
+
+          // Auto-sync commissions if product was activated/deactivated
+          if (wasActivationChange && productCarrierId) {
+            console.log(`Product activation changed for carrier ${productCarrierId}, auto-syncing commissions...`)
+            await syncCommissionsForCarrier(productCarrierId, false)
+          }
+        },
+        onError: (error) => {
+          console.error('Error updating product:', error)
+          showError(error instanceof Error ? error.message : 'Failed to update product')
+        },
       }
-
-      setAllProducts(prev =>
-        prev.map(product =>
-          product.id === editingProductId
-            ? { ...product, ...updatedProduct }
-            : product
-        )
-      )
-
-      setProducts(prev =>
-        prev.map(product =>
-          product.id === editingProductId
-            ? { ...product, ...updatedProduct }
-            : product
-        )
-      )
-
-      setEditingProductId(null)
-      setEditProductFormData({ name: "", product_code: "", is_active: true })
-      setOriginalProductData(null)
-
-      // Auto-sync commissions if product was activated/deactivated or any change
-      const product = allProducts.find(p => p.id === editingProductId)
-      if (product) {
-        const wasActivationChange = editProductFormData.is_active !== originalProductData.is_active
-        if (wasActivationChange) {
-          console.log(`Product activation changed for carrier ${product.carrier_id}, auto-syncing commissions...`)
-          await syncCommissionsForCarrier(product.carrier_id, false)
-        }
-      }
-    } catch (error) {
-      console.error('Error updating product:', error)
-    } finally {
-      setUpdatingProduct(false)
-    }
+    )
   }
 
   const handleDeleteProduct = (product: Product) => {
@@ -1712,74 +1635,37 @@ export default function ConfigurationPage() {
   const handleConfirmProductDelete = async () => {
     if (!productToDelete) return
 
-    try {
-      setDeletingProduct(true)
+    const productId = productToDelete.id
+    const productCarrierId = productToDelete.carrier_id
 
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+    deleteProductMutation.mutate(
+      { productId },
+      {
+        onSuccess: () => {
+          setAllProducts(prev => prev.filter(product => product.id !== productId))
+          setProducts(prev => prev.filter(product => product.id !== productId))
 
-      if (!accessToken) {
-        throw new Error('No access token available')
-      }
+          const remainingProductsForCarrier = allProducts.filter(
+            product => product.id !== productId && product.carrier_id === productCarrierId
+          )
 
-      const response = await fetch(`/api/products/${productToDelete.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        },
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to delete product')
-      }
-
-      setAllProducts(prev => prev.filter(product => product.id !== productToDelete.id))
-      setProducts(prev => prev.filter(product => product.id !== productToDelete.id))
-
-      const remainingProductsForCarrier = allProducts.filter(
-        product => product.id !== productToDelete.id && product.carrier_id === productToDelete.carrier_id
-      )
-
-      if (remainingProductsForCarrier.length === 0) {
-        try {
-          const supabase = createClient()
-          const { data: { session } } = await supabase.auth.getSession()
-          const accessToken = session?.access_token
-
-          if (accessToken) {
-            const carriersResponse = await fetch('/api/carriers', {
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`
-              },
-              credentials: 'include'
-            })
-
-            if (carriersResponse.ok) {
-              const updatedCarriers = await carriersResponse.json()
-              setCarriers(updatedCarriers)
-
-              if (selectedCarrier === productToDelete.carrier_id) {
-                setSelectedCarrier("")
-              }
+          // If no remaining products for carrier, invalidate carriers query to refresh
+          if (remainingProductsForCarrier.length === 0) {
+            queryClient.invalidateQueries({ queryKey: queryKeys.configurationCarriers() })
+            if (selectedCarrier === productCarrierId) {
+              setSelectedCarrier("")
             }
           }
-        } catch (error) {
-          console.error('Error refreshing carriers:', error)
-        }
-      }
 
-      setDeleteProductConfirmOpen(false)
-      setProductToDelete(null)
-    } catch (error) {
-      console.error('Error deleting product:', error)
-    } finally {
-      setDeletingProduct(false)
-    }
+          setDeleteProductConfirmOpen(false)
+          setProductToDelete(null)
+        },
+        onError: (error) => {
+          console.error('Error deleting product:', error)
+          showError(error instanceof Error ? error.message : 'Failed to delete product')
+        },
+      }
+    )
   }
 
   const handleCancelProductDelete = () => {
@@ -2178,27 +2064,6 @@ export default function ConfigurationPage() {
   }
 
   // Policy Reports Management Functions
-  const checkExistingPolicyFiles = async () => {
-    try {
-      setCheckingExistingFiles(true)
-      const response = await fetch('/api/upload-policy-reports/bucket', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.files && data.files.length > 0) {
-          setUploadedFilesInfo(data.files)
-        }
-      }
-    } catch (error) {
-      console.error('Error checking existing files:', error)
-    } finally {
-      setCheckingExistingFiles(false)
-    }
-  }
-
   // Drag and drop handlers for policy reports
   const handlePolicyReportDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -2375,7 +2240,7 @@ export default function ConfigurationPage() {
       if (failures.length === 0) {
         showSuccess(`Successfully uploaded ${successes.length} file(s).`)
         setPolicyReportFiles([])
-        checkExistingPolicyFiles()
+        refetchPolicyFiles()
       } else {
         showWarning(`Uploaded ${successes.length} file(s), but ${failures.length} failed: ${failures.join(', ')}`)
       }
@@ -2475,6 +2340,53 @@ export default function ConfigurationPage() {
           <h1 className="text-3xl font-bold text-foreground mb-1">Settings</h1>
           <p className="text-sm text-muted-foreground">Manage your agency configuration</p>
         </div>
+
+        {/* Error Display - Show errors for any failed queries */}
+        {agencyError && (
+          <div className="mb-4">
+            <QueryErrorDisplay
+              error={agencyError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })}
+              variant="inline"
+            />
+          </div>
+        )}
+        {carriersError && (
+          <div className="mb-4">
+            <QueryErrorDisplay
+              error={carriersError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationCarriers() })}
+              variant="inline"
+            />
+          </div>
+        )}
+        {productsError && (
+          <div className="mb-4">
+            <QueryErrorDisplay
+              error={productsError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationProducts() })}
+              variant="inline"
+            />
+          </div>
+        )}
+        {positionsError && (
+          <div className="mb-4">
+            <QueryErrorDisplay
+              error={positionsError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationPositions() })}
+              variant="inline"
+            />
+          </div>
+        )}
+        {commissionsError && (
+          <div className="mb-4">
+            <QueryErrorDisplay
+              error={commissionsError}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationCommissions(selectedCommissionCarrier) })}
+              variant="inline"
+            />
+          </div>
+        )}
 
         {/* Horizontal Tabs Navigation */}
         <div className="mb-6">
@@ -4486,55 +4398,32 @@ export default function ConfigurationPage() {
                         {/* Submit Button */}
                         <Button
                           className="w-full bg-gray-600 hover:bg-gray-700 text-white"
-                          disabled={!carrierLoginUsername || !carrierLoginPassword || savingCarrierLogin}
-                          onClick={async () => {
+                          disabled={!carrierLoginUsername || !carrierLoginPassword || saveCarrierLoginMutation.isPending}
+                          onClick={() => {
                             if (!selectedCarrierLogin || !carrierLoginUsername || !carrierLoginPassword) return
 
-                            try {
-                              setSavingCarrierLogin(true)
-                              const supabase = createClient()
-                              const { data: { session } } = await supabase.auth.getSession()
-                              const accessToken = session?.access_token
-
-                              if (!accessToken) {
-                                showError('You must be logged in to save carrier logins.')
-                                return
-                              }
-
-                              const response = await fetch('/api/carrier-logins', {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  'Authorization': `Bearer ${accessToken}`
+                            saveCarrierLoginMutation.mutate(
+                              {
+                                carrier_name: selectedCarrierLogin,
+                                login: carrierLoginUsername,
+                                password: carrierLoginPassword,
+                              },
+                              {
+                                onSuccess: () => {
+                                  showSuccess('Carrier login saved successfully.')
+                                  // Clear credentials so user can enter another or switch carriers without reload
+                                  setCarrierLoginUsername("")
+                                  setCarrierLoginPassword("")
                                 },
-                                body: JSON.stringify({
-                                  carrier_name: selectedCarrierLogin,
-                                  login: carrierLoginUsername,
-                                  password: carrierLoginPassword
-                                })
-                              })
-
-                              const data = await response.json().catch(() => null)
-
-                              if (!response.ok) {
-                                const detail = data?.detail || data?.error || 'Failed to save carrier login.'
-                                showError(detail)
-                                return
+                                onError: (error) => {
+                                  console.error('Error saving carrier login:', error)
+                                  showError(error instanceof Error ? error.message : 'Failed to save carrier login.')
+                                },
                               }
-
-                              showSuccess('Carrier login saved successfully.')
-                              // Clear credentials so user can enter another or switch carriers without reload
-                              setCarrierLoginUsername("")
-                              setCarrierLoginPassword("")
-                            } catch (error) {
-                              console.error('Error saving carrier login:', error)
-                              showError('An unexpected error occurred while saving carrier login.')
-                            } finally {
-                              setSavingCarrierLogin(false)
-                            }
+                            )
                           }}
                         >
-                          {savingCarrierLogin ? 'Saving...' : 'Submit'}
+                          {saveCarrierLoginMutation.isPending ? 'Saving...' : 'Submit'}
                         </Button>
                       </div>
                     )}

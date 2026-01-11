@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { ChevronLeft, ChevronRight, Calendar } from "lucide-react"
@@ -9,6 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { useClientDate } from "@/hooks/useClientDate"
 
 interface MonthRangePickerProps {
   startMonth: string // Format: "YYYY-MM"
@@ -19,9 +20,21 @@ interface MonthRangePickerProps {
 
 export function MonthRangePicker({ startMonth, endMonth, onRangeChange, disabled }: MonthRangePickerProps) {
   const [open, setOpen] = useState(false)
-  const [displayYear, setDisplayYear] = useState(new Date().getFullYear())
+  // SSR-safe: useClientDate returns deterministic values on server, actual values on client
+  const clientDate = useClientDate()
+  // Initialize with 2025 to match useClientDate server default, then sync via useEffect
+  const [displayYear, setDisplayYear] = useState(2025)
   const [selectingStart, setSelectingStart] = useState(true)
   const [hoveredMonth, setHoveredMonth] = useState<string | null>(null)
+
+  // Sync displayYear when clientDate becomes available (only on first render)
+  const isFirstRender = useRef(true)
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      setDisplayYear(clientDate.year)
+    }
+  }, [clientDate.year])
 
   // Parse the date strings
   const parseMonth = (monthStr: string) => {
@@ -87,8 +100,9 @@ export function MonthRangePicker({ startMonth, endMonth, onRangeChange, disabled
   const isMonthHovered = (year: number, monthIndex: number) => {
     if (!hoveredMonth || !startMonth || selectingStart) return false
     const monthStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}`
-    const minMonth = Math.min(startMonth, hoveredMonth) as any
-    const maxMonth = Math.max(startMonth, hoveredMonth) as any
+    // String comparison works for "YYYY-MM" format (lexicographic order)
+    const minMonth = startMonth < hoveredMonth ? startMonth : hoveredMonth
+    const maxMonth = startMonth > hoveredMonth ? startMonth : hoveredMonth
     return monthStr >= minMonth && monthStr <= maxMonth
   }
 

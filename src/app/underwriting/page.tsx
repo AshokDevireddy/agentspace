@@ -12,8 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, ClipboardCheck, Trophy, TrendingUp, DollarSign, Award, ChevronDown, ChevronUp, RotateCcw } from "lucide-react"
+import { Loader2, ClipboardCheck, Trophy, TrendingUp, DollarSign, Award, ChevronDown, ChevronUp, RotateCcw, AlertTriangle } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
+import { useMutation } from "@tanstack/react-query"
 
 interface UnderwritingFormData {
   // Basic fields
@@ -153,10 +154,52 @@ const INITIAL_FORM_DATA: UnderwritingFormData = {
 
 export default function UnderwritingPage() {
   const [formData, setFormData] = useState<UnderwritingFormData>(INITIAL_FORM_DATA)
-  const [loading, setLoading] = useState(false)
-  const [results, setResults] = useState<UnderwritingResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [validationError, setValidationError] = useState<string | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  // Track persisted results from localStorage (loaded on mount, synced after mutations)
+  const [persistedResults, setPersistedResults] = useState<UnderwritingResult | null>(null)
+
+  // Mutation for underwriting quote
+  const underwritingMutation = useMutation({
+    mutationFn: async (data: UnderwritingFormData) => {
+      const response = await fetch('/api/underwriting/quote', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      })
+
+      const responseData = await response.json()
+
+      if (!response.ok) {
+        throw new Error(responseData.error || 'Failed to get underwriting quote')
+      }
+
+      // Sort results by monthly premium (lowest to highest)
+      if (responseData.data?.Compulife_ComparisonResults?.Compulife_Results) {
+        responseData.data.Compulife_ComparisonResults.Compulife_Results.sort((a: any, b: any) =>
+          parseFloat(a.Compulife_premiumM) - parseFloat(b.Compulife_premiumM)
+        )
+      }
+
+      return responseData
+    },
+    onSuccess: (data) => {
+      // Persist to localStorage for future page loads
+      try {
+        localStorage.setItem('underwriting_results', JSON.stringify(data))
+      } catch (error) {
+        console.error('Error saving results:', error)
+      }
+      setPersistedResults(data)
+    },
+  })
+
+  // Use mutation data if available, otherwise fall back to persisted results from localStorage
+  const results = underwritingMutation.data || persistedResults
+  // Use mutation error directly (no manual useState)
+  const error = validationError || (underwritingMutation.error instanceof Error ? underwritingMutation.error.message : null)
 
   // Load saved state from localStorage on mount
   useEffect(() => {
@@ -169,7 +212,7 @@ export default function UnderwritingPage() {
         setFormData(JSON.parse(savedFormData))
       }
       if (savedResults) {
-        setResults(JSON.parse(savedResults))
+        setPersistedResults(JSON.parse(savedResults))
       }
       if (savedShowAdvanced) {
         setShowAdvanced(JSON.parse(savedShowAdvanced))
@@ -179,7 +222,7 @@ export default function UnderwritingPage() {
     }
   }, [])
 
-  // Save state to localStorage whenever it changes
+  // Save form data and UI state to localStorage when they change
   useEffect(() => {
     try {
       localStorage.setItem('underwriting_form_data', JSON.stringify(formData))
@@ -187,18 +230,6 @@ export default function UnderwritingPage() {
       console.error('Error saving form data:', error)
     }
   }, [formData])
-
-  useEffect(() => {
-    try {
-      if (results) {
-        localStorage.setItem('underwriting_results', JSON.stringify(results))
-      } else {
-        localStorage.removeItem('underwriting_results')
-      }
-    } catch (error) {
-      console.error('Error saving results:', error)
-    }
-  }, [results])
 
   useEffect(() => {
     try {
@@ -217,9 +248,10 @@ export default function UnderwritingPage() {
 
   const handleClearForm = () => {
     setFormData(INITIAL_FORM_DATA)
-    setResults(null)
-    setError(null)
+    setPersistedResults(null)
+    setValidationError(null)
     setShowAdvanced(false)
+    underwritingMutation.reset() // Clear mutation state
     // Clear from localStorage
     localStorage.removeItem('underwriting_form_data')
     localStorage.removeItem('underwriting_results')
@@ -229,48 +261,22 @@ export default function UnderwritingPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    // Clear any previous validation errors
+    setValidationError(null)
+
     // Validate required button fields
     if (!formData.sex) {
-      setError('Please select sex')
+      setValidationError('Please select sex')
       return
     }
     if (!formData.smoker) {
-      setError('Please select tobacco use status')
+      setValidationError('Please select tobacco use status')
       return
     }
 
-    setLoading(true)
-    setError(null)
-    setResults(null)
-
-    try {
-      const response = await fetch('/api/underwriting/quote', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to get underwriting quote')
-      }
-
-      // Sort results by monthly premium (lowest to highest)
-      if (data.data?.Compulife_ComparisonResults?.Compulife_Results) {
-        data.data.Compulife_ComparisonResults.Compulife_Results.sort((a: any, b: any) =>
-          parseFloat(a.Compulife_premiumM) - parseFloat(b.Compulife_premiumM)
-        )
-      }
-
-      setResults(data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
-    } finally {
-      setLoading(false)
-    }
+    // Clear persisted results when starting new query (mutation.data will take over)
+    setPersistedResults(null)
+    underwritingMutation.mutate(formData)
   }
 
   const months = [
@@ -1224,9 +1230,9 @@ export default function UnderwritingPage() {
                 type="submit"
                 size="lg"
                 className="flex-1 h-12 text-base font-semibold shadow-lg"
-                disabled={loading}
+                disabled={underwritingMutation.isPending}
               >
-                {loading ? (
+                {underwritingMutation.isPending ? (
                   <>
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                     Fetching Quotes...
@@ -1244,7 +1250,7 @@ export default function UnderwritingPage() {
                 size="lg"
                 className="h-12 px-6"
                 onClick={handleClearForm}
-                disabled={loading}
+                disabled={underwritingMutation.isPending}
               >
                 <RotateCcw className="mr-2 h-5 w-5" />
                 Clear
@@ -1259,7 +1265,7 @@ export default function UnderwritingPage() {
         <Card className="mt-6 border-2 border-destructive/50 bg-destructive/5">
           <CardHeader>
             <CardTitle className="text-destructive flex items-center gap-2">
-              <span className="text-2xl">⚠️</span> Error
+              <AlertTriangle className="h-5 w-5" /> Error
             </CardTitle>
           </CardHeader>
           <CardContent>

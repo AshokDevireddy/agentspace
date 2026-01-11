@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useNotification } from '@/contexts/notification-context';
+import { useAddSubscriptionItem, useCreateCheckoutSession } from '@/hooks/mutations';
 
 interface SubscriptionCardProps {
   title: string;
@@ -21,64 +22,48 @@ export function SubscriptionCard({
   isCurrentPlan = false,
   buttonText = 'Subscribe',
 }: SubscriptionCardProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { showError, showSuccess } = useNotification();
 
-  const handleSubscribe = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // For AI Mode addon, add to existing subscription instead of creating new one
-      if (subscriptionType === 'ai_mode_addon') {
-        const response = await fetch('/api/stripe/add-subscription-item', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ priceId }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to add subscription item');
-        }
-
-        // Refresh the page to show updated subscription
-        window.location.reload();
-        return;
-      }
-
-      // For base subscription, create checkout session
-      const response = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          priceId,
-          subscriptionType,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create checkout session');
-      }
-
-      // Redirect to Stripe Checkout URL (modern approach)
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error('No checkout URL returned');
-      }
-    } catch (err) {
+  // Use centralized mutation hooks
+  const addItemMutation = useAddSubscriptionItem({
+    onSuccess: () => {
+      showSuccess('AI Mode successfully activated!');
+    },
+    onError: (err) => {
       console.error('Subscription error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      setLoading(false);
-    }
+      showError(err.message || 'Failed to add subscription item');
+    },
+  });
+
+  const checkoutMutation = useCreateCheckoutSession({
+    onSuccess: (url) => {
+      showSuccess('Redirecting to checkout...');
+      window.location.href = url;
+    },
+    onError: (err) => {
+      console.error('Subscription error:', err);
+      showError(err.message || 'Failed to create checkout session');
+    },
+  });
+
+  // Combined mutation state
+  const mutation = {
+    isPending: addItemMutation.isPending || checkoutMutation.isPending,
+    isSuccess: addItemMutation.isSuccess || checkoutMutation.isSuccess,
+    error: addItemMutation.error || checkoutMutation.error,
+    mutate: () => {
+      if (subscriptionType === 'ai_mode_addon') {
+        addItemMutation.mutate({ priceId });
+      } else {
+        checkoutMutation.mutate({ priceId, subscriptionType });
+      }
+    },
+  };
+
+  // Wrapper function to prevent race conditions with rapid clicks
+  const handleClick = () => {
+    if (mutation.isPending || mutation.isSuccess || isCurrentPlan) return;
+    mutation.mutate();
   };
 
   return (
@@ -110,22 +95,22 @@ export function SubscriptionCard({
         ))}
       </ul>
 
-      {error && (
+      {mutation.error && (
         <div className="mb-4 rounded bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {error}
+          {mutation.error instanceof Error ? mutation.error.message : 'An error occurred'}
         </div>
       )}
 
       <button
-        onClick={handleSubscribe}
-        disabled={loading || isCurrentPlan || buttonText === 'Requires Agent Subscription'}
+        onClick={handleClick}
+        disabled={mutation.isPending || mutation.isSuccess || isCurrentPlan || buttonText === 'Requires Agent Subscription'}
         className={`w-full rounded-md px-4 py-2 font-medium transition-colors ${
           isCurrentPlan || buttonText === 'Requires Agent Subscription'
             ? 'cursor-not-allowed bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
             : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
         }`}
       >
-        {loading ? 'Loading...' : buttonText}
+        {mutation.isPending || mutation.isSuccess ? 'Loading...' : buttonText}
       </button>
     </div>
   );

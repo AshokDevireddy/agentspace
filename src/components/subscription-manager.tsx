@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
 import { useNotification } from '@/contexts/notification-context'
+import { useOpenBillingPortal } from '@/hooks/mutations'
 
 interface SubscriptionManagerProps {
   subscriptionStatus: string;
@@ -10,31 +10,16 @@ interface SubscriptionManagerProps {
 
 export function SubscriptionManager({ subscriptionStatus, hasAiAddon }: SubscriptionManagerProps) {
   const { showError } = useNotification()
-  const [loading, setLoading] = useState(false);
 
-  const handleManageSubscription = async () => {
-    try {
-      setLoading(true);
-
-      const response = await fetch('/api/stripe/create-portal-session', {
-        method: 'POST',
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to open billing portal');
-      }
-
-      // Redirect to Stripe billing portal
-      window.location.href = data.url;
-    } catch (err) {
+  const mutation = useOpenBillingPortal({
+    onSuccess: (url) => {
+      window.location.href = url;
+    },
+    onError: (err) => {
       console.error('Error opening billing portal:', err);
-      showError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-    }
-  };
+      showError(err.message || 'An error occurred');
+    },
+  });
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
@@ -70,11 +55,11 @@ export function SubscriptionManager({ subscriptionStatus, hasAiAddon }: Subscrip
 
       {subscriptionStatus !== 'free' && (
         <button
-          onClick={handleManageSubscription}
-          disabled={loading}
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending || mutation.isSuccess}
           className="w-full rounded-md bg-gray-600 px-4 py-2 font-medium text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
         >
-          {loading ? 'Loading...' : 'Manage Subscription'}
+          {mutation.isPending || mutation.isSuccess ? 'Loading...' : 'Manage Subscription'}
         </button>
       )}
     </div>

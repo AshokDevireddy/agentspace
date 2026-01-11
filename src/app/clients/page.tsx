@@ -1,16 +1,21 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { useAuth } from "@/providers/AuthProvider"
-import { createClient } from "@/lib/supabase/client"
 import { Filter, X, User } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
+import { useApiFetch } from "@/hooks/useApiFetch"
+import { useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/hooks/queryKeys"
+import { QueryErrorDisplay } from "@/components/ui/query-error-display"
+import { useAdminStatus } from "@/hooks/useUserQueries"
 
 // Client data type
 interface Client {
@@ -68,7 +73,7 @@ const generateStatusOptions = () => {
 
 export default function Clients() {
   // Persisted filter state using custom hook (includes view mode)
-  const [localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply] = usePersistedFilters(
+  const { localFilters, appliedFilters, setLocalFilters, applyFilters, clearFilters, setAndApply } = usePersistedFilters(
     'clients',
     {
       clientName: "all",
@@ -87,89 +92,52 @@ export default function Clients() {
     setAndApply({ viewMode: value })
   }
 
-  const [clientsData, setClientsData] = useState<Client[]>([])
-  const [allClients, setAllClients] = useState<Client[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [totalCount, setTotalCount] = useState(0)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [isAdminChecked, setIsAdminChecked] = useState(false)
   const { user } = useAuth()
-  const supabase = createClient()
+  const queryClient = useQueryClient()
 
-  // Check if user is admin
-  useEffect(() => {
-    const checkAdminStatus = async () => {
-      if (!user?.id) return
+  // Check if user is admin using centralized hook
+  const { data: adminData, isPending: isAdminLoading } = useAdminStatus(user?.id)
+  const isAdmin = adminData?.is_admin || false
+  // Wait for both loading to complete AND data to be available to prevent race conditions
+  const isAdminChecked = !isAdminLoading && adminData !== undefined
 
-      const { data: userData } = await supabase
-        .from('users')
-        .select('is_admin')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      const adminStatus = userData?.is_admin || false
-      setIsAdmin(adminStatus)
-      setIsAdminChecked(true)
-    }
-
-    checkAdminStatus()
-  }, [user?.id])
+  // For admins viewing "downlines", we actually fetch "all"
+  const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
 
   // Fetch all clients for dropdown options (without pagination)
-  useEffect(() => {
-    if (!isAdminChecked) return
+  const { data: allClientsData } = useApiFetch<{ clients: Client[] }>(
+    queryKeys.clientsAll(effectiveViewMode),
+    `/api/clients?page=1&limit=1000&view=${effectiveViewMode}`,
+    { enabled: isAdminChecked }
+  )
 
-    const fetchAllClients = async () => {
-      try {
-        // For admins viewing "downlines", we actually fetch "all"
-        const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
-        const url = `/api/clients?page=1&limit=1000&view=${effectiveViewMode}`
-        const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error('Failed to fetch clients')
-        }
-        const data = await response.json()
-        setAllClients(data.clients || [])
-      } catch (err) {
-        console.error('Error fetching all clients:', err)
-      }
+  const allClients = allClientsData?.clients || []
+
+  // Fetch clients data from API with pagination
+  const { data: clientsResponse, isPending: clientsLoading, isFetching: clientsFetching, error: clientsError } = useApiFetch<{
+    clients: Client[]
+    pagination: {
+      totalPages: number
+      totalCount: number
+      currentPage: number
+      limit: number
     }
-
-    fetchAllClients()
-  }, [viewMode, isAdmin, isAdminChecked])
-
-  // Fetch clients data from API
-  useEffect(() => {
-    if (!isAdminChecked) return
-
-    const fetchClients = async () => {
-      try {
-        setLoading(true)
-        // For admins viewing "downlines", we actually fetch "all"
-        const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
-        const url = `/api/clients?page=${currentPage}&limit=20&view=${effectiveViewMode}`
-        const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error('Failed to fetch clients')
-        }
-        const data = await response.json()
-
-        setClientsData(data.clients)
-        setTotalPages(data.pagination.totalPages)
-        setTotalCount(data.pagination.totalCount)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred')
-        console.error('Error fetching clients:', err)
-      } finally {
-        setLoading(false)
-      }
+  }>(
+    queryKeys.clientsList(currentPage, { view: effectiveViewMode }),
+    `/api/clients?page=${currentPage}&limit=20&view=${effectiveViewMode}`,
+    {
+      enabled: isAdminChecked,
+      staleTime: 30 * 1000, // 30 seconds
+      placeholderData: (previousData) => previousData, // Keep previous data while fetching (stale-while-revalidate)
     }
+  )
 
-    fetchClients()
-  }, [currentPage, viewMode, isAdmin, isAdminChecked])
+  const clientsData = clientsResponse?.clients || []
+  const totalPages = clientsResponse?.pagination.totalPages || 1
+  const totalCount = clientsResponse?.pagination.totalCount || 0
+  const loading = isAdminLoading || clientsLoading
+  const isRefreshing = clientsFetching && !clientsLoading // Background refetch with stale data shown
 
   // Apply filters when button is clicked
   const handleApplyFilters = () => {
@@ -213,7 +181,10 @@ export default function Clients() {
       {/* Header */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-4xl font-bold text-gradient">Clients</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-bold text-gradient">Clients</h1>
+            <RefreshingIndicator isRefreshing={isRefreshing} />
+          </div>
 
           {/* View Mode Toggle with Slider */}
           <div className="relative bg-accent/30 rounded-lg p-1">
@@ -393,10 +364,14 @@ export default function Clients() {
                     <td><div className="h-4 w-20 bg-muted rounded" /></td>
                   </tr>
                 ))
-              ) : error ? (
+              ) : clientsError ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-destructive">
-                    Error: {error}
+                  <td colSpan={6} className="p-4">
+                    <QueryErrorDisplay
+                      error={clientsError}
+                      onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.clientsList(currentPage, { view: effectiveViewMode }) })}
+                      variant="inline"
+                    />
                   </td>
                 </tr>
               ) : filteredClients.length === 0 ? (

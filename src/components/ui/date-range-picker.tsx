@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { ChevronLeft, ChevronRight, Calendar } from "lucide-react"
@@ -9,6 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { useClientDate } from "@/hooks/useClientDate"
 
 interface DateRangePickerProps {
   startDate: string // Format: "YYYY-MM-DD"
@@ -19,9 +20,20 @@ interface DateRangePickerProps {
 
 export function DateRangePicker({ startDate, endDate, onRangeChange, disabled }: DateRangePickerProps) {
   const [open, setOpen] = useState(false)
-  const [displayMonth, setDisplayMonth] = useState(new Date())
+  // SSR-safe: useClientDate returns deterministic date on server, actual date on client
+  const clientDate = useClientDate()
+  const [displayMonth, setDisplayMonth] = useState(() => clientDate.date)
   const [selectingStart, setSelectingStart] = useState(true)
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
+
+  // Sync displayMonth when clientDate becomes available (only on first render)
+  const isFirstRender = useRef(true)
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      setDisplayMonth(clientDate.date)
+    }
+  }, [clientDate.date])
 
   // Format display text
   const formatDateDisplay = (dateStr: string) => {

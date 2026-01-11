@@ -12,6 +12,7 @@ interface SimpleSearchableSelectProps {
   placeholder?: string
   className?: string
   searchPlaceholder?: string
+  disabled?: boolean
 }
 
 export function SimpleSearchableSelect({
@@ -21,26 +22,24 @@ export function SimpleSearchableSelect({
   placeholder = "Select option...",
   className,
   searchPlaceholder = "Search...",
+  disabled = false,
 }: SimpleSearchableSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [searchTerm, setSearchTerm] = React.useState("")
-  const [filteredOptions, setFilteredOptions] = React.useState(options)
   const dropdownRef = React.useRef<HTMLDivElement>(null)
 
-  // Filter options based on search term
-  React.useEffect(() => {
+  // Filter options based on search term - use useMemo instead of useEffect to avoid infinite loops
+  const filteredOptions = React.useMemo(() => {
     if (!options || !Array.isArray(options)) {
-      setFilteredOptions([])
-      return
+      return []
     }
 
-    const filtered = options.filter(option => {
+    return options.filter(option => {
       if (!option || typeof option.label !== 'string') {
         return false
       }
       return option.label.toLowerCase().includes(searchTerm.toLowerCase())
     })
-    setFilteredOptions(filtered)
   }, [searchTerm, options])
 
   // Close dropdown when clicking outside
@@ -100,6 +99,7 @@ export function SimpleSearchableSelect({
         type="button"
         role="combobox"
         aria-expanded={open}
+        disabled={disabled}
         className={cn(
           "flex h-10 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 transition-colors hover:bg-accent hover:text-accent-foreground",
           open && "ring-1 ring-ring"
@@ -109,7 +109,7 @@ export function SimpleSearchableSelect({
         }}
         onClick={(e) => {
           e.stopPropagation()
-          setOpen(!open)
+          if (!disabled) setOpen(!open)
         }}
       >
         <span className="truncate flex-1 text-left line-clamp-1">

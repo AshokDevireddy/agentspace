@@ -3,7 +3,12 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export async function middleware(req: NextRequest) {
-  const res = NextResponse.next()
+  // Create response that will be updated by setAll when session refreshes
+  let res = NextResponse.next({
+    request: req,
+  })
+  const pathname = req.nextUrl.pathname
+  const isApiRoute = pathname.startsWith('/api/')
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,7 +19,13 @@ export async function middleware(req: NextRequest) {
           return req.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => req.cookies.set(name, value))
+          // Update cookies on the request for any subsequent middleware
+          cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value))
+          // Create a new response with the updated request
+          res = NextResponse.next({
+            request: req,
+          })
+          // Set cookies on the response for the browser
           cookiesToSet.forEach(({ name, value, options }) =>
             res.cookies.set(name, value, options)
           )
@@ -23,27 +34,25 @@ export async function middleware(req: NextRequest) {
     }
   )
 
-  // Get user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // Use getSession() instead of getUser() - faster, no network request, handles token refresh
+  const { data: { session } } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   // Public routes that don't require authentication
   const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/setup-account']
-  const isPublicRoute = publicRoutes.includes(req.nextUrl.pathname) || req.nextUrl.pathname.startsWith('/auth/confirm') || req.nextUrl.pathname.startsWith('/auth/callback')
+  const isPublicRoute = publicRoutes.includes(pathname) || pathname.startsWith('/auth/confirm') || pathname.startsWith('/auth/callback')
 
   // Public API prefixes that should bypass auth (cron jobs, webhooks, registration, password reset, favicon, etc.)
   const publicApiPrefixes = ['/api/cron/', '/api/telnyx-webhook', '/api/webhooks/stripe', '/api/register', '/api/reset-password', '/api/favicon']
-  const isPublicApi = publicApiPrefixes.some(prefix => req.nextUrl.pathname.startsWith(prefix))
+  const isPublicApi = publicApiPrefixes.some(prefix => pathname.startsWith(prefix))
 
   // If no user and trying to access protected route
   if (!user && !isPublicRoute && !isPublicApi) {
-    // For API routes, return 401 instead of redirecting
-    if (req.nextUrl.pathname.startsWith('/api/')) {
+    if (isApiRoute) {
       return NextResponse.json(
         { error: 'Unauthorized', message: 'Authentication required' },
         { status: 401 }
-      );
+      )
     }
     return NextResponse.redirect(new URL('/login', req.url))
   }

@@ -52,6 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Mark as hydrated after first client-side render
   // This prevents hydration mismatch between server and client
   useEffect(() => {
+    console.log('[AuthProvider] Setting isHydrated=true')
     setIsHydrated(true)
   }, [])
 

@@ -1,6 +1,8 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { ProductionProgressCard } from "@/components/production-progress-card"
 import { Users, BarChart3, FileText, Briefcase, AlertCircle } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { useState, useEffect, useMemo, useCallback } from "react"
@@ -27,6 +29,10 @@ export default function Home() {
   const [loadingScoreboard, setLoadingScoreboard] = useState(true)
   const [dashboardData, setDashboardData] = useState<any>(null)
   const [loadingDashboard, setLoadingDashboard] = useState(true)
+  const [ytdProduction, setYtdProduction] = useState<{ individual: number; hierarchy: number }>({ individual: 0, hierarchy: 0 })
+  const [mtdProduction, setMtdProduction] = useState<{ individual: number; hierarchy: number }>({ individual: 0, hierarchy: 0 })
+  const [loadingProduction, setLoadingProduction] = useState(true)
+  const [topProducersPeriod, setTopProducersPeriod] = useState<'ytd' | 'mtd'>('ytd')
   const [viewMode, setViewMode] = useState<'just_me' | 'downlines'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('dashboard_view_mode') as 'just_me' | 'downlines') || 'downlines'
@@ -49,30 +55,33 @@ export default function Home() {
         return
       }
 
-      // Calculate current week dates (Sunday to Saturday) - needed for scoreboard
-      const today = new Date()
-      const dayOfWeek = today.getDay()
-      const sunday = new Date(today)
-      sunday.setDate(today.getDate() - dayOfWeek)
-      sunday.setHours(0, 0, 0, 0)
-      const saturday = new Date(sunday)
-      saturday.setDate(sunday.getDate() + 6)
-      saturday.setHours(23, 59, 59, 999)
-      const startDate = sunday.toISOString().split('T')[0]
-      const endDate = saturday.toISOString().split('T')[0]
-
       const supabase = createClient()
+      const today = new Date()
+      const year = today.getFullYear()
+      const month = String(today.getMonth() + 1).padStart(2, '0')
+      const day = String(today.getDate()).padStart(2, '0')
+      const todayStr = `${year}-${month}-${day}`
+
+      // Calculate top producers dates based on period (YTD or MTD)
+      let topProducersStartDate: string
+      let topProducersEndDate = todayStr
+      
+      if (topProducersPeriod === 'ytd') {
+        topProducersStartDate = `${year}-01-01`
+      } else {
+        topProducersStartDate = `${year}-${month}-01`
+      }
 
       // Run all 3 fetches in PARALLEL using Promise.allSettled
       const [userResult, scoreboardResult, dashboardResult] = await Promise.allSettled([
         // 1. User profile fetch
         fetch(`/api/user/profile?user_id=${user.id}`).then(res => res.json()),
 
-        // 2. Scoreboard RPC
+        // 2. Scoreboard RPC for top producers
         supabase.rpc('get_scoreboard_data', {
           p_user_id: user.id,
-          p_start_date: startDate,
-          p_end_date: endDate
+          p_start_date: topProducersStartDate,
+          p_end_date: topProducersEndDate
         }),
 
         // 3. Dashboard analytics RPC
@@ -175,6 +184,89 @@ export default function Home() {
     }
 
     fetchAllDashboardData()
+  }, [user, topProducersPeriod])
+
+  // Fetch YTD and MTD production data
+  useEffect(() => {
+    const fetchProductionData = async () => {
+      if (!user) {
+        setLoadingProduction(false)
+        return
+      }
+
+      const supabase = createClient()
+      const today = new Date()
+
+      // Format dates as YYYY-MM-DD strings directly to avoid timezone issues
+      const year = today.getFullYear()
+      const month = String(today.getMonth() + 1).padStart(2, '0')
+      const day = String(today.getDate()).padStart(2, '0')
+      const todayStr = `${year}-${month}-${day}`
+
+      // YTD: Jan 1 of current year to today
+      const ytdStart = `${year}-01-01`
+      const ytdEnd = todayStr
+
+      // MTD: 1st of current month to today
+      const mtdStart = `${year}-${month}-01`
+      const mtdEnd = todayStr
+
+      // Get agency-wide production totals (for downlines view)
+      const { data: ytdAgencyData } = await supabase
+        .from('deals')
+        .select('annual_premium')
+        .gte('policy_effective_date', ytdStart)
+        .lte('policy_effective_date', ytdEnd)
+
+      const { data: mtdAgencyData } = await supabase
+        .from('deals')
+        .select('annual_premium')
+        .gte('policy_effective_date', mtdStart)
+        .lte('policy_effective_date', mtdEnd)
+
+      const ytdAgencyTotal = (ytdAgencyData || []).reduce((sum, d) => sum + (d.annual_premium || 0), 0)
+      const mtdAgencyTotal = (mtdAgencyData || []).reduce((sum, d) => sum + (d.annual_premium || 0), 0)
+
+      try {
+        // Fetch YTD and MTD production for individual (just me) view
+        const [ytdResult, mtdResult] = await Promise.all([
+          supabase.rpc('get_agents_debt_production', {
+            p_user_id: user.id,
+            p_agent_ids: [user.id],
+            p_start_date: ytdStart,
+            p_end_date: ytdEnd
+          }),
+          supabase.rpc('get_agents_debt_production', {
+            p_user_id: user.id,
+            p_agent_ids: [user.id],
+            p_start_date: mtdStart,
+            p_end_date: mtdEnd
+          })
+        ])
+
+        if (ytdResult.data && !ytdResult.error) {
+          const ytdData = ytdResult.data[0] || { individual_production: 0 }
+          setYtdProduction({
+            individual: ytdData.individual_production || 0,
+            hierarchy: ytdAgencyTotal
+          })
+        }
+
+        if (mtdResult.data && !mtdResult.error) {
+          const mtdData = mtdResult.data[0] || { individual_production: 0 }
+          setMtdProduction({
+            individual: mtdData.individual_production || 0,
+            hierarchy: mtdAgencyTotal
+          })
+        }
+      } catch (error) {
+        console.error('[Production] Error fetching production data:', error)
+      } finally {
+        setLoadingProduction(false)
+      }
+    }
+
+    fetchProductionData()
   }, [user])
 
   // Auto-start tour for newly active users (who just completed the wizard)
@@ -449,7 +541,7 @@ export default function Home() {
       {!isLoadingDashboardData && dashboardData && (
         <div
           key={viewMode}
-          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500"
+          className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500"
           data-tour="dashboard-stats"
         >
           {/* Active Policies */}
@@ -463,23 +555,6 @@ export default function Home() {
                   </div>
                   <p className="font-bold text-foreground break-words leading-tight transition-all duration-300" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
                     {(currentData?.active_policies ?? 0).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* New Policies */}
-          <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between">
-                <div className="w-full overflow-hidden min-w-0">
-                  <div className="flex items-center gap-2 mb-3">
-                    <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <p className="text-sm font-medium text-muted-foreground" style={{ fontSize: 'clamp(0.75rem, 1vw + 0.5rem, 0.875rem)' }}>New Policies (Last Week)</p>
-                  </div>
-                  <p className="font-bold text-foreground break-words leading-tight transition-all duration-300" style={{ fontSize: 'clamp(1rem, 1.2vw + 0.75rem, 1.5rem)' }}>
-                    {(currentData?.new_policies ?? 0).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -509,13 +584,13 @@ export default function Home() {
       {isLoadingDashboardData && (
         <div className="space-y-4">
           <div className="h-8 bg-muted animate-pulse rounded w-48" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {Array.from({ length: 3 }).map((_, i) => (
               <Card key={i} className="professional-card rounded-md">
                 <CardContent className="p-4">
                   <div className="animate-pulse">
-                    <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
-                    <div className="h-8 bg-gray-200 rounded w-1/2"></div>
+                    <div className="h-4 bg-muted rounded w-3/4 mb-4"></div>
+                    <div className="h-8 bg-muted rounded w-1/2"></div>
                   </div>
                 </CardContent>
               </Card>
@@ -524,139 +599,75 @@ export default function Home() {
         </div>
       )}
 
-      {/* Pie Chart and Scoreboard Side by Side */}
+      {/* Production Progress + Top Producers Side by Side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Carrier Distribution Pie Chart */}
-        {isLoadingDashboardData ? (
-          <Card className="professional-card rounded-md">
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
-                <BarChart3 className="h-5 w-5 text-foreground" />
-                <span>Active Policies by Carrier</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80 flex items-center justify-center">
-                <div className="h-64 w-64 rounded-full bg-muted animate-pulse" />
-              </div>
-            </CardContent>
-          </Card>
-        ) : !isLoadingDashboardData && currentData?.carriers_active ? (
-          <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg" key={`pie-${viewMode}`}>
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
-                <BarChart3 className="h-5 w-5 text-foreground" />
-                <span>Active Policies by Carrier</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80 animate-in fade-in duration-500">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieChartData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={renderCustomLabel}
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
-                      isAnimationActive={true}
-                      animationDuration={800}
-                      animationBegin={0}
-                    >
-                      {pieChartData.map((entry: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      content={({ active, payload }) => {
-                        if (!active || !payload || !payload[0]) return null
-                        
-                        const data = payload[0].payload
-                        
-                        // If it's "Others", show detailed breakdown
-                        if (data?.isOthers && data?.originalCarriers && data.originalCarriers.length > 0) {
-                          return (
-                            <div
-                              style={{
-                                backgroundColor: 'hsl(var(--card))',
-                                border: '1px solid hsl(var(--border))',
-                                borderRadius: '8px',
-                                padding: '12px',
-                                color: 'hsl(var(--foreground))',
-                                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
-                              }}
-                            >
-                              <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>
-                                Others: {data.value} policies ({data.percentage}%)
-                              </div>
-                              <div style={{ borderTop: '1px solid hsl(var(--border))', paddingTop: '8px' }}>
-                                <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'hsl(var(--muted-foreground))' }}>
-                                  Breakdown:
-                                </div>
-                                {data.originalCarriers.map((carrier: any, idx: number) => (
-                                  <div
-                                    key={idx}
-                                    style={{
-                                      fontSize: '12px',
-                                      padding: '4px 0',
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      gap: '12px'
-                                    }}
-                                  >
-                                    <span>{carrier.name}:</span>
-                                    <span style={{ fontWeight: '500' }}>
-                                      {carrier.value} policies ({carrier.percentage}%)
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )
-                        }
-                        
-                        // Regular tooltip for other slices
-                        return (
-                          <div
-                            style={{
-                              backgroundColor: 'hsl(var(--card))',
-                              border: '1px solid hsl(var(--border))',
-                              borderRadius: '8px',
-                              padding: '8px 12px',
-                              color: 'hsl(var(--foreground))'
-                            }}
-                          >
-                            <div style={{ fontWeight: '500' }}>
-                              {data.name}: {data.value} policies ({data.percentage}%)
-                            </div>
-                          </div>
-                        )
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+        {/* Production Progress */}
+        <ProductionProgressCard
+          viewMode={viewMode}
+          ytdProduction={ytdProduction}
+          mtdProduction={mtdProduction}
+          loading={loadingProduction}
+        />
 
         {/* Top Producers */}
         <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
           <CardHeader>
-            <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
-              <Users className="h-5 w-5 text-foreground" />
-              <span>Top Producers</span>
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
+                <Users className="h-5 w-5 text-foreground" />
+                <span>Top Producers</span>
+              </CardTitle>
+              <div className="flex items-center gap-1 border rounded-md p-1">
+                <Button
+                  variant={topProducersPeriod === 'ytd' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setTopProducersPeriod('ytd')}
+                  className="h-8 px-3 text-xs"
+                >
+                  YTD
+                </Button>
+                <Button
+                  variant={topProducersPeriod === 'mtd' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setTopProducersPeriod('mtd')}
+                  className="h-8 px-3 text-xs"
+                >
+                  MTD
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-sm text-muted-foreground mb-4">
               {isLoadingDashboardData ? (
                 <span className="inline-block h-4 w-32 bg-muted animate-pulse rounded" />
               ) : (
-                `Week of ${formattedDateRange}`
+                <div className="flex flex-col gap-1">
+                  <span>
+                    {topProducersPeriod === 'ytd' ? 'Year to Date' : 'Month to Date'}
+                    {(() => {
+                      const today = new Date()
+                      const year = today.getFullYear()
+                      const month = today.getMonth()
+                      const day = today.getDate()
+                      
+                      let startDate: Date
+                      if (topProducersPeriod === 'ytd') {
+                        startDate = new Date(year, 0, 1) // Jan 1
+                      } else {
+                        startDate = new Date(year, month, 1) // First of current month
+                      }
+                      const endDate = new Date(year, month, day)
+                      
+                      const formatDate = (date: Date) => {
+                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      }
+                      
+                      return ` • ${formatDate(startDate)} - ${formatDate(endDate)}`
+                    })()}
+                  </span>
+                  <span className="text-xs">Based on Submitted Policies</span>
+                </div>
               )}
             </div>
             <div className="space-y-4">
@@ -699,6 +710,109 @@ export default function Home() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Carrier Distribution Pie Chart - Full Width */}
+      {!isLoadingDashboardData && currentData?.carriers_active && (
+        <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg" key={`pie-${viewMode}`}>
+          <CardHeader>
+            <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
+              <BarChart3 className="h-5 w-5 text-foreground" />
+              <span>Active Policies by Carrier</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80 animate-in fade-in duration-500">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieChartData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={renderCustomLabel}
+                    outerRadius={120}
+                    fill="#8884d8"
+                    dataKey="value"
+                    isAnimationActive={true}
+                    animationDuration={800}
+                    animationBegin={0}
+                  >
+                    {pieChartData.map((entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || !payload[0]) return null
+
+                      const data = payload[0].payload
+
+                      // If it's "Others", show detailed breakdown
+                      if (data?.isOthers && data?.originalCarriers && data.originalCarriers.length > 0) {
+                        return (
+                          <div
+                            style={{
+                              backgroundColor: 'hsl(var(--card))',
+                              border: '1px solid hsl(var(--border))',
+                              borderRadius: '8px',
+                              padding: '12px',
+                              color: 'hsl(var(--foreground))',
+                              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+                            }}
+                          >
+                            <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>
+                              Others: {data.value} policies ({data.percentage}%)
+                            </div>
+                            <div style={{ borderTop: '1px solid hsl(var(--border))', paddingTop: '8px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'hsl(var(--muted-foreground))' }}>
+                                Breakdown:
+                              </div>
+                              {data.originalCarriers.map((carrier: any, idx: number) => (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    fontSize: '12px',
+                                    padding: '4px 0',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    gap: '12px'
+                                  }}
+                                >
+                                  <span>{carrier.name}:</span>
+                                  <span style={{ fontWeight: '500' }}>
+                                    {carrier.value} policies ({carrier.percentage}%)
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      }
+
+                      // Regular tooltip for other slices
+                      return (
+                        <div
+                          style={{
+                            backgroundColor: 'hsl(var(--card))',
+                            border: '1px solid hsl(var(--border))',
+                            borderRadius: '8px',
+                            padding: '8px 12px',
+                            color: 'hsl(var(--foreground))'
+                          }}
+                        >
+                          <div style={{ fontWeight: '500' }}>
+                            {data.name}: {data.value} policies ({data.percentage}%)
+                          </div>
+                        </div>
+                      )
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Production Chart - COMMENTED OUT */}
       {/* <Card className="professional-card">

@@ -272,6 +272,8 @@ export async function POST(req: NextRequest) {
       monthly_premium,
       annual_premium,
       policy_effective_date,
+      billing_day_of_month,
+      billing_weekday,
       billing_cycle,
       lead_source,
       status,
@@ -314,6 +316,8 @@ export async function POST(req: NextRequest) {
         client_address: client_address || existingDeal.client_address,
         application_number: application_number ||
           existingDeal.application_number,
+        billing_day_of_month: billing_day_of_month || existingDeal.billing_day_of_month,
+        billing_weekday: billing_weekday || existingDeal.billing_weekday,
         billing_cycle: billing_cycle || existingDeal.billing_cycle,
         lead_source: lead_source || existingDeal.lead_source,
         notes: notes || existingDeal.notes,
@@ -598,6 +602,8 @@ export async function POST(req: NextRequest) {
         monthly_premium,
         annual_premium,
         policy_effective_date,
+        billing_day_of_month,
+        billing_weekday,
         billing_cycle,
         lead_source,
         status: status || "pending", // Changed from 'draft' to 'pending' to match book of business

@@ -98,21 +98,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    // Use getUser() to validate session with server (not cached getSession())
-    // This ensures the session is valid and not stale from localStorage
+    // Use getSession() instead of getUser() - reads from localStorage instantly, no network request
+    // Session is already refreshed by middleware, no need to validate with server on client
     const initializeAuth = async () => {
       console.log('[AuthProvider] Starting auth initialization...')
       try {
-        // Add timeout to prevent hanging on hard refresh (Supabase getUser can hang)
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Auth timeout after 10s')), 10000)
-        )
-
-        const { data: { user: authUser }, error } = await Promise.race([
-          supabase.auth.getUser(),
-          timeoutPromise
-        ])
-        console.log('[AuthProvider] getUser result:', { authUser: !!authUser, error: error?.message })
+        const { data: { session }, error } = await supabase.auth.getSession()
+        const authUser = session?.user ?? null
+        console.log('[AuthProvider] getSession result:', { hasSession: !!session, error: error?.message })
 
         if (error || !authUser) {
           console.log('[AuthProvider] No user or error, setting loading=false')

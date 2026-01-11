@@ -25,9 +25,9 @@ export async function middleware(req: NextRequest) {
     }
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // Use getSession() instead of getUser() - faster, no network request, handles token refresh
+  const { data: { session } } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   // Public routes that don't require authentication
   const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/setup-account']

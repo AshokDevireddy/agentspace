@@ -63,11 +63,51 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Fetch session on server (uses cookies, reliable on hard refresh)
+  // This eliminates the client-side session recovery delay
+  let initialUser = null;
+  let initialUserData = null;
+
+  try {
+    const supabase = await createServerClient();
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (session?.user) {
+      // Extract only serializable user properties (methods can't be serialized)
+      initialUser = {
+        id: session.user.id,
+        email: session.user.email,
+        user_metadata: session.user.user_metadata,
+      };
+
+      // Fetch user profile data
+      const { data: userData } = await supabase
+        .from('users')
+        .select('role, status, theme_mode, is_admin, agency_id, subscription_tier')
+        .eq('auth_user_id', session.user.id)
+        .single();
+
+      if (userData) {
+        initialUserData = {
+          role: userData.role as 'admin' | 'agent' | 'client',
+          status: userData.status as 'active' | 'onboarding' | 'invited' | 'inactive',
+          theme_mode: userData.theme_mode as 'light' | 'dark' | 'system' | null,
+          is_admin: userData.is_admin || false,
+          agency_id: userData.agency_id || null,
+          subscription_tier: (userData.subscription_tier || 'free') as 'free' | 'pro' | 'expert',
+        };
+      }
+    }
+  } catch (error) {
+    // Log but don't crash - AuthProvider will handle client-side fallback
+    console.error('[Layout] Error fetching initial session:', error);
+  }
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
@@ -79,7 +119,10 @@ export default function RootLayout({
               enableSystem
               disableTransitionOnChange
             >
-              <AuthProvider>
+              <AuthProvider
+                initialUser={initialUser}
+                initialUserData={initialUserData}
+              >
                 <ThemeCoordinator>
                   <NotificationProvider>
                     <TourProvider>

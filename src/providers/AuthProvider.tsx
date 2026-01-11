@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { AUTH_RETRY_TIMEOUTS } from '@/lib/auth/constants'
@@ -36,12 +36,38 @@ const AuthContext = createContext<AuthContextType>({
   refreshUserData: async () => {},
 })
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [userData, setUserData] = useState<UserData | null>(null)
-  const [loading, setLoading] = useState(true)
+// Serializable user data passed from server (full User type has methods that can't be serialized)
+type SerializedUser = {
+  id: string
+  email?: string
+  user_metadata?: Record<string, unknown>
+}
+
+type AuthProviderProps = {
+  children: React.ReactNode
+  initialUser?: SerializedUser | null
+  initialUserData?: UserData | null
+}
+
+// Auth timeout for edge cases when server didn't provide session (8 seconds max)
+const AUTH_FALLBACK_TIMEOUT_MS = 8000
+
+// Pages that don't require auth redirect
+const AUTH_PAGES = ['/login', '/register', '/forgot-password', '/reset-password', '/setup-account', '/auth/confirm', '/auth/callback']
+
+export function AuthProvider({
+  children,
+  initialUser = null,
+  initialUserData = null
+}: AuthProviderProps) {
+  // Start with server-provided data (no loading flash on hard refresh!)
+  const [user, setUser] = useState<User | null>(initialUser as User | null)
+  const [userData, setUserData] = useState<UserData | null>(initialUserData)
+  // If server provided user, we're not in loading state
+  const [loading, setLoading] = useState(!initialUser)
   const [isHydrated, setIsHydrated] = useState(false)
   const router = useRouter()
+  const pathname = usePathname()
   const queryClient = useQueryClient()
   const supabaseRef = useRef<ReturnType<typeof createClient>>(null!)
   supabaseRef.current ??= createClient()
@@ -99,10 +125,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    // Hybrid approach: Try getSession() first (fast, from cache), fallback to getUser() (server validation)
-    // This handles hard refresh where localStorage cache may be stale but server session is valid
+    // If server already provided user data, skip client-side recovery
+    // Just set up the auth state listener for logout/token refresh
+    if (initialUser && user) {
+      console.log('[AuthProvider] Using server-provided session, skipping client-side recovery')
+      setLoading(false)
+
+      // Set up auth state listener for logout/token refresh
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          console.log('[AuthProvider] Auth state changed:', event)
+          if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+            if (session?.user) {
+              setUser(session.user)
+              const data = await fetchUserData(session.user.id)
+              setUserData(data)
+            }
+          } else if (event === 'SIGNED_OUT') {
+            setUser(null)
+            setUserData(null)
+          }
+        }
+      )
+
+      return () => {
+        subscription.unsubscribe()
+      }
+    }
+
+    // Server didn't provide user - need to do client-side recovery
+    // This handles edge cases like expired tokens or auth pages
     const initializeAuth = async () => {
-      console.log('[AuthProvider] Starting auth initialization...')
+      console.log('[AuthProvider] Starting client-side auth initialization...')
+
+      // Set up timeout to prevent infinite loading
+      const isAuthPage = AUTH_PAGES.some(page => pathname?.startsWith(page))
+      let timeoutId: NodeJS.Timeout | null = null
+
+      if (!isAuthPage) {
+        timeoutId = setTimeout(() => {
+          console.log('[AuthProvider] Auth timeout reached - redirecting to login')
+          setUser(null)
+          setUserData(null)
+          setLoading(false)
+          router.push('/login')
+        }, AUTH_FALLBACK_TIMEOUT_MS)
+      }
+
       try {
         // Step 1: Try getSession() first - instant, reads from localStorage/IndexedDB
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
@@ -111,6 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (session?.user) {
           // Session found in cache - use it (fast path for normal navigation)
           console.log('[AuthProvider] Session found in cache, using cached user')
+          if (timeoutId) clearTimeout(timeoutId)
           setUser(session.user)
           const data = await fetchUserData(session.user.id)
           setUserData(data)
@@ -123,13 +193,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // but the server still has valid session cookies
         console.log('[AuthProvider] No cached session, validating with server...')
 
-        // Retry with exponential backoff - handles Vercel cold starts (2-8s)
-        // Uses AUTH_RETRY_TIMEOUTS from constants: [5000, 8000, 15000]
+        // Use shorter retry timeouts since we have the overall timeout
+        const shortTimeouts = [3000, 4000]
         let lastError: Error | null = null
 
-        for (let attempt = 0; attempt < AUTH_RETRY_TIMEOUTS.length; attempt++) {
-          const timeout = AUTH_RETRY_TIMEOUTS[attempt]
-          console.log(`[AuthProvider] Server validation attempt ${attempt + 1}/${AUTH_RETRY_TIMEOUTS.length} (timeout: ${timeout}ms)`)
+        for (let attempt = 0; attempt < shortTimeouts.length; attempt++) {
+          const timeout = shortTimeouts[attempt]
+          console.log(`[AuthProvider] Server validation attempt ${attempt + 1}/${shortTimeouts.length} (timeout: ${timeout}ms)`)
 
           try {
             const timeoutPromise = new Promise<never>((_, reject) =>
@@ -143,6 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             if (serverUser && !userError) {
               console.log('[AuthProvider] Server validation successful, user authenticated')
+              if (timeoutId) clearTimeout(timeoutId)
               setUser(serverUser)
               const data = await fetchUserData(serverUser.id)
               setUserData(data)
@@ -167,19 +238,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         // All retries exhausted or server confirmed no session
-        console.log('[AuthProvider] No valid session found after retries, user is logged out')
+        console.log('[AuthProvider] No valid session found after retries')
         if (lastError) {
           console.error('[AuthProvider] Last error was:', lastError.message)
         }
+
+        if (timeoutId) clearTimeout(timeoutId)
         setUser(null)
         setUserData(null)
         setLoading(false)
+
+        // Auto-redirect to login if not on an auth page
+        if (!isAuthPage) {
+          console.log('[AuthProvider] Not authenticated, redirecting to login')
+          router.push('/login')
+        }
       } catch (err) {
         console.error('[AuthProvider] Unexpected auth error:', err)
+        if (timeoutId) clearTimeout(timeoutId)
         // On unexpected error, set user to null and allow page to render
         setUser(null)
         setUserData(null)
         setLoading(false)
+
+        // Auto-redirect to login if not on an auth page
+        if (!isAuthPage) {
+          router.push('/login')
+        }
       }
     }
 
@@ -188,6 +273,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes (login/logout/token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('[AuthProvider] Auth state changed:', event)
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
           if (session?.user) {
             setUser(session.user)
@@ -205,7 +291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       subscription.unsubscribe()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHydrated]) // supabase client is stable via ref
+  }, [isHydrated, initialUser, pathname]) // supabase client is stable via ref
 
   const signIn = useCallback(async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
     // Prevent concurrent signIn calls to avoid race conditions

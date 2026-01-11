@@ -1,5 +1,11 @@
-export const AUTH_TIMEOUT_MS = 5000
+// Single request timeout - used for individual auth operations
+export const AUTH_TIMEOUT_MS = 15000 // Increased from 5000 to handle Vercel cold starts (2-8s)
 export const REDIRECT_DELAY_MS = 2000
+
+// Retry timeouts for auth server validation (used in AuthProvider)
+// Handles hard refresh scenarios where localStorage is empty but server session is valid
+// Uses exponential backoff: 5s -> 8s -> 15s (total ~28s with retries)
+export const AUTH_RETRY_TIMEOUTS = [5000, 8000, 15000] as const
 
 export interface HashTokens {
   accessToken: string

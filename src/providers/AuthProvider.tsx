@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useRef, useMemo, useCal
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
+import { AUTH_RETRY_TIMEOUTS } from '@/lib/auth/constants'
 import type { User } from '@supabase/supabase-js'
 
 export type UserData = {
@@ -122,32 +123,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // but the server still has valid session cookies
         console.log('[AuthProvider] No cached session, validating with server...')
 
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Auth server validation timeout')), 5000)
-        )
+        // Retry with exponential backoff - handles Vercel cold starts (2-8s)
+        // Uses AUTH_RETRY_TIMEOUTS from constants: [5000, 8000, 15000]
+        let lastError: Error | null = null
 
-        const { data: { user: serverUser }, error: userError } = await Promise.race([
-          supabase.auth.getUser(),
-          timeoutPromise
-        ]) as Awaited<ReturnType<typeof supabase.auth.getUser>>
+        for (let attempt = 0; attempt < AUTH_RETRY_TIMEOUTS.length; attempt++) {
+          const timeout = AUTH_RETRY_TIMEOUTS[attempt]
+          console.log(`[AuthProvider] Server validation attempt ${attempt + 1}/${AUTH_RETRY_TIMEOUTS.length} (timeout: ${timeout}ms)`)
 
-        if (serverUser && !userError) {
-          console.log('[AuthProvider] Server validation successful, user authenticated')
-          setUser(serverUser)
-          const data = await fetchUserData(serverUser.id)
-          setUserData(data)
-          setLoading(false)
-          return
+          try {
+            const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`Auth server validation timeout (${timeout}ms)`)), timeout)
+            )
+
+            const { data: { user: serverUser }, error: userError } = await Promise.race([
+              supabase.auth.getUser(),
+              timeoutPromise
+            ]) as Awaited<ReturnType<typeof supabase.auth.getUser>>
+
+            if (serverUser && !userError) {
+              console.log('[AuthProvider] Server validation successful, user authenticated')
+              setUser(serverUser)
+              const data = await fetchUserData(serverUser.id)
+              setUserData(data)
+              setLoading(false)
+              return
+            }
+
+            // No user returned but no error - user is definitely logged out
+            if (!userError) {
+              console.log('[AuthProvider] Server confirmed no valid session')
+              break
+            }
+
+            // Auth error - might be temporary, try again
+            lastError = userError
+            console.warn(`[AuthProvider] Attempt ${attempt + 1} failed:`, userError.message)
+          } catch (err) {
+            lastError = err instanceof Error ? err : new Error(String(err))
+            console.warn(`[AuthProvider] Attempt ${attempt + 1} timed out or errored:`, lastError.message)
+            // Continue to next attempt
+          }
         }
 
-        // No session in cache and server validation failed - user is truly logged out
-        console.log('[AuthProvider] No valid session found, user is logged out')
+        // All retries exhausted or server confirmed no session
+        console.log('[AuthProvider] No valid session found after retries, user is logged out')
+        if (lastError) {
+          console.error('[AuthProvider] Last error was:', lastError.message)
+        }
         setUser(null)
         setUserData(null)
         setLoading(false)
       } catch (err) {
-        console.error('[AuthProvider] Auth error (possibly timeout):', err)
-        // On timeout or error, set user to null and allow page to render
+        console.error('[AuthProvider] Unexpected auth error:', err)
+        // On unexpected error, set user to null and allow page to render
         setUser(null)
         setUserData(null)
         setLoading(false)

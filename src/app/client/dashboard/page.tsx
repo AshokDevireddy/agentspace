@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { FileText, User, Mail, Phone, MapPin, Calendar, DollarSign, CreditCard, Hash, Building2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { useAuth } from '@/providers/AuthProvider'
 
 interface Deal {
   id: string
@@ -57,14 +58,13 @@ interface AgencyData {
 export default function ClientDashboard() {
   const router = useRouter()
   const supabase = createClient()
+  const { user: authUser, userData: authUserData, loading: authLoading } = useAuth()
 
-  // Query for authenticated user and their profile
+  // Query for full user profile data (extends AuthProvider's basic userData)
   const { data: userData, isLoading: userLoading, error: userError } = useQuery({
     queryKey: queryKeys.clientUser(),
     queryFn: async () => {
-      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
-
-      if (authError || !authUser) {
+      if (!authUser) {
         throw new Error('Not authenticated')
       }
 
@@ -84,8 +84,10 @@ export default function ClientDashboard() {
 
       return profile as UserData
     },
+    // Wait for AuthProvider to complete before running this query
+    enabled: !authLoading && !!authUser,
     staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: false,
+    retry: 2, // Allow retries for resilience
   })
 
   // Query for agency data
@@ -133,6 +135,22 @@ export default function ClientDashboard() {
 
   // Handle auth errors - redirect to login
   useEffect(() => {
+    // Wait for auth to complete before making redirect decisions
+    if (authLoading) return
+
+    // If no user after auth completes, redirect to login
+    if (!authUser) {
+      router.push('/login')
+      return
+    }
+
+    // If user is not a client (from AuthProvider), redirect to main dashboard
+    if (authUserData?.role && authUserData.role !== 'client') {
+      router.push('/')
+      return
+    }
+
+    // Handle query errors
     if (userError) {
       const errorMessage = userError.message
       if (errorMessage === 'Not authenticated' || errorMessage === 'Profile not found') {
@@ -141,13 +159,14 @@ export default function ClientDashboard() {
         router.push('/')
       }
     }
-  }, [userError, router])
+  }, [authLoading, authUser, authUserData, userError, router])
 
   // Derived values
   const user = userData
   const agencyName = agencyData?.display_name || agencyData?.name || "AgentSpace"
   const agencyLogo = agencyData?.logo_url || null
-  const loading = userLoading || (!!userData && dealsLoading)
+  // Include authLoading to prevent rendering before auth state is known
+  const loading = authLoading || userLoading || (!!userData && dealsLoading)
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()

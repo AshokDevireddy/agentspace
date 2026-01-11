@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation'
 import Navigation from '@/components/navigation'
 import OnboardingTour from '@/components/onboarding-tour'
-import { Building2 } from 'lucide-react'
+import { Building2, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { useAgencyBranding } from '@/contexts/AgencyBrandingContext'
 import { useAuth } from '@/providers/AuthProvider'
@@ -82,6 +82,19 @@ export default function ClientLayout({
         <main className="pt-20">
           {children}
         </main>
+      </div>
+    )
+  }
+
+  // Show loading screen for protected pages while auth is initializing
+  // This prevents race conditions where pages try to fetch data before auth is ready
+  if (loading && !isAuthPage) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
       </div>
     )
   }

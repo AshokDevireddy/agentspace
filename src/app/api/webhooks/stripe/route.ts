@@ -188,8 +188,9 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
 
     // Check for required billing cycle dates (future-proof for API version 2025-03-31)
     // Try subscription-level fields first (current API), then fall back to item-level fields (new API)
-    const periodStart = subscription.current_period_start || subscription.items.data[0]?.current_period_start;
-    const periodEnd = subscription.current_period_end || subscription.items.data[0]?.current_period_end;
+    // Note: current_period_start/end deprecated at subscription level in 2025-03-31, moved to item level
+    const periodStart = (subscription as any).current_period_start || (subscription.items.data[0] as any)?.current_period_start;
+    const periodEnd = (subscription as any).current_period_end || (subscription.items.data[0] as any)?.current_period_end;
 
     if (!periodStart || !periodEnd) {
       console.error('Missing billing cycle dates in subscription:', subscription.id);
@@ -201,7 +202,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
     console.log(`📅 Billing cycle dates for subscription ${subscription.id}:`, {
       periodStart,
       periodEnd,
-      source: subscription.current_period_start ? 'subscription-level' : 'item-level',
+      source: (subscription as any).current_period_start ? 'subscription-level' : 'item-level',
       periodStartDate: new Date(periodStart * 1000).toISOString(),
       periodEndDate: new Date(periodEnd * 1000).toISOString(),
     });
@@ -379,16 +380,17 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
 
   // Check for required billing cycle dates (future-proof for API version 2025-03-31)
   // Try subscription-level fields first (current API), then fall back to item-level fields (new API)
-  const periodStart = subscription.current_period_start || subscription.items.data[0]?.current_period_start;
-  const periodEnd = subscription.current_period_end || subscription.items.data[0]?.current_period_end;
+  // Note: current_period_start/end deprecated at subscription level in 2025-03-31, moved to item level
+  const periodStart = (subscription as any).current_period_start || (subscription.items.data[0] as any)?.current_period_start;
+  const periodEnd = (subscription as any).current_period_end || (subscription.items.data[0] as any)?.current_period_end;
 
   if (!periodStart || !periodEnd) {
     console.error('❌ Missing billing cycle dates in subscription:', subscription.id);
     console.error('Checked locations:');
-    console.error('  - subscription.current_period_start:', subscription.current_period_start);
-    console.error('  - subscription.current_period_end:', subscription.current_period_end);
-    console.error('  - subscription.items.data[0]?.current_period_start:', subscription.items.data[0]?.current_period_start);
-    console.error('  - subscription.items.data[0]?.current_period_end:', subscription.items.data[0]?.current_period_end);
+    console.error('  - subscription.current_period_start:', (subscription as any).current_period_start);
+    console.error('  - subscription.current_period_end:', (subscription as any).current_period_end);
+    console.error('  - subscription.items.data[0]?.current_period_start:', (subscription.items.data[0] as any)?.current_period_start);
+    console.error('  - subscription.items.data[0]?.current_period_end:', (subscription.items.data[0] as any)?.current_period_end);
     console.error('Subscription items:', JSON.stringify(subscription.items.data, null, 2));
     return;
   }
@@ -396,7 +398,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
   console.log(`📅 Billing cycle dates found:`, {
     periodStart,
     periodEnd,
-    source: subscription.current_period_start ? 'subscription-level' : 'item-level',
+    source: (subscription as any).current_period_start ? 'subscription-level' : 'item-level',
     periodStartDate: new Date(periodStart * 1000).toISOString(),
     periodEndDate: new Date(periodEnd * 1000).toISOString(),
   });
@@ -490,7 +492,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
               console.log(`🗑️  Removing old metered price: ${item.price.id}`);
               itemsToUpdate.push({
                 id: item.id,
-                deleted: true,
+                deleted: true as any, // Type assertion needed for Stripe API
               });
             }
           }

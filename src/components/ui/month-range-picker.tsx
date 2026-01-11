@@ -22,7 +22,8 @@ export function MonthRangePicker({ startMonth, endMonth, onRangeChange, disabled
   const [open, setOpen] = useState(false)
   // SSR-safe: useClientDate returns deterministic values on server, actual values on client
   const clientDate = useClientDate()
-  const [displayYear, setDisplayYear] = useState(clientDate.year)
+  // Initialize with 2025 to match useClientDate server default, then sync via useEffect
+  const [displayYear, setDisplayYear] = useState(2025)
   const [selectingStart, setSelectingStart] = useState(true)
   const [hoveredMonth, setHoveredMonth] = useState<string | null>(null)
 

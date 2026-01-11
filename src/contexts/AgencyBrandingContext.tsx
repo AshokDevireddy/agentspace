@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react'
+import React, { createContext, useContext, useMemo, useSyncExternalStore } from 'react'
 import { useAgencyBrandingByDomain } from '@/hooks/useUserQueries'
 import { isWhiteLabelDomain } from '@/lib/whitelabel'
 
@@ -30,13 +30,14 @@ export function useAgencyBranding() {
   return useContext(AgencyBrandingContext)
 }
 
-export function AgencyBrandingProvider({ children }: { children: React.ReactNode }) {
-  const [hostname, setHostname] = useState<string | null>(null)
+// SSR-safe hostname detection using useSyncExternalStore
+const hostnameSubscribe = () => () => {}
+const getHostname = () => typeof window !== 'undefined' ? window.location.hostname : null
+const getServerHostname = () => null
 
-  // Detect hostname on client side
-  useEffect(() => {
-    setHostname(window.location.hostname)
-  }, [])
+export function AgencyBrandingProvider({ children }: { children: React.ReactNode }) {
+  // SSR-safe: returns null on server, actual hostname on client after hydration
+  const hostname = useSyncExternalStore(hostnameSubscribe, getHostname, getServerHostname)
 
   // Determine if this is a white-label domain
   const isWhiteLabel = hostname ? isWhiteLabelDomain(hostname) : false

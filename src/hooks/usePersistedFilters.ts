@@ -16,6 +16,10 @@ export function usePersistedFilters<T extends Record<string, unknown>>(
   const preserveRef = useRef(preserveOnClear)
   preserveRef.current = preserveOnClear
 
+  // Cache refs for snapshot results - critical for useSyncExternalStore
+  const localCacheRef = useRef<{ raw: string | null; parsed: T } | null>(null)
+  const appliedCacheRef = useRef<{ raw: string | null; parsed: T } | null>(null)
+
   // Subscribe function for localStorage changes
   const subscribe = useCallback((callback: () => void) => {
     const handleStorage = (e: StorageEvent) => {
@@ -40,11 +44,17 @@ export function usePersistedFilters<T extends Record<string, unknown>>(
     }
   }, [key])
 
-  // Snapshot functions
+  // Snapshot functions - MUST return cached value if data hasn't changed
   const getLocalSnapshot = useCallback(() => {
     try {
       const stored = localStorage.getItem(`filter_${key}_local`)
-      return stored ? { ...initialRef.current, ...JSON.parse(stored) } : initialRef.current
+      // Return cached value if raw string is the same
+      if (localCacheRef.current && localCacheRef.current.raw === stored) {
+        return localCacheRef.current.parsed
+      }
+      const parsed = stored ? { ...initialRef.current, ...JSON.parse(stored) } : initialRef.current
+      localCacheRef.current = { raw: stored, parsed }
+      return parsed
     } catch {
       return initialRef.current
     }
@@ -53,7 +63,13 @@ export function usePersistedFilters<T extends Record<string, unknown>>(
   const getAppliedSnapshot = useCallback(() => {
     try {
       const stored = localStorage.getItem(`filter_${key}_applied`)
-      return stored ? { ...initialRef.current, ...JSON.parse(stored) } : initialRef.current
+      // Return cached value if raw string is the same
+      if (appliedCacheRef.current && appliedCacheRef.current.raw === stored) {
+        return appliedCacheRef.current.parsed
+      }
+      const parsed = stored ? { ...initialRef.current, ...JSON.parse(stored) } : initialRef.current
+      appliedCacheRef.current = { raw: stored, parsed }
+      return parsed
     } catch {
       return initialRef.current
     }

@@ -26,23 +26,20 @@ export function SimpleSearchableSelect({
 }: SimpleSearchableSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [searchTerm, setSearchTerm] = React.useState("")
-  const [filteredOptions, setFilteredOptions] = React.useState(options)
   const dropdownRef = React.useRef<HTMLDivElement>(null)
 
-  // Filter options based on search term
-  React.useEffect(() => {
+  // Filter options based on search term - use useMemo instead of useEffect to avoid infinite loops
+  const filteredOptions = React.useMemo(() => {
     if (!options || !Array.isArray(options)) {
-      setFilteredOptions([])
-      return
+      return []
     }
 
-    const filtered = options.filter(option => {
+    return options.filter(option => {
       if (!option || typeof option.label !== 'string') {
         return false
       }
       return option.label.toLowerCase().includes(searchTerm.toLowerCase())
     })
-    setFilteredOptions(filtered)
   }, [searchTerm, options])
 
   // Close dropdown when clicking outside

@@ -20,7 +20,7 @@ export interface DateInfo {
  * @param serverDay - Day to use on server (e.g., 1)
  */
 export function useClientDate(
-  serverYear: number = 2024,
+  serverYear: number = 2025,
   serverMonth: number = 0,
   serverDay: number = 1
 ): DateInfo {

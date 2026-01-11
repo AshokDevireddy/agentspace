@@ -38,20 +38,26 @@ export default function Home() {
   const { startTour, setUserRole, isTourActive } = useTour()
   const [showWizard, setShowWizard] = useState(false)
   const [hasStartedTour, setHasStartedTour] = useState(false)
-  const [viewMode, setViewMode] = useState<'just_me' | 'downlines'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('dashboard_view_mode') as 'just_me' | 'downlines') || 'downlines'
-    }
-    return 'downlines'
-  })
+  // Initialize with default to avoid hydration mismatch, then sync from localStorage
+  const [viewMode, setViewMode] = useState<'just_me' | 'downlines'>('downlines')
+  const [isHydrated, setIsHydrated] = useState(false)
 
   const weekRange = useMemo(() => getWeekDateRange(), [])
   const queryClient = useQueryClient()
   const completeOnboardingMutation = useCompleteOnboarding()
 
+  // Sync viewMode from localStorage after hydration (avoids server/client mismatch)
   useEffect(() => {
-    localStorage.setItem('dashboard_view_mode', viewMode)
-  }, [viewMode])
+    setIsHydrated(true)
+    const saved = localStorage.getItem('dashboard_view_mode') as 'just_me' | 'downlines' | null
+    if (saved) setViewMode(saved)
+  }, [])
+
+  useEffect(() => {
+    if (isHydrated) {
+      localStorage.setItem('dashboard_view_mode', viewMode)
+    }
+  }, [viewMode, isHydrated])
 
   const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useApiFetch<any>(
     queryKeys.userProfile(user?.id),
@@ -148,10 +154,11 @@ export default function Home() {
   }
 
   // Decoupled loading states per section for better UX
+  // Include authLoading to show skeletons while auth is initializing (prevents "no data" flash)
   const isHeaderLoading = authLoading || profileLoading
-  const isStatsLoading = dashboardLoading
-  const isScoreboardLoading = scoreboardLoading
-  const isPieChartLoading = dashboardLoading
+  const isStatsLoading = authLoading || dashboardLoading
+  const isScoreboardLoading = authLoading || scoreboardLoading
+  const isPieChartLoading = authLoading || dashboardLoading
 
   // Background refetch indicators for stale-while-revalidate
   const isRefreshing = (dashboardFetching && !dashboardLoading) || (scoreboardFetching && !scoreboardLoading)

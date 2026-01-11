@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, createAdminClient } from '@/lib/supabase/server';
-import Stripe from 'stripe';
 import { TIER_PRICE_IDS } from '@/lib/subscription-tiers';
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-11-20.acacia',
-});
+import { stripe } from '@/lib/stripe';
+import Stripe from 'stripe';
 
 // Tier hierarchy for determining upgrades vs downgrades
 const TIER_HIERARCHY = {
@@ -161,9 +158,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Get current subscription details
-    const subscription = await stripe.subscriptions.retrieve(userData.stripe_subscription_id, {
+    const subscriptionResponse = await stripe.subscriptions.retrieve(userData.stripe_subscription_id, {
       expand: ['items.data.price', 'discounts']
     });
+    const subscription = subscriptionResponse as unknown as Stripe.Subscription;
 
     if (!subscription || subscription.items.data.length === 0) {
       return NextResponse.json({ error: 'Invalid subscription state' }, { status: 400 });
@@ -221,7 +219,7 @@ export async function POST(request: NextRequest) {
           console.log(`Removing old metered price: ${item.price.id}`);
           itemsToUpdate.push({
             id: item.id,
-            deleted: true,
+            deleted: true as any, // Type assertion needed for Stripe API
           });
         }
       }
@@ -308,11 +306,15 @@ export async function POST(request: NextRequest) {
       // The actual Stripe subscription update happens in the webhook when the billing cycle renews.
 
       // Get billing cycle end
-      const periodEnd = subscription.current_period_end;
+      // Try subscription-level field first, then fall back to item-level field (future API versions)
+      // Note: current_period_end deprecated at subscription level in 2025-03-31, moved to item level
+      const periodEnd = (subscription as any).current_period_end || (subscription.items.data[0] as any)?.current_period_end;
 
       if (!periodEnd) {
         console.error('❌ Missing period_end for downgrade scheduling:', subscription.id);
-        // console.error('Full subscription object:', JSON.stringify(subscription, null, 2));
+        console.error('Checked locations:');
+        console.error('  - subscription.current_period_end:', (subscription as any).current_period_end);
+        console.error('  - subscription.items.data[0]?.current_period_end:', (subscription.items.data[0] as any)?.current_period_end);
         return NextResponse.json({ error: 'Unable to schedule downgrade - missing billing cycle data' }, { status: 500 });
       }
 

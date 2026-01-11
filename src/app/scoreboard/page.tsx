@@ -71,7 +71,7 @@ export default function Scoreboard() {
   const isHydrated = useHydrated()
   const clientDate = useClientDate()
 
-  const [timeframe, setTimeframe] = useState<TimeframeOption>('past_90_days')
+  const [timeframe, setTimeframe] = useState<TimeframeOption>('ytd')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
@@ -83,6 +83,7 @@ export default function Scoreboard() {
   const [assumedMonthsTillLapse, setAssumedMonthsTillLapse] = useState<number>(5)
   const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
+  const [submittedFilter, setSubmittedFilter] = useState<'submitted' | 'issue_paid'>('submitted')
 
   // Update calendar state when client date becomes available after hydration
   useEffect(() => {
@@ -204,14 +205,16 @@ export default function Scoreboard() {
     [
       ...queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate),
       'with-lapse',
-      assumedMonthsTillLapse
+      assumedMonthsTillLapse,
+      submittedFilter
     ],
     'get_scoreboard_data_updated_lapsed_deals',
     {
       p_user_id: user?.id || '',
       p_start_date: dateRange.startDate,
       p_end_date: dateRange.endDate,
-      assumed_months_till_lapse: assumedMonthsTillLapse
+      assumed_months_till_lapse: assumedMonthsTillLapse,
+      submitted: submittedFilter === 'submitted'
     },
     {
       enabled: shouldFetch,
@@ -557,6 +560,25 @@ export default function Scoreboard() {
                 </div>
               </PopoverContent>
             </Popover>
+
+            <div className="flex items-center gap-1 border rounded-md p-1">
+              <Button
+                variant={submittedFilter === 'submitted' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setSubmittedFilter('submitted')}
+                className="h-9 px-3 text-sm"
+              >
+                Submitted
+              </Button>
+              <Button
+                variant={submittedFilter === 'issue_paid' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setSubmittedFilter('issue_paid')}
+                className="h-9 px-3 text-sm"
+              >
+                Issue Paid
+              </Button>
+            </div>
           </div>
         </div>
         <div className="flex items-center space-x-2 text-sm text-muted-foreground mt-1">

@@ -76,7 +76,8 @@ export async function POST(request: NextRequest) {
     const subscription = await stripe.subscriptions.retrieve(userData.stripe_subscription_id);
 
     // Calculate new billing cycle dates (advance by 1 month)
-    const currentPeriodEnd = subscription.current_period_end || subscription.items.data[0]?.current_period_end;
+    // Note: current_period_end deprecated at subscription level in 2025-03-31, moved to item level
+    const currentPeriodEnd = (subscription as any).current_period_end || (subscription.items.data[0] as any)?.current_period_end;
     if (!currentPeriodEnd) {
       return NextResponse.json({ error: 'Unable to determine billing cycle' }, { status: 500 });
     }
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest) {
             console.log(`Removing metered price: ${item.price.id}`);
             itemsToUpdate.push({
               id: item.id,
-              deleted: true,
+              deleted: true as any, // Type assertion needed for Stripe API
             });
           }
         }

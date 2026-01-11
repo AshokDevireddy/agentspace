@@ -1,6 +1,8 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { ProductionProgressCard } from "@/components/production-progress-card"
 import { Users, BarChart3, FileText, Briefcase, AlertCircle } from "lucide-react"
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useState, useEffect, useMemo, useCallback } from "react"
@@ -28,6 +30,7 @@ export default function Home() {
   const [hasStartedTour, setHasStartedTour] = useState(false)
   // SSR-safe localStorage hook - returns 'downlines' on server, synced value on client
   const [viewMode, setViewMode] = useLocalStorage<'just_me' | 'downlines'>('dashboard_view_mode', 'downlines')
+  const [topProducersPeriod, setTopProducersPeriod] = useState<'ytd' | 'mtd'>('ytd')
   const isHydrated = useHydrated()
 
   // SSR-safe week date range - returns deterministic dates on server, actual current week on client
@@ -65,6 +68,85 @@ export default function Home() {
     }
   )
 
+  // Calculate YTD/MTD date ranges for production and top producers
+  const productionDateRanges = useMemo(() => {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+    const todayStr = `${year}-${month}-${day}`
+
+    return {
+      ytd: { start: `${year}-01-01`, end: todayStr },
+      mtd: { start: `${year}-${month}-01`, end: todayStr }
+    }
+  }, [])
+
+  // Top producers query with YTD/MTD period selection
+  const topProducersRange = topProducersPeriod === 'ytd' ? productionDateRanges.ytd : productionDateRanges.mtd
+
+  const { data: topProducersResult, isLoading: topProducersLoading } = useSupabaseRpc<any>(
+    [...queryKeys.scoreboard(user?.id || '', topProducersRange.start, topProducersRange.end), topProducersPeriod],
+    'get_scoreboard_data',
+    { p_user_id: user?.id, p_start_date: topProducersRange.start, p_end_date: topProducersRange.end },
+    {
+      enabled: !!user?.id,
+      staleTime: 60 * 1000,
+      placeholderData: (previousData: any) => previousData,
+    }
+  )
+
+  // YTD production query for ProductionProgressCard
+  const { data: ytdProductionResult, isLoading: ytdProductionLoading } = useSupabaseRpc<any>(
+    ['production', 'ytd', user?.id, productionDateRanges.ytd.start, productionDateRanges.ytd.end],
+    'get_agents_debt_production',
+    {
+      p_user_id: user?.id,
+      p_agent_ids: user?.id ? [user.id] : [],
+      p_start_date: productionDateRanges.ytd.start,
+      p_end_date: productionDateRanges.ytd.end
+    },
+    {
+      enabled: !!user?.id,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+    }
+  )
+
+  // MTD production query for ProductionProgressCard
+  const { data: mtdProductionResult, isLoading: mtdProductionLoading } = useSupabaseRpc<any>(
+    ['production', 'mtd', user?.id, productionDateRanges.mtd.start, productionDateRanges.mtd.end],
+    'get_agents_debt_production',
+    {
+      p_user_id: user?.id,
+      p_agent_ids: user?.id ? [user.id] : [],
+      p_start_date: productionDateRanges.mtd.start,
+      p_end_date: productionDateRanges.mtd.end
+    },
+    {
+      enabled: !!user?.id,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+    }
+  )
+
+  // Extract production values for ProductionProgressCard
+  const ytdProduction = useMemo(() => {
+    const data = ytdProductionResult?.[0]
+    return {
+      individual: data?.individual_production || 0,
+      hierarchy: data?.hierarchy_production || 0
+    }
+  }, [ytdProductionResult])
+
+  const mtdProduction = useMemo(() => {
+    const data = mtdProductionResult?.[0]
+    return {
+      individual: data?.individual_production || 0,
+      hierarchy: data?.hierarchy_production || 0
+    }
+  }, [mtdProductionResult])
+
+  const isProductionLoading = ytdProductionLoading || mtdProductionLoading
+
   // Combined error state for main data
   const queryError = dashboardError || scoreboardError || profileError
 
@@ -80,15 +162,19 @@ export default function Home() {
     }
   }, [userData, setUserRole])
 
+  // Weekly scoreboard for date display
   const scoreboardData = scoreboardResult?.success ? scoreboardResult.data : null
+
+  // Top producers from YTD/MTD query
+  const topProducersData = topProducersResult?.success ? topProducersResult.data : null
   const topProducers: { rank: number; name: string; amount: string }[] = useMemo(() => {
-    if (!scoreboardData?.leaderboard) return []
-    return scoreboardData.leaderboard.slice(0, 5).map((producer: { rank: number; name: string; total: number }) => ({
+    if (!topProducersData?.leaderboard) return []
+    return topProducersData.leaderboard.slice(0, 5).map((producer: { rank: number; name: string; total: number }) => ({
       rank: producer.rank,
       name: producer.name,
       amount: `$${producer.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     }))
-  }, [scoreboardData])
+  }, [topProducersData])
 
   const dateRange = scoreboardData?.dateRange || { startDate: weekRange.startDate, endDate: weekRange.endDate }
 
@@ -325,6 +411,77 @@ export default function Home() {
         </div>
       )}
 
+      {/* Production Progress + Top Producers Side by Side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Production Progress */}
+        <ProductionProgressCard
+          viewMode={viewMode}
+          ytdProduction={ytdProduction}
+          mtdProduction={mtdProduction}
+          loading={isProductionLoading}
+        />
+
+        {/* Top Producers */}
+        <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
+                <Users className="h-5 w-5" />
+                <span>Top Producers</span>
+              </CardTitle>
+              <div className="flex items-center gap-1 border rounded-md p-1">
+                <Button
+                  variant={topProducersPeriod === 'ytd' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setTopProducersPeriod('ytd')}
+                  className="h-7 px-3 text-xs"
+                >
+                  YTD
+                </Button>
+                <Button
+                  variant={topProducersPeriod === 'mtd' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setTopProducersPeriod('mtd')}
+                  className="h-7 px-3 text-xs"
+                >
+                  MTD
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {topProducersLoading ? (
+                Array.from({ length: 5 }).map((_, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
+                    <div className="flex items-center space-x-3">
+                      <Skeleton className="w-8 h-8 rounded-full" />
+                      <Skeleton className="h-4 w-24" />
+                    </div>
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                ))
+              ) : topProducers.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No production data available</div>
+              ) : (
+                topProducers.map((producer) => (
+                  <div key={producer.rank} className="flex items-center justify-between p-3 rounded-lg bg-accent/30 hover:bg-accent/50 transition-colors">
+                    <div className="flex items-center space-x-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${producer.rank === 1 ? 'bg-yellow-500 text-yellow-900' : producer.rank === 2 ? 'bg-gray-400 text-gray-900' : producer.rank === 3 ? 'bg-orange-500 text-orange-900' : 'bg-muted text-muted-foreground'}`}>
+                        {producer.rank}
+                      </div>
+                      <span className="text-sm font-medium text-foreground">{producer.name}</span>
+                    </div>
+                    <span className="text-sm font-semibold text-foreground">{producer.amount}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Pie Chart Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {isPieChartLoading ? (
           <Card className="professional-card rounded-md">
@@ -387,47 +544,6 @@ export default function Home() {
             </CardContent>
           </Card>
         )}
-
-        <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
-              <Users className="h-5 w-5" />
-              <span>Top Producers</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm text-muted-foreground mb-4">
-              {isScoreboardLoading ? <Skeleton className="h-4 w-32" /> : `Week of ${formattedDateRange}`}
-            </div>
-            <div className="space-y-4">
-              {isScoreboardLoading ? (
-                Array.from({ length: 5 }).map((_, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
-                    <div className="flex items-center space-x-3">
-                      <Skeleton className="w-8 h-8 rounded-full" />
-                      <Skeleton className="h-4 w-24" />
-                    </div>
-                    <Skeleton className="h-4 w-16" />
-                  </div>
-                ))
-              ) : topProducers.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">No production data available</div>
-              ) : (
-                topProducers.map((producer) => (
-                  <div key={producer.rank} className="flex items-center justify-between p-3 rounded-lg bg-accent/30 hover:bg-accent/50 transition-colors">
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${producer.rank === 1 ? 'bg-yellow-500 text-yellow-900' : producer.rank === 2 ? 'bg-gray-400 text-gray-900' : producer.rank === 3 ? 'bg-orange-500 text-orange-900' : 'bg-muted text-muted-foreground'}`}>
-                        {producer.rank}
-                      </div>
-                      <span className="text-sm font-medium text-foreground">{producer.name}</span>
-                    </div>
-                    <span className="text-sm font-semibold text-foreground">{producer.amount}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )

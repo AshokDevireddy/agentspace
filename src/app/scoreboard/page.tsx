@@ -562,7 +562,11 @@ export default function Scoreboard() {
         <div className="flex items-center space-x-2 text-sm text-muted-foreground mt-1">
           <span>{getTimeframeLabel()}</span>
           <span>•</span>
-          <span>{formatDateRange(displayDateRange.startDate, displayDateRange.endDate)}</span>
+          {isHydrated ? (
+            <span>{formatDateRange(displayDateRange.startDate, displayDateRange.endDate)}</span>
+          ) : (
+            <span className="h-4 w-48 bg-muted animate-pulse rounded inline-block" />
+          )}
         </div>
       </div>
 
@@ -681,9 +685,10 @@ export default function Scoreboard() {
                   <tr className="border-b border-border">
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-0 bg-card z-10 w-20 min-w-[80px]" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Rank</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-[80px] bg-card z-10" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Name</th>
-                    {generateDateRange(displayDateRange.startDate, displayDateRange.endDate).map(date => (
-                      <th key={date} className="text-center py-3 px-4 font-medium text-muted-foreground whitespace-nowrap">
-                        {formatDateHeader(date)}
+                    {/* Use fixed placeholder columns for loading skeleton to avoid hydration mismatch */}
+                    {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                      <th key={i} className="text-center py-3 px-4 font-medium text-muted-foreground whitespace-nowrap">
+                        <span className="h-4 w-10 bg-muted animate-pulse rounded inline-block" />
                       </th>
                     ))}
                     <th className="text-right py-3 px-4 font-medium text-muted-foreground sticky right-0 bg-card z-10" style={{ boxShadow: '-2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Total</th>
@@ -698,8 +703,9 @@ export default function Scoreboard() {
                       <td className="py-3 px-4 sticky left-[80px] bg-card z-10" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>
                         <div className="h-5 w-32 bg-muted animate-pulse rounded" />
                       </td>
-                      {generateDateRange(displayDateRange.startDate, displayDateRange.endDate).map(date => (
-                        <td key={date} className="py-3 px-4 text-center">
+                      {/* Use fixed placeholder columns for loading skeleton to avoid hydration mismatch */}
+                      {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                        <td key={i} className="py-3 px-4 text-center">
                           <div className="h-5 w-20 bg-muted animate-pulse rounded mx-auto" />
                         </td>
                       ))}

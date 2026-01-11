@@ -314,30 +314,33 @@ export default function Agents() {
   const [selectedAgentIdForModal, setSelectedAgentIdForModal] = useState<string | null>(null)
   const [agentModalOpen, setAgentModalOpen] = useState(false)
 
-  // Track which filters are visible (showing input fields) - load from localStorage
-  const [visibleFilters, setVisibleFilters] = useState<Set<string>>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('agents-visible-filters')
-      if (stored) {
-        try {
-          return new Set(JSON.parse(stored))
-        } catch {
-          return new Set()
-        }
-      }
-    }
-    return new Set()
-  })
+  // Track which filters are visible (showing input fields)
+  // Initialize to empty Set for SSR safety, hydrate from localStorage in useEffect
+  const [visibleFilters, setVisibleFilters] = useState<Set<string>>(() => new Set())
+  const [filtersHydrated, setFiltersHydrated] = useState(false)
 
   // Track if the add filter menu is open
   const [addFilterMenuOpen, setAddFilterMenuOpen] = useState(false)
 
-  // Persist visible filters to localStorage whenever they change
+  // Hydrate visible filters from localStorage on client mount (SSR-safe)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('agents-visible-filters')
+    if (stored) {
+      try {
+        setVisibleFilters(new Set(JSON.parse(stored)))
+      } catch {
+        // Invalid JSON, keep empty set
+      }
+    }
+    setFiltersHydrated(true)
+  }, [])
+
+  // Persist visible filters to localStorage whenever they change (skip initial hydration)
+  useEffect(() => {
+    if (filtersHydrated) {
       localStorage.setItem('agents-visible-filters', JSON.stringify(Array.from(visibleFilters)))
     }
-  }, [visibleFilters])
+  }, [visibleFilters, filtersHydrated])
 
   const formatUplineLabel = (upline?: string | null) => {
     if (!upline) return 'None'

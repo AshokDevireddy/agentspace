@@ -16,8 +16,6 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
 
   const processedRef = useRef(false)
-
-  // Use TanStack Query mutation for sign in
   const signInMutation = useSignIn()
 
   useEffect(() => {
@@ -127,21 +125,8 @@ export default function LoginPage() {
             localStorage.setItem(TOKEN_STORAGE_KEYS.LOGIN_REFRESH, refreshToken)
           }
 
-          // Small delay to let session cookies propagate before redirect
-          await new Promise(resolve => setTimeout(resolve, 100))
-
-          // Redirect based on role and status
-          if (userData.status === 'onboarding') {
-            if (userData.role === 'client') {
-              window.location.href = '/client/dashboard'
-            } else {
-              window.location.href = '/'
-            }
-          } else if (userData.role === 'client') {
-            window.location.href = '/client/dashboard'
-          } else {
-            window.location.href = '/'
-          }
+          const destination = userData.role === 'client' ? '/client/dashboard' : '/'
+          router.push(destination)
         },
         onError: (err) => {
           setError(err.message || 'Login failed')

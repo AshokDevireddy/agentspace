@@ -38,6 +38,43 @@ export function withTimeout<T>(promise: Promise<T>, ms = AUTH_TIMEOUT_MS): Promi
   return Promise.race([promise, timeout])
 }
 
+/**
+ * Retry an operation with progressive timeouts.
+ * Each attempt waits for the previous to complete/timeout before starting.
+ * This prevents overlapping calls that could conflict.
+ */
+export async function withRetry<T>(
+  operation: () => Promise<T>,
+  timeouts: readonly number[] = [5000, 8000, 12000]
+): Promise<{ success: true; result: T } | { success: false; error: Error }> {
+  let lastError: Error = new Error('No attempts made')
+  const retryStart = Date.now()
+  console.log(`[withRetry] Starting with timeouts [${timeouts.join(', ')}]ms at ${retryStart}`)
+
+  for (let i = 0; i < timeouts.length; i++) {
+    const attemptStart = Date.now()
+    console.log(`[withRetry] Attempt ${i + 1}/${timeouts.length} starting at +${attemptStart - retryStart}ms (timeout: ${timeouts[i]}ms)`)
+    try {
+      // Create fresh promise for each attempt - don't reuse
+      // withTimeout already handles the race properly
+      const result = await withTimeout(operation(), timeouts[i])
+      console.log(`[withRetry] Attempt ${i + 1}/${timeouts.length} SUCCEEDED at +${Date.now() - retryStart}ms`)
+      return { success: true, result }
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      // Only retry on timeout, not on actual auth errors
+      if (lastError.message !== 'timeout') {
+        console.log(`[withRetry] Attempt ${i + 1}/${timeouts.length} FAILED (non-timeout) at +${Date.now() - retryStart}ms: ${lastError.message}`)
+        return { success: false, error: lastError }
+      }
+      // Log attempt failure for debugging
+      console.log(`[withRetry] Attempt ${i + 1}/${timeouts.length} timed out at +${Date.now() - retryStart}ms (waited ${Date.now() - attemptStart}ms)`)
+    }
+  }
+  console.log(`[withRetry] All attempts exhausted at +${Date.now() - retryStart}ms`)
+  return { success: false, error: lastError }
+}
+
 export const TOKEN_STORAGE_KEYS = {
   INVITE_ACCESS: 'invite_access_token',
   INVITE_REFRESH: 'invite_refresh_token',

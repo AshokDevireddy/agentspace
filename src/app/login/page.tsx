@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [isNavigating, setIsNavigating] = useState(false)
 
   const processedRef = useRef(false)
   const signInMutation = useSignIn()
@@ -109,11 +110,20 @@ export default function LoginPage() {
             return
           }
 
-          // Use hard navigation to ensure auth cookies are sent fresh
+          // Mark as navigating (disables button)
+          setIsNavigating(true)
           const destination = userData.role === 'client' ? '/client/dashboard' : '/'
+
+          // Small delay to ensure cookies are synced, then navigate
+          // We don't wait for onAuthStateChange because it can be unreliable
+          // when there's existing auth state from previous flows
+          await new Promise(resolve => setTimeout(resolve, 500))
+
+          // Use hard navigation to ensure auth cookies are sent fresh
           window.location.href = destination
         },
         onError: (err) => {
+          setIsNavigating(false)
           setError(err.message || 'Login failed')
         },
       }
@@ -184,9 +194,9 @@ export default function LoginPage() {
               <button
                 type="submit"
                 className="w-full py-2 rounded-md bg-foreground text-background font-semibold text-lg hover:bg-foreground/90 transition disabled:opacity-60"
-                disabled={signInMutation.isPending || signInMutation.isSuccess}
+                disabled={signInMutation.isPending || isNavigating}
               >
-                {signInMutation.isPending || signInMutation.isSuccess ? 'Signing in...' : 'Sign In'}
+                {signInMutation.isPending || isNavigating ? 'Signing in...' : 'Sign In'}
               </button>
               <button
                 type="button"

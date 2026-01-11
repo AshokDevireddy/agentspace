@@ -185,22 +185,69 @@ export function AuthProvider({
 
     // Server didn't provide user - need to do client-side recovery
     // This handles edge cases like expired tokens or auth pages
-    const initializeAuth = async () => {
-      console.log('[AuthProvider] Starting client-side auth initialization...')
 
-      // Set up timeout to prevent infinite loading
-      const isAuthPage = AUTH_PAGES.some(page => pathname?.startsWith(page))
-      let timeoutId: NodeJS.Timeout | null = null
+    // Track resolution state - can be resolved by either validation loop OR auth listener
+    const authResolved = { current: false }
+    const isAuthPage = AUTH_PAGES.some(page => pathname?.startsWith(page))
+    let fallbackTimeoutId: NodeJS.Timeout | null = null
+    let subscriptionCleanup: (() => void) | null = null
 
-      if (!isAuthPage) {
-        timeoutId = setTimeout(() => {
-          console.log('[AuthProvider] Auth timeout reached - redirecting to login')
+    // Helper to resolve auth state (called by either path)
+    const resolveAuth = async (authenticated: boolean, authUser?: User | null, skipDataFetch = false) => {
+      if (authResolved.current) return false // Already resolved
+      authResolved.current = true
+
+      if (fallbackTimeoutId) clearTimeout(fallbackTimeoutId)
+
+      if (authenticated && authUser) {
+        setUser(authUser)
+        if (!skipDataFetch) {
+          const data = await fetchUserData(authUser.id)
+          setUserData(data)
+        }
+      } else {
+        setUser(null)
+        setUserData(null)
+      }
+      setLoading(false)
+      return true
+    }
+
+    // Set up auth state listener FIRST - it may fire before validation completes
+    // This catches SIGNED_IN events from setSession() in /auth/confirm
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('[AuthProvider] Auth state changed:', event)
+
+        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+          // Auth state confirmed via listener - resolve immediately
+          // skipDataFetch=false means resolveAuth will fetch user data
+          const resolved = await resolveAuth(true, session.user, false)
+          if (resolved) {
+            console.log('[AuthProvider] Resolved via', event, 'event')
+          }
+        } else if (event === 'SIGNED_OUT') {
           setUser(null)
           setUserData(null)
-          setLoading(false)
-          router.push('/login')
-        }, AUTH_FALLBACK_TIMEOUT_MS)
+        }
       }
+    )
+    subscriptionCleanup = () => subscription.unsubscribe()
+
+    // Set up fallback timeout for non-auth pages
+    if (!isAuthPage) {
+      fallbackTimeoutId = setTimeout(() => {
+        if (!authResolved.current) {
+          console.log('[AuthProvider] Fallback timeout reached - redirecting to login')
+          resolveAuth(false)
+          router.push('/login')
+        }
+      }, AUTH_FALLBACK_TIMEOUT_MS)
+    }
+
+    // Start validation
+    const initializeAuth = async () => {
+      console.log('[AuthProvider] Starting client-side auth initialization...')
 
       try {
         // Step 1: Try getSession() first - instant, reads from localStorage/IndexedDB
@@ -210,11 +257,13 @@ export function AuthProvider({
         if (session?.user) {
           // Session found in cache - use it (fast path for normal navigation)
           console.log('[AuthProvider] Session found in cache, using cached user')
-          if (timeoutId) clearTimeout(timeoutId)
-          setUser(session.user)
-          const data = await fetchUserData(session.user.id)
-          setUserData(data)
-          setLoading(false)
+          const resolved = await resolveAuth(true, session.user)
+          if (resolved) return
+        }
+
+        // Check if already resolved by auth listener
+        if (authResolved.current) {
+          console.log('[AuthProvider] Already resolved by auth listener, skipping validation')
           return
         }
 
@@ -223,13 +272,18 @@ export function AuthProvider({
         // but the server still has valid session cookies
         console.log('[AuthProvider] No cached session, validating with server...')
 
-        // Use shorter retry timeouts since we have the overall timeout
-        const shortTimeouts = [3000, 4000]
+        // Use AUTH_RETRY_TIMEOUTS for cold start resilience
         let lastError: Error | null = null
 
-        for (let attempt = 0; attempt < shortTimeouts.length; attempt++) {
-          const timeout = shortTimeouts[attempt]
-          console.log(`[AuthProvider] Server validation attempt ${attempt + 1}/${shortTimeouts.length} (timeout: ${timeout}ms)`)
+        for (let attempt = 0; attempt < AUTH_RETRY_TIMEOUTS.length; attempt++) {
+          // Check if already resolved by auth listener before each attempt
+          if (authResolved.current) {
+            console.log('[AuthProvider] Resolved by auth listener during validation')
+            return
+          }
+
+          const timeout = AUTH_RETRY_TIMEOUTS[attempt]
+          console.log(`[AuthProvider] Server validation attempt ${attempt + 1}/${AUTH_RETRY_TIMEOUTS.length} (timeout: ${timeout}ms)`)
 
           try {
             const timeoutPromise = new Promise<never>((_, reject) =>
@@ -243,12 +297,8 @@ export function AuthProvider({
 
             if (serverUser && !userError) {
               console.log('[AuthProvider] Server validation successful, user authenticated')
-              if (timeoutId) clearTimeout(timeoutId)
-              setUser(serverUser)
-              const data = await fetchUserData(serverUser.id)
-              setUserData(data)
-              setLoading(false)
-              return
+              const resolved = await resolveAuth(true, serverUser)
+              if (resolved) return
             }
 
             // No user returned but no error - user is definitely logged out
@@ -267,16 +317,19 @@ export function AuthProvider({
           }
         }
 
+        // Check one more time if resolved by auth listener
+        if (authResolved.current) {
+          console.log('[AuthProvider] Resolved by auth listener after validation loop')
+          return
+        }
+
         // All retries exhausted or server confirmed no session
         console.log('[AuthProvider] No valid session found after retries')
         if (lastError) {
           console.error('[AuthProvider] Last error was:', lastError.message)
         }
 
-        if (timeoutId) clearTimeout(timeoutId)
-        setUser(null)
-        setUserData(null)
-        setLoading(false)
+        await resolveAuth(false)
 
         // Auto-redirect to login if not on an auth page
         if (!isAuthPage) {
@@ -285,11 +338,7 @@ export function AuthProvider({
         }
       } catch (err) {
         console.error('[AuthProvider] Unexpected auth error:', err)
-        if (timeoutId) clearTimeout(timeoutId)
-        // On unexpected error, set user to null and allow page to render
-        setUser(null)
-        setUserData(null)
-        setLoading(false)
+        await resolveAuth(false)
 
         // Auto-redirect to login if not on an auth page
         if (!isAuthPage) {
@@ -300,25 +349,14 @@ export function AuthProvider({
 
     initializeAuth()
 
-    // Listen for auth changes (login/logout/token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('[AuthProvider] Auth state changed:', event)
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          if (session?.user) {
-            setUser(session.user)
-            const data = await fetchUserData(session.user.id)
-            setUserData(data)
-          }
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null)
-          setUserData(null)
-        }
-      }
-    )
-
+    // Cleanup function handles:
+    // 1. Unsubscribe auth listener
+    // 2. Clear fallback timeout
+    // 3. Mark as resolved to stop any in-flight validation
     return () => {
-      subscription.unsubscribe()
+      authResolved.current = true // Stop validation loop
+      subscriptionCleanup?.()
+      if (fallbackTimeoutId) clearTimeout(fallbackTimeoutId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabaseReady, user, pathname]) // supabase client is stable via ref

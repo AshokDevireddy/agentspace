@@ -63,9 +63,10 @@ export function AuthProvider({
   // Start with server-provided data (no loading flash on hard refresh!)
   const [user, setUser] = useState<User | null>(initialUser as User | null)
   const [userData, setUserData] = useState<UserData | null>(initialUserData)
-  // If server provided user, we're not in loading state
-  const [loading, setLoading] = useState(!initialUser)
+  // Always start with loading=true, we'll set to false after Supabase client is initialized
+  const [loading, setLoading] = useState(true)
   const [isHydrated, setIsHydrated] = useState(false)
+  const [supabaseReady, setSupabaseReady] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
   const queryClient = useQueryClient()
@@ -82,6 +83,38 @@ export function AuthProvider({
     console.log('[AuthProvider] Setting isHydrated=true')
     setIsHydrated(true)
   }, [])
+
+  // Initialize Supabase client session from cookies
+  // This ensures the browser client is authenticated before queries run
+  useEffect(() => {
+    if (!isHydrated) return
+
+    const initSupabaseSession = async () => {
+      console.log('[AuthProvider] Initializing Supabase client session...')
+      try {
+        // This call reads auth from cookies and initializes the client
+        const { data: { session } } = await supabase.auth.getSession()
+        console.log('[AuthProvider] Supabase session initialized:', { hasSession: !!session })
+
+        if (session?.user) {
+          // Update user state with the full User object from Supabase
+          setUser(session.user)
+        }
+        setSupabaseReady(true)
+
+        // Only set loading to false after Supabase is ready
+        if (initialUser || session?.user) {
+          setLoading(false)
+        }
+      } catch (error) {
+        console.error('[AuthProvider] Failed to initialize Supabase session:', error)
+        setSupabaseReady(true)
+        setLoading(false)
+      }
+    }
+
+    initSupabaseSession()
+  }, [isHydrated, supabase, initialUser])
 
   const fetchUserData = async (authUserId: string): Promise<UserData | null> => {
     try {
@@ -118,18 +151,15 @@ export function AuthProvider({
   }, [user?.id, supabase])
 
   useEffect(() => {
-    // Wait for hydration before initializing auth
-    // This prevents hydration mismatch on Vercel where server/client timing differs
-    if (!isHydrated) {
-      console.log('[AuthProvider] Waiting for hydration...')
+    // Wait for Supabase to be initialized before continuing
+    if (!supabaseReady) {
+      console.log('[AuthProvider] Waiting for Supabase to be ready...')
       return
     }
 
-    // If server already provided user data, skip client-side recovery
-    // Just set up the auth state listener for logout/token refresh
-    if (initialUser && user) {
-      console.log('[AuthProvider] Using server-provided session, skipping client-side recovery')
-      setLoading(false)
+    // If we have a user (from server or Supabase session), just set up auth state listener
+    if (user) {
+      console.log('[AuthProvider] User authenticated, setting up auth state listener')
 
       // Set up auth state listener for logout/token refresh
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -291,7 +321,7 @@ export function AuthProvider({
       subscription.unsubscribe()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHydrated, initialUser, pathname]) // supabase client is stable via ref
+  }, [supabaseReady, user, pathname]) // supabase client is stable via ref
 
   const signIn = useCallback(async (email: string, password: string, expectedRole?: 'admin' | 'agent' | 'client') => {
     // Prevent concurrent signIn calls to avoid race conditions

@@ -7,7 +7,7 @@ interface UseSupabaseRpcOptions<T> extends Omit<UseQueryOptions<T, Error>, 'quer
   timeout?: number
 }
 
-const DEFAULT_TIMEOUT_MS = 10000
+const DEFAULT_TIMEOUT_MS = 30000
 
 export function useSupabaseRpc<T>(
   queryKey: readonly unknown[],

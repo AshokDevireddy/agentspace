@@ -3,7 +3,10 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export async function middleware(req: NextRequest) {
-  const res = NextResponse.next()
+  // Create response that will be updated by setAll when session refreshes
+  let res = NextResponse.next({
+    request: req,
+  })
   const pathname = req.nextUrl.pathname
   const isApiRoute = pathname.startsWith('/api/')
 
@@ -16,7 +19,13 @@ export async function middleware(req: NextRequest) {
           return req.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => req.cookies.set(name, value, options))
+          // Update cookies on the request for any subsequent middleware
+          cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value))
+          // Create a new response with the updated request
+          res = NextResponse.next({
+            request: req,
+          })
+          // Set cookies on the response for the browser
           cookiesToSet.forEach(({ name, value, options }) =>
             res.cookies.set(name, value, options)
           )

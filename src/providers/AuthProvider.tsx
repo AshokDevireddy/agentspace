@@ -103,7 +103,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initializeAuth = async () => {
       console.log('[AuthProvider] Starting auth initialization...')
       try {
-        const { data: { user: authUser }, error } = await supabase.auth.getUser()
+        // Add timeout to prevent hanging on hard refresh (Supabase getUser can hang)
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Auth timeout after 10s')), 10000)
+        )
+
+        const { data: { user: authUser }, error } = await Promise.race([
+          supabase.auth.getUser(),
+          timeoutPromise
+        ])
         console.log('[AuthProvider] getUser result:', { authUser: !!authUser, error: error?.message })
 
         if (error || !authUser) {
@@ -121,7 +129,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUserData(data)
         setLoading(false)
       } catch (err) {
-        console.error('[AuthProvider] Unexpected error in initializeAuth:', err)
+        console.error('[AuthProvider] Auth error (possibly timeout):', err)
+        // On timeout or error, set user to null and allow page to render
+        setUser(null)
+        setUserData(null)
         setLoading(false)
       }
     }

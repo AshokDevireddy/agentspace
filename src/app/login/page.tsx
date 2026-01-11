@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 import { useSignIn } from "@/hooks/mutations"
+import { createClient } from "@/lib/supabase/client"
+import { clearInviteTokens, clearRecoveryTokens } from "@/lib/auth/constants"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -14,7 +16,29 @@ export default function LoginPage() {
   const [isNavigating, setIsNavigating] = useState(false)
 
   const processedRef = useRef(false)
+  const cleanedRef = useRef(false)
   const signInMutation = useSignIn()
+
+  // Clean up any stale auth state on mount (fixes login after confirmation flow)
+  useEffect(() => {
+    if (cleanedRef.current) return
+    cleanedRef.current = true
+
+    const cleanup = async () => {
+      try {
+        // Clear any stored tokens from invite/recovery flows
+        clearInviteTokens()
+        clearRecoveryTokens()
+
+        // Clear Supabase session to ensure fresh state
+        const supabase = createClient()
+        await supabase.auth.signOut({ scope: 'local' })
+      } catch {
+        // Ignore errors - just ensuring clean state
+      }
+    }
+    cleanup()
+  }, [])
 
   useEffect(() => {
     if (processedRef.current) return

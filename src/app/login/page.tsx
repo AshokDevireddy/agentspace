@@ -11,12 +11,9 @@ export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
-  const [loginStep, setLoginStep] = useState<string | null>(null)
 
   const processedRef = useRef(false)
-  const signInMutation = useSignIn({
-    onProgress: (step) => setLoginStep(step),
-  })
+  const signInMutation = useSignIn()
 
   useEffect(() => {
     if (processedRef.current) return
@@ -64,17 +61,11 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    setLoginStep(null)
-    
-    console.log('[Login] Form submitted')
 
     signInMutation.mutate(
       { email, password },
       {
         onSuccess: async (result) => {
-          console.log('[Login] onSuccess received', { role: result.user.role, status: result.user.status })
-          setLoginStep('Validating...')
-          
           const { user: userData, agency: userAgency } = result
 
           // Whitelabel validation
@@ -88,7 +79,6 @@ export default function LoginPage() {
               if (userData.agency_id !== branding.id) {
                 signInMutation.reset()
                 setError('No account found with these credentials')
-                setLoginStep(null)
                 return
               }
             }
@@ -96,7 +86,6 @@ export default function LoginPage() {
             if (!isWhiteLabel && userAgency.whitelabel_domain) {
               signInMutation.reset()
               setError('No account found with these credentials')
-              setLoginStep(null)
               return
             }
           }
@@ -105,36 +94,27 @@ export default function LoginPage() {
           if (userData.status === 'invited') {
             signInMutation.reset()
             setError('Please check your email and click the invite link to complete account setup')
-            setLoginStep(null)
             return
           }
 
           if (userData.status === 'inactive') {
             signInMutation.reset()
             setError('Your account has been deactivated')
-            setLoginStep(null)
             return
           }
 
           if (userData.status !== 'active' && userData.status !== 'onboarding') {
             signInMutation.reset()
             setError('Account status is invalid. Please contact support.')
-            setLoginStep(null)
             return
           }
 
+          // Use hard navigation to ensure auth cookies are sent fresh
           const destination = userData.role === 'client' ? '/client/dashboard' : '/'
-          console.log('[Login] Navigating to', destination)
-          setLoginStep('Redirecting...')
-          
-          // Use hard navigation instead of router.push() to ensure auth cookies are sent fresh
-          // router.push() can fail silently on Vercel when cookies haven't propagated
           window.location.href = destination
         },
         onError: (err) => {
-          console.log('[Login] onError received', err.message)
           setError(err.message || 'Login failed')
-          setLoginStep(null)
         },
       }
     )
@@ -206,9 +186,7 @@ export default function LoginPage() {
                 className="w-full py-2 rounded-md bg-foreground text-background font-semibold text-lg hover:bg-foreground/90 transition disabled:opacity-60"
                 disabled={signInMutation.isPending || signInMutation.isSuccess}
               >
-                {signInMutation.isPending || signInMutation.isSuccess 
-                  ? (loginStep || 'Signing in...') 
-                  : 'Sign In'}
+                {signInMutation.isPending || signInMutation.isSuccess ? 'Signing in...' : 'Sign In'}
               </button>
               <button
                 type="button"

@@ -15,49 +15,25 @@ import { queryKeys } from "@/hooks/queryKeys"
 import { Skeleton } from "@/components/ui/skeleton"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import Link from "next/link"
+import { useWeekDateRange } from "@/hooks/useClientDate"
+import { useLocalStorage } from "@/hooks/useLocalStorage"
+import { useHydrated } from "@/hooks/useHydrated"
 
 const PIE_CHART_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347', '#d084d0', '#84d0d0', '#d0d084'] as const
-
-function getWeekDateRange() {
-  const today = new Date()
-  const dayOfWeek = today.getDay()
-  const sunday = new Date(today)
-  sunday.setDate(today.getDate() - dayOfWeek)
-  sunday.setHours(0, 0, 0, 0)
-  const saturday = new Date(sunday)
-  saturday.setDate(sunday.getDate() + 6)
-  saturday.setHours(23, 59, 59, 999)
-  return {
-    startDate: sunday.toISOString().split('T')[0],
-    endDate: saturday.toISOString().split('T')[0]
-  }
-}
 
 export default function Home() {
   const { user, loading: authLoading } = useAuth()
   const { startTour, setUserRole, isTourActive } = useTour()
   const [showWizard, setShowWizard] = useState(false)
   const [hasStartedTour, setHasStartedTour] = useState(false)
-  // Initialize with default to avoid hydration mismatch, then sync from localStorage
-  const [viewMode, setViewMode] = useState<'just_me' | 'downlines'>('downlines')
-  const [isHydrated, setIsHydrated] = useState(false)
+  // SSR-safe localStorage hook - returns 'downlines' on server, synced value on client
+  const [viewMode, setViewMode] = useLocalStorage<'just_me' | 'downlines'>('dashboard_view_mode', 'downlines')
+  const isHydrated = useHydrated()
 
-  const weekRange = useMemo(() => getWeekDateRange(), [])
+  // SSR-safe week date range - returns deterministic dates on server, actual current week on client
+  const weekRange = useWeekDateRange()
   const queryClient = useQueryClient()
   const completeOnboardingMutation = useCompleteOnboarding()
-
-  // Sync viewMode from localStorage after hydration (avoids server/client mismatch)
-  useEffect(() => {
-    setIsHydrated(true)
-    const saved = localStorage.getItem('dashboard_view_mode') as 'just_me' | 'downlines' | null
-    if (saved) setViewMode(saved)
-  }, [])
-
-  useEffect(() => {
-    if (isHydrated) {
-      localStorage.setItem('dashboard_view_mode', viewMode)
-    }
-  }, [viewMode, isHydrated])
 
   const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useApiFetch<any>(
     queryKeys.userProfile(user?.id),

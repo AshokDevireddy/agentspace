@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { MonthRangePicker } from "@/components/ui/month-range-picker"
@@ -15,6 +15,7 @@ import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { cn } from "@/lib/utils"
+import { useClientDate } from "@/hooks/useClientDate"
 
 interface PayoutData {
   month: string
@@ -102,19 +103,15 @@ export default function ExpectedPayoutsPage() {
   const supabase = createClient()
   const queryClient = useQueryClient()
 
+  // SSR-safe date hook - returns deterministic values on server, actual values on client
+  const clientDate = useClientDate()
+
   // Calculate default date range (current year: Jan to Dec)
-  const getDefaultDateRange = () => {
-    const now = new Date()
-    const currentYear = now.getFullYear()
-
-    // Default to full current year (January to December)
-    const startMonth = `${currentYear}-01`
-    const endMonth = `${currentYear}-12`
-
-    return { startMonth, endMonth }
-  }
-
-  const defaultRange = getDefaultDateRange()
+  // SSR-safe: uses clientDate.year which is deterministic on server
+  const defaultRange = useMemo(() => ({
+    startMonth: `${clientDate.year}-01`,
+    endMonth: `${clientDate.year}-12`
+  }), [clientDate.year])
 
   // Persisted filter state using custom hook
   // Changed key to 'expected-payouts-v2' to clear old cached data with wrong calculations
@@ -247,9 +244,9 @@ export default function ExpectedPayoutsPage() {
 
       // Calculate months difference from now using proper month arithmetic
       // Important: We need to calculate from the START of the current month
-      const now = new Date()
-      const nowYear = now.getFullYear()
-      const nowMonth = now.getMonth() // 0-indexed (0 = January)
+      // SSR-safe: uses clientDate which is deterministic on server
+      const nowYear = clientDate.year
+      const nowMonth = clientDate.month // 0-indexed (0 = January)
 
       // Parse start and end months from the filter (format: "YYYY-MM")
       const [startYear, startMonthStr] = appliedFilters.startMonth.split('-').map(Number)

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarIcon, Info } from "lucide-react"
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
 import { queryKeys } from "@/hooks/queryKeys"
@@ -15,6 +15,8 @@ import { useAgencyScoreboardSettings } from "@/hooks/useUserQueries"
 import { useQueryClient } from "@tanstack/react-query"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
+import { useHydrated } from "@/hooks/useHydrated"
+import { useClientDate } from "@/hooks/useClientDate"
 
 interface AgentScore {
   rank: number
@@ -64,42 +66,44 @@ const timeframeOptions = [
 export default function Scoreboard() {
   const { user, userData, loading: authLoading } = useAuth()
   const queryClient = useQueryClient()
+
+  // SSR-safe hydration and date hooks
+  const isHydrated = useHydrated()
+  const clientDate = useClientDate()
+
   const [timeframe, setTimeframe] = useState<TimeframeOption>('past_90_days')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [selectingStartDate, setSelectingStartDate] = useState(true)
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
-  // Initialize with 0 to avoid hydration mismatch, then set in useEffect
-  const [calendarMonth, setCalendarMonth] = useState(0)
-  const [calendarYear, setCalendarYear] = useState(2024)
-  const [isHydrated, setIsHydrated] = useState(false)
+  // SSR-safe: Initialize with clientDate values (deterministic on server, actual on client)
+  const [calendarMonth, setCalendarMonth] = useState(clientDate.month)
+  const [calendarYear, setCalendarYear] = useState(clientDate.year)
   const [assumedMonthsTillLapse, setAssumedMonthsTillLapse] = useState<number>(5)
   const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
 
-  // Set calendar to current month after hydration to avoid server/client mismatch
+  // Update calendar state when client date becomes available after hydration
   useEffect(() => {
-    setIsHydrated(true)
-    const now = new Date()
-    setCalendarMonth(now.getMonth())
-    setCalendarYear(now.getFullYear())
-  }, [])
+    if (isHydrated) {
+      setCalendarMonth(clientDate.month)
+      setCalendarYear(clientDate.year)
+    }
+  }, [isHydrated, clientDate.month, clientDate.year])
 
   // Fetch agency default scoreboard start date using TanStack Query
   const { data: agencySettings } = useAgencyScoreboardSettings(userData?.agency_id)
   const defaultScoreboardStartDate = agencySettings?.default_scoreboard_start_date ?? null
 
-  // Calculate date range based on timeframe
-  const getDateRange = (selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
-    const today = new Date()
-    const year = today.getFullYear()
+  // Calculate date range based on timeframe - SSR-safe using clientDate
+  const getDateRange = useCallback((selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
+    const { date: today, year, month, dayOfWeek } = clientDate
     let startDate: Date
     let endDate: Date = new Date(today)
 
     switch (selectedTimeframe) {
       case 'this_week': {
-        const dayOfWeek = today.getDay()
         startDate = new Date(today)
         startDate.setDate(today.getDate() - dayOfWeek)
         endDate = new Date(today)
@@ -107,7 +111,6 @@ export default function Scoreboard() {
         break
       }
       case 'last_week': {
-        const dayOfWeek = today.getDay()
         endDate = new Date(today)
         endDate.setDate(today.getDate() - dayOfWeek - 1)
         startDate = new Date(endDate)
@@ -123,12 +126,12 @@ export default function Scoreboard() {
         startDate.setDate(today.getDate() - 13)
         break
       case 'this_month':
-        startDate = new Date(year, today.getMonth(), 1)
-        endDate = new Date(year, today.getMonth() + 1, 0)
+        startDate = new Date(year, month, 1)
+        endDate = new Date(year, month + 1, 0)
         break
       case 'last_month':
-        startDate = new Date(year, today.getMonth() - 1, 1)
-        endDate = new Date(year, today.getMonth(), 0)
+        startDate = new Date(year, month - 1, 1)
+        endDate = new Date(year, month, 0)
         break
       case 'past_30_days':
         startDate = new Date(today)
@@ -144,18 +147,17 @@ export default function Scoreboard() {
         break
       case 'past_12_months':
         startDate = new Date(today)
-        startDate.setFullYear(today.getFullYear() - 1)
+        startDate.setFullYear(year - 1)
         break
       case 'ytd':
         startDate = new Date(year, 0, 1)
         break
       case 'custom':
         return {
-          startDate: customStartDate || today.toISOString().split('T')[0],
-          endDate: customEndDate || today.toISOString().split('T')[0]
+          startDate: customStartDate || clientDate.isoDate,
+          endDate: customEndDate || clientDate.isoDate
         }
       default: {
-        const dayOfWeek = today.getDay()
         startDate = new Date(today)
         startDate.setDate(today.getDate() - dayOfWeek)
         endDate = new Date(today)
@@ -171,18 +173,19 @@ export default function Scoreboard() {
       startDate: finalStartDate,
       endDate: endDate.toISOString().split('T')[0]
     }
-  }
+  }, [clientDate, customStartDate, customEndDate, defaultScoreboardStartDate])
 
   // Memoize the date range calculation to avoid unnecessary recalculations
+  // SSR-safe: uses clientDate which returns deterministic values on server
   const dateRange = useMemo(() => {
     if (timeframe === 'custom') {
       return {
-        startDate: customStartDate || new Date().toISOString().split('T')[0],
-        endDate: customEndDate || new Date().toISOString().split('T')[0]
+        startDate: customStartDate || clientDate.isoDate,
+        endDate: customEndDate || clientDate.isoDate
       }
     }
     return getDateRange(timeframe)
-  }, [timeframe, customStartDate, customEndDate, defaultScoreboardStartDate])
+  }, [timeframe, customStartDate, customEndDate, getDateRange, clientDate.isoDate])
 
   // Update custom dates when timeframe changes (only for non-custom timeframes)
   useEffect(() => {
@@ -191,7 +194,7 @@ export default function Scoreboard() {
       setCustomStartDate(range.startDate)
       setCustomEndDate(range.endDate)
     }
-  }, [timeframe, defaultScoreboardStartDate])
+  }, [timeframe, getDateRange])
 
   // Fetch scoreboard data using TanStack Query
   const shouldFetch = !!user?.id && (timeframe !== 'custom' || (!!dateRange.startDate && !!dateRange.endDate))

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { ChevronLeft, ChevronRight, Calendar } from "lucide-react"
@@ -9,6 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { useClientDate } from "@/hooks/useClientDate"
 
 interface MonthRangePickerProps {
   startMonth: string // Format: "YYYY-MM"
@@ -19,15 +20,20 @@ interface MonthRangePickerProps {
 
 export function MonthRangePicker({ startMonth, endMonth, onRangeChange, disabled }: MonthRangePickerProps) {
   const [open, setOpen] = useState(false)
-  // Initialize with safe default to avoid hydration mismatch, then update in useEffect
-  const [displayYear, setDisplayYear] = useState(2025)
+  // SSR-safe: useClientDate returns deterministic values on server, actual values on client
+  const clientDate = useClientDate()
+  const [displayYear, setDisplayYear] = useState(clientDate.year)
   const [selectingStart, setSelectingStart] = useState(true)
   const [hoveredMonth, setHoveredMonth] = useState<string | null>(null)
 
-  // Set to current year after hydration
+  // Sync displayYear when clientDate becomes available (only on first render)
+  const isFirstRender = useRef(true)
   useEffect(() => {
-    setDisplayYear(new Date().getFullYear())
-  }, [])
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      setDisplayYear(clientDate.year)
+    }
+  }, [clientDate.year])
 
   // Parse the date strings
   const parseMonth = (monthStr: string) => {

@@ -164,34 +164,15 @@ interface SignInResponse {
 export function useSignIn(options?: {
   onSuccess?: (data: SignInResponse) => void
   onError?: (error: Error) => void
-  onProgress?: (step: string) => void
 }) {
   return useMutation<SignInResponse, Error, SignInInput>({
     mutationFn: async ({ email, password }) => {
-      const log = (step: string, data?: Record<string, unknown>) => {
-        console.log(`[SignIn] ${step}`, data || '')
-        options?.onProgress?.(step)
-      }
-
-      log('1. Starting sign in')
-      
-      // Import Supabase client dynamically to avoid SSR issues
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
-      
-      log('2. Calling signInWithPassword')
-      const signInStart = Date.now()
-      
-      // Use native Supabase signInWithPassword - this properly sets up the session
+
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
-      })
-
-      log('3. signInWithPassword completed', { 
-        took: `${Date.now() - signInStart}ms`,
-        hasUser: !!authData?.user,
-        error: authError?.message 
       })
 
       if (authError || !authData.user) {
@@ -199,51 +180,34 @@ export function useSignIn(options?: {
       }
 
       const authUserId = authData.user.id
-      log('4. Fetching user profile')
 
-      // Fetch user profile using the authenticated client
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('id, role, status, agency_id')
         .eq('auth_user_id', authUserId)
         .single()
 
-      log('5. User profile fetched', { hasData: !!userData, error: userError?.message })
-
       if (userError || !userData) {
         throw new Error('User profile not found')
       }
 
-      log('6. Fetching agency info')
-
-      // Fetch agency info
       const { data: agencyData, error: agencyError } = await supabase
         .from('agencies')
         .select('whitelabel_domain')
         .eq('id', userData.agency_id)
         .single()
 
-      log('7. Agency info fetched', { hasData: !!agencyData, error: agencyError?.message })
-
       if (agencyError || !agencyData) {
         throw new Error('Agency not found')
       }
-
-      log('8. Sign in complete, returning data')
 
       return {
         user: userData as SignInUserData,
         agency: agencyData as SignInAgencyData,
       }
     },
-    onSuccess: (data) => {
-      console.log('[SignIn] onSuccess callback fired', { userId: data.user.id })
-      options?.onSuccess?.(data)
-    },
-    onError: (error) => {
-      console.log('[SignIn] onError callback fired', { error: error.message })
-      options?.onError?.(error)
-    },
+    onSuccess: options?.onSuccess,
+    onError: options?.onError,
   })
 }
 

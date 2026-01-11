@@ -98,28 +98,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    // Use getSession() instead of getUser() - reads from localStorage instantly, no network request
-    // Session is already refreshed by middleware, no need to validate with server on client
+    // Hybrid approach: Try getSession() first (fast, from cache), fallback to getUser() (server validation)
+    // This handles hard refresh where localStorage cache may be stale but server session is valid
     const initializeAuth = async () => {
       console.log('[AuthProvider] Starting auth initialization...')
       try {
-        const { data: { session }, error } = await supabase.auth.getSession()
-        const authUser = session?.user ?? null
-        console.log('[AuthProvider] getSession result:', { hasSession: !!session, error: error?.message })
+        // Step 1: Try getSession() first - instant, reads from localStorage/IndexedDB
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        console.log('[AuthProvider] getSession result:', { hasSession: !!session, error: sessionError?.message })
 
-        if (error || !authUser) {
-          console.log('[AuthProvider] No user or error, setting loading=false')
-          setUser(null)
-          setUserData(null)
+        if (session?.user) {
+          // Session found in cache - use it (fast path for normal navigation)
+          console.log('[AuthProvider] Session found in cache, using cached user')
+          setUser(session.user)
+          const data = await fetchUserData(session.user.id)
+          setUserData(data)
           setLoading(false)
           return
         }
 
-        setUser(authUser)
-        console.log('[AuthProvider] Fetching user data...')
-        const data = await fetchUserData(authUser.id)
-        console.log('[AuthProvider] User data fetched, setting loading=false')
-        setUserData(data)
+        // Step 2: No cached session - validate with server (handles hard refresh)
+        // This is critical: on hard refresh, localStorage cache may be empty/stale
+        // but the server still has valid session cookies
+        console.log('[AuthProvider] No cached session, validating with server...')
+
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Auth server validation timeout')), 5000)
+        )
+
+        const { data: { user: serverUser }, error: userError } = await Promise.race([
+          supabase.auth.getUser(),
+          timeoutPromise
+        ]) as Awaited<ReturnType<typeof supabase.auth.getUser>>
+
+        if (serverUser && !userError) {
+          console.log('[AuthProvider] Server validation successful, user authenticated')
+          setUser(serverUser)
+          const data = await fetchUserData(serverUser.id)
+          setUserData(data)
+          setLoading(false)
+          return
+        }
+
+        // No session in cache and server validation failed - user is truly logged out
+        console.log('[AuthProvider] No valid session found, user is logged out')
+        setUser(null)
+        setUserData(null)
         setLoading(false)
       } catch (err) {
         console.error('[AuthProvider] Auth error (possibly timeout):', err)

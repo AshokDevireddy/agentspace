@@ -16,14 +16,19 @@ export async function GET(request: NextRequest) {
   const supabaseAdmin = createAdminClient()
 
   try {
-    // Verify cron secret in production
+    // Verify cron secret - required in all environments
     const authHeader = request.headers.get('authorization')
     const cronSecret = process.env.CRON_SECRET
 
-    if (process.env.NODE_ENV === 'production' && cronSecret) {
-      if (authHeader !== `Bearer ${cronSecret}`) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+    if (!cronSecret) {
+      return NextResponse.json(
+        { error: 'Server configuration error - CRON_SECRET not set' },
+        { status: 500 }
+      )
+    }
+
+    if (authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Release any stale locks first

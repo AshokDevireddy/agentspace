@@ -3,18 +3,31 @@ import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
   try {
-    // Get user_id from URL search params
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('user_id')
+    const supabase = await createServerClient()
 
-    if (!userId) {
+    // Authenticate the request
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
       return NextResponse.json(
-        { error: 'user_id parameter is required' },
-        { status: 400 }
+        { error: 'Unauthorized' },
+        { status: 401 }
       )
     }
 
-    const supabase = await createServerClient()
+    // Get user_id from URL search params (optional - defaults to current user)
+    const { searchParams } = new URL(request.url)
+    const requestedUserId = searchParams.get('user_id')
+
+    // Use the authenticated user's ID (users can only fetch their own profile)
+    // If user_id is provided, it must match the authenticated user
+    const userId = user.id
+    if (requestedUserId && requestedUserId !== userId) {
+      return NextResponse.json(
+        { error: 'Forbidden - can only access your own profile' },
+        { status: 403 }
+      )
+    }
 
     const { data: userData, error: userError } = await supabase
       .from('users')

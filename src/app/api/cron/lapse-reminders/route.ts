@@ -14,15 +14,21 @@ import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
 
 export async function GET(request: NextRequest) {
   try {
-    // Verify this is a cron request
+    // Verify this is a cron request - CRON_SECRET is required
     const authHeader = request.headers.get('authorization');
+
+    if (!process.env.CRON_SECRET) {
+      return NextResponse.json(
+        { error: 'Server configuration error - CRON_SECRET not set' },
+        { status: 500 }
+      );
+    }
+
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      if (process.env.CRON_SECRET) {
-        return NextResponse.json(
-          { error: 'Unauthorized' },
-          { status: 401 }
-        );
-      }
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const supabase = createAdminClient();

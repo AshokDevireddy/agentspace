@@ -11,11 +11,11 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createServerClient();
     const { searchParams } = new URL(request.url);
-    const view = searchParams.get('view') || 'downlines'; // 'all', 'self', 'downlines'
+    const view = searchParams.get('view') || 'downlines';
     const countOnly = searchParams.get('countOnly') === 'true';
 
-    // Get current user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
+
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },

@@ -109,7 +109,6 @@ export default function LoginPage() {
             return
           }
 
-          // Session is already set by the mutation via native Supabase signInWithPassword
           const destination = userData.role === 'client' ? '/client/dashboard' : '/'
           router.push(destination)
         },

@@ -1,9 +1,13 @@
 import { useQuery, UseQueryOptions } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
+import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
 interface UseSupabaseRpcOptions<T> extends Omit<UseQueryOptions<T, Error>, 'queryKey' | 'queryFn'> {
+  /** Timeout in milliseconds (default: 10000) */
   timeout?: number
 }
+
+const DEFAULT_TIMEOUT_MS = 10000
 
 export function useSupabaseRpc<T>(
   queryKey: unknown[],
@@ -11,7 +15,7 @@ export function useSupabaseRpc<T>(
   params: Record<string, unknown>,
   options: UseSupabaseRpcOptions<T> = {}
 ) {
-  const { timeout = 10000, ...queryOptions } = options
+  const { timeout = DEFAULT_TIMEOUT_MS, ...queryOptions } = options
   const supabase = createClient()
 
   return useQuery<T, Error>({
@@ -21,7 +25,6 @@ export function useSupabaseRpc<T>(
         throw new Error('Request aborted')
       }
 
-      // Create abort handler that cleans up after itself
       let cleanupAbortListener: (() => void) | undefined
 
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -44,10 +47,11 @@ export function useSupabaseRpc<T>(
       try {
         return await Promise.race([rpcPromise, timeoutPromise])
       } finally {
-        // Clean up abort listener to prevent memory leak
         cleanupAbortListener?.()
       }
     },
+    retry: shouldRetry,
+    retryDelay: getRetryDelay,
     ...queryOptions,
   })
 }

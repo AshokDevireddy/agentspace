@@ -100,7 +100,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { user: authUser }, error } = await supabase.auth.getUser()
 
       if (error || !authUser) {
-        // Session invalid or doesn't exist - clear state
         setUser(null)
         setUserData(null)
         setLoading(false)
@@ -118,7 +117,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes (login/logout/token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        // Handle specific auth events
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
           if (session?.user) {
             setUser(session.user)
@@ -129,7 +127,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null)
           setUserData(null)
         }
-        // For INITIAL_SESSION event, we rely on initializeAuth() above
       }
     )
 

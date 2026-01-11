@@ -20,7 +20,6 @@ import {
   ExternalLink,
   BookOpen,
   Sparkles,
-  FolderOpen,
   DollarSign,
   ClipboardCheck
 } from "lucide-react"
@@ -172,7 +171,6 @@ export default function Navigation() {
     queryKey: queryKeys.conversationCount('self'),
     queryFn: async () => {
       try {
-        // Use countOnly=true for lightweight unread count query
         const response = await fetch('/api/sms/conversations?view=self&countOnly=true', {
           credentials: 'include'
         })
@@ -190,7 +188,7 @@ export default function Navigation() {
     },
     enabled: !!user?.id,
     staleTime: 1000 * 30, // 30 seconds
-    refetchInterval: 1000 * 60, // Refetch every minute as a fallback
+    refetchInterval: 1000 * 60, // 1 minute fallback
   })
 
   const unreadCount = unreadCountData?.unreadCount || 0

@@ -62,7 +62,7 @@ const timeframeOptions = [
 ]
 
 export default function Scoreboard() {
-  const { user, userData } = useAuth()
+  const { user, userData, loading: authLoading } = useAuth()
   const queryClient = useQueryClient()
   const [timeframe, setTimeframe] = useState<TimeframeOption>('past_90_days')
   const [customStartDate, setCustomStartDate] = useState('')
@@ -70,11 +70,21 @@ export default function Scoreboard() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [selectingStartDate, setSelectingStartDate] = useState(true)
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
-  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth())
-  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear())
+  // Initialize with 0 to avoid hydration mismatch, then set in useEffect
+  const [calendarMonth, setCalendarMonth] = useState(0)
+  const [calendarYear, setCalendarYear] = useState(2024)
+  const [isHydrated, setIsHydrated] = useState(false)
   const [assumedMonthsTillLapse, setAssumedMonthsTillLapse] = useState<number>(5)
   const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
+
+  // Set calendar to current month after hydration to avoid server/client mismatch
+  useEffect(() => {
+    setIsHydrated(true)
+    const now = new Date()
+    setCalendarMonth(now.getMonth())
+    setCalendarYear(now.getFullYear())
+  }, [])
 
   // Fetch agency default scoreboard start date using TanStack Query
   const { data: agencySettings } = useAgencyScoreboardSettings(userData?.agency_id)
@@ -186,7 +196,8 @@ export default function Scoreboard() {
   // Fetch scoreboard data using TanStack Query
   const shouldFetch = !!user?.id && (timeframe !== 'custom' || (!!dateRange.startDate && !!dateRange.endDate))
 
-  const { data: rpcResponse, isPending: isLoading, isFetching, error: queryError } = useSupabaseRpc<ScoreboardRpcResponse>(
+  // Include authLoading to show proper loading state while auth initializes
+  const { data: rpcResponse, isPending: isDataLoading, isFetching, error: queryError } = useSupabaseRpc<ScoreboardRpcResponse>(
     [
       ...queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate),
       'with-lapse',
@@ -211,8 +222,11 @@ export default function Scoreboard() {
   const data = rpcResponse?.success ? rpcResponse.data : null
   const error = rpcResponse?.success === false ? rpcResponse.error : queryError?.message
 
+  // Include authLoading to show skeletons while auth initializes (prevents "no data" flash)
+  const isLoading = authLoading || isDataLoading
+
   // Background refresh indicator (stale-while-revalidate pattern)
-  const isRefreshing = isFetching && !isLoading
+  const isRefreshing = isFetching && !isDataLoading
 
   // Calculate date range for display even when loading
   const displayDateRange = useMemo(() => {
@@ -561,8 +575,8 @@ export default function Scoreboard() {
         </div>
       )}
 
-      {/* Weekly Stats - Only show for admins */}
-      {userData?.role === 'admin' && (
+      {/* Weekly Stats - Only show for admins (after hydration to avoid mismatch) */}
+      {isHydrated && userData?.role === 'admin' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="professional-card rounded-md">
             <CardContent className="p-6 text-center">

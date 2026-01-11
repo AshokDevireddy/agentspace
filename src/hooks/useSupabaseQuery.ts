@@ -10,7 +10,7 @@ interface UseSupabaseRpcOptions<T> extends Omit<UseQueryOptions<T, Error>, 'quer
 const DEFAULT_TIMEOUT_MS = 10000
 
 export function useSupabaseRpc<T>(
-  queryKey: unknown[],
+  queryKey: readonly unknown[],
   rpcName: string,
   params: Record<string, unknown>,
   options: UseSupabaseRpcOptions<T> = {}

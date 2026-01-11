@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { ChevronLeft, ChevronRight, Calendar } from "lucide-react"
@@ -19,9 +19,15 @@ interface DateRangePickerProps {
 
 export function DateRangePicker({ startDate, endDate, onRangeChange, disabled }: DateRangePickerProps) {
   const [open, setOpen] = useState(false)
-  const [displayMonth, setDisplayMonth] = useState(new Date())
+  // Initialize with safe default to avoid hydration mismatch, then update in useEffect
+  const [displayMonth, setDisplayMonth] = useState(() => new Date(2024, 0, 1))
   const [selectingStart, setSelectingStart] = useState(true)
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
+
+  // Set to current month after hydration
+  useEffect(() => {
+    setDisplayMonth(new Date())
+  }, [])
 
   // Format display text
   const formatDateDisplay = (dateStr: string) => {

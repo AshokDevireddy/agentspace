@@ -19,9 +19,15 @@ interface MonthRangePickerProps {
 
 export function MonthRangePicker({ startMonth, endMonth, onRangeChange, disabled }: MonthRangePickerProps) {
   const [open, setOpen] = useState(false)
-  const [displayYear, setDisplayYear] = useState(new Date().getFullYear())
+  // Initialize with safe default to avoid hydration mismatch, then update in useEffect
+  const [displayYear, setDisplayYear] = useState(2025)
   const [selectingStart, setSelectingStart] = useState(true)
   const [hoveredMonth, setHoveredMonth] = useState<string | null>(null)
+
+  // Set to current year after hydration
+  useEffect(() => {
+    setDisplayYear(new Date().getFullYear())
+  }, [])
 
   // Parse the date strings
   const parseMonth = (monthStr: string) => {
@@ -87,8 +93,9 @@ export function MonthRangePicker({ startMonth, endMonth, onRangeChange, disabled
   const isMonthHovered = (year: number, monthIndex: number) => {
     if (!hoveredMonth || !startMonth || selectingStart) return false
     const monthStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}`
-    const minMonth = Math.min(startMonth, hoveredMonth) as any
-    const maxMonth = Math.max(startMonth, hoveredMonth) as any
+    // String comparison works for "YYYY-MM" format (lexicographic order)
+    const minMonth = startMonth < hoveredMonth ? startMonth : hoveredMonth
+    const maxMonth = startMonth > hoveredMonth ? startMonth : hoveredMonth
     return monthStr >= minMonth && monthStr <= maxMonth
   }
 

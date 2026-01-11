@@ -105,9 +105,9 @@ export default function Home() {
   }, [userData, setUserRole])
 
   const scoreboardData = scoreboardResult?.success ? scoreboardResult.data : null
-  const topProducers = useMemo(() => {
+  const topProducers: { rank: number; name: string; amount: string }[] = useMemo(() => {
     if (!scoreboardData?.leaderboard) return []
-    return scoreboardData.leaderboard.slice(0, 5).map((producer: any) => ({
+    return scoreboardData.leaderboard.slice(0, 5).map((producer: { rank: number; name: string; total: number }) => ({
       rank: producer.rank,
       name: producer.name,
       amount: `$${producer.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

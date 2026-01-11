@@ -92,24 +92,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Wait for hydration before initializing auth
     // This prevents hydration mismatch on Vercel where server/client timing differs
-    if (!isHydrated) return
+    if (!isHydrated) {
+      console.log('[AuthProvider] Waiting for hydration...')
+      return
+    }
 
     // Use getUser() to validate session with server (not cached getSession())
     // This ensures the session is valid and not stale from localStorage
     const initializeAuth = async () => {
-      const { data: { user: authUser }, error } = await supabase.auth.getUser()
+      console.log('[AuthProvider] Starting auth initialization...')
+      try {
+        const { data: { user: authUser }, error } = await supabase.auth.getUser()
+        console.log('[AuthProvider] getUser result:', { authUser: !!authUser, error: error?.message })
 
-      if (error || !authUser) {
-        setUser(null)
-        setUserData(null)
+        if (error || !authUser) {
+          console.log('[AuthProvider] No user or error, setting loading=false')
+          setUser(null)
+          setUserData(null)
+          setLoading(false)
+          return
+        }
+
+        setUser(authUser)
+        console.log('[AuthProvider] Fetching user data...')
+        const data = await fetchUserData(authUser.id)
+        console.log('[AuthProvider] User data fetched, setting loading=false')
+        setUserData(data)
         setLoading(false)
-        return
+      } catch (err) {
+        console.error('[AuthProvider] Unexpected error in initializeAuth:', err)
+        setLoading(false)
       }
-
-      setUser(authUser)
-      const data = await fetchUserData(authUser.id)
-      setUserData(data)
-      setLoading(false)
     }
 
     initializeAuth()

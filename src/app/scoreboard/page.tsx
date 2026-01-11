@@ -167,14 +167,16 @@ export default function Scoreboard() {
       }
     }
 
-    // Use agency default start date if available and not null
-    const finalStartDate = defaultScoreboardStartDate || startDate.toISOString().split('T')[0]
+    // Use agency default start date if available and not null, but only when submitted filter is true
+    const finalStartDate = (submittedFilter === 'submitted' && defaultScoreboardStartDate) 
+      ? defaultScoreboardStartDate 
+      : startDate.toISOString().split('T')[0]
 
     return {
       startDate: finalStartDate,
       endDate: endDate.toISOString().split('T')[0]
     }
-  }, [clientDate, customStartDate, customEndDate, defaultScoreboardStartDate])
+  }, [clientDate, customStartDate, customEndDate, defaultScoreboardStartDate, submittedFilter])
 
   // Memoize the date range calculation to avoid unnecessary recalculations
   // SSR-safe: uses clientDate which returns deterministic values on server

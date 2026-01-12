@@ -516,7 +516,7 @@ export default function ConfigurationPage() {
 
       const { data: agencyInfo, error } = await supabase
         .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template')
+        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template')
         .eq('id', userDataLocal.agency_id)
         .single()
 

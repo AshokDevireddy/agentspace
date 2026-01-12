@@ -39,7 +39,6 @@
     "@vercel/functions": "^3.3.4",
     "adm-zip": "^0.5.16",
     "class-variance-authority": "^0.7.1",
-    "client-lambda": "github:aws-sdk/client-lambda",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "lucide-react": "^0.511.0",

@@ -369,8 +369,8 @@ export default function Home() {
       )}
 
       {isStatsLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {Array.from({ length: 2 }).map((_, i) => (
             <Card key={i} className="professional-card rounded-md">
               <CardContent className="p-4">
                 <Skeleton className="h-4 w-3/4 mb-4" />
@@ -380,7 +380,7 @@ export default function Home() {
           ))}
         </div>
       ) : dashboardData && (
-        <div key={viewMode} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500" data-tour="dashboard-stats">
+        <div key={viewMode} className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500" data-tour="dashboard-stats">
           <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -388,15 +388,6 @@ export default function Home() {
                 <p className="text-sm font-medium text-muted-foreground">Active Policies</p>
               </div>
               <p className="font-bold text-foreground text-xl">{(currentData?.active_policies ?? 0).toLocaleString()}</p>
-            </CardContent>
-          </Card>
-          <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <p className="text-sm font-medium text-muted-foreground">New Policies (Last Week)</p>
-              </div>
-              <p className="font-bold text-foreground text-xl">{(currentData?.new_policies ?? 0).toLocaleString()}</p>
             </CardContent>
           </Card>
           <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
@@ -450,6 +441,38 @@ export default function Home() {
             </div>
           </CardHeader>
           <CardContent>
+            <div className="text-sm text-muted-foreground mb-4">
+              {topProducersLoading ? (
+                <span className="inline-block h-4 w-32 bg-muted animate-pulse rounded" />
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <span>
+                    {topProducersPeriod === 'ytd' ? 'Year to Date' : 'Month to Date'}
+                    {(() => {
+                      const today = new Date()
+                      const year = today.getFullYear()
+                      const month = today.getMonth()
+                      const day = today.getDate()
+                      
+                      let startDate: Date
+                      if (topProducersPeriod === 'ytd') {
+                        startDate = new Date(year, 0, 1) // Jan 1
+                      } else {
+                        startDate = new Date(year, month, 1) // First of current month
+                      }
+                      const endDate = new Date(year, month, day)
+                      
+                      const formatDate = (date: Date) => {
+                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      }
+                      
+                      return ` • ${formatDate(startDate)} - ${formatDate(endDate)}`
+                    })()}
+                  </span>
+                  <span className="text-xs">Based on Submitted Policies</span>
+                </div>
+              )}
+            </div>
             <div className="space-y-4">
               {topProducersLoading ? (
                 Array.from({ length: 5 }).map((_, index) => (
@@ -482,7 +505,7 @@ export default function Home() {
       </div>
 
       {/* Pie Chart Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div>
         {isPieChartLoading ? (
           <Card className="professional-card rounded-md">
             <CardHeader>

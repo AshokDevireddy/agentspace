@@ -182,6 +182,8 @@ export default function Scoreboard() {
   // SSR-safe: uses clientDate which returns deterministic values on server
   const dateRange = useMemo(() => {
     if (timeframe === 'custom') {
+      // For custom dates, always use the user-selected dates directly
+      // Never apply default_scoreboard_start_date to custom selections
       return {
         startDate: customStartDate || clientDate.isoDate,
         endDate: customEndDate || clientDate.isoDate
@@ -197,7 +199,8 @@ export default function Scoreboard() {
       setCustomStartDate(range.startDate)
       setCustomEndDate(range.endDate)
     }
-  }, [timeframe, getDateRange])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeframe]) // Only update when timeframe changes, not when getDateRange changes (to avoid interfering with custom dates)
 
   // Fetch scoreboard data using TanStack Query
   const shouldFetch = !!user?.id && (timeframe !== 'custom' || (!!dateRange.startDate && !!dateRange.endDate))

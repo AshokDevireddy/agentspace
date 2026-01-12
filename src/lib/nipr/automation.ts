@@ -189,9 +189,22 @@ async function checkForPageError(page: { locator: (selector: string) => any, con
           const text = await element.textContent()
           if (text && text.trim().length > 5) { // Min length to avoid empty/icon-only elements
             const cleanText = text.trim()
+            const lowerText = cleanText.toLowerCase()
+
+            // Informational messages that should NOT be treated as errors
+            const informationalPatterns = [
+              'vermont adjuster license applicants',
+              'common expiration date',
+              'dfr.vermont.gov',
+            ]
+
             // Filter out non-error text
-            if (!cleanText.toLowerCase().includes('loading') &&
-                !cleanText.toLowerCase().includes('please wait')) {
+            const isInformational =
+              lowerText.includes('loading') ||
+              lowerText.includes('please wait') ||
+              informationalPatterns.some(pattern => lowerText.includes(pattern))
+
+            if (!isInformational) {
               return cleanText
             }
           }

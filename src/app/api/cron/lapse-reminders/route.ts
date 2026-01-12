@@ -153,10 +153,16 @@ export async function GET(request: NextRequest) {
         });
         console.log(`  💾 Draft message created successfully!`);
 
-        // Update deal status_standardized to 'lapse_notified' (status changes as normal)
+        // Update deal status_standardized using staged notification logic
+        // If email was already sent (lapse_email_notified) → lapse_sms_and_email_notified
+        // Otherwise → lapse_sms_notified
+        const newStatus = deal.status_standardized === 'lapse_email_notified'
+          ? 'lapse_sms_and_email_notified'
+          : 'lapse_sms_notified';
+
         await supabase
           .from('deals')
-          .update({ status_standardized: 'lapse_notified' })
+          .update({ status_standardized: newStatus })
           .eq('id', deal.deal_id);
 
         successCount++;

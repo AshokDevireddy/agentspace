@@ -1,5 +1,8 @@
 // supabase/functions/send-lapse-notification/index.ts
-// Triggered by database trigger when a deal's status_standardized changes to lapse/lapse_pending
+// Triggered by database trigger when a deal's status matches a lapse status in status_mapping
+// Uses staged notification system:
+// - If status_standardized IS NULL → sets to 'lapse_email_notified'
+// - If status_standardized = 'lapse_sms_notified' → sets to 'lapse_sms_and_email_notified'
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -235,6 +238,35 @@ Deno.serve(async (req) => {
     }
 
     console.log(`[Lapse Notification] Complete: ${sentCount} emails sent for deal ${deal_id}`)
+
+    // Update status_standardized using staged notification logic
+    // Only update if at least one email was sent
+    if (sentCount > 0) {
+      // Fetch current status to determine new status
+      const { data: currentDeal } = await supabase
+        .from('deals')
+        .select('status_standardized')
+        .eq('id', deal_id)
+        .single()
+
+      const currentStatus = currentDeal?.status_standardized
+      // If SMS was already sent (lapse_sms_notified) → lapse_sms_and_email_notified
+      // Otherwise → lapse_email_notified
+      const newStatus = currentStatus === 'lapse_sms_notified'
+        ? 'lapse_sms_and_email_notified'
+        : 'lapse_email_notified'
+
+      const { error: updateError } = await supabase
+        .from('deals')
+        .update({ status_standardized: newStatus })
+        .eq('id', deal_id)
+
+      if (updateError) {
+        console.error(`[Lapse Notification] Failed to update status_standardized:`, updateError)
+      } else {
+        console.log(`[Lapse Notification] Updated status_standardized to ${newStatus}`)
+      }
+    }
 
     return new Response(
       JSON.stringify({

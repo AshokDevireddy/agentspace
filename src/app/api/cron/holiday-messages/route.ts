@@ -72,8 +72,11 @@ function getTodaysHoliday(): { name: string; greeting: string } | null {
       }
     } else {
       // Floating holiday (nth weekday of month)
+      const holidayMonth = parseInt(holiday.date.split('-')[0], 10) - 1;
+      if (month !== holidayMonth) continue;
+
       const year = today.getFullYear();
-      const holidayDate = getNthWeekdayOfMonth(year, month, holiday.week, holiday.weekday!);
+      const holidayDate = getNthWeekdayOfMonth(year, holidayMonth, holiday.week, holiday.weekday!);
       if (holidayDate && holidayDate.getDate() === day) {
         return { name: holiday.name, greeting: holiday.greeting };
       }

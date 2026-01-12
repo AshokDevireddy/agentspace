@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { Check, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
@@ -13,6 +14,7 @@ interface SimpleSearchableSelectProps {
   className?: string
   searchPlaceholder?: string
   disabled?: boolean
+  portal?: boolean // Use portal to escape overflow:hidden containers
 }
 
 export function SimpleSearchableSelect({
@@ -23,10 +25,13 @@ export function SimpleSearchableSelect({
   className,
   searchPlaceholder = "Search...",
   disabled = false,
+  portal = false,
 }: SimpleSearchableSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [searchTerm, setSearchTerm] = React.useState("")
   const dropdownRef = React.useRef<HTMLDivElement>(null)
+  const buttonRef = React.useRef<HTMLButtonElement>(null)
+  const [dropdownPosition, setDropdownPosition] = React.useState({ top: 0, left: 0, width: 0 })
 
   // Filter options based on search term - use useMemo instead of useEffect to avoid infinite loops
   const filteredOptions = React.useMemo(() => {
@@ -93,9 +98,84 @@ export function SimpleSearchableSelect({
 
   const selectedOption = options.find(option => option.value === value)
 
+  // Update dropdown position when portal mode and open
+  React.useEffect(() => {
+    if (portal && open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect()
+      setDropdownPosition({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      })
+    }
+  }, [portal, open])
+
+  // Dropdown content
+  const dropdownContent = open && (
+    <div
+      className={cn(
+        "bg-card border border-border rounded-md shadow-2xl backdrop-blur-sm",
+        portal ? "fixed z-[99999]" : "absolute top-full left-0 z-[9999] w-full mt-1"
+      )}
+      style={portal ? {
+        top: dropdownPosition.top,
+        left: dropdownPosition.left,
+        width: dropdownPosition.width,
+        minWidth: 200
+      } : undefined}
+    >
+      <div className="p-1.5">
+        <Input
+          type="text"
+          placeholder={searchPlaceholder}
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="h-8 text-sm bg-background text-foreground border-border"
+          autoFocus
+        />
+      </div>
+      <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
+        {filteredOptions.length === 0 ? (
+          <div className="py-3 text-center text-xs text-muted-foreground">
+            No option found.
+          </div>
+        ) : (
+          filteredOptions.map((option) => {
+            const isSelected = value === option.value
+            return (
+              <button
+                type="button"
+                key={option.value}
+                className={cn(
+                  "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none text-foreground hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground transition-colors"
+                )}
+                onClick={() => {
+                  onValueChange?.(option.value === value ? "" : option.value)
+                  setOpen(false)
+                  setSearchTerm("")
+                }}
+              >
+                <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+                  <Check
+                    className={cn(
+                      "h-4 w-4 transition-opacity",
+                      isSelected ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                </span>
+                <span className="text-left flex-1">{option.label}</span>
+              </button>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <div className={cn("relative", className)} ref={dropdownRef}>
       <button
+        ref={buttonRef}
         type="button"
         role="combobox"
         aria-expanded={open}
@@ -118,55 +198,10 @@ export function SimpleSearchableSelect({
         <ChevronDown className={cn("ml-2 h-4 w-4 shrink-0 opacity-50", open && "rotate-180")} />
       </button>
 
-      {open && (
-        <div className="absolute top-full left-0 z-[9999] w-full mt-1 bg-card border border-border rounded-md shadow-2xl backdrop-blur-sm">
-          <div className="p-1.5">
-            <Input
-              type="text"
-              placeholder={searchPlaceholder}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-8 text-sm bg-background text-foreground border-border"
-              autoFocus
-            />
-          </div>
-          <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
-            {filteredOptions.length === 0 ? (
-              <div className="py-3 text-center text-xs text-muted-foreground">
-                No option found.
-              </div>
-            ) : (
-              filteredOptions.map((option) => {
-                const isSelected = value === option.value
-                return (
-                  <button
-                    type="button"
-                    key={option.value}
-                    className={cn(
-                      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none text-foreground hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground transition-colors"
-                    )}
-                    onClick={() => {
-                      onValueChange?.(option.value === value ? "" : option.value)
-                      setOpen(false)
-                      setSearchTerm("")
-                    }}
-                  >
-                    <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
-                      <Check
-                        className={cn(
-                          "h-4 w-4 transition-opacity",
-                          isSelected ? "opacity-100" : "opacity-0"
-                        )}
-                      />
-                    </span>
-                    <span className="text-left flex-1">{option.label}</span>
-                  </button>
-                )
-              })
-            )}
-          </div>
-        </div>
-      )}
+      {portal && typeof document !== 'undefined'
+        ? createPortal(dropdownContent, document.body)
+        : dropdownContent
+      }
     </div>
   )
 }

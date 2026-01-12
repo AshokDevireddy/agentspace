@@ -104,8 +104,8 @@ export async function GET(
 
     if (startMonthParam && endMonthParam) {
       // Parse "YYYY-MM" format from query params
-      const [startYear, startMonthNum] = startMonthParam.split('-').map(Number);
-      const [endYear, endMonthNum] = endMonthParam.split('-').map(Number);
+      const [startYear, startMonthNum] = startMonthParam.split("-").map(Number);
+      const [endYear, endMonthNum] = endMonthParam.split("-").map(Number);
       startDate = new Date(startYear, startMonthNum - 1, 1); // First day of start month
       endDate = new Date(endYear, endMonthNum, 1); // First day of month AFTER end month
     } else {
@@ -122,7 +122,7 @@ export async function GET(
         p_agent_ids: [agentId],
         p_start_date: startDate.toISOString(),
         p_end_date: endDate.toISOString(),
-      }
+      },
     );
 
     // Extract metrics from RPC result
@@ -181,15 +181,20 @@ export async function GET(
       downlines: downlineCount || 0,
       status: agent.status || "pre-invite",
       badge: positionName,
+      is_active: agent.is_active ?? true,
       // Add production/debt metrics
       individual_debt: individual_debt,
       individual_debt_count: Number(metrics.individual_debt_count || 0),
       individual_production: individual_production,
-      individual_production_count: Number(metrics.individual_production_count || 0),
+      individual_production_count: Number(
+        metrics.individual_production_count || 0,
+      ),
       hierarchy_debt: hierarchy_debt,
       hierarchy_debt_count: Number(metrics.hierarchy_debt_count || 0),
       hierarchy_production: hierarchy_production,
-      hierarchy_production_count: Number(metrics.hierarchy_production_count || 0),
+      hierarchy_production_count: Number(
+        metrics.hierarchy_production_count || 0,
+      ),
       debt_to_production_ratio: metrics.debt_to_production_ratio != null
         ? Number(metrics.debt_to_production_ratio)
         : null,
@@ -235,27 +240,60 @@ export async function PUT(
       .eq("auth_user_id", user.id)
       .single();
 
-    const isAdmin = currentUser?.is_admin || 
-                   currentUser?.perm_level === "admin" || 
-                   currentUser?.role === "admin";
+    const isAdmin = currentUser?.is_admin ||
+      currentUser?.perm_level === "admin" ||
+      currentUser?.role === "admin";
 
     if (!currentUser || !isAdmin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await request.json();
-    const { email, phone_number, role, status, upline_id } = body;
+    const { email, phone_number, role, status, upline_id, is_active } = body;
 
-    // Build update object with only provided fields
+    // Build update object with only fields that are actually being updated
+    // Only include fields that are explicitly provided and have meaningful values
     const updateData: any = {};
-    if (email !== undefined) updateData.email = email;
-    if (phone_number !== undefined) updateData.phone_number = phone_number;
-    if (role !== undefined) updateData.role = role;
-    if (status !== undefined) updateData.status = status;
+
+    // Only update email if it's provided and not an empty string (empty string means clear it, set to null)
+    if (email !== undefined) {
+      updateData.email = email === "" || email === null ? null : email;
+    }
+
+    // Only update phone_number if it's provided
+    if (phone_number !== undefined) {
+      updateData.phone_number = phone_number === "" || phone_number === null
+        ? null
+        : phone_number;
+    }
+
+    // Only update role if it's provided and not empty
+    if (role !== undefined && role !== "") {
+      updateData.role = role;
+    }
+
+    // Only update status if it's provided and not empty
+    if (status !== undefined && status !== "") {
+      updateData.status = status;
+    }
+
+    // Only update is_active if it's explicitly provided (boolean)
+    if (is_active !== undefined && typeof is_active === "boolean") {
+      updateData.is_active = is_active;
+    }
+
+    // Only update upline_id if it's provided
     if (upline_id !== undefined) {
       updateData.upline_id = upline_id === "all" || upline_id === ""
         ? null
         : upline_id;
+    }
+
+    // If no fields to update, return early
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: "No fields to update" }, {
+        status: 400,
+      });
     }
 
     // Update agent

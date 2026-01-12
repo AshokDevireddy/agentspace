@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { AsyncSearchableSelect } from "@/components/ui/async-searchable-select"
 import { Loader2, User, Calendar, DollarSign, Users, Building2, Mail, Phone, CheckCircle2, UserCog, TrendingUp, Circle, X, Edit, Save } from "lucide-react"
@@ -113,7 +114,9 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
         showSuccess('Agent updated successfully!')
       }
 
+      // Close the modal after successful save
       onOpenChange(false)
+      // Trigger any update callbacks
       onUpdate?.()
     },
     onError: (err) => {
@@ -208,15 +211,19 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
       }
 
       const data = await response.json()
+      console.log('[AgentDetailsModal] Raw API response:', data)
       // Convert name format from "Last, First" to "First Last" if needed
       // Also normalize status to lowercase for consistency
-      return {
+      const transformedData = {
         ...data,
         name: data.name?.includes(',')
           ? data.name.split(',').reverse().map((s: string) => s.trim()).join(' ')
           : data.name,
-        status: data.status?.toLowerCase() || 'active'
+        status: data.status?.toLowerCase() || 'active',
+        is_active: data.is_active ?? true // Ensure is_active is preserved
       }
+      console.log('[AgentDetailsModal] Transformed agent data:', transformedData)
+      return transformedData
     },
     enabled: open && !!agentId,
     staleTime: 30 * 1000, // 30 seconds
@@ -260,12 +267,15 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
 
   const handleEdit = () => {
     if (!agent) return
+    console.log('[AgentDetailsModal] Agent object when editing:', agent)
+    console.log('[AgentDetailsModal] Agent is_active value:', agent.is_active)
     setEditedData({
       email: agent.email || '',
       phone_number: agent.phone_number || '',
       role: agent.role || '',
       status: agent.status || 'pre-invite',
-      upline_id: agent.upline_id || ''
+      upline_id: agent.upline_id || '',
+      is_active: agent.is_active !== undefined ? agent.is_active : true
     })
     setIsEditing(true)
   }
@@ -277,6 +287,9 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
 
   const handleSave = () => {
     if (!agent || !editedData) return
+
+    console.log('[AgentDetailsModal] Saving with editedData:', editedData)
+    console.log('[AgentDetailsModal] is_active in editedData:', editedData.is_active)
 
     // Check if we should send an invite automatically
     const wasPreInvite = agent.status?.toLowerCase() === 'pre-invite'
@@ -581,25 +594,43 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
                   <p className="text-lg font-semibold text-foreground">{agent.downlines || 0}</p>
                 </div>
                 {isEditing && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Status
-                    </label>
-                    <SimpleSearchableSelect
-                      options={[
-                        { value: 'pre-invite', label: 'Pre-Invite' },
-                        { value: 'invited', label: 'Invited' },
-                        { value: 'onboarding', label: 'Onboarding' },
-                        { value: 'active', label: 'Active' },
-                        { value: 'inactive', label: 'Inactive' }
-                      ]}
-                      value={editedData?.status || ''}
-                      onValueChange={(value) => setEditedData({ ...editedData, status: value })}
-                      placeholder="Select status..."
-                      searchPlaceholder="Search status..."
-                    />
-                  </div>
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Status
+                      </label>
+                      <SimpleSearchableSelect
+                        options={[
+                          { value: 'pre-invite', label: 'Pre-Invite' },
+                          { value: 'invited', label: 'Invited' },
+                          { value: 'onboarding', label: 'Onboarding' },
+                          { value: 'active', label: 'Active' },
+                          { value: 'inactive', label: 'Inactive' }
+                        ]}
+                        value={editedData?.status || ''}
+                        onValueChange={(value) => setEditedData({ ...editedData, status: value })}
+                        placeholder="Select status..."
+                        searchPlaceholder="Search status..."
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Active Status
+                      </label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Checkbox
+                          id="is_active"
+                          checked={editedData?.is_active ?? true}
+                          onCheckedChange={(checked) => setEditedData({ ...editedData, is_active: checked as boolean })}
+                        />
+                        <label htmlFor="is_active" className="text-sm font-medium text-foreground cursor-pointer">
+                          Agent is active
+                        </label>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             </CardContent>

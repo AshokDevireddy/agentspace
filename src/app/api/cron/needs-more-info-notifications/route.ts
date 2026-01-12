@@ -30,75 +30,54 @@ export async function GET(request: NextRequest) {
 
     console.log('Running needs_more_info notifications cron');
 
-    // Query deals with status_standardized = 'needs_more_info' (not yet notified)
-    // Join with users to get agent subscription tier and agencies to check messaging_enabled
+    // Query deals using RPC function
+    console.log('🔍 Querying deals using RPC function...');
     const { data: deals, error: dealsError } = await supabase
-      .from('deals')
-      .select(`
-        id,
-        client_name,
-        agent_id,
-        agency_id,
-        users!deals_agent_id_fkey(
-          id,
-          first_name,
-          last_name,
-          subscription_tier
-        ),
-        agencies!deals_agency_id_fkey(
-          id,
-          name,
-          messaging_enabled
-        )
-      `)
-      .eq('status_standardized', 'needs_more_info');
+      .rpc('get_needs_more_info_deals');
 
     if (dealsError) {
+      console.error('❌ Error querying deals:', dealsError);
       throw dealsError;
     }
 
     if (!deals || deals.length === 0) {
-      console.log('No deals with needs_more_info status found');
+      console.log('No deals eligible for needs more info notifications found');
       return NextResponse.json({
         success: true,
         updated: 0,
-        message: 'No deals requiring notification',
+        message: 'No deals eligible for needs more info notifications',
       });
     }
 
-    console.log(`Found ${deals.length} deals that need more info`);
+    console.log(`Found ${deals.length} deals eligible for needs more info notifications`);
 
     let successCount = 0;
     let errorCount = 0;
     let skippedCount = 0;
 
     // Update status to needs_more_info_notified (only for Pro/Expert with messaging enabled)
+    console.log('\n📋 Processing needs more info notifications...');
     for (const deal of deals) {
       try {
-        const agent = Array.isArray(deal.users) ? deal.users[0] : deal.users;
-        const agency = Array.isArray(deal.agencies) ? deal.agencies[0] : deal.agencies;
-        const agentTier = agent?.subscription_tier || 'free';
-        const messagingEnabled = agency?.messaging_enabled || false;
+        console.log(`\n📋 Processing deal ${deal.deal_id} (${deal.client_name})`);
+        console.log(`  Agent: ${deal.agent_first_name} ${deal.agent_last_name} (ID: ${deal.agent_id})`);
+        console.log(`  Agent Tier: ${deal.agent_subscription_tier}`);
+        console.log(`  Agency: ${deal.agency_name}`);
+        console.log(`  Messaging Enabled: ${deal.messaging_enabled}`);
 
-        console.log(`\n📋 Processing deal ${deal.id} (${deal.client_name})`);
-        console.log(`  Agent: ${agent?.first_name} ${agent?.last_name}`);
-        console.log(`  Agent Tier: ${agentTier}`);
-        console.log(`  Agency: ${agency?.name}`);
-        console.log(`  Messaging Enabled: ${messagingEnabled}`);
-
-        // Check if messaging is disabled for agency
-        if (!messagingEnabled) {
-          console.log(`  ⏭️  SKIPPED: Messaging is disabled for agency ${agency?.name}`);
-          console.log(`  ℹ️  Status remains as 'needs_more_info' (not updating to 'needs_more_info_notified')`);
+        // Check if messaging is disabled for agency (RPC already filters, but double-check)
+        if (!deal.messaging_enabled) {
+          console.log(`  ⏭️  SKIPPED: Messaging is disabled for agency ${deal.agency_name}`);
+          console.log(`  ℹ️  Status remains unchanged (not updating to 'needs_more_info_notified')`);
           skippedCount++;
           continue;
         }
 
         // Check agent subscription tier - only Pro and Expert get status updates
         // For Free/Basic tiers, skip status update entirely
-        if (agentTier === 'free' || agentTier === 'basic') {
-          console.log(`  ⏭️  SKIPPED: Agent is on ${agentTier} tier (automated messaging restricted to Pro/Expert only)`);
-          console.log(`  ℹ️  Status remains as 'needs_more_info' (not updating to 'needs_more_info_notified')`);
+        if (deal.agent_subscription_tier === 'free' || deal.agent_subscription_tier === 'basic') {
+          console.log(`  ⏭️  SKIPPED: Agent is on ${deal.agent_subscription_tier} tier (automated messaging restricted to Pro/Expert only)`);
+          console.log(`  ℹ️  Status remains unchanged (not updating to 'needs_more_info_notified')`);
           skippedCount++;
           continue;
         }
@@ -107,13 +86,13 @@ export async function GET(request: NextRequest) {
         await supabase
           .from('deals')
           .update({ status_standardized: 'needs_more_info_notified' })
-          .eq('id', deal.id);
+          .eq('id', deal.deal_id);
 
         successCount++;
-        console.log(`  ✅ Updated deal ${deal.id} to 'needs_more_info_notified'`);
+        console.log(`  ✅ Updated deal ${deal.deal_id} to 'needs_more_info_notified'`);
 
       } catch (error) {
-        console.error(`  ❌ Failed to update deal ${deal.id}:`, error);
+        console.error(`  ❌ Failed to update deal ${deal.deal_id}:`, error);
         errorCount++;
       }
     }

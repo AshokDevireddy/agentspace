@@ -952,12 +952,7 @@ export default function ConfigurationPage() {
         })
 
       if (uploadError) {
-        console.error('Storage upload error:', {
-          error: uploadError,
-          message: uploadError.message,
-          statusCode: uploadError.statusCode,
-          details: uploadError
-        })
+        console.error('Storage upload error:', uploadError)
         throw new Error(`Upload failed: ${uploadError.message}`)
       }
 
@@ -990,7 +985,7 @@ export default function ConfigurationPage() {
   // Extract dominant color from logo
   const extractDominantColor = async (imageUrl: string) => {
     try {
-      const img = new Image()
+      const img = new window.Image()
       img.crossOrigin = 'anonymous'
       img.src = imageUrl
 

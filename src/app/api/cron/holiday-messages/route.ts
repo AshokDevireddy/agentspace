@@ -9,7 +9,7 @@ import {
   getConversationIfExists,
   logMessage,
 } from '@/lib/sms-helpers';
-import { replaceSmsPlaceholders } from '@/lib/sms-template-helpers';
+import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
 
 // US Federal Bank Holidays configuration
@@ -201,7 +201,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Get template and replace placeholders
-        const template = agencySettings.sms_holiday_template;
+        const template = agencySettings?.sms_holiday_template || DEFAULT_SMS_TEMPLATES.holiday;
         const clientFirstName = deal.client_name?.split(' ')[0] || deal.client_name || 'there';
         const agentName = `${deal.agent_first_name} ${deal.agent_last_name}`;
 

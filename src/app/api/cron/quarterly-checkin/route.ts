@@ -9,7 +9,7 @@ import {
   getConversationIfExists,
   logMessage,
 } from '@/lib/sms-helpers';
-import { replaceSmsPlaceholders } from '@/lib/sms-template-helpers';
+import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
 
 export async function GET(request: NextRequest) {
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Get template and replace placeholders
-        const template = agencySettings.sms_quarterly_template;
+        const template = agencySettings?.sms_quarterly_template || DEFAULT_SMS_TEMPLATES.quarterly;
         const clientFirstName = deal.client_name?.split(' ')[0] || deal.client_name || 'there';
         const agentName = `${deal.agent_first_name} ${deal.agent_last_name}`;
         const agentPhone = deal.agent_phone || deal.agency_phone || 'your agent';

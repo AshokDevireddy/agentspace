@@ -3,7 +3,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ProductionProgressCard } from "@/components/production-progress-card"
-import { Users, BarChart3, FileText, Briefcase, AlertCircle } from "lucide-react"
+import { TimePeriodToggle } from "@/components/time-period-toggle"
+import { ProductionModeToggle, type ProductionMode } from "@/components/production-mode-toggle"
+import { Users, BarChart3, Briefcase, AlertCircle } from "lucide-react"
+import { getDateRangeForPeriod, formatDateRangeDisplay, getTimePeriodLabel, type TimePeriod } from "@/lib/date-utils"
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
@@ -28,12 +31,16 @@ export default function Home() {
   const { startTour, setUserRole, isTourActive } = useTour()
   const [showWizard, setShowWizard] = useState(false)
   const [hasStartedTour, setHasStartedTour] = useState(false)
-  // SSR-safe localStorage hook - returns 'downlines' on server, synced value on client
+  // SSR-safe localStorage hooks - returns default on server, synced value on client
   const [viewMode, setViewMode] = useLocalStorage<'just_me' | 'downlines'>('dashboard_view_mode', 'downlines')
+  const [timePeriod, setTimePeriod] = useLocalStorage<TimePeriod>('dashboard_time_period', 'this_week')
   const [topProducersPeriod, setTopProducersPeriod] = useState<'ytd' | 'mtd'>('ytd')
   const isHydrated = useHydrated()
 
-  // SSR-safe week date range - returns deterministic dates on server, actual current week on client
+  // Calculate date range based on selected time period
+  const periodDateRange = useMemo(() => getDateRangeForPeriod(timePeriod), [timePeriod])
+
+  // SSR-safe week date range for weekly scoreboard display
   const weekRange = useWeekDateRange()
   const queryClient = useQueryClient()
   const completeOnboardingMutation = useCompleteOnboarding()
@@ -47,16 +54,19 @@ export default function Home() {
     }
   )
 
+  // Scoreboard query uses selected time period
   const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useSupabaseRpc<any>(
-    queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate),
+    [...queryKeys.scoreboard(user?.id || '', periodDateRange.startDate, periodDateRange.endDate), timePeriod],
     'get_scoreboard_data',
-    { p_user_id: user?.id, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate },
+    { p_user_id: user?.id, p_start_date: periodDateRange.startDate, p_end_date: periodDateRange.endDate },
     {
       enabled: !!user?.id,
       staleTime: 60 * 1000, // 1 minute - scoreboard data is more static
       placeholderData: (previousData: any) => previousData,
     }
   )
+  // Production mode toggle state (Submitted vs Issue Paid)
+  const [productionMode, setProductionMode] = useLocalStorage<ProductionMode>('dashboard_production_mode', 'submitted')
 
   const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching, error: dashboardError } = useSupabaseRpc<any>(
     queryKeys.dashboard(user?.id || ''),
@@ -96,31 +106,16 @@ export default function Home() {
     }
   )
 
-  // YTD production query for ProductionProgressCard
-  const { data: ytdProductionResult, isLoading: ytdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'ytd', user?.id, productionDateRanges.ytd.start, productionDateRanges.ytd.end],
+  // Production query based on selected time period for ProductionProgressCard
+  // Note: productionMode filtering would need backend RPC support - toggle is ready for when backend supports it
+  const { data: periodProductionResult, isLoading: periodProductionLoading } = useSupabaseRpc<any>(
+    ['production', 'period', user?.id, periodDateRange.startDate, periodDateRange.endDate, timePeriod, productionMode],
     'get_agents_debt_production',
     {
       p_user_id: user?.id,
       p_agent_ids: user?.id ? [user.id] : [],
-      p_start_date: productionDateRanges.ytd.start,
-      p_end_date: productionDateRanges.ytd.end
-    },
-    {
-      enabled: !!user?.id,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    }
-  )
-
-  // MTD production query for ProductionProgressCard
-  const { data: mtdProductionResult, isLoading: mtdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'mtd', user?.id, productionDateRanges.mtd.start, productionDateRanges.mtd.end],
-    'get_agents_debt_production',
-    {
-      p_user_id: user?.id,
-      p_agent_ids: user?.id ? [user.id] : [],
-      p_start_date: productionDateRanges.mtd.start,
-      p_end_date: productionDateRanges.mtd.end
+      p_start_date: periodDateRange.startDate,
+      p_end_date: periodDateRange.endDate
     },
     {
       enabled: !!user?.id,
@@ -129,23 +124,13 @@ export default function Home() {
   )
 
   // Extract production values for ProductionProgressCard
-  const ytdProduction = useMemo(() => {
-    const data = ytdProductionResult?.[0]
+  const periodProduction = useMemo(() => {
+    const data = periodProductionResult?.[0]
     return {
       individual: data?.individual_production || 0,
       hierarchy: data?.hierarchy_production || 0
     }
-  }, [ytdProductionResult])
-
-  const mtdProduction = useMemo(() => {
-    const data = mtdProductionResult?.[0]
-    return {
-      individual: data?.individual_production || 0,
-      hierarchy: data?.hierarchy_production || 0
-    }
-  }, [mtdProductionResult])
-
-  const isProductionLoading = ytdProductionLoading || mtdProductionLoading
+  }, [periodProductionResult])
 
   // Combined error state for main data
   const queryError = dashboardError || scoreboardError || profileError
@@ -162,7 +147,7 @@ export default function Home() {
     }
   }, [userData, setUserRole])
 
-  // Weekly scoreboard for date display
+  // Scoreboard data for date display
   const scoreboardData = scoreboardResult?.success ? scoreboardResult.data : null
 
   // Top producers from YTD/MTD query
@@ -176,7 +161,8 @@ export default function Home() {
     }))
   }, [topProducersData])
 
-  const dateRange = scoreboardData?.dateRange || { startDate: weekRange.startDate, endDate: weekRange.endDate }
+  // Use period date range for display
+  const dateRange = { startDate: periodDateRange.startDate, endDate: periodDateRange.endDate }
 
   const dashboardData = dashboardResult
 
@@ -223,16 +209,15 @@ export default function Home() {
   const isStatsLoading = authLoading || dashboardLoading
   const isScoreboardLoading = authLoading || scoreboardLoading
   const isPieChartLoading = authLoading || dashboardLoading
+  const isProductionLoading = periodProductionLoading
 
   // Background refetch indicators for stale-while-revalidate
   const isRefreshing = (dashboardFetching && !dashboardLoading) || (scoreboardFetching && !scoreboardLoading)
 
+  // Format date range for display using the selected time period
   const formattedDateRange = useMemo(() => {
-    if (!dateRange.startDate || !dateRange.endDate) return 'This Week'
-    const start = new Date(dateRange.startDate + 'T00:00:00')
-    const end = new Date(dateRange.endDate + 'T00:00:00')
-    return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-  }, [dateRange])
+    return formatDateRangeDisplay(periodDateRange.startDate, periodDateRange.endDate)
+  }, [periodDateRange])
 
   const currentData = useMemo(() => {
     if (dashboardData?.your_deals || dashboardData?.downline_production) {
@@ -344,7 +329,7 @@ export default function Home() {
           <div>
             <h1 className="text-4xl font-bold mb-2 text-foreground">Welcome, {firstName}.</h1>
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-              <span>This Week • {formattedDateRange}</span>
+              <span>{getTimePeriodLabel(timePeriod)} • {formattedDateRange}</span>
               {isRefreshing && (
                 <span className="text-xs text-muted-foreground/70 animate-pulse">Refreshing...</span>
               )}
@@ -357,6 +342,14 @@ export default function Home() {
                 <span className="font-semibold">{dashboardData?.totals?.pending_positions || dashboardData?.pending_positions} Pending Position{(dashboardData?.totals?.pending_positions || dashboardData?.pending_positions) !== 1 ? 's' : ''}</span>
               </Link>
             )}
+
+            {/* Production Mode Toggle */}
+            <ProductionModeToggle value={productionMode} onChange={setProductionMode} />
+
+            {/* Time Period Toggle */}
+            <TimePeriodToggle value={timePeriod} onChange={setTimePeriod} />
+
+            {/* Just Me / Downlines Toggle */}
             <div className="relative bg-muted/50 p-1 rounded-lg">
               <div className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out" style={{ left: viewMode === 'just_me' ? '4px' : 'calc(50%)', width: 'calc(50% - 4px)' }} />
               <div className="relative z-10 flex">
@@ -407,8 +400,8 @@ export default function Home() {
         {/* Production Progress */}
         <ProductionProgressCard
           viewMode={viewMode}
-          ytdProduction={ytdProduction}
-          mtdProduction={mtdProduction}
+          production={periodProduction}
+          timePeriod={timePeriod}
           loading={isProductionLoading}
         />
 

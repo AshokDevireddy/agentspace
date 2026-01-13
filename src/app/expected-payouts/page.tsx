@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { MonthRangePicker } from "@/components/ui/month-range-picker"
+import { ProductionModeToggle, type ProductionMode } from "@/components/production-mode-toggle"
 import { createClient } from "@/lib/supabase/client"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { DollarSign, TrendingUp, TrendingDown, Calendar } from "lucide-react"
@@ -131,6 +132,17 @@ export default function ExpectedPayoutsPage() {
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [userTier, setUserTier] = useState<string>('free')
+  const [productionMode, setProductionMode] = useState<ProductionMode>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('expected_payouts_production_mode') as ProductionMode) || 'submitted'
+    }
+    return 'submitted'
+  })
+
+  // Save production mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('expected_payouts_production_mode', productionMode)
+  }, [productionMode])
 
   // Fetch current user data - waits for auth to be ready to prevent race conditions
   const { data: userData, isPending: userLoading } = useQuery({
@@ -249,7 +261,7 @@ export default function ExpectedPayoutsPage() {
     isFetching: payoutsFetching,
     error: payoutsError
   } = useQuery({
-    queryKey: queryKeys.expectedPayoutsData({ ...appliedFilters, agent: effectiveAgentId }),
+    queryKey: [...queryKeys.expectedPayoutsData({ ...appliedFilters, agent: effectiveAgentId }), productionMode],
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
@@ -280,6 +292,7 @@ export default function ExpectedPayoutsPage() {
       params.append('months_past', Math.abs(monthsPast).toString())
       params.append('months_future', Math.abs(monthsFuture).toString())
       params.append('agent_id', effectiveAgentId)
+      params.append('production_mode', productionMode)
 
       if (appliedFilters.carrier !== "all") {
         params.append('carrier_id', appliedFilters.carrier)
@@ -410,14 +423,17 @@ export default function ExpectedPayoutsPage() {
   return (
     <div className="space-y-6 relative payouts-content" data-tour="payouts">
       {/* Header */}
-      <div>
-        <div className="flex items-center gap-3 mb-2">
-          <h1 className="text-4xl font-bold text-foreground">Expected Payouts</h1>
-          <RefreshingIndicator isRefreshing={isRefreshing} />
+      <div className="flex justify-between items-start">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-4xl font-bold text-foreground">Expected Payouts</h1>
+            <RefreshingIndicator isRefreshing={isRefreshing} />
+          </div>
+          <p className="text-muted-foreground">
+            View projected commission payouts based on posted deals
+          </p>
         </div>
-        <p className="text-muted-foreground">
-          View projected commission payouts based on posted deals
-        </p>
+        <ProductionModeToggle value={productionMode} onChange={setProductionMode} />
       </div>
 
       {/* Error Display */}

@@ -110,10 +110,22 @@ export function calculateNextDraftDate(effectiveDate: string, billingCycle: stri
   const interval = monthsToAdd[billingCycle?.toLowerCase()] || 1
 
   let nextDraft = new Date(effective)
+  const originalDayOfMonth = effective.getDate()
 
   // Keep adding intervals until we find a date in the future
   while (nextDraft <= today) {
-    nextDraft.setMonth(nextDraft.getMonth() + interval)
+    const newMonth = nextDraft.getMonth() + interval
+    const newYear = nextDraft.getFullYear() + Math.floor(newMonth / 12)
+    const normalizedMonth = newMonth % 12
+
+    // Get the last day of the target month to handle overflow
+    // (e.g., Jan 31 + 1 month should be Feb 28, not Mar 3)
+    const lastDayOfTargetMonth = new Date(newYear, normalizedMonth + 1, 0).getDate()
+
+    // Use the original day or the last day of month, whichever is smaller
+    const dayToUse = Math.min(originalDayOfMonth, lastDayOfTargetMonth)
+
+    nextDraft = new Date(newYear, normalizedMonth, dayToUse)
   }
 
   return nextDraft

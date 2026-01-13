@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2, Mail, Check, Circle, Bot, Users, ChevronDown, ChevronUp } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, calculateNextCustomBillingDate, formatBillingPattern, calculateNextDraftDate } from "@/lib/utils"
 import Link from "next/link"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -214,7 +214,10 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
           policy_effective_date: data.policy_effective_date,
           annual_premium: parseFloat(data.annual_premium),
           monthly_premium: parseFloat(data.annual_premium) / 12,
-          status: data.status
+          status: data.status,
+          ssn_benefit: data.ssn_benefit,
+          billing_day_of_month: data.ssn_benefit ? data.billing_day_of_month : null,
+          billing_weekday: data.ssn_benefit ? data.billing_weekday : null
         })
       })
 
@@ -364,7 +367,10 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
       client_phone: deal.client_phone,
       policy_effective_date: deal.policy_effective_date,
       annual_premium: deal.annual_premium,
-      status: deal.status
+      status: deal.status,
+      ssn_benefit: deal.ssn_benefit || false,
+      billing_day_of_month: deal.billing_day_of_month || null,
+      billing_weekday: deal.billing_weekday || null
     })
     setIsEditing(true)
   }
@@ -733,6 +739,104 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         {deal.agent ? `${deal.agent.first_name} ${deal.agent.last_name}` : 'N/A'}
                       </p>
                     </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        Next Billing Date
+                      </label>
+                      {deal.ssn_benefit && deal.billing_day_of_month && deal.billing_weekday ? (
+                        <div>
+                          <p className="text-lg font-semibold text-foreground">
+                            {(() => {
+                              const nextBilling = calculateNextCustomBillingDate(deal.billing_day_of_month, deal.billing_weekday)
+                              return nextBilling ? nextBilling.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A'
+                            })()}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatBillingPattern(deal.billing_day_of_month, deal.billing_weekday)} of each month
+                          </p>
+                        </div>
+                      ) : deal.policy_effective_date && deal.billing_cycle ? (
+                        <p className="text-lg font-semibold text-foreground">
+                          {(() => {
+                            const nextDraft = calculateNextDraftDate(deal.policy_effective_date, deal.billing_cycle)
+                            return nextDraft ? nextDraft.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A'
+                          })()}
+                        </p>
+                      ) : (
+                        <p className="text-lg font-semibold text-muted-foreground">N/A</p>
+                      )}
+                    </div>
+
+                    {isEditing && (
+                      <>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                            SSN Benefit
+                          </label>
+                          <SimpleSearchableSelect
+                            options={[
+                              { value: 'yes', label: 'Yes' },
+                              { value: 'no', label: 'No' }
+                            ]}
+                            value={editedData?.ssn_benefit ? 'yes' : 'no'}
+                            onValueChange={(value) => setEditedData({
+                              ...editedData,
+                              ssn_benefit: value === 'yes',
+                              billing_day_of_month: value === 'no' ? null : editedData?.billing_day_of_month,
+                              billing_weekday: value === 'no' ? null : editedData?.billing_weekday
+                            })}
+                            placeholder="Select..."
+                            searchPlaceholder="Search..."
+                            portal={true}
+                          />
+                        </div>
+
+                        {editedData?.ssn_benefit && (
+                          <>
+                            <div className="space-y-1">
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                Billing Week
+                              </label>
+                              <SimpleSearchableSelect
+                                options={[
+                                  { value: '1st', label: '1st' },
+                                  { value: '2nd', label: '2nd' },
+                                  { value: '3rd', label: '3rd' },
+                                  { value: '4th', label: '4th' }
+                                ]}
+                                value={editedData?.billing_day_of_month || ''}
+                                onValueChange={(value) => setEditedData({ ...editedData, billing_day_of_month: value })}
+                                placeholder="Select week..."
+                                searchPlaceholder="Search..."
+                                portal={true}
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                Billing Day
+                              </label>
+                              <SimpleSearchableSelect
+                                options={[
+                                  { value: 'Monday', label: 'Monday' },
+                                  { value: 'Tuesday', label: 'Tuesday' },
+                                  { value: 'Wednesday', label: 'Wednesday' },
+                                  { value: 'Thursday', label: 'Thursday' },
+                                  { value: 'Friday', label: 'Friday' }
+                                ]}
+                                value={editedData?.billing_weekday || ''}
+                                onValueChange={(value) => setEditedData({ ...editedData, billing_weekday: value })}
+                                placeholder="Select day..."
+                                searchPlaceholder="Search..."
+                                portal={true}
+                              />
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>

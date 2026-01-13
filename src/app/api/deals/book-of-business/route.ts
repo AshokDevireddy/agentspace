@@ -173,6 +173,9 @@ export async function GET(req: NextRequest) {
         leadSource: deal.lead_source || "",
         status: deal.status || "draft",
         statusStandardized: deal.status_standardized || deal.status || "draft",
+        ssnBenefit: deal.ssn_benefit || false,
+        billingDayOfMonth: deal.billing_day_of_month || null,
+        billingWeekday: deal.billing_weekday || null,
       };
     });
 

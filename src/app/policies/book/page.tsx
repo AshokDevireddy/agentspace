@@ -10,7 +10,7 @@ import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { Loader2, Plus, X } from "lucide-react"
 import { PolicyDetailsModal } from "@/components/modals/policy-details-modal"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
-import { cn, calculateMonthlyPremium, calculateNextDraftDate } from "@/lib/utils"
+import { cn, calculateMonthlyPremium, calculateNextDraftDate, calculateNextCustomBillingDate, formatBillingPattern } from "@/lib/utils"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import {
   Popover,
@@ -45,6 +45,9 @@ interface Deal {
   billingCycle: string
   status: string
   statusStandardized: string
+  ssnBenefit: boolean
+  billingDayOfMonth: string | null
+  billingWeekday: string | null
 }
 
 interface EditableDeal extends Deal {
@@ -980,14 +983,21 @@ export default function BookOfBusiness() {
                             </div>
                             <div className="flex flex-col gap-0.5">
                               <span className="text-xs text-muted-foreground">Effective: {deal.effectiveDate}</span>
-                              {deal.effectiveDateRaw && deal.billingCycle && (
+                              {deal.ssnBenefit && deal.billingDayOfMonth && deal.billingWeekday ? (
+                                <span className="text-xs text-muted-foreground">
+                                  Next Billing ({formatBillingPattern(deal.billingDayOfMonth, deal.billingWeekday)}): {(() => {
+                                    const nextBilling = calculateNextCustomBillingDate(deal.billingDayOfMonth, deal.billingWeekday)
+                                    return nextBilling ? nextBilling.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A'
+                                  })()}
+                                </span>
+                              ) : deal.effectiveDateRaw && deal.billingCycle ? (
                                 <span className="text-xs text-muted-foreground">
                                   Next Draft: {(() => {
                                     const nextDraft = calculateNextDraftDate(deal.effectiveDateRaw, deal.billingCycle)
                                     return nextDraft ? nextDraft.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A'
                                   })()}
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                             {deal.billingCycle ? (
                               <Badge

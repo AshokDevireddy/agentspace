@@ -3211,7 +3211,7 @@ export default function ConfigurationPage() {
                           </tr>
                         ) : (
                           positions.map((position) => (
-                            <tr key={position.position_id} className="border-b border-border hover:bg-blue-50 transition-colors">
+                            <tr key={position.position_id} className="border-b border-border hover:bg-accent/30 dark:hover:bg-accent/20 transition-colors">
                               <td className="py-5 px-6">
                                 {editingPositionId === position.position_id ? (
                                   <Input
@@ -3425,7 +3425,7 @@ export default function ConfigurationPage() {
                             </thead>
                             <tbody>
                               {gridData.positions.map((position) => (
-                                <tr key={position.id} className="hover:bg-accent/50 transition-colors group">
+                                <tr key={position.id} className="hover:bg-accent/30 dark:hover:bg-accent/20 transition-colors group">
                                   <td className="font-semibold bg-card transition-colors border-r border-border pos-col" style={{ position: 'sticky', left: 0, zIndex: 1, paddingLeft: '1rem', paddingRight: '1rem', marginLeft: 0, marginRight: 0, boxShadow: '8px 0 12px -4px rgba(0, 0, 0, 0.2), 4px 0 4px -2px rgba(0, 0, 0, 0.1)', minWidth: '150px' }}>
                                     {position.name}
                                     <span className="ml-2 text-xs text-muted-foreground">(Level {position.level})</span>

@@ -2381,9 +2381,7 @@ export default function ConfigurationPage() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Left Sidebar Navigation */}
       <aside className="w-72 bg-card border-r border-border flex flex-col flex-shrink-0 sticky top-0 h-screen">
-        {/* Back to App Button */}
         <div className="p-4 border-b border-border">
           <Link
             href="/"
@@ -2394,12 +2392,10 @@ export default function ConfigurationPage() {
           </Link>
         </div>
 
-        {/* Settings Header */}
         <div className="px-6 py-4">
           <h1 className="text-lg font-semibold text-foreground tracking-tight">Settings</h1>
         </div>
 
-        {/* Navigation Items */}
         <nav className="flex-1 px-3 overflow-y-auto">
           <div className="space-y-1">
             {tabs.map((tab) => {
@@ -2424,7 +2420,6 @@ export default function ConfigurationPage() {
           </div>
         </nav>
 
-        {/* Profile and Logout at Bottom */}
         <div className="border-t border-border p-3 mt-auto">
           <Link
             href="/user/profile"
@@ -2443,16 +2438,13 @@ export default function ConfigurationPage() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto">
         <div className="p-8 max-w-6xl">
-          {/* Page Header */}
           <div className="mb-8">
             <h2 className="text-2xl font-bold text-foreground mb-1">{TAB_META[activeTab].title}</h2>
             <p className="text-sm text-muted-foreground">{TAB_META[activeTab].description}</p>
           </div>
 
-          {/* Error Display - Show errors for any failed queries */}
           {agencyError && (
             <div className="mb-4">
               <QueryErrorDisplay

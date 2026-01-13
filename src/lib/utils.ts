@@ -130,3 +130,83 @@ export function calculateNextDraftDate(effectiveDate: string, billingCycle: stri
 
   return nextDraft
 }
+
+/**
+ * Calculates the next billing date based on custom billing pattern (e.g., "2nd Wednesday")
+ */
+export function calculateNextCustomBillingDate(
+  billingDayOfMonth: string | null,
+  billingWeekday: string | null
+): Date | null {
+  if (!billingDayOfMonth || !billingWeekday) return null
+
+  const weekdayMap: Record<string, number> = {
+    'sunday': 0,
+    'monday': 1,
+    'tuesday': 2,
+    'wednesday': 3,
+    'thursday': 4,
+    'friday': 5,
+    'saturday': 6
+  }
+
+  const ordinalMap: Record<string, number> = {
+    '1st': 1,
+    '2nd': 2,
+    '3rd': 3,
+    '4th': 4
+  }
+
+  const targetWeekday = weekdayMap[billingWeekday.toLowerCase()]
+  const targetOrdinal = ordinalMap[billingDayOfMonth.toLowerCase()]
+
+  if (targetWeekday === undefined || targetOrdinal === undefined) return null
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const findNthWeekdayOfMonth = (year: number, month: number, weekday: number, n: number): Date => {
+    const firstOfMonth = new Date(year, month, 1)
+    const firstWeekday = firstOfMonth.getDay()
+
+    let daysUntilFirstOccurrence = weekday - firstWeekday
+    if (daysUntilFirstOccurrence < 0) {
+      daysUntilFirstOccurrence += 7
+    }
+
+    const nthOccurrenceDay = 1 + daysUntilFirstOccurrence + (n - 1) * 7
+    return new Date(year, month, nthOccurrenceDay)
+  }
+
+  let currentYear = today.getFullYear()
+  let currentMonth = today.getMonth()
+  let targetDate = findNthWeekdayOfMonth(currentYear, currentMonth, targetWeekday, targetOrdinal)
+
+  if (targetDate <= today || targetDate.getMonth() !== currentMonth) {
+    currentMonth++
+    if (currentMonth > 11) {
+      currentMonth = 0
+      currentYear++
+    }
+    targetDate = findNthWeekdayOfMonth(currentYear, currentMonth, targetWeekday, targetOrdinal)
+
+    while (targetDate.getMonth() !== currentMonth) {
+      currentMonth++
+      if (currentMonth > 11) {
+        currentMonth = 0
+        currentYear++
+      }
+      targetDate = findNthWeekdayOfMonth(currentYear, currentMonth, targetWeekday, targetOrdinal)
+    }
+  }
+
+  return targetDate
+}
+
+export function formatBillingPattern(
+  billingDayOfMonth: string | null,
+  billingWeekday: string | null
+): string | null {
+  if (!billingDayOfMonth || !billingWeekday) return null
+  return `${billingDayOfMonth} ${billingWeekday}`
+}

@@ -11,6 +11,7 @@ import {
 } from '@/lib/sms-helpers';
 import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
+import { calculateNextCustomBillingDate } from '@/lib/utils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -85,7 +86,15 @@ export async function GET(request: NextRequest) {
     console.log('\n💌 Processing billing reminders...');
     for (const deal of deals) {
       try {
-        const nextBillingDateStr = new Date(deal.next_billing_date).toLocaleDateString('en-US');
+        let nextBillingDate: Date;
+        if (deal.ssn_benefit && deal.billing_day_of_month && deal.billing_weekday) {
+          const customDate = calculateNextCustomBillingDate(deal.billing_day_of_month, deal.billing_weekday);
+          nextBillingDate = customDate || new Date(deal.next_billing_date);
+          console.log(`  Using custom billing pattern: ${deal.billing_day_of_month} ${deal.billing_weekday}`);
+        } else {
+          nextBillingDate = new Date(deal.next_billing_date);
+        }
+        const nextBillingDateStr = nextBillingDate.toLocaleDateString('en-US');
         console.log(`\n📬 Processing: ${deal.client_name} (${deal.client_phone})`);
         console.log(`  Next billing: ${nextBillingDateStr} (due in 3 days)`);
         console.log(`  Agent: ${deal.agent_first_name} ${deal.agent_last_name} (ID: ${deal.agent_id})`);
@@ -156,7 +165,9 @@ export async function GET(request: NextRequest) {
             client_phone: deal.client_phone,
             client_name: deal.client_name,
             billing_cycle: deal.billing_cycle,
-            next_billing_date: deal.next_billing_date,
+            next_billing_date: nextBillingDate.toISOString(),
+            ssn_benefit: deal.ssn_benefit,
+            billing_pattern: deal.ssn_benefit ? `${deal.billing_day_of_month} ${deal.billing_weekday}` : null,
           },
         });
 

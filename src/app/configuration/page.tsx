@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft, Mail, MessageCircle } from "lucide-react"
+import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft, Mail, MessageCircle, User, LogOut, ChevronLeft } from "lucide-react"
+import Link from "next/link"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
@@ -128,7 +129,7 @@ const isDefaultColorForMode = (color: string, mode: 'light' | 'dark' | 'system' 
 export default function ConfigurationPage() {
   const { showSuccess, showError, showWarning } = useNotification()
   const { theme, setTheme, resolvedTheme } = useTheme()
-  const { userData, refreshUserData } = useAuth()
+  const { userData, refreshUserData, signOut } = useAuth()
   const [isMounted, setIsMounted] = useState(false)
   const queryClient = useQueryClient()
   
@@ -2298,6 +2299,21 @@ export default function ConfigurationPage() {
     { id: "sms-templates" as TabType, label: "SMS Templates", icon: MessageCircle },
   ]
 
+  // Tab metadata with titles and descriptions for page headers
+  const TAB_META: Record<TabType, { title: string; description: string }> = {
+    "agency-profile": { title: "Agency Profile", description: "Customize your agency branding and appearance" },
+    "carriers": { title: "Carriers & Products", description: "Manage insurance carriers and their product offerings" },
+    "positions": { title: "Positions", description: "Configure agent positions and organizational hierarchy" },
+    "commissions": { title: "Commissions", description: "Set up commission structures and percentage splits" },
+    "lead-sources": { title: "Lead Sources", description: "Track and manage where your leads originate" },
+    "messaging": { title: "Messaging", description: "Configure SMS and messaging preferences" },
+    "email-notifications": { title: "Email Notifications", description: "Set up automated email notification rules" },
+    "policy-reports": { title: "Policy Reports", description: "Upload and manage carrier policy reports" },
+    "carrier-logins": { title: "Carrier Logins", description: "Store carrier portal credentials securely" },
+    "discord": { title: "Discord Notifications", description: "Connect Discord webhooks for team alerts" },
+    "sms-templates": { title: "SMS Templates", description: "Create and customize SMS message templates" },
+  }
+
   // Get commissions grid data
   const getCommissionsGrid = () => {
     if (!selectedCommissionCarrier || commissions.length === 0) return null
@@ -2364,120 +2380,151 @@ export default function ConfigurationPage() {
   const gridData = getCommissionsGrid()
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-6 py-6">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-foreground mb-1">Settings</h1>
-          <p className="text-sm text-muted-foreground">Manage your agency configuration</p>
+    <div className="flex min-h-screen bg-background">
+      {/* Left Sidebar Navigation */}
+      <aside className="w-72 bg-card border-r border-border flex flex-col flex-shrink-0 sticky top-0 h-screen">
+        {/* Back to App Button */}
+        <div className="p-4 border-b border-border">
+          <Link
+            href="/"
+            className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-primary hover:bg-primary/10 rounded-lg transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Back to App
+          </Link>
         </div>
 
-        {/* Error Display - Show errors for any failed queries */}
-        {agencyError && (
-          <div className="mb-4">
-            <QueryErrorDisplay
-              error={agencyError}
-              onRetry={() => {
-                if (isMounted) {
-                  queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
-                }
-              }}
-              variant="inline"
-            />
-          </div>
-        )}
-        {carriersError && (
-          <div className="mb-4">
-            <QueryErrorDisplay
-              error={carriersError}
-              onRetry={() => {
-                if (isMounted) {
-                  queryClient.invalidateQueries({ queryKey: queryKeys.configurationCarriers() })
-                }
-              }}
-              variant="inline"
-            />
-          </div>
-        )}
-        {productsError && (
-          <div className="mb-4">
-            <QueryErrorDisplay
-              error={productsError}
-              onRetry={() => {
-                if (isMounted) {
-                  queryClient.invalidateQueries({ queryKey: queryKeys.configurationProducts() })
-                }
-              }}
-              variant="inline"
-            />
-          </div>
-        )}
-        {positionsError && (
-          <div className="mb-4">
-            <QueryErrorDisplay
-              error={positionsError}
-              onRetry={() => {
-                if (isMounted) {
-                  queryClient.invalidateQueries({ queryKey: queryKeys.configurationPositions() })
-                }
-              }}
-              variant="inline"
-            />
-          </div>
-        )}
-        {commissionsError && (
-          <div className="mb-4">
-            <QueryErrorDisplay
-              error={commissionsError}
-              onRetry={() => {
-                if (isMounted) {
-                  queryClient.invalidateQueries({ queryKey: queryKeys.configurationCommissions(selectedCommissionCarrier) })
-                }
-              }}
-              variant="inline"
-            />
-          </div>
-        )}
+        {/* Settings Header */}
+        <div className="px-6 py-4">
+          <h1 className="text-lg font-semibold text-foreground tracking-tight">Settings</h1>
+        </div>
 
-        {/* Horizontal Tabs Navigation */}
-        <div className="mb-6">
-          <div className="bg-card rounded-lg shadow-sm border border-border">
-            <div className="overflow-x-auto">
-              <div className="flex min-w-max border-b border-border">
-                {tabs.map((tab) => {
-                  const Icon = tab.icon
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={cn(
-                        "flex items-center gap-2 px-6 py-4 text-sm font-medium transition-all whitespace-nowrap border-b-2",
-                        activeTab === tab.id
-                          ? "border-black text-black bg-black/5 dark:border-white dark:text-white dark:bg-white/10"
-                          : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent"
-                      )}
-                    >
-                      <Icon className="h-5 w-5 flex-shrink-0" />
-                      <span>{tab.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
+        {/* Navigation Items */}
+        <nav className="flex-1 px-3 overflow-y-auto">
+          <div className="space-y-1">
+            {tabs.map((tab) => {
+              const Icon = tab.icon
+              const isActive = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-all",
+                    isActive
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  )}
+                >
+                  <Icon className="h-4 w-4 flex-shrink-0" />
+                  <span className="truncate">{tab.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </nav>
+
+        {/* Profile and Logout at Bottom */}
+        <div className="border-t border-border p-3 mt-auto">
+          <Link
+            href="/user/profile"
+            className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+          >
+            <User className="h-4 w-4 flex-shrink-0" />
+            <span>Profile</span>
+          </Link>
+          <button
+            onClick={() => signOut()}
+            className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+          >
+            <LogOut className="h-4 w-4 flex-shrink-0" />
+            <span>Logout</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-y-auto">
+        <div className="p-8 max-w-6xl">
+          {/* Page Header */}
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-foreground mb-1">{TAB_META[activeTab].title}</h2>
+            <p className="text-sm text-muted-foreground">{TAB_META[activeTab].description}</p>
+          </div>
+
+          {/* Error Display - Show errors for any failed queries */}
+          {agencyError && (
+            <div className="mb-4">
+              <QueryErrorDisplay
+                error={agencyError}
+                onRetry={() => {
+                  if (isMounted) {
+                    queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+                  }
+                }}
+                variant="inline"
+              />
             </div>
-          </div>
-        </div>
+          )}
+          {carriersError && (
+            <div className="mb-4">
+              <QueryErrorDisplay
+                error={carriersError}
+                onRetry={() => {
+                  if (isMounted) {
+                    queryClient.invalidateQueries({ queryKey: queryKeys.configurationCarriers() })
+                  }
+                }}
+                variant="inline"
+              />
+            </div>
+          )}
+          {productsError && (
+            <div className="mb-4">
+              <QueryErrorDisplay
+                error={productsError}
+                onRetry={() => {
+                  if (isMounted) {
+                    queryClient.invalidateQueries({ queryKey: queryKeys.configurationProducts() })
+                  }
+                }}
+                variant="inline"
+              />
+            </div>
+          )}
+          {positionsError && (
+            <div className="mb-4">
+              <QueryErrorDisplay
+                error={positionsError}
+                onRetry={() => {
+                  if (isMounted) {
+                    queryClient.invalidateQueries({ queryKey: queryKeys.configurationPositions() })
+                  }
+                }}
+                variant="inline"
+              />
+            </div>
+          )}
+          {commissionsError && (
+            <div className="mb-4">
+              <QueryErrorDisplay
+                error={commissionsError}
+                onRetry={() => {
+                  if (isMounted) {
+                    queryClient.invalidateQueries({ queryKey: queryKeys.configurationCommissions(selectedCommissionCarrier) })
+                  }
+                }}
+                variant="inline"
+              />
+            </div>
+          )}
 
-        {/* Tab Content Area */}
-        <div className="bg-card rounded-lg shadow-sm border border-border p-6">
-              {/* Agency Profile Tab - NEW */}
-              {activeTab === "agency-profile" && (
-                <div>
-                  <div className="mb-6">
-                    <h2 className="text-xl font-semibold text-foreground mb-1">Agency Profile</h2>
-                    <p className="text-sm text-muted-foreground">Customize your agency branding and appearance</p>
-                  </div>
-
-                  {loadingAgencyProfile ? (
+          {/* Tab Content Area */}
+          <div className="bg-card rounded-xl shadow-sm border border-border p-6">
+            {/* Agency Profile Tab */}
+            {activeTab === "agency-profile" && (
+              <div>
+                {loadingAgencyProfile ? (
                     /* Loading Skeleton */
                     <div className="space-y-6">
                       {/* Display Name Skeleton */}
@@ -4809,6 +4856,7 @@ export default function ConfigurationPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      </main>
     </div>
   )
 }

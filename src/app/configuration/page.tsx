@@ -129,7 +129,13 @@ export default function ConfigurationPage() {
   const { showSuccess, showError, showWarning } = useNotification()
   const { theme, setTheme, resolvedTheme } = useTheme()
   const { userData, refreshUserData } = useAuth()
+  const [isMounted, setIsMounted] = useState(false)
   const queryClient = useQueryClient()
+  
+  // Ensure we're on the client before using queryClient
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>("agency-profile")
@@ -299,12 +305,14 @@ export default function ConfigurationPage() {
         setTheme(agencyThemeMode)
       }
 
-      // Invalidate queries to refresh all agency-related data
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.agency }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.agencyBranding(agency.id) }),
-      ])
+      // Invalidate queries to refresh all agency-related data (client-side only)
+      if (isMounted) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.agency }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.agencyBranding(agency.id) }),
+        ])
+      }
 
       showSuccess('Changes saved successfully')
     } catch (error) {
@@ -483,7 +491,7 @@ export default function ConfigurationPage() {
   // Commissions state
   const [commissions, setCommissions] = useState<Commission[]>([])
   const [selectedCommissionCarrier, setSelectedCommissionCarrier] = useState<string>("")
-  const [commissionEdits, setCommissionEdits] = useState<Record<string, number | null>>({})
+  const [commissionEdits, setCommissionEdits] = useState<Array<{ position_id: string; product_id: string; commission_percentage: number }>>([])
   const [focusedInputKey, setFocusedInputKey] = useState<string | null>(null)
 
   // ============ TanStack Query Hooks ============
@@ -529,7 +537,7 @@ export default function ConfigurationPage() {
 
       if (!accessToken) throw new Error('No access token')
 
-      const response = await fetch('/api/carriers/agency', {
+      const response = await fetch('/api/carriers', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -677,8 +685,10 @@ export default function ConfigurationPage() {
       if (agency) {
         setAgency({ ...agency, primary_color: data.color })
       }
-      // Invalidate agency query to ensure cache is consistent
-      queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+      // Invalidate agency query to ensure cache is consistent (client-side only)
+      if (isMounted) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+      }
     },
     onError: (error) => {
       console.error('Error updating primary color:', error)
@@ -1245,20 +1255,51 @@ export default function ConfigurationPage() {
   }
 
   const handleSavePositionEdit = async () => {
-    if (!editingPositionId) return
+    if (!editingPositionId || !editPositionFormData) {
+      showError('No position selected for editing')
+      return
+    }
+
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(editingPositionId)) {
+      console.error('Invalid position ID format:', editingPositionId)
+      showError('Invalid position ID. Please refresh the page and try again.')
+      return
+    }
+
+    // Validate required fields
+    if (!editPositionFormData.name.trim()) {
+      showError('Position name is required')
+      return
+    }
+
+    if (editPositionFormData.level < 0 || !Number.isInteger(editPositionFormData.level)) {
+      showError('Level must be a positive integer')
+      return
+    }
 
     const shouldSyncCommissions = originalPositionData && editPositionFormData.is_active !== originalPositionData.is_active
+
+    console.log('[Position Update] Saving position:', {
+      positionId: editingPositionId,
+      positionIdLength: editingPositionId.length,
+      name: editPositionFormData.name.trim(),
+      level: editPositionFormData.level,
+      is_active: editPositionFormData.is_active,
+    })
 
     updatePositionMutation.mutate(
       {
         positionId: editingPositionId,
-        name: editPositionFormData.name,
+        name: editPositionFormData.name.trim(),
         level: editPositionFormData.level,
         description: editPositionFormData.description || null,
         is_active: editPositionFormData.is_active,
       },
       {
         onSuccess: async () => {
+          showSuccess('Position updated successfully')
           // Auto-sync commissions for all carriers if position was activated/deactivated
           if (shouldSyncCommissions) {
             console.log('Position activation changed, auto-syncing commissions for all carriers...')
@@ -1300,29 +1341,9 @@ export default function ConfigurationPage() {
 
   // Commission management functions
   const handleCommissionChange = (positionId: string, productId: string, value: string, originalValue?: number) => {
-    console.log('[Commission Change] handleCommissionChange called:', {
-      positionId,
-      positionId_length: positionId?.length,
-      positionId_type: typeof positionId,
-      productId,
-      productId_length: productId?.length,
-      productId_type: typeof productId,
-    })
-    
-    const key = `${positionId}-${productId}`
-    
-    console.log('[Commission Change] Key created:', {
-      key,
-      key_length: key.length,
-    })
-    
     // Allow empty string while typing
     if (value === '') {
-      setCommissionEdits(prev => {
-        const newEdits = { ...prev }
-        delete newEdits[key]
-        return newEdits
-      })
+      setCommissionEdits(prev => prev.filter(edit => !(edit.position_id === positionId && edit.product_id === productId)))
       return
     }
 
@@ -1337,66 +1358,40 @@ export default function ConfigurationPage() {
       // Only track as edit if it's different from original value
       const original = originalValue ?? 0
       if (numValue !== original) {
-        setCommissionEdits(prev => ({ ...prev, [key]: numValue }))
+        setCommissionEdits(prev => {
+          // Remove existing edit for this position/product combo if it exists
+          const filtered = prev.filter(edit => !(edit.position_id === positionId && edit.product_id === productId))
+          // Add the new edit
+          return [...filtered, { position_id: positionId, product_id: productId, commission_percentage: numValue }]
+        })
       } else {
         // Value matches original, remove from edits
-        setCommissionEdits(prev => {
-          const newEdits = { ...prev }
-          delete newEdits[key]
-          return newEdits
-        })
+        setCommissionEdits(prev => prev.filter(edit => !(edit.position_id === positionId && edit.product_id === productId)))
       }
     }
   }
 
   const handleSaveCommissions = async () => {
-    if (Object.keys(commissionEdits).length === 0) {
+    console.log('[Save] Commission edits:', commissionEdits)
+    
+    if (commissionEdits.length === 0) {
       showWarning('No changes to save')
       return
     }
 
-    const commissionsToSave = Object.entries(commissionEdits)
-      .filter(([_, percentage]) => percentage !== null) // Filter out null values (empty cells)
-      .map(([key, percentage]) => {
-        // UUIDs are 36 characters long. Split by taking first 36 chars as position_id
-        // and everything after the separator dash (position 37+) as product_id
-        const position_id = key.substring(0, 36)
-        const product_id = key.substring(37) // Skip the dash separator at position 36
-
-        // If percentage is null or undefined, default to 0
-        const result = { position_id, product_id, commission_percentage: percentage ?? 0 }
-
-        // Log each commission entry to debug key splitting issues
-        console.log('[Commission Save] Parsed commission entry:', {
-          originalKey: key,
-          originalKeyLength: key.length,
-          position_id,
-          position_id_length: position_id.length,
-          product_id,
-          product_id_length: product_id.length,
-          commission_percentage: percentage ?? 0,
-        })
-
-        return result
-      })
-
-    console.log('[Commission Save] Sending commissions to API:', {
-      totalCommissions: commissionsToSave.length,
-      commissions: commissionsToSave,
-      uniquePositionIds: [...new Set(commissionsToSave.map(c => c.position_id))],
-      uniqueProductIds: [...new Set(commissionsToSave.map(c => c.product_id))]
-    })
+    console.log('[Save] Sending to API:', { commissions: commissionEdits })
 
     saveCommissionsMutation.mutate(
-      { commissions: commissionsToSave },
+      { commissions: commissionEdits },
       {
-        onSuccess: () => {
-          setCommissionEdits({})
+        onSuccess: (data) => {
+          console.log('[Save] Success:', data)
+          setCommissionEdits([])
           refetchCommissions()
           showSuccess('Commissions saved successfully!')
         },
         onError: (error) => {
-          console.error('Error saving commissions:', error)
+          console.error('[Save] Error:', error)
           showError(error instanceof Error ? error.message : 'Failed to save commissions')
         },
       }
@@ -1651,7 +1646,9 @@ export default function ConfigurationPage() {
 
           // If no remaining products for carrier, invalidate carriers query to refresh
           if (remainingProductsForCarrier.length === 0) {
-            queryClient.invalidateQueries({ queryKey: queryKeys.configurationCarriers() })
+            if (isMounted) {
+              queryClient.invalidateQueries({ queryKey: queryKeys.configurationCarriers() })
+            }
             if (selectedCarrier === productCarrierId) {
               setSelectedCarrier("")
             }
@@ -2346,7 +2343,11 @@ export default function ConfigurationPage() {
           <div className="mb-4">
             <QueryErrorDisplay
               error={agencyError}
-              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })}
+              onRetry={() => {
+                if (isMounted) {
+                  queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+                }
+              }}
               variant="inline"
             />
           </div>
@@ -2355,7 +2356,11 @@ export default function ConfigurationPage() {
           <div className="mb-4">
             <QueryErrorDisplay
               error={carriersError}
-              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationCarriers() })}
+              onRetry={() => {
+                if (isMounted) {
+                  queryClient.invalidateQueries({ queryKey: queryKeys.configurationCarriers() })
+                }
+              }}
               variant="inline"
             />
           </div>
@@ -2364,7 +2369,11 @@ export default function ConfigurationPage() {
           <div className="mb-4">
             <QueryErrorDisplay
               error={productsError}
-              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationProducts() })}
+              onRetry={() => {
+                if (isMounted) {
+                  queryClient.invalidateQueries({ queryKey: queryKeys.configurationProducts() })
+                }
+              }}
               variant="inline"
             />
           </div>
@@ -2373,7 +2382,11 @@ export default function ConfigurationPage() {
           <div className="mb-4">
             <QueryErrorDisplay
               error={positionsError}
-              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationPositions() })}
+              onRetry={() => {
+                if (isMounted) {
+                  queryClient.invalidateQueries({ queryKey: queryKeys.configurationPositions() })
+                }
+              }}
               variant="inline"
             />
           </div>
@@ -2382,7 +2395,11 @@ export default function ConfigurationPage() {
           <div className="mb-4">
             <QueryErrorDisplay
               error={commissionsError}
-              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.configurationCommissions(selectedCommissionCarrier) })}
+              onRetry={() => {
+                if (isMounted) {
+                  queryClient.invalidateQueries({ queryKey: queryKeys.configurationCommissions(selectedCommissionCarrier) })
+                }
+              }}
               variant="inline"
             />
           </div>
@@ -3269,20 +3286,29 @@ export default function ConfigurationPage() {
                                 )}
                               </td>
                               <td className="py-5 px-6">
-                                <div className="flex items-center justify-end space-x-2">
+                                <div className="flex items-center justify-end space-x-2 relative z-10">
                                   {editingPositionId === position.position_id ? (
                                     <>
                                       <button
-                                        onClick={handleSavePositionEdit}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleSavePositionEdit()
+                                        }}
                                         disabled={savingPosition}
-                                        className="text-green-600 hover:text-green-800 p-2 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
+                                        className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 p-2 bg-green-50 dark:bg-green-950/50 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative z-10"
+                                        type="button"
                                       >
                                         <Check className="h-5 w-5" />
                                       </button>
                                       <button
-                                        onClick={() => setEditingPositionId(null)}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setEditingPositionId(null)
+                                          setOriginalPositionData(null)
+                                        }}
                                         disabled={savingPosition}
-                                        className="text-muted-foreground hover:text-foreground p-2 bg-accent rounded-lg hover:bg-accent/80 transition-colors"
+                                        className="text-muted-foreground hover:text-foreground p-2 bg-accent rounded-lg hover:bg-accent/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative z-10"
+                                        type="button"
                                       >
                                         <X className="h-5 w-5" />
                                       </button>
@@ -3290,14 +3316,22 @@ export default function ConfigurationPage() {
                                   ) : (
                                     <>
                                       <button
-                                        onClick={() => handleEditPosition(position)}
-                                        className="text-blue-600 hover:text-blue-800 p-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleEditPosition(position)
+                                        }}
+                                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 p-2 bg-blue-50 dark:bg-blue-950/50 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors relative z-10"
+                                        type="button"
                                       >
                                         <Edit className="h-5 w-5" />
                                       </button>
                                       <button
-                                        onClick={() => handleDeletePosition(position)}
-                                        className="text-red-600 hover:text-red-800 p-2 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleDeletePosition(position)
+                                        }}
+                                        type="button"
+                                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 p-2 bg-red-50 dark:bg-red-950/50 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors relative z-10"
                                       >
                                         <Trash2 className="h-5 w-5" />
                                       </button>
@@ -3332,7 +3366,7 @@ export default function ConfigurationPage() {
                           onChange={async (e) => {
                             const carrierId = e.target.value
                             setSelectedCommissionCarrier(carrierId)
-                            setCommissionEdits({})
+                            setCommissionEdits([])
                             
                             // If a carrier is selected, automatically sync missing commissions (silently)
                             // The sync function will fetch commissions at the end, so no need to fetch here
@@ -3452,7 +3486,9 @@ export default function ConfigurationPage() {
                                     }
                                     
                                     const key = `${position.id}-${product.id}`
-                                    const editedValue = commissionEdits[key]
+                                    const editedValue = commissionEdits.find(
+                                      edit => edit.position_id === position.id && edit.product_id === product.id
+                                    )?.commission_percentage
                                     const originalValue = commission?.commission_percentage
                                     const currentValue = editedValue !== undefined ? editedValue : originalValue
                                     const isFocused = focusedInputKey === key
@@ -3498,8 +3534,8 @@ export default function ConfigurationPage() {
                                             min="0"
                                             max="999.99"
                                             className={cn(
-                                              "h-10 w-28 text-center pr-6 no-spinner",
-                                              editedValue !== undefined && "border-blue-500 bg-blue-50"
+                                              "h-10 w-28 text-center pr-6 no-spinner bg-background text-foreground",
+                                              editedValue !== undefined && "border-blue-500 bg-blue-50 dark:bg-blue-950/50 dark:border-blue-400 dark:text-foreground"
                                             )}
                                           />
                                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">%</span>
@@ -3514,24 +3550,29 @@ export default function ConfigurationPage() {
                         </div>
                       </div>
 
-                      {Object.keys(commissionEdits).length > 0 && (
+                      {commissionEdits.length > 0 && (
                         <div className="flex items-center justify-between bg-primary/10 border border-primary/30 rounded-lg p-4 mt-4">
                           <div className="text-foreground">
-                            <p className="font-semibold">{Object.keys(commissionEdits).length} unsaved changes</p>
+                            <p className="font-semibold">{commissionEdits.length} unsaved changes</p>
                             <p className="text-sm text-muted-foreground">Click Save to apply your commission changes</p>
                           </div>
                           <div className="flex gap-3">
                             <Button
                               variant="outline"
-                              onClick={() => setCommissionEdits({})}
+                              onClick={() => setCommissionEdits([])}
                               disabled={savingCommissions}
                             >
                               Cancel
                             </Button>
                             <Button
-                              onClick={handleSaveCommissions}
-                              disabled={savingCommissions}
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                handleSaveCommissions()
+                              }}
+                              disabled={savingCommissions || commissionEdits.length === 0}
                               className="bg-primary hover:bg-primary/90"
+                              type="button"
                             >
                               {savingCommissions ? (
                                 <>

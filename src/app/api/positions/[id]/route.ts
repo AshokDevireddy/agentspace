@@ -8,12 +8,36 @@ import { NextResponse } from 'next/server'
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = createAdminClient()
     const body = await request.json()
-    const positionId = params.id
+    const { id: positionId } = await params
+    
+    if (!positionId) {
+      console.error('[Position Update] Missing position ID in URL params')
+      return NextResponse.json({
+        error: 'Missing position ID',
+        detail: 'Position ID is required in the URL'
+      }, { status: 400 })
+    }
+
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(positionId)) {
+      console.error('[Position Update] Invalid UUID format:', positionId)
+      return NextResponse.json({
+        error: 'Invalid position ID format',
+        detail: 'Position ID must be a valid UUID'
+      }, { status: 400 })
+    }
+
+    console.log('[Position Update] Received request:', {
+      positionId,
+      positionIdLength: positionId.length,
+      bodyKeys: Object.keys(body)
+    })
 
     const { name, level, description, is_active } = body
 
@@ -129,11 +153,29 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = createAdminClient()
-    const positionId = params.id
+    const { id: positionId } = await params
+    
+    if (!positionId) {
+      console.error('[Position Delete] Missing position ID in URL params')
+      return NextResponse.json({
+        error: 'Missing position ID',
+        detail: 'Position ID is required in the URL'
+      }, { status: 400 })
+    }
+
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(positionId)) {
+      console.error('[Position Delete] Invalid UUID format:', positionId)
+      return NextResponse.json({
+        error: 'Invalid position ID format',
+        detail: 'Position ID must be a valid UUID'
+      }, { status: 400 })
+    }
 
     // Get the authorization header
     const authHeader = request.headers.get('authorization')

@@ -710,6 +710,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                           onValueChange={(value) => setEditedData({ ...editedData, status: value })}
                           placeholder="Select Status"
                           searchPlaceholder="Search status..."
+                          portal={true}
                         />
                       ) : (
                         <div>

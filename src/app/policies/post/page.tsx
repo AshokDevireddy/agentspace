@@ -21,6 +21,9 @@ const initialFormData = {
   carrierId: "",
   productId: "",
   policyEffectiveDate: "",
+  ssnBenefit: "",
+  billingDayOfMonth: "",
+  billingWeekday: "",
   monthlyPremium: "",
   billingCycle: "",
   leadSource: "",
@@ -42,7 +45,7 @@ type Beneficiary = {
 type FormField = keyof typeof initialFormData;
 
 const requiredFields: FormField[] = [
-  "carrierId", "productId", "policyEffectiveDate", "monthlyPremium",
+  "carrierId", "productId", "policyEffectiveDate", "ssnBenefit", "monthlyPremium",
   "billingCycle", "leadSource",
   "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
   "clientAddress", "policyNumber"
@@ -76,6 +79,29 @@ export default function PostDeal() {
     { value: "quarterly", label: "Quarterly" },
     { value: "semi-annually", label: "Semi-Annually" },
     { value: "annually", label: "Annually" },
+  ]
+
+  // Billing day of month options
+  const billingDayOfMonthOptions = [
+    { value: "1st", label: "1st" },
+    { value: "2nd", label: "2nd" },
+    { value: "3rd", label: "3rd" },
+    { value: "4th", label: "4th" },
+  ]
+
+  // Billing weekday options
+  const billingWeekdayOptions = [
+    { value: "Monday", label: "Monday" },
+    { value: "Tuesday", label: "Tuesday" },
+    { value: "Wednesday", label: "Wednesday" },
+    { value: "Thursday", label: "Thursday" },
+    { value: "Friday", label: "Friday" },
+  ]
+
+  // SSN benefit options
+  const ssnBenefitOptions = [
+    { value: "yes", label: "Yes" },
+    { value: "no", label: "No" },
   ]
 
   useEffect(() => {
@@ -403,6 +429,9 @@ export default function PostDeal() {
         monthly_premium: monthlyPremium,
         annual_premium: monthlyPremium * 12,
         policy_effective_date: formData.policyEffectiveDate,
+        ssn_benefit: formData.ssnBenefit === "yes",
+        billing_day_of_month: formData.ssnBenefit === "yes" ? formData.billingDayOfMonth : null,
+        billing_weekday: formData.ssnBenefit === "yes" ? formData.billingWeekday : null,
         billing_cycle: formData.billingCycle || null,
         lead_source: formData.leadSource || null,
         beneficiaries: normalizedBeneficiaries,
@@ -570,6 +599,21 @@ export default function PostDeal() {
       if (!formData.policyEffectiveDate) {
         setError("Please select a policy effective date.")
         return false
+      }
+      if (!formData.ssnBenefit) {
+        setError("Please select whether this policy has SSN benefit.")
+        return false
+      }
+      // Only require billing pattern fields if SSN benefit is "yes"
+      if (formData.ssnBenefit === "yes") {
+        if (!formData.billingDayOfMonth) {
+          setError("Please select the week of month for billing.")
+          return false
+        }
+        if (!formData.billingWeekday) {
+          setError("Please select the day of week for billing.")
+          return false
+        }
       }
       if (!formData.monthlyPremium) {
         setError("Please enter the monthly premium.")
@@ -860,6 +904,60 @@ export default function PostDeal() {
                   </div>
                 </div>
 
+                {/* SSN Benefit */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      SSN Benefit <span className="text-destructive">*</span>
+                    </label>
+                    <SimpleSearchableSelect
+                      options={ssnBenefitOptions}
+                      value={formData.ssnBenefit}
+                      onValueChange={(value) => handleInputChange("ssnBenefit", value)}
+                      placeholder="Select yes or no"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      If yes, you&apos;ll need to specify the billing date pattern below
+                    </p>
+                  </div>
+                </div>
+
+                {/* Billing Date Pattern - Only shown when SSN Benefit is "yes" */}
+                {formData.ssnBenefit === "yes" && (
+                  <div className="border border-border rounded-lg p-4 bg-card/50 space-y-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-foreground">Billing Date Pattern</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Specify when billing occurs each period (e.g., 2nd Wednesday means billing happens on the 2nd Wednesday of each billing cycle)
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="block text-sm font-semibold text-foreground">
+                          Week of Month <span className="text-destructive">*</span>
+                        </label>
+                        <SimpleSearchableSelect
+                          options={billingDayOfMonthOptions}
+                          value={formData.billingDayOfMonth}
+                          onValueChange={(value) => handleInputChange("billingDayOfMonth", value)}
+                          placeholder="Select week"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="block text-sm font-semibold text-foreground">
+                          Day of Week <span className="text-destructive">*</span>
+                        </label>
+                        <SimpleSearchableSelect
+                          options={billingWeekdayOptions}
+                          value={formData.billingWeekday}
+                          onValueChange={(value) => handleInputChange("billingWeekday", value)}
+                          placeholder="Select day"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Policy Number */}
                   <div className="space-y-2">
@@ -1103,6 +1201,16 @@ export default function PostDeal() {
                       <span className="text-muted-foreground">Effective Date:</span>
                       <p className="font-medium text-foreground mt-1">{formData.policyEffectiveDate}</p>
                     </div>
+                    <div>
+                      <span className="text-muted-foreground">SSN Benefit:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.ssnBenefit === "yes" ? "Yes" : "No"}</p>
+                    </div>
+                    {formData.ssnBenefit === "yes" && (
+                      <div>
+                        <span className="text-muted-foreground">Billing Date Pattern:</span>
+                        <p className="font-medium text-foreground mt-1">{formData.billingDayOfMonth} {formData.billingWeekday}</p>
+                      </div>
+                    )}
                     <div>
                       <span className="text-muted-foreground">Monthly Premium:</span>
                       <p className="font-medium text-foreground mt-1">${formData.monthlyPremium}</p>

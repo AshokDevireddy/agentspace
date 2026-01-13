@@ -53,10 +53,10 @@ export async function GET(request: NextRequest) {
     console.log(`📅 Today (PST): ${todayPST.toLocaleDateString('en-US')}`);
     console.log(`📅 Looking for billing due on: ${threeDaysFromNow.toLocaleDateString('en-US')} (3 days from now)`);
 
-    // Query deals using RPC function with proper status checking
-    console.log('🔍 Querying deals using RPC function with status_mapping...');
+    // Query deals using new RPC function with custom billing date support
+    console.log('🔍 Querying deals using RPC function with status_mapping and custom billing dates...');
     const { data: deals, error: dealsError } = await supabase
-      .rpc('get_billing_reminder_deals');
+      .rpc('get_billing_reminder_deals_v2');
 
     if (dealsError) {
       console.error('❌ Error querying deals:', dealsError);

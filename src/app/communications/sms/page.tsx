@@ -78,6 +78,8 @@ interface DealDetails {
   annual_premium: number
   monthly_premium: number
   policy_effective_date: string | null
+  billing_day_of_month: string | null
+  billing_weekday: string | null
   billing_cycle: string | null
   lead_source: string | null
   status: string
@@ -689,16 +691,77 @@ function SMSMessagingPageContent() {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
-  const calculateNextBillingDate = (effectiveDate: string | null, billingCycle: string | null): string => {
-    if (!effectiveDate || !billingCycle) return 'N/A'
+  // Helper to get the Nth occurrence of a weekday in a month
+  const getNthWeekdayOfMonth = (year: number, month: number, nth: string, weekday: string): Date | null => {
+    const nthInt = { '1st': 1, '2nd': 2, '3rd': 3, '4th': 4 }[nth] || 1
+    const targetWeekday = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 6, 'Sunday': 0 }[weekday] || 0
 
-    // Parse date as local time to avoid timezone shifts
+    const firstDay = new Date(year, month, 1)
+    const firstWeekday = firstDay.getDay()
+
+    // Calculate days until first occurrence
+    let daysUntilFirst = targetWeekday - firstWeekday
+    if (daysUntilFirst < 0) daysUntilFirst += 7
+
+    // Calculate the nth occurrence
+    const nthOccurrence = new Date(year, month, 1 + daysUntilFirst + (nthInt - 1) * 7)
+
+    // Check if still in same month
+    if (nthOccurrence.getMonth() !== month) return null
+
+    return nthOccurrence
+  }
+
+  const calculateNextBillingDate = (
+    effectiveDate: string | null,
+    billingCycle: string | null,
+    billingDayOfMonth: string | null = null,
+    billingWeekday: string | null = null
+  ): string => {
+    if (!billingCycle) return 'N/A'
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    // If custom billing pattern is set, use it
+    if (billingDayOfMonth && billingWeekday) {
+      const incrementMonths = {
+        'monthly': 1,
+        'quarterly': 3,
+        'semi-annually': 6,
+        'annually': 12
+      }[billingCycle] || 1
+
+      let testDate = new Date(today)
+      testDate.setDate(1) // Start from first of current month
+
+      // Search forward up to 50 billing cycles
+      for (let i = 0; i < 50; i++) {
+        const candidateDate = getNthWeekdayOfMonth(
+          testDate.getFullYear(),
+          testDate.getMonth(),
+          billingDayOfMonth,
+          billingWeekday
+        )
+
+        if (candidateDate && candidateDate > today) {
+          return candidateDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        }
+
+        // Move to next billing period
+        testDate.setMonth(testDate.getMonth() + incrementMonths)
+      }
+
+      return 'N/A'
+    }
+
+    // Fallback to old calculation using policy effective date
+    if (!effectiveDate) return 'N/A'
+
     const [year, month, day] = effectiveDate.split('T')[0].split('-')
     const effective = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
-    const today = new Date()
     let nextBilling = new Date(effective)
 
-    // Calculate the increment based on billing cycle
     const incrementMonths = {
       'monthly': 1,
       'quarterly': 3,
@@ -706,7 +769,6 @@ function SMSMessagingPageContent() {
       'annually': 12
     }[billingCycle] || 1
 
-    // Keep adding the billing period until we get a future date
     while (nextBilling <= today) {
       nextBilling.setMonth(nextBilling.getMonth() + incrementMonths)
     }
@@ -1389,9 +1451,20 @@ function SMSMessagingPageContent() {
                       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                     })() : 'N/A'}
                   />
+                  {dealDetails.billing_day_of_month && dealDetails.billing_weekday && (
+                    <DetailRow
+                      label="Billing Pattern"
+                      value={`${dealDetails.billing_day_of_month} ${dealDetails.billing_weekday}`}
+                    />
+                  )}
                   <DetailRow
                     label="Next Billing Date"
-                    value={calculateNextBillingDate(dealDetails.policy_effective_date, dealDetails.billing_cycle)}
+                    value={calculateNextBillingDate(
+                      dealDetails.policy_effective_date,
+                      dealDetails.billing_cycle,
+                      dealDetails.billing_day_of_month,
+                      dealDetails.billing_weekday
+                    )}
                     highlight
                   />
                   <DetailRow

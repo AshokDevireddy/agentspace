@@ -22,6 +22,9 @@ const AUTH_PAGES = [
 // Pages for client users (no navigation)
 const CLIENT_PAGES = ['/client/dashboard']
 
+// Pages that use their own full-page layout (settings has its own sidebar)
+const FULL_PAGE_LAYOUTS = ['/configuration']
+
 export default function ClientLayout({
   children,
 }: {
@@ -32,6 +35,7 @@ export default function ClientLayout({
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isClientPage = CLIENT_PAGES.some(page => pathname.startsWith(page))
+  const isFullPageLayout = FULL_PAGE_LAYOUTS.some(page => pathname.startsWith(page))
 
   // Get role and status from centralized auth state (no duplicate fetching)
   const userRole = userData?.role || null
@@ -91,8 +95,8 @@ export default function ClientLayout({
   const isOnWizardPath = pathname === '/' && userStatus === 'onboarding'
   const shouldHideNavigation = !loading && (userRole === 'client' || isOnWizardPath)
 
-  // Client pages or wizard phase - no navigation sidebar
-  if (isClientPage || shouldHideNavigation) {
+  // Client pages, wizard phase, or full-page layouts - no navigation sidebar
+  if (isClientPage || shouldHideNavigation || isFullPageLayout) {
     return (
       <div className="min-h-screen bg-background">
         {children}

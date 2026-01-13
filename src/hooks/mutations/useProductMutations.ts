@@ -46,7 +46,11 @@ interface Product {
 export function useCreateProduct() {
   return useAuthenticatedMutation<CreateProductResponse, CreateProductInput>('/api/products', {
     method: 'POST',
-    invalidateKeys: [queryKeys.configurationProducts(), queryKeys.products],
+    invalidateKeys: [
+      queryKeys.configurationProducts(),
+      queryKeys.products,
+      queryKeys.configurationCommissionsCarriers(),
+    ],
   })
 }
 
@@ -71,7 +75,11 @@ export function useDeleteProduct() {
     (variables) => `/api/products/${variables.productId}`,
     {
       method: 'DELETE',
-      invalidateKeys: [queryKeys.configurationProducts(), queryKeys.products],
+      invalidateKeys: [
+        queryKeys.configurationProducts(),
+        queryKeys.products,
+        queryKeys.configurationCommissionsCarriers(),
+      ],
     }
   )
 }

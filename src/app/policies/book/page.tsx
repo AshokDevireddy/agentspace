@@ -10,7 +10,7 @@ import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { Loader2, Plus, X } from "lucide-react"
 import { PolicyDetailsModal } from "@/components/modals/policy-details-modal"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
-import { cn } from "@/lib/utils"
+import { cn, calculateMonthlyPremium, calculateNextDraftDate } from "@/lib/utils"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import {
   Popover,
@@ -38,7 +38,9 @@ interface Deal {
   phoneHidden?: boolean
   agentId?: string
   effectiveDate: string
+  effectiveDateRaw: string
   annualPremium: string
+  annualPremiumRaw: number
   leadSource: string
   billingCycle: string
   status: string
@@ -968,8 +970,25 @@ export default function BookOfBusiness() {
                         </td>
                         <td>
                           <div className="flex flex-col gap-1">
-                            <span className="text-foreground font-bold text-base">{deal.annualPremium}</span>
-                            <span className="text-xs text-muted-foreground">{deal.effectiveDate}</span>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-foreground font-bold text-base">{deal.annualPremium}/yr</span>
+                              {deal.billingCycle && deal.annualPremiumRaw > 0 && (
+                                <span className="text-xs text-muted-foreground">
+                                  (${calculateMonthlyPremium(deal.annualPremiumRaw, deal.billingCycle).toFixed(2)}/mo)
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-xs text-muted-foreground">Effective: {deal.effectiveDate}</span>
+                              {deal.effectiveDateRaw && deal.billingCycle && (
+                                <span className="text-xs text-muted-foreground">
+                                  Next Draft: {(() => {
+                                    const nextDraft = calculateNextDraftDate(deal.effectiveDateRaw, deal.billingCycle)
+                                    return nextDraft ? nextDraft.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A'
+                                  })()}
+                                </span>
+                              )}
+                            </div>
                             {deal.billingCycle ? (
                               <Badge
                                 className={`${getBillingCycleColor(deal.billingCycle)} border capitalize text-xs w-fit`}

@@ -73,3 +73,60 @@ export function getContrastTextColor(hslColor: string): 'white' | 'black' {
     return 'white'
   }
 }
+
+/**
+ * Calculates monthly premium from annual premium based on billing cycle
+ */
+export function calculateMonthlyPremium(annualPremium: number, billingCycle: string): number {
+  const frequencies: Record<string, number> = {
+    'monthly': 12,
+    'quarterly': 4,
+    'semi-annually': 2,
+    'annually': 1
+  }
+  const divisor = frequencies[billingCycle?.toLowerCase()] || 12
+  return annualPremium / divisor
+}
+
+/**
+ * Calculates the next draft date based on effective date and billing cycle
+ */
+export function calculateNextDraftDate(effectiveDate: string, billingCycle: string): Date | null {
+  if (!effectiveDate) return null
+
+  const effective = new Date(effectiveDate + 'T00:00:00')
+  if (isNaN(effective.getTime())) return null
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const monthsToAdd: Record<string, number> = {
+    'monthly': 1,
+    'quarterly': 3,
+    'semi-annually': 6,
+    'annually': 12
+  }
+
+  const interval = monthsToAdd[billingCycle?.toLowerCase()] || 1
+
+  let nextDraft = new Date(effective)
+  const originalDayOfMonth = effective.getDate()
+
+  // Keep adding intervals until we find a date in the future
+  while (nextDraft <= today) {
+    const newMonth = nextDraft.getMonth() + interval
+    const newYear = nextDraft.getFullYear() + Math.floor(newMonth / 12)
+    const normalizedMonth = newMonth % 12
+
+    // Get the last day of the target month to handle overflow
+    // (e.g., Jan 31 + 1 month should be Feb 28, not Mar 3)
+    const lastDayOfTargetMonth = new Date(newYear, normalizedMonth + 1, 0).getDate()
+
+    // Use the original day or the last day of month, whichever is smaller
+    const dayToUse = Math.min(originalDayOfMonth, lastDayOfTargetMonth)
+
+    nextDraft = new Date(newYear, normalizedMonth, dayToUse)
+  }
+
+  return nextDraft
+}

@@ -117,6 +117,7 @@ export const queryKeys = {
   configurationPositions: () => ['configuration', 'positions'] as const,
   configurationCommissions: (carrierId?: string) =>
     ['configuration', 'commissions', carrierId] as const,
+  configurationCommissionsCarriers: () => ['configuration', 'commissions-carriers'] as const,
   configurationCarrierNames: () => ['configuration', 'carrier-names'] as const,
   configurationPolicyFiles: () => ['configuration', 'policy-files'] as const,
 

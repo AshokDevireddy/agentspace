@@ -493,6 +493,7 @@ export default function ConfigurationPage() {
   const [selectedCommissionCarrier, setSelectedCommissionCarrier] = useState<string>("")
   const [commissionEdits, setCommissionEdits] = useState<Array<{ position_id: string; product_id: string; commission_percentage: number }>>([])
   const [focusedInputKey, setFocusedInputKey] = useState<string | null>(null)
+  const [commissionsCarriers, setCommissionsCarriers] = useState<Carrier[]>([])
 
   // ============ TanStack Query Hooks ============
 
@@ -616,6 +617,32 @@ export default function ConfigurationPage() {
     },
     enabled: activeTab === 'positions',
     staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
+  // Fetch carriers for commissions dropdown (only carriers with products)
+  const { data: commissionsCarriersData = [], isLoading: commissionsCarriersLoading } = useQuery({
+    queryKey: queryKeys.configurationCommissionsCarriers(),
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) return []
+
+      const response = await fetch('/api/carriers/with-products', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        credentials: 'include'
+      })
+
+      if (!response.ok) return []
+      return response.json() as Promise<Carrier[]>
+    },
+    enabled: activeTab === 'commissions' && !!userData,
+    staleTime: 10 * 60 * 1000, // 10 minutes
   })
 
   // Fetch commissions (only when commissions tab is active and carrier is selected)
@@ -779,6 +806,13 @@ export default function ConfigurationPage() {
       setCommissions(commissionsData)
     }
   }, [commissionsData])
+
+  // Sync commissions carriers to local state
+  useEffect(() => {
+    if (commissionsCarriersData.length > 0) {
+      setCommissionsCarriers(commissionsCarriersData)
+    }
+  }, [commissionsCarriersData])
 
   // Sync carrier names to local state
   useEffect(() => {
@@ -3379,13 +3413,18 @@ export default function ConfigurationPage() {
                             }
                           }}
                           className="w-full md:w-96 h-12 px-4 rounded-lg border border-border bg-white dark:bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                          disabled={commissionsCarriersLoading}
                         >
                           <option value="">-- Select a carrier --</option>
-                          {carriers.map((carrier) => (
-                            <option key={carrier.id} value={carrier.id}>
-                              {carrier.display_name}
-                            </option>
-                          ))}
+                          {commissionsCarriersLoading ? (
+                            <option value="" disabled>Loading carriers...</option>
+                          ) : (
+                            commissionsCarriers.map((carrier) => (
+                              <option key={carrier.id} value={carrier.id}>
+                                {carrier.display_name}
+                              </option>
+                            ))
+                          )}
                         </select>
                       </div>
                       {selectedCommissionCarrier && (

@@ -14,7 +14,7 @@ export async function PUT(
     const supabase = createAdminClient()
     const body = await request.json()
     const { id: positionId } = await params
-    
+
     if (!positionId) {
       console.error('[Position Update] Missing position ID in URL params')
       return NextResponse.json({
@@ -158,7 +158,7 @@ export async function DELETE(
   try {
     const supabase = createAdminClient()
     const { id: positionId } = await params
-    
+
     if (!positionId) {
       console.error('[Position Delete] Missing position ID in URL params')
       return NextResponse.json({

@@ -188,13 +188,16 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
     onError: (error: Error) => {
       console.error('Unexpected error during upload:', error)
 
-      // If it's a partial failure (contains upload count), show warning
+      // Show appropriate notification based on error type
       if (error.message.includes('Uploaded') && error.message.includes('failed')) {
         showWarning(error.message)
-        onClose()
       } else {
         showError(error.message || 'An unexpected error occurred while uploading. Please try again.')
       }
+
+      // Always reset state and close modal on error
+      setPolicyReportFiles([])
+      onClose()
     }
   })
 
@@ -209,13 +212,16 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
 
 
 
-  const handleCancel = () => {
-    setPolicyReportFiles([])
-    onClose()
-  }
+  const handleCancel = () => onClose()
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) {
+        setPolicyReportFiles([])
+        uploadMutation.reset()
+      }
+      onClose()
+    }}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
         <DialogHeader>
           <DialogTitle className="text-center text-2xl font-bold text-foreground">

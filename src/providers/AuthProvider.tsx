@@ -410,10 +410,21 @@ export function AuthProvider({
   }, [supabase, router])
 
   const signOut = useCallback(async () => {
-    // 1. Clear all TanStack Query cache first (prevents stale data on re-login)
+    // 1. Invalidate server session FIRST (while component tree is stable)
+    try {
+      await supabase.auth.signOut()
+    } catch (err) {
+      console.error('[AuthProvider] Server signOut failed:', err)
+      // Continue with cleanup - we'll still clear local state
+    }
+
+    // 2. Navigate BEFORE clearing state (prevents re-render interference on large pages)
+    router.push('/login')
+
+    // 3. Clear TanStack Query cache AFTER navigation is initiated
     queryClient.clear()
 
-    // 2. Clear local state (localStorage filters)
+    // 4. Clear local state (localStorage filters)
     if (typeof window !== 'undefined') {
       const keysToRemove: string[] = []
       for (let i = 0; i < localStorage.length; i++) {
@@ -423,20 +434,9 @@ export function AuthProvider({
       keysToRemove.forEach(key => localStorage.removeItem(key))
     }
 
-    // 3. Clear React state
+    // 5. Clear React state LAST (prevents cascading re-renders from blocking navigation)
     setUser(null)
     setUserData(null)
-
-    // 4. Invalidate server session (non-blocking - proceed with redirect on error)
-    try {
-      await supabase.auth.signOut()
-    } catch (err) {
-      console.error('[AuthProvider] Server signOut failed:', err)
-      // Continue with redirect - local state is already cleared
-    }
-
-    // 5. Use Next.js router for clean navigation (no hard refresh needed)
-    router.push('/login')
   }, [supabase, router, queryClient])
 
   const contextValue = useMemo(() => ({

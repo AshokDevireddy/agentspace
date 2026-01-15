@@ -58,7 +58,7 @@ interface AgencyData {
 export default function ClientDashboard() {
   const router = useRouter()
   const supabase = createClient()
-  const { user: authUser, userData: authUserData, loading: authLoading } = useAuth()
+  const { user: authUser, userData: authUserData, loading: authLoading, signOut } = useAuth()
 
   // Query for full user profile data (extends AuthProvider's basic userData)
   const { data: userData, isLoading: userLoading, error: userError } = useQuery({
@@ -168,9 +168,8 @@ export default function ClientDashboard() {
   // Include authLoading to prevent rendering before auth state is known
   const loading = authLoading || userLoading || (!!userData && dealsLoading)
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
+  const handleSignOut = () => {
+    signOut()
   }
 
   const formatCurrency = (amount: number) => {

@@ -153,17 +153,23 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         throw new Error('No access token available')
       }
 
-      // Fetch current user's position level
+      // Fetch current user's position level and admin status
       let userPositionLevel: number | null = null
+      let isAdmin = false
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        const profileResponse = await fetch(`/api/user/profile?user_id=${user.id}`)
-        if (profileResponse.ok) {
-          const profileData = await profileResponse.json()
-          if (profileData.success && profileData.data.position) {
-            userPositionLevel = profileData.data.position.level
-          }
+        const { data: userData } = await supabase
+          .from('users')
+          .select('position_id, position:positions(level), role')
+          .eq('auth_user_id', user.id)
+          .single()
+
+        if (userData?.position?.level !== undefined) {
+          userPositionLevel = userData.position.level
         }
+
+        // Check if user is admin by role
+        isAdmin = userData?.role === 'admin'
       }
 
       const response = await fetch('/api/positions', {
@@ -179,10 +185,12 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
       const data = await response.json()
 
-      // Filter positions: only show positions BELOW current user's level (not including their level)
-      const filteredData = userPositionLevel !== null
-        ? data.filter((pos: any) => pos.level < userPositionLevel)
-        : data
+      // Filter positions: admins can assign any position, agents can assign positions at their level or below
+      const filteredData = isAdmin
+        ? data
+        : userPositionLevel !== null
+          ? data.filter((pos: any) => pos.level <= userPositionLevel)
+          : data
 
       return {
         positions: filteredData.map((pos: any) => ({

@@ -477,7 +477,7 @@ export default function Agents() {
       const accessToken = session?.access_token
 
       if (!accessToken) {
-        return { positions: [], userPositionLevel: null }
+        return { positions: [], userPositionLevel: null, isAdmin: false }
       }
 
       const response = await fetch('/api/positions', {
@@ -493,23 +493,27 @@ export default function Agents() {
 
       const positions = await response.json()
 
-      // Fetch current user's position level (for filtering assignment dropdown)
+      // Fetch current user's position level and admin status (for filtering assignment dropdown)
       const { data: { user } } = await supabase.auth.getUser()
       let userPositionLevel = null
+      let isAdmin = false
 
       if (user) {
         const { data: userData } = await supabase
           .from('users')
-          .select('position_id, position:positions(level)')
+          .select('position_id, position:positions(level), role')
           .eq('auth_user_id', user.id)
           .single()
 
         if (userData?.position?.level !== undefined) {
           userPositionLevel = userData.position.level
         }
+
+        // Check if user is admin by role
+        isAdmin = userData?.role === 'admin'
       }
 
-      return { positions, userPositionLevel }
+      return { positions, userPositionLevel, isAdmin }
     },
     staleTime: 10 * 60 * 1000, // 10 minutes - positions rarely change
     placeholderData: (previousData) => previousData, // Stale-while-revalidate
@@ -537,11 +541,18 @@ export default function Agents() {
   // Derived positions data
   const allPositions = positionsData?.positions || []
   const userPositionLevel = positionsData?.userPositionLevel || null
-  const positions = allPositions.filter((p: Position) =>
-    userPositionLevel === null || userPositionLevel === undefined
-      ? true
-      : p.level < userPositionLevel
-  ) // For pending positions assignment (filtered by user level)
+  const isAdmin = positionsData?.isAdmin || false
+  const positions = allPositions.filter((p: Position) => {
+    // Admins can assign any position
+    if (isAdmin) {
+      return true
+    }
+    // Agents can assign positions at their level or below
+    if (userPositionLevel === null || userPositionLevel === undefined) {
+      return true
+    }
+    return p.level <= userPositionLevel
+  }) // For pending positions assignment (filtered by user level)
   const filterPositions = allPositions // For filter dropdown (all agency positions)
   const positionsLoaded = !positionsLoading
 

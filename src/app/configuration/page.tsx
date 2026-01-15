@@ -684,10 +684,10 @@ export default function ConfigurationPage() {
     }
   )
 
-  // Fetch existing policy files (only when policy-reports tab is active)
-  const { data: policyFilesData, isLoading: checkingExistingFiles, refetch: refetchPolicyFiles } = useApiFetch<{files: any[]}>(
+  // Fetch existing policy files from ingest jobs (only when policy-reports tab is active)
+  const { data: policyFilesData, isLoading: checkingExistingFiles, refetch: refetchPolicyFiles } = useApiFetch<{files: any[], jobs?: any[]}>(
     queryKeys.configurationPolicyFiles(),
-    '/api/upload-policy-reports/bucket',
+    '/api/upload-policy-reports/jobs',
     {
       enabled: activeTab === 'policy-reports',
       staleTime: 2 * 60 * 1000, // 2 minutes
@@ -3942,7 +3942,7 @@ export default function ConfigurationPage() {
                   {uploadedFilesInfo.length > 0 && (
                     <div className="mb-6 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                       <p className="text-blue-800 dark:text-blue-200">
-                        <strong>Note:</strong> Previous uploads detected. New uploads will replace existing files for those carriers.
+                        <strong>{uploadedFilesInfo.length} file(s) uploaded</strong> across {policyFilesData?.jobs?.length || 0} job(s). Files are being processed by Lambda.
                       </p>
                     </div>
                   )}

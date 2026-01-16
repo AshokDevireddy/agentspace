@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { sendSMS } from "@/lib/telnyx";
 import { getOrCreateConversation, logMessage } from "@/lib/sms-helpers";
 
 /**
@@ -241,9 +240,12 @@ async function upsertDealBeneficiaries(
 }
 
 export async function POST(req: NextRequest) {
+  console.log("[Deals API] ========== POST /api/deals REQUEST RECEIVED ==========");
   const supabase = createAdminClient();
   try {
+    console.log("[Deals API] Parsing request body...");
     const data = await req.json();
+    console.log("[Deals API] Request body parsed successfully");
     console.log("[Deals API] POST /api/deals payload (sanitized)", {
       hasAgentId: !!data?.agent_id,
       hasAgencyId: !!data?.agency_id,
@@ -252,6 +254,8 @@ export async function POST(req: NextRequest) {
       hasProductId: !!data?.product_id,
       policy_number: data?.policy_number,
       policy_effective_date: data?.policy_effective_date,
+      client_phone: data?.client_phone,
+      client_email: data?.client_email,
     });
 
     // Destructure all possible fields
@@ -416,8 +420,10 @@ export async function POST(req: NextRequest) {
 
       // STEP 2: Check if phone number already exists for another deal in the same agency
       if (client_phone && agency_id) {
+        console.log('[Deals API] Checking phone uniqueness for:', client_phone);
         const { normalizePhoneForStorage } = await import('@/lib/telnyx');
         const normalizedPhone = normalizePhoneForStorage(client_phone);
+        console.log('[Deals API] Normalized phone:', normalizedPhone);
 
         const { data: existingDeal, error: phoneCheckError } = await supabase
           .from('deals')
@@ -435,6 +441,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (existingDeal) {
+          console.log('[Deals API] Phone number already exists for deal:', existingDeal.id);
           return NextResponse.json(
             {
               error: `Phone number ${client_phone} already exists for another deal in your agency (${existingDeal.client_name}, Policy: ${existingDeal.policy_number || 'N/A'}). Each deal must have a unique phone number within the agency.`,
@@ -443,6 +450,7 @@ export async function POST(req: NextRequest) {
             { status: 409 } // 409 Conflict
           );
         }
+        console.log('[Deals API] Phone number is unique');
       }
 
       // STEP 3: Verify that ALL agents in the upline have positions set
@@ -613,6 +621,7 @@ export async function POST(req: NextRequest) {
         notes,
       };
 
+      console.log("[Deals API] Inserting deal into database...");
       const { data: deal, error } = await supabase
         .from("deals")
         .insert([dealData])
@@ -620,8 +629,11 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (error) {
+        console.error("[Deals API] Error inserting deal:", error);
         return NextResponse.json({ error: error.message }, { status: 400 });
       }
+
+      console.log("[Deals API] Deal inserted successfully, ID:", deal.id);
 
       try {
         await upsertDealBeneficiaries(
@@ -694,10 +706,10 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Send welcome SMS to client (if client phone exists)
+      // Create welcome SMS draft for client (if client phone exists)
       if (deal?.id && deal.client_phone && deal.agent_id) {
         try {
-          console.log("[Deals API] Sending welcome SMS to client", {
+          console.log("[Deals API] Creating welcome SMS draft for client", {
             dealId: deal.id,
             clientPhone: deal.client_phone,
           });
@@ -720,14 +732,7 @@ export async function POST(req: NextRequest) {
             const welcomeMessage =
               `Welcome ${clientFirstName}! Thank you for choosing ${agencyName} for your life insurance needs. Your agent ${agentName} is here to help. You'll receive policy updates and reminders by text. Complete your account setup by clicking the invitation sent to ${clientEmail}. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
 
-            // Send SMS via Telnyx
-            await sendSMS({
-              from: agentData.agency.phone_number,
-              to: deal.client_phone,
-              text: welcomeMessage,
-            });
-
-            // Create conversation and log message (using client phone to prevent duplicates)
+            // Create conversation and log message as DRAFT (not sent automatically)
             const conversation = await getOrCreateConversation(
               agentData.id,
               deal.id,
@@ -741,7 +746,7 @@ export async function POST(req: NextRequest) {
               receiverId: agentData.id, // Placeholder
               body: welcomeMessage,
               direction: "outbound",
-              status: "sent",
+              status: "draft", // Create as draft - requires approval before sending
               metadata: {
                 automated: true,
                 type: "welcome",
@@ -752,17 +757,17 @@ export async function POST(req: NextRequest) {
             });
 
             console.log(
-              "[Deals API] Welcome SMS sent successfully to",
+              "[Deals API] Welcome SMS draft created successfully for",
               deal.client_phone,
             );
           } else {
             console.warn(
-              "[Deals API] Cannot send welcome SMS - agency phone not configured",
+              "[Deals API] Cannot create welcome SMS draft - agency phone not configured",
             );
           }
         } catch (smsError) {
-          // Don't fail the deal creation if SMS fails
-          console.error("[Deals API] Failed to send welcome SMS:", smsError);
+          // Don't fail the deal creation if SMS draft creation fails
+          console.error("[Deals API] Failed to create welcome SMS draft:", smsError);
         }
       }
 

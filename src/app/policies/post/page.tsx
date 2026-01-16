@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
-import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2 } from "lucide-react"
+import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2, MapPin } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -73,6 +73,12 @@ export default function PostDeal() {
   // Dynamic option states
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([])
 
+  // Address autocomplete states
+  const [addressSuggestions, setAddressSuggestions] = useState<Array<{display_name: string, address: any}>>([])
+  const [showAddressSuggestions, setShowAddressSuggestions] = useState(false)
+  const [addressSearchTimeout, setAddressSearchTimeout] = useState<NodeJS.Timeout | null>(null)
+  const addressInputRef = useRef<HTMLInputElement>(null)
+
   // Billing cycle options (fixed enum)
   const billingCycleOptions = [
     { value: "monthly", label: "Monthly" },
@@ -116,6 +122,7 @@ export default function PostDeal() {
     queryFn: async () => {
       if (!user?.id) return null
 
+      // Safe to use getSession() here - only extracting access token for API auth, not using for client-side auth decisions
       const { data: { session } } = await supabase.auth.getSession()
       const accessToken = session?.access_token
 
@@ -310,6 +317,8 @@ export default function PostDeal() {
   // Mutation: Submit deal
   const submitDealMutation = useMutation({
     mutationFn: async () => {
+      console.log('[PostDeal] Starting mutation...')
+
       // SECTION 1: Get current user's agent_id from auth context
       if (!user?.id) {
         throw new Error("User not authenticated. Please log in again.")
@@ -439,12 +448,31 @@ export default function PostDeal() {
 
       console.log('[PostDeal] Submitting payload to /api/deals', payload)
       console.log('[PostDeal] Agency ID being sent:', agencyId)
-      const res = await fetch("/api/deals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })
 
+      // Add timeout to prevent infinite hanging
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+
+      let res
+      try {
+        res = await fetch("/api/deals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        })
+        clearTimeout(timeoutId)
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId)
+        if (fetchError.name === 'AbortError') {
+          console.error('[PostDeal] Request timed out after 30 seconds')
+          throw new Error("Request timed out. Please try again.")
+        }
+        console.error('[PostDeal] Fetch error:', fetchError)
+        throw new Error("Network error. Please check your connection and try again.")
+      }
+
+      console.log('[PostDeal] Response received, status:', res.status)
       const data = await res.json()
       console.log('[PostDeal] /api/deals response', { ok: res.ok, status: res.status, data })
 
@@ -465,7 +493,7 @@ export default function PostDeal() {
         successMessage += '\n\n' + invitationMessage
       }
 
-      console.log("Deal operation complete:", successMessage)
+      console.log("[PostDeal] Deal operation complete:", successMessage)
 
       // Send Discord notification (don't block on this - fire and forget)
       sendDiscordNotification(agencyId, agent_id, formData, monthlyPremium).catch(err => {
@@ -476,6 +504,8 @@ export default function PostDeal() {
       return successMessage
     },
     onSuccess: (successMessage) => {
+      console.log('[PostDeal] onSuccess callback triggered')
+
       // Invalidate deals cache so the book of business shows the new deal
       // Use partial key prefix to match all filter variations
       queryClient.invalidateQueries({ queryKey: queryKeys.deals })
@@ -483,35 +513,48 @@ export default function PostDeal() {
 
       showSuccess(successMessage, 7000)
       setBeneficiaries([])
-      router.push("/policies/book")
+
+      console.log('[PostDeal] Navigating to /policies/book')
+
+      // Use window.location instead of router.push to force a full page reload
+      // This ensures the book of business page loads fresh data
+      window.location.href = "/policies/book"
     },
     onError: (error: Error) => {
+      console.error('[PostDeal] onError callback triggered:', error)
       setError(error.message || "An unexpected error occurred.")
     },
     onSettled: () => {
+      console.log('[PostDeal] onSettled callback triggered')
       submitIntentRef.current = false
     }
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    console.log('[PostDeal] handleSubmit called')
 
     // Only submit if we're on the final step
     if (currentStep !== STEPS.length) {
+      console.log('[PostDeal] Not on final step, aborting. Current step:', currentStep)
       submitIntentRef.current = false
       return
     }
 
     // Require explicit submit intent (button click)
     if (!submitIntentRef.current) {
+      console.log('[PostDeal] No submit intent, aborting')
       return
     }
 
+    console.log('[PostDeal] Validating form...')
     if (!validateForm()) {
+      console.log('[PostDeal] Form validation failed')
       submitIntentRef.current = false
       return
     }
 
+    console.log('[PostDeal] Form valid, calling mutation')
     setError(null)
     submitDealMutation.mutate()
   }
@@ -522,6 +565,87 @@ export default function PostDeal() {
       e.preventDefault()
     }
   }
+
+  // Format phone number as (XXX) XXX-XXXX
+  const formatPhoneNumber = (value: string) => {
+    // Remove all non-digits
+    const phoneNumber = value.replace(/\D/g, '')
+
+    // Limit to 10 digits
+    const limitedPhone = phoneNumber.slice(0, 10)
+
+    // Format based on length
+    if (limitedPhone.length <= 3) {
+      return limitedPhone
+    } else if (limitedPhone.length <= 6) {
+      return `(${limitedPhone.slice(0, 3)}) ${limitedPhone.slice(3)}`
+    } else {
+      return `(${limitedPhone.slice(0, 3)}) ${limitedPhone.slice(3, 6)}-${limitedPhone.slice(6)}`
+    }
+  }
+
+  // Search for address suggestions using Nominatim (free, no API key needed)
+  const searchAddress = async (query: string) => {
+    if (query.length < 3) {
+      setAddressSuggestions([])
+      setShowAddressSuggestions(false)
+      return
+    }
+
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=us&limit=5`,
+        {
+          headers: {
+            'User-Agent': 'AgentSpace-App'
+          }
+        }
+      )
+      const data = await response.json()
+      setAddressSuggestions(data)
+      setShowAddressSuggestions(data.length > 0)
+    } catch (error) {
+      console.error('Address search error:', error)
+      setAddressSuggestions([])
+      setShowAddressSuggestions(false)
+    }
+  }
+
+  // Handle address input change with debouncing
+  const handleAddressChange = (value: string) => {
+    setFormData({ ...formData, clientAddress: value })
+
+    // Clear existing timeout
+    if (addressSearchTimeout) {
+      clearTimeout(addressSearchTimeout)
+    }
+
+    // Set new timeout for search
+    const timeout = setTimeout(() => {
+      searchAddress(value)
+    }, 300) // 300ms debounce
+
+    setAddressSearchTimeout(timeout)
+  }
+
+  // Select an address suggestion
+  const selectAddress = (suggestion: any) => {
+    setFormData({ ...formData, clientAddress: suggestion.display_name })
+    setShowAddressSuggestions(false)
+    setAddressSuggestions([])
+  }
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (addressInputRef.current && !addressInputRef.current.contains(event.target as Node)) {
+        setShowAddressSuggestions(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleInputChange = (field: string, value: string) => {
     // For monthly premium, allow any string (including empty, partial numbers)
@@ -534,6 +658,12 @@ export default function PostDeal() {
     // Reset productId when carrier changes to prevent stale product selection
     if (field === "carrierId") {
       setFormData(prev => ({ ...prev, carrierId: value, productId: "" }))
+      return
+    }
+    // Format phone number input
+    if (field === "clientPhone") {
+      const formatted = formatPhoneNumber(value)
+      setFormData({ ...formData, [field]: formatted })
       return
     }
     setFormData({ ...formData, [field]: value })
@@ -655,6 +785,12 @@ export default function PostDeal() {
       }
       if (!formData.clientPhone) {
         setError("Please enter the client's phone number.")
+        return false
+      }
+      // Validate phone number format (must be 10 digits)
+      const phoneDigits = formData.clientPhone.replace(/\D/g, '')
+      if (phoneDigits.length !== 10) {
+        setError("Please enter a valid 10-digit phone number.")
         return false
       }
       if (!formData.clientDateOfBirth) {
@@ -1070,8 +1206,12 @@ export default function PostDeal() {
                       value={formData.clientPhone}
                       onChange={(e) => handleInputChange("clientPhone", e.target.value)}
                       className="h-12"
-                      placeholder="Enter phone number"
+                      placeholder="(555) 123-4567"
+                      maxLength={14}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Format: (XXX) XXX-XXXX
+                    </p>
                   </div>
 
                   <div className="space-y-2">
@@ -1088,17 +1228,39 @@ export default function PostDeal() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2 md:col-span-2">
+                  <div className="space-y-2 md:col-span-2 relative" ref={addressInputRef}>
                     <label className="block text-sm font-semibold text-foreground">
                       Address <span className="text-destructive">*</span>
                     </label>
-                    <Input
-                      type="text"
-                      value={formData.clientAddress}
-                      onChange={(e) => handleInputChange("clientAddress", e.target.value)}
-                      className="h-12"
-                      placeholder="Enter address"
-                    />
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                      <Input
+                        type="text"
+                        value={formData.clientAddress}
+                        onChange={(e) => handleAddressChange(e.target.value)}
+                        className="h-12 pl-10"
+                        placeholder="Start typing an address..."
+                        autoComplete="off"
+                      />
+                    </div>
+                    {showAddressSuggestions && addressSuggestions.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-60 overflow-auto">
+                        {addressSuggestions.map((suggestion, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => selectAddress(suggestion)}
+                            className="w-full text-left px-4 py-3 hover:bg-accent transition-colors border-b border-border last:border-0 flex items-start gap-2"
+                          >
+                            <MapPin className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                            <span className="text-sm text-foreground">{suggestion.display_name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Start typing to search for addresses
+                    </p>
                   </div>
                 </div>
 
@@ -1322,10 +1484,10 @@ export default function PostDeal() {
                   onClick={() => {
                     submitIntentRef.current = true
                   }}
-                  disabled={submitDealMutation.isPending || submitDealMutation.isSuccess}
+                  disabled={submitDealMutation.isPending}
                   className="h-12 px-6 bg-foreground hover:bg-foreground/90 text-background disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {submitDealMutation.isPending || submitDealMutation.isSuccess ? (
+                  {submitDealMutation.isPending ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Submitting...

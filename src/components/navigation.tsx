@@ -187,8 +187,8 @@ export default function Navigation() {
       }
     },
     enabled: !!user?.id,
-    staleTime: 1000 * 30, // 30 seconds
-    refetchInterval: 1000 * 60, // 1 minute fallback
+    staleTime: 1000 * 60 * 5, // 5 minutes - rely on real-time updates instead of polling
+    refetchInterval: false, // Disable polling - use real-time subscriptions only
   })
 
   const unreadCount = unreadCountData?.unreadCount || 0
@@ -238,11 +238,20 @@ export default function Navigation() {
       )
       .subscribe()
 
-    // Handle visibility change - refetch when tab becomes visible
+    // Handle visibility change - refetch when tab becomes visible (debounced)
+    let visibilityTimeout: NodeJS.Timeout | null = null
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        // Invalidate query when tab becomes visible (catches any missed events)
-        queryClient.invalidateQueries({ queryKey: queryKeys.conversationCount('self') })
+        // Debounce to prevent multiple rapid refetches
+        if (visibilityTimeout) clearTimeout(visibilityTimeout)
+        visibilityTimeout = setTimeout(() => {
+          // Only invalidate if data is stale (older than 1 minute)
+          const queryState = queryClient.getQueryState(queryKeys.conversationCount('self'))
+          const dataAge = queryState?.dataUpdatedAt ? Date.now() - queryState.dataUpdatedAt : Infinity
+          if (dataAge > 60000) { // 1 minute
+            queryClient.invalidateQueries({ queryKey: queryKeys.conversationCount('self') })
+          }
+        }, 1000) // Wait 1 second before refetching
       }
     }
 
@@ -251,6 +260,7 @@ export default function Navigation() {
     return () => {
       supabase.removeChannel(channel)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (visibilityTimeout) clearTimeout(visibilityTimeout)
     }
   }, [user?.id, supabase, queryClient])
 

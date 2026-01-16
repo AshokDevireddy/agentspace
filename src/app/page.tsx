@@ -354,7 +354,7 @@ export default function Home() {
             {(dashboardData?.totals?.pending_positions || dashboardData?.pending_positions) > 0 && (
               <Link href="/agents?tab=pending-positions" className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
                 <AlertCircle className="h-5 w-5" />
-                <span className="font-semibold">{dashboardData?.totals?.pending_positions || dashboardData?.pending_positions} Pending Position{(dashboardData?.totals?.pending_positions || dashboardData?.pending_positions) !== 1 ? 's' : ''}</span>
+                <span className="font-semibold">Pending Positions</span>
               </Link>
             )}
             <div className="relative bg-muted/50 p-1 rounded-lg">

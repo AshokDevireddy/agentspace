@@ -395,6 +395,11 @@ export default function PostDeal() {
 
           let inviteResponse
           try {
+            // Strip formatting from phone number for invite API
+            const cleanPhoneForInvite = formData.clientPhone
+              ? formData.clientPhone.replace(/[^\d]/g, '')
+              : undefined
+
             inviteResponse = await fetch('/api/clients/invite', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -402,7 +407,7 @@ export default function PostDeal() {
                 email: formData.clientEmail,
                 firstName: formData.clientName.split(' ')[0] || formData.clientName,
                 lastName: formData.clientName.split(' ').slice(1).join(' ') || 'Client',
-                phoneNumber: formData.clientPhone
+                phoneNumber: cleanPhoneForInvite
               }),
               signal: inviteController.signal
             })
@@ -468,6 +473,12 @@ export default function PostDeal() {
       // SECTION 4: Construct payload and submit to API
       console.log('[PostDeal] SECTION 4: Constructing payload...')
       const monthlyPremium = parseFloat(formData.monthlyPremium)
+
+      // Strip formatting from phone number - remove parentheses, spaces, and dashes
+      const cleanPhoneNumber = formData.clientPhone
+        ? formData.clientPhone.replace(/[^\d]/g, '')
+        : null
+
       const payload = {
         agent_id,
         carrier_id,
@@ -476,7 +487,7 @@ export default function PostDeal() {
         agency_id: agencyId,
         client_name: formData.clientName,
         client_email: formData.clientEmail || null,
-        client_phone: formData.clientPhone || null,
+        client_phone: cleanPhoneNumber,
         date_of_birth: formData.clientDateOfBirth || null,
         ssn_last_4: null,
         client_address: formData.clientAddress || null,

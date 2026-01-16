@@ -13,6 +13,8 @@ const nextConfig: NextConfig = {
     'playwright',
     'playwright-core',
   ],
+  // Empty turbopack config to silence Next.js 16 warning about webpack config
+  turbopack: {},
   // Suppress Supabase getSession warnings (they're informational, not actual security issues)
   webpack: (config, { isServer }) => {
     if (isServer) {

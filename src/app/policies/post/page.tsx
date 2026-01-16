@@ -162,18 +162,32 @@ export default function PostDeal() {
   const { data: agencyData } = useQuery({
     queryKey: queryKeys.agencyOptions(user?.id || ''),
     queryFn: async () => {
-      if (!user?.id) return null
+      console.log('[PostDeal AgencyQuery] Starting agency data fetch')
+      console.log('[PostDeal AgencyQuery] User auth ID:', user?.id)
+
+      if (!user?.id) {
+        console.log('[PostDeal AgencyQuery] No user ID, returning null')
+        return null
+      }
 
       // Fetch the current user's agency_id
+      console.log('[PostDeal AgencyQuery] Querying users table with auth_user_id:', user.id)
+      console.log('[PostDeal AgencyQuery] Query: SELECT id, agency_id, is_admin, role FROM users WHERE auth_user_id =', user.id)
+
       const { data: currentUser, error: currentUserError } = await supabase
         .from('users')
         .select('id, agency_id, is_admin, role')
         .eq('auth_user_id', user.id)
         .single()
 
+      console.log('[PostDeal AgencyQuery] Query result:', { currentUser, currentUserError })
+
       if (currentUserError || !currentUser?.agency_id) {
+        console.error('[PostDeal AgencyQuery] Error or missing agency_id:', currentUserError)
         return null
       }
+
+      console.log('[PostDeal AgencyQuery] User found:', currentUser.id, 'Agency:', currentUser.agency_id)
 
       const agencyIdVal = currentUser.agency_id as string
       const isAdminUser = Boolean(currentUser.is_admin || currentUser.role === 'admin')
@@ -231,17 +245,29 @@ export default function PostDeal() {
 
       const carriersOptions = Array.from(carrierMap.values()).map(c => ({ value: c.id, label: c.display_name }))
 
-      return {
+      const result = {
+        userId: currentUser.id,
         agencyId: agencyIdVal,
         isAdminUser,
         leadSourceOptions,
         carriersOptions
       }
+
+      console.log('[PostDeal AgencyQuery] Query complete, returning:', {
+        userId: result.userId,
+        agencyId: result.agencyId,
+        isAdminUser: result.isAdminUser,
+        leadSourcesCount: result.leadSourceOptions.length,
+        carriersCount: result.carriersOptions.length
+      })
+
+      return result
     },
     enabled: !!user?.id,
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
+  const userId = agencyData?.userId ?? null
   const agencyId = agencyData?.agencyId ?? null
   const isAdminUser = agencyData?.isAdminUser ?? false
   const leadSourceOptions = agencyData?.leadSourceOptions ?? []
@@ -318,124 +344,113 @@ export default function PostDeal() {
   const submitDealMutation = useMutation({
     mutationFn: async () => {
       console.log('[PostDeal] Starting mutation...')
+      console.log('[PostDeal] Auth User ID:', user?.id)
+      console.log('[PostDeal] User ID (from cache):', userId)
+      console.log('[PostDeal] Agency ID:', agencyId)
 
-      // SECTION 1: Get current user's agent_id from auth context
+      // SECTION 1: Get current user's agent_id from cached data
       if (!user?.id) {
+        console.error('[PostDeal] ERROR: User not authenticated')
         throw new Error("User not authenticated. Please log in again.")
       }
 
       // Ensure agency_id is loaded
       if (!agencyId) {
+        console.error('[PostDeal] ERROR: Agency ID not loaded')
         throw new Error("Agency information not loaded. Please refresh the page and try again.")
       }
 
-      // Get the user's agent_id from the users table
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      if (userError || !userData) {
-        throw new Error("Failed to get user information. Please try again.")
+      // Use cached user ID from agencyData query instead of querying again
+      if (!userId) {
+        console.error('[PostDeal] ERROR: User ID not available from cache')
+        throw new Error("User information not loaded. Please refresh the page and try again.")
       }
 
-      const agent_id = userData.id
+      const agent_id = userId
+      console.log('[PostDeal] Agent ID (using cached value):', agent_id)
 
       // SECTION 2: Use selected IDs directly
       const carrier_id = formData.carrierId
       const product_id = formData.productId
+      console.log('[PostDeal] Carrier ID:', carrier_id, 'Product ID:', product_id)
 
       // SECTION 3: Invite client if email is provided
+      console.log('[PostDeal] SECTION 3: Starting client invitation process...')
       let client_id = null
       let invitationMessage = ''
 
       console.log('[PostDeal] Checking client email:', formData.clientEmail ? 'present' : 'missing')
       if (formData.clientEmail) {
-        console.log('[PostDeal] Client email provided, checking for existing client...')
+        console.log('[PostDeal] Client email provided, sending invitation to:', formData.clientEmail)
         try {
-          // Check if client already exists in users table (including pending)
-          const { data: existingClient } = await supabase
-            .from('users')
-            .select('id, auth_user_id, status')
-            .eq('email', formData.clientEmail)
-            .eq('role', 'client')
-            .maybeSingle()
+          // Call the invite API directly - it handles checking for existing clients
+          console.log('[PostDeal] Calling /api/clients/invite...')
 
-          console.log('[PostDeal] Existing client check complete:', existingClient ? 'found' : 'not found')
+          // Add timeout to invitation API call
+          const inviteController = new AbortController()
+          const inviteTimeoutId = setTimeout(() => {
+            console.error('[PostDeal] Client invitation timeout triggered')
+            inviteController.abort()
+          }, 15000) // 15 second timeout
 
-          if (existingClient) {
-            client_id = existingClient.id
-            invitationMessage = existingClient.status === 'pending'
-              ? 'Client invitation was previously sent.'
-              : 'Client already has an account.'
-            console.log('[PostDeal] Client exists:', client_id, 'status:', existingClient.status)
-          } else {
-              // Send invitation to client
-              console.log('[PostDeal] No existing client found, sending invitation to:', formData.clientEmail)
-              console.log('[PostDeal] About to call /api/clients/invite...')
+          let inviteResponse
+          try {
+            inviteResponse = await fetch('/api/clients/invite', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: formData.clientEmail,
+                firstName: formData.clientName.split(' ')[0] || formData.clientName,
+                lastName: formData.clientName.split(' ').slice(1).join(' ') || 'Client',
+                phoneNumber: formData.clientPhone
+              }),
+              signal: inviteController.signal
+            })
+            clearTimeout(inviteTimeoutId)
+            console.log('[PostDeal] Invite API response status:', inviteResponse.status)
+          } catch (inviteFetchError: any) {
+            clearTimeout(inviteTimeoutId)
+            if (inviteFetchError.name === 'AbortError') {
+              console.error('[PostDeal] Client invitation request timed out after 15 seconds')
+              invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
+              inviteResponse = null
+            } else {
+              console.error('[PostDeal] Client invitation fetch error:', inviteFetchError)
+              invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
+              inviteResponse = null
+            }
+          }
 
-              // Add timeout to invitation API call
-              const inviteController = new AbortController()
-              const inviteTimeoutId = setTimeout(() => inviteController.abort(), 10000) // 10 second timeout
+          if (inviteResponse) {
+            const inviteData = await inviteResponse.json()
+            console.log('[PostDeal] Invite API response data:', inviteData)
 
-              let inviteResponse
-              try {
-                inviteResponse = await fetch('/api/clients/invite', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    email: formData.clientEmail,
-                    // Extract first and last name from client name if possible
-                    firstName: formData.clientName.split(' ')[0] || formData.clientName,
-                    lastName: formData.clientName.split(' ').slice(1).join(' ') || 'Client',
-                    phoneNumber: formData.clientPhone
-                  }),
-                  signal: inviteController.signal
-                })
-                clearTimeout(inviteTimeoutId)
-              } catch (inviteFetchError: any) {
-                clearTimeout(inviteTimeoutId)
-                if (inviteFetchError.name === 'AbortError') {
-                  console.error('[PostDeal] Client invitation request timed out after 10 seconds')
-                  invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
-                  // Continue with deal creation
-                  inviteResponse = null
-                } else {
-                  console.error('[PostDeal] Client invitation fetch error:', inviteFetchError)
-                  invitationMessage = `Email unable to send. Please try manually from Book of Business.`
-                  inviteResponse = null
-                }
-              }
-
-            if (inviteResponse) {
-              console.log('[PostDeal] Invite API fetch complete, status:', inviteResponse.status)
-              const inviteData = await inviteResponse.json()
-              console.log('[PostDeal] Invite API response:', inviteData)
-
-              if (inviteResponse.ok && inviteData.success) {
-                client_id = inviteData.userId
-                invitationMessage = inviteData.alreadyExists
-                  ? 'Client invitation was previously sent.'
-                  : '✓ Invitation email sent to client successfully!'
-                console.log('[PostDeal] Client invitation sent successfully, client_id:', client_id)
-              } else {
-                const errorMsg = inviteData.error || 'Unknown error'
-                console.error('[PostDeal] Failed to invite client:', errorMsg)
-                invitationMessage = `Email unable to send. Please try manually from Book of Business.`
-                // Continue anyway, but warn the user
-              }
+            if (inviteResponse.ok && inviteData.success) {
+              client_id = inviteData.userId
+              invitationMessage = inviteData.alreadyExists
+                ? 'Client invitation was previously sent.'
+                : '✓ Invitation email sent to client successfully!'
+              console.log('[PostDeal] Client invitation successful, client_id:', client_id)
+            } else {
+              const errorMsg = inviteData.error || 'Unknown error'
+              console.error('[PostDeal] Failed to invite client:', errorMsg)
+              invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
             }
           }
         } catch (clientError) {
-          console.error('Error inviting client:', clientError)
-          invitationMessage = `Email unable to send. Please try manually from Book of Business.`
-          // Continue anyway, but warn the user
+          console.error('[PostDeal] Error in client invitation process:', clientError)
+          invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
         }
       } else {
+        console.log('[PostDeal] No client email provided')
         invitationMessage = 'No client email provided - client will not receive portal access.'
       }
 
+      console.log('[PostDeal] SECTION 3 COMPLETE: Client invitation process finished')
+      console.log('[PostDeal] Final client_id:', client_id)
+      console.log('[PostDeal] Invitation message:', invitationMessage)
+
+      console.log('[PostDeal] Processing beneficiaries...')
       const normalizedBeneficiaries = beneficiaries
         .filter(b =>
       b.name.trim() ||
@@ -448,8 +463,10 @@ export default function PostDeal() {
             allocation_percentage: null,
           }
         })
+      console.log('[PostDeal] Normalized beneficiaries:', normalizedBeneficiaries.length, 'total')
 
       // SECTION 4: Construct payload and submit to API
+      console.log('[PostDeal] SECTION 4: Constructing payload...')
       const monthlyPremium = parseFloat(formData.monthlyPremium)
       const payload = {
         agent_id,
@@ -476,14 +493,19 @@ export default function PostDeal() {
         beneficiaries: normalizedBeneficiaries,
       }
 
-      console.log('[PostDeal] Submitting payload to /api/deals', payload)
+      console.log('[PostDeal] ===== ABOUT TO SUBMIT TO API =====')
+      console.log('[PostDeal] Payload:', JSON.stringify(payload, null, 2))
       console.log('[PostDeal] Agency ID being sent:', agencyId)
 
       // Add timeout to prevent infinite hanging
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+      const timeoutId = setTimeout(() => {
+        console.error('[PostDeal] Request timeout triggered after 30 seconds')
+        controller.abort()
+      }, 30000) // 30 second timeout
 
       let res
+      console.log('[PostDeal] Starting fetch to /api/deals...')
       try {
         res = await fetch("/api/deals", {
           method: "POST",
@@ -492,8 +514,10 @@ export default function PostDeal() {
           signal: controller.signal
         })
         clearTimeout(timeoutId)
+        console.log('[PostDeal] Fetch completed successfully')
       } catch (fetchError: any) {
         clearTimeout(timeoutId)
+        console.error('[PostDeal] Fetch threw an error:', fetchError)
         if (fetchError.name === 'AbortError') {
           console.error('[PostDeal] Request timed out after 30 seconds')
           throw new Error("Request timed out. Please try again.")
@@ -503,14 +527,18 @@ export default function PostDeal() {
       }
 
       console.log('[PostDeal] Response received, status:', res.status)
+      console.log('[PostDeal] Response headers:', Object.fromEntries(res.headers.entries()))
+      console.log('[PostDeal] Parsing response JSON...')
       const data = await res.json()
-      console.log('[PostDeal] /api/deals response', { ok: res.ok, status: res.status, data })
+      console.log('[PostDeal] JSON parsed successfully:', { ok: res.ok, status: res.status, data })
 
       if (!res.ok) {
+        console.error('[PostDeal] Response not OK, throwing error')
         throw new Error(data.error || "Failed to submit deal.")
       }
 
       // Success: show appropriate message based on operation
+      console.log('[PostDeal] Response OK, building success message...')
       let successMessage = ''
       if (data.operation === 'updated') {
         successMessage = "Deal updated successfully! This policy already existed and has been updated with your additional information."
@@ -526,11 +554,13 @@ export default function PostDeal() {
       console.log("[PostDeal] Deal operation complete:", successMessage)
 
       // Send Discord notification (don't block on this - fire and forget)
+      console.log('[PostDeal] Sending Discord notification (fire and forget)...')
       sendDiscordNotification(agencyId, agent_id, formData, monthlyPremium).catch(err => {
         console.error('Failed to send Discord notification:', err)
         // Don't fail the whole operation if Discord notification fails
       })
 
+      console.log('[PostDeal] Returning success message to mutation handler')
       return successMessage
     },
     onSuccess: (successMessage) => {

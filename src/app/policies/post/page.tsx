@@ -176,7 +176,7 @@ export default function PostDeal() {
 
       const { data: currentUser, error: currentUserError } = await supabase
         .from('users')
-        .select('id, agency_id, is_admin, role')
+        .select('id, agency_id, is_admin, role, first_name, last_name')
         .eq('auth_user_id', user.id)
         .single()
 
@@ -250,7 +250,9 @@ export default function PostDeal() {
         agencyId: agencyIdVal,
         isAdminUser,
         leadSourceOptions,
-        carriersOptions
+        carriersOptions,
+        userFirstName: currentUser.first_name,
+        userLastName: currentUser.last_name
       }
 
       console.log('[PostDeal AgencyQuery] Query complete, returning:', {
@@ -272,6 +274,8 @@ export default function PostDeal() {
   const isAdminUser = agencyData?.isAdminUser ?? false
   const leadSourceOptions = agencyData?.leadSourceOptions ?? []
   const carriersOptions = agencyData?.carriersOptions ?? []
+  const userFirstName = agencyData?.userFirstName ?? ''
+  const userLastName = agencyData?.userLastName ?? ''
 
   // Query: Load products when carrier changes
   const { data: productsOptions = [], isFetching: isProductsFetching } = useQuery({
@@ -298,45 +302,50 @@ export default function PostDeal() {
   const sendDiscordNotification = async (
     agencyId: string,
     agentId: string,
+    agentFirstName: string,
+    agentLastName: string,
     formData: typeof initialFormData,
     monthlyPremium: number
   ) => {
     try {
-      // Get agent name
-      const { data: agentData } = await supabase
-        .from('users')
-        .select('first_name, last_name')
-        .eq('id', agentId)
-        .single()
-
-      const agentName = agentData
-        ? `${agentData.first_name} ${agentData.last_name}`
-        : 'Unknown Agent'
-
-      // Get carrier and product names
+      // Use cached agent name - no need to query again!
+      const agentName = `${agentFirstName} ${agentLastName}`
       const carrierName = getCarrierName(formData.carrierId)
       const productName = getProductName(formData.productId)
+      const annualPremium = (monthlyPremium * 12).toFixed(2)
 
-      // Build the Discord message
-      const message = `**Agent:** ${agentName}
-      **Carrier:** ${carrierName}
-      **Product:** ${productName}
-      **Annual Premium:** $${(monthlyPremium * 12).toFixed(2)}`
-
-      // Send to Discord webhook API
-      await fetch('/api/discord/webhook', {
+      // Send template variables to webhook API
+      const response = await fetch('/api/discord/webhook', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           agencyId,
-          message,
+          placeholders: {
+            agent_name: agentName,
+            carrier_name: carrierName,
+            product_name: productName,
+            monthly_premium: monthlyPremium.toFixed(2),
+            annual_premium: annualPremium,
+            client_name: formData.clientName,
+            policy_number: formData.policyNumber,
+            effective_date: formData.policyEffectiveDate,
+          },
         }),
       })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('[Discord] Webhook API error:', errorData)
+      }
     } catch (error) {
-      // Log error but don't throw - we don't want to fail the deal submission
-      console.error('Error sending Discord notification:', error)
+      // Ignore AbortError from page navigation - notification likely sent successfully
+      if (error instanceof Error && error.name === 'AbortError') {
+        return
+      }
+      // Log other errors but don't throw - we don't want to fail the deal submission
+      console.error('[Discord] Error sending notification:', error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -565,20 +574,12 @@ export default function PostDeal() {
       console.log("[PostDeal] Deal operation complete:", successMessage)
 
       // Send Discord notification (don't block on this - fire and forget)
-      console.log('[PostDeal] Sending Discord notification (fire and forget)...')
-      sendDiscordNotification(agencyId, agent_id, formData, monthlyPremium).catch(err => {
-        console.error('Failed to send Discord notification:', err)
-        // Don't fail the whole operation if Discord notification fails
-      })
+      sendDiscordNotification(agencyId, agent_id, userFirstName, userLastName, formData, monthlyPremium)
 
-      console.log('[PostDeal] Returning success message to mutation handler')
       return successMessage
     },
     onSuccess: (successMessage) => {
-      console.log('[PostDeal] onSuccess callback triggered')
-
       // Invalidate deals cache so the book of business shows the new deal
-      // Use partial key prefix to match all filter variations
       queryClient.invalidateQueries({ queryKey: queryKeys.deals })
       queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business'] })
 
@@ -595,8 +596,6 @@ export default function PostDeal() {
       }
 
       setBeneficiaries([])
-
-      console.log('[PostDeal] Navigating to /policies/book')
 
       // Use window.location instead of router.push to force a full page reload
       // This ensures the book of business page loads fresh data

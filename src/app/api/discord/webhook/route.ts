@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { replaceDiscordPlaceholders, DEFAULT_DISCORD_TEMPLATE } from '@/lib/discord-template-helpers'
 
 export async function POST(request: NextRequest) {
   try {
@@ -7,30 +8,34 @@ export async function POST(request: NextRequest) {
 
     // Verify authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
+
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Get request body
     const body = await request.json()
-    const { agencyId, message } = body
+    const { agencyId, placeholders } = body
 
-    if (!agencyId || !message) {
+    if (!agencyId || !placeholders) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Get the agency's Discord webhook URL
+    // Get the agency's Discord webhook URL and template
     const { data: agency, error: agencyError } = await supabase
       .from('agencies')
-      .select('discord_webhook_url')
+      .select('discord_webhook_url, discord_notification_enabled, discord_notification_template')
       .eq('id', agencyId)
       .single()
 
     if (agencyError || !agency) {
+      console.error('[Discord Webhook API] Agency not found:', agencyError)
       return NextResponse.json({ error: 'Agency not found' }, { status: 404 })
     }
 
     const webhookUrl = agency.discord_webhook_url
+    const useCustomTemplate = agency.discord_notification_enabled ?? false
+    const customTemplate = agency.discord_notification_template
 
     // If no webhook URL is configured, skip silently (not an error)
     if (!webhookUrl) {
@@ -39,6 +44,12 @@ export async function POST(request: NextRequest) {
         message: 'No webhook configured, notification skipped'
       })
     }
+
+    // Use custom template only if explicitly enabled, otherwise use default
+    const template = (useCustomTemplate && customTemplate) ? customTemplate : DEFAULT_DISCORD_TEMPLATE
+
+    // Render the template with placeholders
+    const message = replaceDiscordPlaceholders(template, placeholders)
 
     // Send the Discord webhook
     const discordResponse = await fetch(webhookUrl, {
@@ -54,7 +65,7 @@ export async function POST(request: NextRequest) {
 
     if (!discordResponse.ok) {
       const errorText = await discordResponse.text()
-      console.error('Discord webhook error:', errorText)
+      console.error('[Discord Webhook API] Discord webhook failed:', errorText)
       return NextResponse.json({
         error: 'Failed to send Discord notification',
         details: errorText
@@ -67,7 +78,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Error sending Discord webhook:', error)
+    console.error('[Discord Webhook API] Error:', error instanceof Error ? error.message : 'Unknown error')
     return NextResponse.json({
       error: 'Internal server error',
       details: error instanceof Error ? error.message : 'Unknown error'

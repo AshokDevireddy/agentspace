@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -18,7 +19,9 @@ import { useNotification } from "@/contexts/notification-context"
 import { useAuth } from "@/providers/AuthProvider"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
 import { SmsTemplateEditor } from "@/components/sms-template-editor"
+import { DiscordTemplateEditor } from "@/components/discord-template-editor"
 import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_PLACEHOLDERS } from "@/lib/sms-template-helpers"
+import { DEFAULT_DISCORD_TEMPLATE, DISCORD_TEMPLATE_PLACEHOLDERS } from "@/lib/discord-template-helpers"
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
@@ -64,6 +67,8 @@ interface Agency {
   phone_number?: string
   messaging_enabled?: boolean
   discord_webhook_url?: string
+  discord_notification_enabled?: boolean
+  discord_notification_template?: string
   display_name?: string
   logo_url?: string
   primary_color?: string
@@ -132,14 +137,33 @@ export default function ConfigurationPage() {
   const { userData, refreshUserData, signOut } = useAuth()
   const [isMounted, setIsMounted] = useState(false)
   const queryClient = useQueryClient()
-  
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
   // Ensure we're on the client before using queryClient
   useEffect(() => {
     setIsMounted(true)
   }, [])
   const [selectedCarrier, setSelectedCarrier] = useState<string>("")
   const [productsModalOpen, setProductsModalOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabType>("agency-profile")
+
+  // Get tab from URL or default to "agency-profile"
+  const tabFromUrl = (searchParams.get('tab') as TabType) || "agency-profile"
+  const [activeTab, setActiveTab] = useState<TabType>(tabFromUrl)
+
+  // Sync activeTab with URL parameter
+  useEffect(() => {
+    const urlTab = (searchParams.get('tab') as TabType) || "agency-profile"
+    if (urlTab !== activeTab) {
+      setActiveTab(urlTab)
+    }
+  }, [searchParams])
+
+  // Function to change tab and update URL
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab)
+    router.push(`/configuration?tab=${tab}`, { scroll: false })
+  }
 
   // Agency Profile state
   const [agency, setAgency] = useState<Agency | null>(null)
@@ -394,6 +418,8 @@ export default function ConfigurationPage() {
   const [editingDiscordWebhook, setEditingDiscordWebhook] = useState(false)
   const [discordWebhookValue, setDiscordWebhookValue] = useState("")
   const [savingDiscordWebhook, setSavingDiscordWebhook] = useState(false)
+  const [discordNotificationEnabled, setDiscordNotificationEnabled] = useState(false)
+  const [discordNotificationTemplate, setDiscordNotificationTemplate] = useState("")
 
   // SMS Templates state
   const [smsWelcomeEnabled, setSmsWelcomeEnabled] = useState(true)
@@ -517,7 +543,7 @@ export default function ConfigurationPage() {
 
       const { data: agencyInfo, error } = await supabase
         .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template')
+        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, discord_notification_enabled, discord_notification_template, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template')
         .eq('id', userDataLocal.agency_id)
         .single()
 
@@ -754,6 +780,10 @@ export default function ConfigurationPage() {
   // Sync agency data to local state
   useEffect(() => {
     if (agencyData) {
+      console.log('[Config Page] Loading agency data into state')
+      console.log('[Config Page] Discord notification enabled:', agencyData.discord_notification_enabled)
+      console.log('[Config Page] Discord notification template:', agencyData.discord_notification_template)
+
       setAgency(agencyData)
       setDisplayName(agencyData.display_name || agencyData.name)
       setPrimaryColor(agencyData.primary_color || "217 91% 60%")
@@ -761,6 +791,8 @@ export default function ConfigurationPage() {
       setAgencyPhoneNumber(agencyData.phone_number || "")
       setMessagingEnabled(agencyData.messaging_enabled || false)
       setDiscordWebhookUrl(agencyData.discord_webhook_url || "")
+      setDiscordNotificationEnabled(agencyData.discord_notification_enabled ?? false)
+      setDiscordNotificationTemplate(agencyData.discord_notification_template || "")
       setWhitelabelDomain(agencyData.whitelabel_domain || "")
       setSmsWelcomeEnabled(agencyData.sms_welcome_enabled ?? true)
       setSmsWelcomeTemplate(agencyData.sms_welcome_template || "")
@@ -2399,7 +2431,7 @@ export default function ConfigurationPage() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => handleTabChange(tab.id)}
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-all",
                     isActive
@@ -4309,6 +4341,19 @@ export default function ConfigurationPage() {
                       )}
                     </div>
 
+                    {/* Discord Template Editor */}
+                    {discordWebhookUrl && (
+                      <DiscordTemplateEditor
+                        enabled={discordNotificationEnabled}
+                        template={discordNotificationTemplate}
+                        agencyId={agency?.id}
+                        onEnabledChange={setDiscordNotificationEnabled}
+                        onTemplateChange={setDiscordNotificationTemplate}
+                        showSuccess={showSuccess}
+                        showError={showError}
+                      />
+                    )}
+
                     {/* Setup Instructions */}
                     <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
                       <h3 className="text-lg font-semibold text-blue-900 mb-3">How to Set Up Discord Webhook</h3>
@@ -4338,25 +4383,6 @@ export default function ConfigurationPage() {
                           <span>Paste the URL above and save</span>
                         </li>
                       </ol>
-                    </div>
-
-                    {/* Notification Example */}
-                    <div className="bg-accent/30 rounded-lg p-6 border border-border">
-                      <h3 className="text-lg font-semibold text-foreground mb-3">Notification Example</h3>
-                      <p className="text-sm text-muted-foreground mb-3">
-                        When an agent posts a deal, you'll receive a message like this:
-                      </p>
-                      <div className="bg-white rounded-lg p-4 border-l-4 border-blue-500 font-mono text-sm">
-                        <p className="text-gray-700">
-                          🎉 <strong>New Deal Posted!</strong>
-                        </p>
-                        <p className="text-gray-600 mt-2">
-                          <strong>Agent:</strong> John Doe<br />
-                          <strong>Carrier:</strong> Aetna<br />
-                          <strong>Product:</strong> Term Life Insurance<br />
-                          <strong>Annual Premium:</strong> $1,800.00
-                        </p>
-                      </div>
                     </div>
 
                     {!discordWebhookUrl && (

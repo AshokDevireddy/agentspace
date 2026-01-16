@@ -350,7 +350,9 @@ export default function PostDeal() {
       let client_id = null
       let invitationMessage = ''
 
+      console.log('[PostDeal] Checking client email:', formData.clientEmail ? 'present' : 'missing')
       if (formData.clientEmail) {
+        console.log('[PostDeal] Client email provided, checking for existing client...')
         try {
           // Check if client already exists in users table (including pending)
           const { data: existingClient } = await supabase
@@ -360,46 +362,74 @@ export default function PostDeal() {
             .eq('role', 'client')
             .maybeSingle()
 
+          console.log('[PostDeal] Existing client check complete:', existingClient ? 'found' : 'not found')
+
           if (existingClient) {
             client_id = existingClient.id
             invitationMessage = existingClient.status === 'pending'
               ? 'Client invitation was previously sent.'
               : 'Client already has an account.'
-            console.log('Client exists:', client_id, 'status:', existingClient.status)
+            console.log('[PostDeal] Client exists:', client_id, 'status:', existingClient.status)
           } else {
               // Send invitation to client
-              console.log('Sending invitation to:', formData.clientEmail)
-              const inviteResponse = await fetch('/api/clients/invite', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  email: formData.clientEmail,
-                  // Extract first and last name from client name if possible
-                  firstName: formData.clientName.split(' ')[0] || formData.clientName,
-                  lastName: formData.clientName.split(' ').slice(1).join(' ') || 'Client',
-                  phoneNumber: formData.clientPhone
+              console.log('[PostDeal] No existing client found, sending invitation to:', formData.clientEmail)
+              console.log('[PostDeal] About to call /api/clients/invite...')
+
+              // Add timeout to invitation API call
+              const inviteController = new AbortController()
+              const inviteTimeoutId = setTimeout(() => inviteController.abort(), 10000) // 10 second timeout
+
+              let inviteResponse
+              try {
+                inviteResponse = await fetch('/api/clients/invite', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    email: formData.clientEmail,
+                    // Extract first and last name from client name if possible
+                    firstName: formData.clientName.split(' ')[0] || formData.clientName,
+                    lastName: formData.clientName.split(' ').slice(1).join(' ') || 'Client',
+                    phoneNumber: formData.clientPhone
+                  }),
+                  signal: inviteController.signal
                 })
-              })
+                clearTimeout(inviteTimeoutId)
+              } catch (inviteFetchError: any) {
+                clearTimeout(inviteTimeoutId)
+                if (inviteFetchError.name === 'AbortError') {
+                  console.error('[PostDeal] Client invitation request timed out after 10 seconds')
+                  invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
+                  // Continue with deal creation
+                  inviteResponse = null
+                } else {
+                  console.error('[PostDeal] Client invitation fetch error:', inviteFetchError)
+                  invitationMessage = `Email unable to send. Please try manually from Book of Business.`
+                  inviteResponse = null
+                }
+              }
 
-            const inviteData = await inviteResponse.json()
-            console.log('Invite API response:', inviteData)
+            if (inviteResponse) {
+              console.log('[PostDeal] Invite API fetch complete, status:', inviteResponse.status)
+              const inviteData = await inviteResponse.json()
+              console.log('[PostDeal] Invite API response:', inviteData)
 
-            if (inviteResponse.ok && inviteData.success) {
-              client_id = inviteData.userId
-              invitationMessage = inviteData.alreadyExists
-                ? 'Client invitation was previously sent.'
-                : '✓ Invitation email sent to client successfully!'
-              console.log('Client invitation sent successfully, client_id:', client_id)
-            } else {
-              const errorMsg = inviteData.error || 'Unknown error'
-              console.error('Failed to invite client:', errorMsg)
-              invitationMessage = `⚠️ Warning: Failed to send invitation email (${errorMsg}). Deal will still be created.`
-              // Continue anyway, but warn the user
+              if (inviteResponse.ok && inviteData.success) {
+                client_id = inviteData.userId
+                invitationMessage = inviteData.alreadyExists
+                  ? 'Client invitation was previously sent.'
+                  : '✓ Invitation email sent to client successfully!'
+                console.log('[PostDeal] Client invitation sent successfully, client_id:', client_id)
+              } else {
+                const errorMsg = inviteData.error || 'Unknown error'
+                console.error('[PostDeal] Failed to invite client:', errorMsg)
+                invitationMessage = `Email unable to send. Please try manually from Book of Business.`
+                // Continue anyway, but warn the user
+              }
             }
           }
         } catch (clientError) {
           console.error('Error inviting client:', clientError)
-          invitationMessage = `⚠️ Warning: Error sending invitation (${clientError instanceof Error ? clientError.message : 'Unknown error'}). Deal will still be created.`
+          invitationMessage = `Email unable to send. Please try manually from Book of Business.`
           // Continue anyway, but warn the user
         }
       } else {
@@ -511,7 +541,18 @@ export default function PostDeal() {
       queryClient.invalidateQueries({ queryKey: queryKeys.deals })
       queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business'] })
 
-      showSuccess(successMessage, 7000)
+      // Check if invitation failed and show appropriate notifications
+      if (successMessage.includes('Email unable to send')) {
+        // Show success for deal creation
+        const dealMessage = successMessage.split('\n\n')[0]
+        showSuccess(dealMessage, 5000)
+        // Show warning for email failure
+        showWarning('Email unable to send. Please send invitation manually from Book of Business.', 7000)
+      } else {
+        // Show combined success message
+        showSuccess(successMessage, 7000)
+      }
+
       setBeneficiaries([])
 
       console.log('[PostDeal] Navigating to /policies/book')

@@ -95,7 +95,7 @@ export default function Navigation() {
       const supabase = createClient()
       const { data } = await supabase
         .from('agencies')
-        .select('display_name, name, logo_url, primary_color')
+        .select('display_name, name, logo_url, primary_color, deactivated_post_a_deal')
         .eq('id', agencyId)
         .maybeSingle()
 
@@ -336,7 +336,15 @@ export default function Navigation() {
 
       {/* Navigation Items */}
       <nav className="flex-1 p-4 space-y-2">
-        {navigationItems.map((item) => (
+        {navigationItems
+          .filter((item) => {
+            // Hide "Post a Deal" if deactivated_post_a_deal is true
+            if (item.name === "Post a Deal" && agencyData?.deactivated_post_a_deal) {
+              return false
+            }
+            return true
+          })
+          .map((item) => (
           <div key={item.name} className="relative">
             <Link
               href={item.href}

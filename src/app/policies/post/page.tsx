@@ -192,10 +192,10 @@ export default function PostDeal() {
       const agencyIdVal = currentUser.agency_id as string
       const isAdminUser = Boolean(currentUser.is_admin || currentUser.role === 'admin')
 
-      // Load agency's lead sources
+      // Load agency's lead sources and deactivated_post_a_deal flag
       const { data: agencyData } = await supabase
         .from('agencies')
-        .select('lead_sources')
+        .select('lead_sources, deactivated_post_a_deal')
         .eq('id', agencyIdVal)
         .single()
 
@@ -252,7 +252,8 @@ export default function PostDeal() {
         leadSourceOptions,
         carriersOptions,
         userFirstName: currentUser.first_name,
-        userLastName: currentUser.last_name
+        userLastName: currentUser.last_name,
+        deactivatedPostADeal: agencyData?.deactivated_post_a_deal || false
       }
 
       console.log('[PostDeal AgencyQuery] Query complete, returning:', {
@@ -276,6 +277,7 @@ export default function PostDeal() {
   const carriersOptions = agencyData?.carriersOptions ?? []
   const userFirstName = agencyData?.userFirstName ?? ''
   const userLastName = agencyData?.userLastName ?? ''
+  const deactivatedPostADeal = agencyData?.deactivatedPostADeal ?? false
 
   // Query: Load products when carrier changes
   const { data: productsOptions = [], isFetching: isProductsFetching } = useQuery({
@@ -933,6 +935,23 @@ export default function PostDeal() {
         </Card>
       )}
 
+      {/* Deactivated Post a Deal Check */}
+      {deactivatedPostADeal && (
+        <Card className="border-destructive bg-destructive/10">
+          <CardHeader>
+            <CardTitle className="text-destructive flex items-center gap-2">
+              <Circle className="h-5 w-5 fill-current" />
+              Post a Deal Disabled
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-foreground">
+              Posting deals has been disabled for your agency. Please contact your agency administrator for more information.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Position Check Error */}
       {!positionCheckLoading && !hasAllPositions && (
         <Card className="border-destructive bg-destructive/10">
@@ -976,8 +995,8 @@ export default function PostDeal() {
         </Card>
       )}
 
-      {/* Only show form if positions are valid */}
-      {!positionCheckLoading && hasAllPositions && (
+      {/* Only show form if positions are valid and post a deal is not deactivated */}
+      {!positionCheckLoading && hasAllPositions && !deactivatedPostADeal && (
         <>
           {/* Progress Stepper */}
       <div className="relative">

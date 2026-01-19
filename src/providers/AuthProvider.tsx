@@ -435,9 +435,9 @@ export function AuthProvider({
       // Continue with redirect - local state is already cleared
     }
 
-    // 5. Use Next.js router for clean navigation (no hard refresh needed)
-    router.push('/login')
-  }, [supabase, router, queryClient])
+    // 5. Use hard redirect to ensure middleware sees cleared session state
+    window.location.href = '/login'
+  }, [supabase, queryClient])
 
   const contextValue = useMemo(() => ({
     user, userData, loading, isHydrated, signIn, signOut, refreshUserData

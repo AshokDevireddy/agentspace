@@ -270,6 +270,15 @@ export function AuthProvider({
         // Step 2: No cached session - validate with server (handles hard refresh)
         // This is critical: on hard refresh, localStorage cache may be empty/stale
         // but the server still has valid session cookies
+
+        // On auth pages (login, forgot-password, etc), skip validation and just resolve as not authenticated
+        // This prevents unnecessary validation attempts when user is on public auth pages
+        if (isAuthPage) {
+          console.log('[AuthProvider] On auth page with no session, skipping validation')
+          await resolveAuth(false)
+          return
+        }
+
         console.log('[AuthProvider] No cached session, validating with server...')
 
         // Use AUTH_RETRY_TIMEOUTS for cold start resilience

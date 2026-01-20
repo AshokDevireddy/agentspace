@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
 import { updatePassword } from '@/lib/supabase/api'
-import { storeRecoveryTokens, getRecoveryTokens, clearRecoveryTokens, captureHashTokens } from '@/lib/auth/constants'
+import { captureHashTokens } from '@/lib/auth/constants'
 
 export default function ForgotPassword() {
   const supabase = createClient()
@@ -26,7 +26,14 @@ export default function ForgotPassword() {
   const [userEmail, setUserEmail] = useState<string>("")
   const [tokenValid, setTokenValid] = useState<boolean>(false)
 
-  const [initialHashTokens] = useState(() => captureHashTokens('recovery'))
+  // Capture tokens immediately on component mount - store in ref to survive re-renders
+  const initialHashTokensRef = useRef<ReturnType<typeof captureHashTokens>>(null)
+  if (initialHashTokensRef.current === null) {
+    initialHashTokensRef.current = captureHashTokens('recovery')
+    console.log('[ForgotPassword] Captured hash tokens on mount:', !!initialHashTokensRef.current)
+  }
+  const initialHashTokens = initialHashTokensRef.current
+
   const processingRef = useRef(false)
 
   useEffect(() => {
@@ -38,17 +45,24 @@ export default function ForgotPassword() {
   }, [])
 
   const handleRecovery = async () => {
+    console.log('[ForgotPassword] handleRecovery called, initialHashTokens:', !!initialHashTokens)
+
     if (initialHashTokens) {
       const payload = decodeAndValidateJwt(initialHashTokens.accessToken)
+      console.log('[ForgotPassword] JWT payload:', payload)
 
       if (!payload) {
+        console.log('[ForgotPassword] Invalid JWT, redirecting to login')
         setLoading(false)
         router.push('/login?error=Your password reset link has expired. Please request a new one.')
         return
       }
 
       if (payload.email) {
-        storeRecoveryTokens(initialHashTokens.accessToken, initialHashTokens.refreshToken)
+        console.log('[ForgotPassword] Valid recovery token for email:', payload.email)
+        // DON'T store in localStorage - keep in ref only
+        // This way it survives the session and works across devices
+
         setUserEmail(payload.email)
         setTokenValid(true)
         setLoading(false)
@@ -56,6 +70,7 @@ export default function ForgotPassword() {
       }
     }
 
+    console.log('[ForgotPassword] No valid tokens found, redirecting to login')
     setLoading(false)
     router.push('/login?error=Please use the password reset link from your email')
   }
@@ -90,20 +105,21 @@ export default function ForgotPassword() {
   }
 
   const handleUpdatePassword = async (newPassword: string) => {
-    const { accessToken } = getRecoveryTokens()
+    console.log('[ForgotPassword] handleUpdatePassword called')
 
-    if (!accessToken) {
+    // Use tokens from ref directly - don't rely on localStorage
+    if (!initialHashTokens?.accessToken) {
+      console.error('[ForgotPassword] No recovery token found in component state')
       return {
         success: false,
         message: 'No recovery token found. Please use the password reset link again.'
       }
     }
 
-    const result = await updatePassword(accessToken, newPassword)
-
-    if (result.success) {
-      clearRecoveryTokens()
-    }
+    console.log('[ForgotPassword] Using recovery token from URL hash')
+    console.log('[ForgotPassword] Calling updatePassword API')
+    const result = await updatePassword(initialHashTokens.accessToken, newPassword)
+    console.log('[ForgotPassword] updatePassword result:', result)
 
     return {
       success: result.success,
@@ -120,40 +136,43 @@ export default function ForgotPassword() {
     }
 
     setSubmitting(true)
+    setErrors([])
 
     try {
       const result = await handleUpdatePassword(formData.password)
 
       if (!result.success) {
         setErrors([result.message || 'Failed to update password. Please try again.'])
+        setSubmitting(false)
         window.scrollTo({ top: 0, behavior: 'smooth' })
         return
       }
 
+      // Password updated successfully - clear form
       setFormData({ password: "", confirmPassword: "" })
+      console.log('[ForgotPassword] Password reset successful, preparing redirect...')
 
+      // Get redirect URL from query params
       const urlParams = new URLSearchParams(window.location.search)
-      const agencyId = urlParams.get('agency_id')
+      const whitelabelDomain = urlParams.get('whitelabel_domain')
+      let redirectUrl = '/login?message=password-reset-success'
 
-      if (agencyId) {
-        const { data: agencyData } = await supabase
-          .from('agencies')
-          .select('whitelabel_domain')
-          .eq('id', agencyId)
-          .single()
-
-        if (agencyData?.whitelabel_domain) {
-          const protocol = window.location.protocol
-          window.location.href = `${protocol}//${agencyData.whitelabel_domain}/login?message=password-reset-success`
-          return
-        }
+      if (whitelabelDomain) {
+        const protocol = window.location.protocol
+        redirectUrl = `${protocol}//${whitelabelDomain}/login?message=password-reset-success`
+        console.log('[ForgotPassword] Using whitelabel domain:', whitelabelDomain)
       }
 
-      router.push('/login?message=password-reset-success')
-    } catch {
+      console.log('[ForgotPassword] Redirecting to:', redirectUrl)
+
+      // Navigate immediately - don't wait for signOut
+      // The login page will clear session anyway
+      window.location.href = redirectUrl
+    } catch (err) {
+      console.error('Password reset error:', err)
       setErrors(['Failed to update password. Please try again.'])
-    } finally {
       setSubmitting(false)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   }
 

@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils"
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { useResetPassword } from '@/hooks/mutations'
 
 interface ProfileData {
   id: string;
@@ -71,6 +72,9 @@ export default function ProfilePage() {
   const queryClient = useQueryClient()
   const [selectedPositionId, setSelectedPositionId] = useState<string>("");
   const [savingTheme, setSavingTheme] = useState(false);
+
+  // Password reset mutation
+  const resetPasswordMutation = useResetPassword();
 
   // Fetch user profile data using TanStack Query
   // Wait for auth to be ready before fetching to prevent race conditions
@@ -194,6 +198,25 @@ export default function ProfilePage() {
     setSavingTheme(false)
   }
 
+  const handlePasswordReset = () => {
+    if (!user?.email) {
+      showError('Unable to send password reset email')
+      return
+    }
+
+    resetPasswordMutation.mutate(
+      { email: user.email },
+      {
+        onSuccess: () => {
+          showSuccess('Password reset email sent! Check your inbox.')
+        },
+        onError: () => {
+          showError('Failed to send password reset email')
+        }
+      }
+    )
+  }
+
   // Show error state if profile fetch failed
   if (profileError) {
     return (
@@ -257,6 +280,28 @@ export default function ProfilePage() {
             <h1 className="text-4xl font-extrabold text-foreground mb-1">{user_profile.name}</h1>
           </div>
         </div>
+      </div>
+
+      {/* Password Reset Section */}
+      <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
+        <h2 className="text-xl font-bold text-foreground mb-2">Password</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Reset your password by sending a password reset link to your email address.
+        </p>
+        <button
+          onClick={handlePasswordReset}
+          disabled={resetPasswordMutation.isPending}
+          className="px-6 py-2 bg-foreground text-background rounded-lg font-semibold hover:bg-foreground/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          {resetPasswordMutation.isPending ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Sending Email...
+            </>
+          ) : (
+            'Send Password Reset Email'
+          )}
+        </button>
       </div>
 
       {/* Position Selection (Admin Only) */}

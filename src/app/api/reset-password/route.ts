@@ -30,17 +30,22 @@ export async function POST(request: Request) {
       // WHITE-LABEL AUTH STRATEGY:
       // Password reset uses hash fragments (implicit flow), not PKCE
       // So we redirect directly to /forgot-password which handles hash tokens client-side
-      // Store agency_id to redirect back to white-label domain after password reset
+      // Include whitelabel_domain in URL so we can redirect back after password reset
 
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      const redirectUrl = existingUser.agency_id
-        ? `${baseUrl}/forgot-password?agency_id=${existingUser.agency_id}`
-        : `${baseUrl}/forgot-password`
+      const agencyData = existingUser.agencies as any
+      const whitelabelDomain = agencyData?.whitelabel_domain
+
+      let redirectUrl = `${baseUrl}/forgot-password`
+      if (whitelabelDomain) {
+        // Include whitelabel domain in URL params so forgot-password page can redirect back
+        redirectUrl = `${baseUrl}/forgot-password?whitelabel_domain=${encodeURIComponent(whitelabelDomain)}`
+      }
 
       console.log('Sending password reset email with redirectTo:', redirectUrl)
 
       // Get agency name for email template
-      const agencyName = (existingUser.agencies as any)?.name || 'AgentSpace'
+      const agencyName = agencyData?.name || 'AgentSpace'
 
       console.log('Sending password reset for user in agency:', agencyName)
 

@@ -54,9 +54,13 @@ export function useAssignPosition(options?: {
 
       return response.json()
     },
-    onSuccess: async (data, variables) => {
-      // Use centralized invalidation - handles agents, positions, and agent details
-      await invalidateAgentRelated(variables.agentId)
+    onSuccess: (data, variables) => {
+      // Use centralized invalidation - handles agents, positions, and agent details (fire and forget)
+      // Don't await to prevent blocking the UI update
+      invalidateAgentRelated(variables.agentId).catch(err => {
+        console.error('[useAssignPosition] Failed to invalidate queries:', err)
+      })
+      // Call the page-level success handler immediately
       options?.onSuccess?.(data, variables)
     },
     onError: options?.onError,
@@ -148,15 +152,21 @@ export function useSendInvite(options?: {
 
       return response.json()
     },
-    onSuccess: async (data, variables) => {
-      // Use centralized invalidation - handles agents and positions
-      await invalidateAgentRelated()
+    onSuccess: (data, variables) => {
+      // Use centralized invalidation - handles agents and positions (fire and forget)
+      // Don't await to prevent blocking the UI update
+      invalidateAgentRelated().catch(err => {
+        console.error('[useSendInvite] Failed to invalidate agent queries:', err)
+      })
 
-      // Optionally invalidate client queries
+      // Optionally invalidate client queries (also fire and forget)
       if (options?.invalidateClients) {
-        await invalidateClientRelated()
+        invalidateClientRelated().catch(err => {
+          console.error('[useSendInvite] Failed to invalidate client queries:', err)
+        })
       }
 
+      // Call the page-level success handler immediately
       options?.onSuccess?.(data, variables)
     },
     onError: options?.onError,

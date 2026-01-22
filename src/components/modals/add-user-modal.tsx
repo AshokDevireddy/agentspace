@@ -290,8 +290,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
   // Mutation: Submit form to invite agent - using centralized hook
   const inviteAgentMutation = useSendInvite({
-    invalidateAdditional: true, // Also invalidate clients and agentsPendingPositions
-    onSuccess: (data, variables) => {
+    invalidateClients: true, // Also invalidate clients queries
+    onSuccess: (_data, variables) => {
       const message = selectedPreInviteUserId
         ? `User ${variables.firstName} ${variables.lastName} updated and invitation sent to ${variables.email}!`
         : `Invitation sent successfully to ${variables.email}!`
@@ -504,7 +504,31 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   }
 
   const handleInputChange = (field: string, value: string) => {
-    setFormData({ ...formData, [field]: value })
+    // Special handling for phone number - format as (XXX) XXX-XXXX but store only digits
+    if (field === 'phoneNumber') {
+      // Remove all non-digit characters
+      const digitsOnly = value.replace(/\D/g, '')
+
+      // Limit to 10 digits
+      const limitedDigits = digitsOnly.slice(0, 10)
+
+      // Store only digits in state (database format)
+      setFormData({ ...formData, [field]: limitedDigits })
+    } else {
+      setFormData({ ...formData, [field]: value })
+    }
+  }
+
+  // Format phone number for display as (XXX) XXX-XXXX
+  const formatPhoneForDisplay = (phone: string) => {
+    // Remove all non-digit characters
+    const digitsOnly = phone.replace(/\D/g, '')
+
+    // Format based on number of digits
+    if (digitsOnly.length === 0) return ''
+    if (digitsOnly.length <= 3) return `(${digitsOnly}`
+    if (digitsOnly.length <= 6) return `(${digitsOnly.slice(0, 3)}) ${digitsOnly.slice(3)}`
+    return `(${digitsOnly.slice(0, 3)}) ${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6, 10)}`
   }
 
   // Handle upline agent selection
@@ -730,7 +754,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
-                First name
+                First name <span className="text-red-500">*</span>
               </label>
               <Input
                 type="text"
@@ -751,7 +775,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
-                Last name
+                Last name <span className="text-red-500">*</span>
               </label>
               <Input
                 type="text"
@@ -772,7 +796,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
-                Email
+                Email <span className="text-red-500">*</span>
               </label>
               <Input
                 type="email"
@@ -785,14 +809,14 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
-                Phone number
+                Phone number <span className="text-red-500">*</span>
               </label>
               <Input
                 type="tel"
-                value={formData.phoneNumber}
+                value={formatPhoneForDisplay(formData.phoneNumber)}
                 onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
                 className={`h-12 ${errorFields.phoneNumber ? 'border-red-500' : ''}`}
-                placeholder="xxx-xxx-xxxx"
+                placeholder="(000) 000-0000"
                 required
               />
               {errorFields.phoneNumber && (
@@ -805,7 +829,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
-                Permission Level
+                Permission Level <span className="text-red-500">*</span>
               </label>
               <SimpleSearchableSelect
                 options={permissionLevels}

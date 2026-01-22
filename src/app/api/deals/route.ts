@@ -283,6 +283,7 @@ export async function POST(req: NextRequest) {
       lead_source,
       status,
       notes,
+      submission_date,
       beneficiaries,
     } = data;
 
@@ -619,6 +620,7 @@ export async function POST(req: NextRequest) {
         lead_source,
         status: status || "pending", // Changed from 'draft' to 'pending' to match book of business
         notes,
+        submission_date,
       };
 
       console.log("[Deals API] Inserting deal into database...");

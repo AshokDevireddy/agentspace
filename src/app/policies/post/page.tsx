@@ -526,6 +526,7 @@ export default function PostDeal() {
         billing_weekday: formData.ssnBenefit === "yes" ? formData.billingWeekday : null,
         billing_cycle: formData.billingCycle || null,
         lead_source: formData.leadSource || null,
+        submission_date: new Date().toISOString().split('T')[0],
         beneficiaries: normalizedBeneficiaries,
       }
 

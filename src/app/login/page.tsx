@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
-import { useSignIn } from "@/hooks/mutations"
+import { useSmartSignIn } from "@/hooks/mutations"
 import { createClient } from "@/lib/supabase/client"
 import { clearInviteTokens, clearRecoveryTokens } from "@/lib/auth/constants"
 
@@ -17,7 +17,7 @@ export default function LoginPage() {
 
   const processedRef = useRef(false)
   const cleanedRef = useRef(false)
-  const signInMutation = useSignIn()
+  const signInMutation = useSmartSignIn()
 
   // Clean up any stale auth state on mount (fixes login after confirmation flow)
   useEffect(() => {

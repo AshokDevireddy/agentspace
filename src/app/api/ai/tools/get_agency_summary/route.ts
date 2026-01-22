@@ -1,13 +1,15 @@
 import { createServerClient } from '@/lib/supabase/server';
+import { getUserContext } from '@/lib/auth/get-user-context';
 import { NextRequest } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const agencyId = request.headers.get('x-agency-id');
-
-    if (!agencyId) {
-      return Response.json({ error: 'Agency ID required' }, { status: 400 });
+    // SECURITY: Get agency ID from authenticated user, not from headers
+    const userContextResult = await getUserContext();
+    if (!userContextResult.success) {
+      return Response.json({ error: userContextResult.error }, { status: userContextResult.status });
     }
+    const { agencyId } = userContextResult.context;
 
     const supabase = await createServerClient();
     const params = await request.json();

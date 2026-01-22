@@ -6,6 +6,8 @@
 import { useMutation } from '@tanstack/react-query'
 import { useInvalidation } from '../useInvalidation'
 import { supabaseRestFetch, updatePassword } from '@/lib/supabase/api'
+import { shouldUseDjangoAuth } from '@/lib/feature-flags'
+import { getDjangoAuthEndpoint } from '@/lib/api-config'
 
 // ============ Register Mutation ============
 
@@ -237,6 +239,126 @@ export function useSignIn(options?: {
     onSuccess: options?.onSuccess,
     onError: options?.onError,
   })
+}
+
+// ============ Django Sign In Mutation ============
+
+interface DjangoSignInResponse {
+  access_token: string
+  refresh_token: string
+  expires_in: number
+  token_type: string
+  user: {
+    id: string
+    email: string
+    first_name: string
+    last_name: string
+    agency_id: string | null
+    role: string
+    is_admin: boolean
+    status: string
+    subscription_tier: string | null
+  }
+}
+
+/**
+ * Sign in user via Django backend API
+ * Django calls Supabase Auth internally and returns Supabase tokens.
+ * We then set these tokens in the Supabase client for seamless compatibility.
+ */
+export function useDjangoSignIn(options?: {
+  onSuccess?: (data: SignInResponse) => void
+  onError?: (error: Error) => void
+}) {
+  return useMutation<SignInResponse, Error, SignInInput>({
+    mutationFn: async ({ email, password }) => {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+
+      // Clear any existing session to prevent conflicts
+      try {
+        await Promise.race([
+          supabase.auth.signOut({ scope: 'local' }),
+          new Promise(resolve => setTimeout(resolve, 3000))
+        ])
+      } catch {
+        // Ignore sign-out errors - continue with sign-in
+      }
+
+      // Call Django login endpoint
+      const response = await withAuthTimeout(
+        fetch(getDjangoAuthEndpoint('login'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email, password }),
+        })
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || 'Invalid login credentials')
+      }
+
+      const data: DjangoSignInResponse = await response.json()
+
+      // Set the Supabase session with the tokens from Django
+      // This allows all subsequent Supabase RPC calls to work seamlessly
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      })
+
+      if (sessionError) {
+        throw new Error('Failed to establish session')
+      }
+
+      // Fetch agency data for whitelabel validation
+      const { data: agencyData, error: agencyError } = await withAuthTimeout(
+        supabase
+          .from('agencies')
+          .select('whitelabel_domain')
+          .eq('id', data.user.agency_id)
+          .single()
+      )
+
+      if (agencyError || !agencyData) {
+        throw new Error('Agency not found')
+      }
+
+      return {
+        user: {
+          id: data.user.id,
+          role: data.user.role,
+          status: data.user.status,
+          agency_id: data.user.agency_id || '',
+        },
+        agency: {
+          whitelabel_domain: agencyData.whitelabel_domain,
+        },
+      }
+    },
+    onSuccess: options?.onSuccess,
+    onError: options?.onError,
+  })
+}
+
+/**
+ * Smart sign-in hook that automatically uses Django or Supabase based on feature flag
+ */
+export function useSmartSignIn(options?: {
+  onSuccess?: (data: SignInResponse) => void
+  onError?: (error: Error) => void
+}) {
+  const djangoSignIn = useDjangoSignIn(options)
+  const supabaseSignIn = useSignIn(options)
+
+  // Return the appropriate mutation based on feature flag
+  if (shouldUseDjangoAuth()) {
+    return djangoSignIn
+  }
+  return supabaseSignIn
 }
 
 // ============ Update Password Mutation ============

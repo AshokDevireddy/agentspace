@@ -1,73 +1,45 @@
 // app/api/parse-jobs/route.ts
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { getUserContext } from '@/lib/auth/get-user-context'
 
 type Job = { bucket: string; path: string }
-type Body = { carrier: string; agencyId: string; jobs: Job[] }
+// SECURITY: agencyId is now optional - we derive it from authenticated user
+type Body = { carrier: string; agencyId?: string; jobs: Job[] }
 
 function validateBody(body: any): { ok: true; data: Body } | { ok: false; error: string } {
   if (!body || typeof body !== 'object') return { ok: false, error: 'Body must be an object' }
-  const { carrier, agencyId, jobs } = body
+  const { carrier, jobs } = body
   if (!carrier || typeof carrier !== 'string') return { ok: false, error: 'carrier is required' }
-  if (!agencyId || typeof agencyId !== 'string') return { ok: false, error: 'agencyId is required' }
+  // SECURITY: agencyId in body is now optional/ignored - we use authenticated user's agency
   if (!Array.isArray(jobs) || jobs.length === 0) return { ok: false, error: 'jobs[] is required' }
   for (const j of jobs) {
     if (!j || typeof j !== 'object') return { ok: false, error: 'job must be object' }
     if (!j.bucket || typeof j.bucket !== 'string') return { ok: false, error: 'job.bucket is required' }
     if (!j.path || typeof j.path !== 'string') return { ok: false, error: 'job.path is required' }
   }
-  return { ok: true, data: { carrier, agencyId, jobs } }
+  return { ok: true, data: { carrier, jobs } }
 }
 
 export async function POST(req: Request) {
-  // Next 15 returns a Promise here; Next 14 returns directly — `await` works for both.
-  const cookieStore = await cookies()
-
-  // NEW cookie API: getAll & setAll
-  const supabaseAuth = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        // Must return [{ name, value }]
-        getAll() {
-          // Next cookies().getAll() returns { name, value }[]
-          return cookieStore.getAll().map(({ name, value }) => ({ name, value }))
-        },
-        // Receives [{ name, value, options }]
-        setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
-          for (const { name, value, options } of cookiesToSet) {
-            cookieStore.set({ name, value, ...options })
-          }
-        },
-      },
-    }
-  )
-
-  const { data: { user }, error: userErr } = await supabaseAuth.auth.getUser()
-  if (userErr || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // SECURITY: Get agency ID from authenticated user, not from request body
+  const userContextResult = await getUserContext()
+  if (!userContextResult.success) {
+    return NextResponse.json({ error: userContextResult.error }, { status: userContextResult.status })
+  }
+  const { agencyId, userId } = userContextResult.context
 
   const body = await req.json().catch(() => null)
   const v = validateBody(body)
   if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
-  const { carrier, agencyId, jobs } = v.data
+  const { carrier, jobs } = v.data
+  // SECURITY: agencyId comes from authenticated user, not from body
 
   // Service-role client for privileged operations
   const admin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY! // server-only
   )
-
-  // (Optional) tenant check
-  const { data: membership, error: memErr } = await admin
-    .from('user_agencies')
-    .select('agency_id')
-    .eq('user_id', user.id)
-    .eq('agency_id', agencyId)
-    .maybeSingle()
-  if (memErr || !membership) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   // (Optional) path guard
   for (const j of jobs) {

@@ -6,10 +6,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/server";
 import { startWatcherForJob } from "@/lib/watchers/start-watcher";
+import { getUserContext } from "@/lib/auth/get-user-context";
 
-// Input schema using Zod
+// Input schema using Zod - agencyId is now optional since we derive it from auth
 const CreateJobSchema = z.object({
-    agencyId: z.string().uuid(),
+    agencyId: z.string().uuid().optional(), // DEPRECATED: Will be derived from authenticated user
     expectedFiles: z.number().int().min(0),
     clientJobId: z.string().min(1).optional(),
 });
@@ -79,6 +80,16 @@ export async function POST(req: NextRequest) {
     const supabase = createAdminClient();
 
     try {
+        // SECURITY: Get agency ID from authenticated user, not from request body
+        const userContextResult = await getUserContext();
+        if (!userContextResult.success) {
+            return NextResponse.json(
+                { error: userContextResult.error },
+                { status: userContextResult.status }
+            );
+        }
+        const secureAgencyId = userContextResult.context.agencyId;
+
         // Ensure schema exists (best-effort)
         await ensureSchema();
 
@@ -96,8 +107,9 @@ export async function POST(req: NextRequest) {
                 issues: parsed.error.flatten(),
             }, { status: 400 });
         }
-        const { agencyId, expectedFiles, clientJobId } = parsed
-            .data as CreateJobInput;
+        const { expectedFiles, clientJobId } = parsed.data as CreateJobInput;
+        // SECURITY: Always use agency from authenticated user, ignore any agencyId in body
+        const agencyId = secureAgencyId;
         console.debug("[create-job] validated", {
             agencyId,
             expectedFiles,

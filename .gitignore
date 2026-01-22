@@ -45,3 +45,6 @@ next-env.d.ts
 rpc.json
 nipr_credentials
 scripts/
+
+# planning docs
+rework-plan.md

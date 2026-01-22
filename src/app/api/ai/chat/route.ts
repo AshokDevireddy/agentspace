@@ -778,11 +778,14 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
     const stream = new ReadableStream({
       async start(controller) {
         let isStreamActive = true;
+        const MAX_TOOL_ITERATIONS = 10;
         try {
           let conversationMessages = [...messages];
           let shouldContinue = true;
+          let iterationCount = 0;
 
-          while (shouldContinue && isStreamActive) {
+          while (shouldContinue && isStreamActive && iterationCount < MAX_TOOL_ITERATIONS) {
+            iterationCount++;
             const messageStream = await anthropic.messages.create({
               model: 'claude-sonnet-4-5',
               max_tokens: 4096,
@@ -934,6 +937,11 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
             } else {
               shouldContinue = false;
             }
+          }
+
+          // Log warning if iteration limit was reached
+          if (iterationCount >= MAX_TOOL_ITERATIONS && shouldContinue) {
+            console.warn(`AI chat reached maximum tool iterations (${MAX_TOOL_ITERATIONS}) for user ${userId}`);
           }
 
           // Send done signal only if stream is still active

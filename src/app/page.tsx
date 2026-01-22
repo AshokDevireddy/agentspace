@@ -11,6 +11,7 @@ import OnboardingWizard from "@/components/onboarding-wizard"
 import { useTour } from "@/contexts/onboarding-tour-context"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
+import { useDashboardSummary, useScoreboardData, useProductionData } from "@/hooks/useDashboardData"
 import { useCompleteOnboarding } from "@/hooks/mutations"
 import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
@@ -47,24 +48,20 @@ export default function Home() {
     }
   )
 
-  const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useSupabaseRpc<any>(
-    queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate),
-    'get_scoreboard_data',
-    { p_user_id: user?.id, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate },
+  const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useScoreboardData(
+    user?.id,
+    weekRange.startDate,
+    weekRange.endDate,
     {
       enabled: !!user?.id,
       staleTime: 60 * 1000, // 1 minute - scoreboard data is more static
-      placeholderData: (previousData: any) => previousData,
     }
   )
 
-  const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching, error: dashboardError } = useSupabaseRpc<any>(
-    queryKeys.dashboard(user?.id || ''),
-    'get_dashboard_data_with_agency_id',
-    { p_user_id: user?.id },
+  const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching, error: dashboardError } = useDashboardSummary(
+    user?.id,
     {
       enabled: !!user?.id,
-      placeholderData: (previousData: any) => previousData,
     }
   )
 
@@ -85,27 +82,22 @@ export default function Home() {
   // Top producers query with YTD/MTD period selection
   const topProducersRange = topProducersPeriod === 'ytd' ? productionDateRanges.ytd : productionDateRanges.mtd
 
-  const { data: topProducersResult, isLoading: topProducersLoading } = useSupabaseRpc<any>(
-    [...queryKeys.scoreboard(user?.id || '', topProducersRange.start, topProducersRange.end), topProducersPeriod],
-    'get_scoreboard_data',
-    { p_user_id: user?.id, p_start_date: topProducersRange.start, p_end_date: topProducersRange.end },
+  const { data: topProducersResult, isLoading: topProducersLoading } = useScoreboardData(
+    user?.id,
+    topProducersRange.start,
+    topProducersRange.end,
     {
       enabled: !!user?.id,
       staleTime: 60 * 1000,
-      placeholderData: (previousData: any) => previousData,
     }
   )
 
   // YTD production query for ProductionProgressCard
-  const { data: ytdProductionResult, isLoading: ytdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'ytd', user?.id, productionDateRanges.ytd.start, productionDateRanges.ytd.end],
-    'get_agents_debt_production',
-    {
-      p_user_id: user?.id,
-      p_agent_ids: user?.id ? [user.id] : [],
-      p_start_date: productionDateRanges.ytd.start,
-      p_end_date: productionDateRanges.ytd.end
-    },
+  const { data: ytdProductionResult, isLoading: ytdProductionLoading } = useProductionData(
+    user?.id,
+    user?.id ? [user.id] : [],
+    productionDateRanges.ytd.start,
+    productionDateRanges.ytd.end,
     {
       enabled: !!user?.id,
       staleTime: 5 * 60 * 1000, // 5 minutes
@@ -113,15 +105,11 @@ export default function Home() {
   )
 
   // MTD production query for ProductionProgressCard
-  const { data: mtdProductionResult, isLoading: mtdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'mtd', user?.id, productionDateRanges.mtd.start, productionDateRanges.mtd.end],
-    'get_agents_debt_production',
-    {
-      p_user_id: user?.id,
-      p_agent_ids: user?.id ? [user.id] : [],
-      p_start_date: productionDateRanges.mtd.start,
-      p_end_date: productionDateRanges.mtd.end
-    },
+  const { data: mtdProductionResult, isLoading: mtdProductionLoading } = useProductionData(
+    user?.id,
+    user?.id ? [user.id] : [],
+    productionDateRanges.mtd.start,
+    productionDateRanges.mtd.end,
     {
       enabled: !!user?.id,
       staleTime: 5 * 60 * 1000, // 5 minutes

@@ -68,6 +68,8 @@ export {
   useResetPassword,
   useCompleteOnboarding,
   useSignIn,
+  useDjangoSignIn,
+  useSmartSignIn,
   useUpdatePassword,
   useUpdateUserProfile,
   useUpdateUserStatus,

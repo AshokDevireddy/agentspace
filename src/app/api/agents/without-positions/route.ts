@@ -121,7 +121,7 @@ export async function GET(request: Request) {
       if (!isAdmin) {
         // For non-admins, we need to get their downlines
         const { data: downlineData, error: downlineError } = await supabase
-          .rpc("get_agent_downline", { p_agent_id: userId });
+          .rpc("get_agent_downline", { agent_id: userId });
 
         if (downlineError) {
           // Fallback to only themselves if downline fetch fails

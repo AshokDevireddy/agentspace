@@ -48,3 +48,5 @@ scripts/
 
 # planning docs
 rework-plan.md
+rpc_functions.csv
+types.csv

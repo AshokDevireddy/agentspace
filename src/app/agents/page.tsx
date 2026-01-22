@@ -14,6 +14,7 @@ import { AgentDetailsModal } from "@/components/modals/agent-details-modal"
 import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog, Mail, Send } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
+import { useAgentsList, useAgentsWithoutPositions, type Agent, type TreeNode, type PendingAgent } from "@/hooks/useAgentsData"
 import {
   Popover,
   PopoverContent,
@@ -24,62 +25,12 @@ import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { getInitials } from "@/components/ui/initials-avatar"
 import { useNotification } from "@/contexts/notification-context"
-import { useApiFetch } from "@/hooks/useApiFetch"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useAssignPosition, useResendInvite, useSendInvite } from "@/hooks/mutations"
 
-// Agent data type
-interface Agent {
-  id: string
-  name: string
-  position: string
-  upline: string
-  created: string
-  lastLogin: string
-  earnings: string
-  downlines: number
-  status: string
-  badge: string
-  position_id?: string | null
-  position_name?: string | null
-  position_level?: number | null
-  email?: string | null
-  first_name?: string
-  last_name?: string
-  // Debt and production metrics
-  individual_debt: number
-  individual_debt_count: number
-  individual_production: number
-  individual_production_count: number
-  hierarchy_debt: number
-  hierarchy_debt_count: number
-  hierarchy_production: number
-  hierarchy_production_count: number
-  debt_to_production_ratio: number | null
-}
-
-interface TreeNode {
-    name: string;
-    attributes?: {
-      [key: string]: string;
-    };
-    children?: TreeNode[];
-}
-
-interface PendingAgent {
-  agent_id: string
-  first_name: string
-  last_name: string
-  email: string
-  phone_number: string | null
-  role: string
-  upline_name: string | null
-  created_at: string
-  position_id?: string | null
-  position_name?: string | null
-  has_position?: boolean
-}
+// Types imported from useAgentsData
 
 interface Position {
   position_id: string
@@ -556,63 +507,13 @@ export default function Agents() {
   const filterPositions = allPositions // For filter dropdown (all agency positions)
   const positionsLoaded = !positionsLoading
 
-  // Build query params for agents fetch
-  const buildAgentsUrl = () => {
-    const params = new URLSearchParams()
-    if (view === 'table') {
-      params.append('page', currentPage.toString())
-      params.append('limit', '20')
-    } else if (view === 'tree') {
-      params.append('view', 'tree')
-    }
-
-    // Add active filter parameters
-    if (appliedFilters.inUpline && appliedFilters.inUpline !== 'all') {
-      params.append('inUpline', appliedFilters.inUpline)
-    }
-    if (appliedFilters.directUpline && appliedFilters.directUpline !== 'all') {
-      params.append('directUpline', appliedFilters.directUpline === 'not_set' ? 'not_set' : appliedFilters.directUpline)
-    }
-    if (appliedFilters.inDownline && appliedFilters.inDownline !== 'all') {
-      params.append('inDownline', appliedFilters.inDownline)
-    }
-    if (appliedFilters.directDownline && appliedFilters.directDownline !== 'all') {
-      params.append('directDownline', appliedFilters.directDownline)
-    }
-    if (appliedFilters.agentName && appliedFilters.agentName !== 'all') {
-      params.append('agentName', appliedFilters.agentName)
-    }
-    if (appliedFilters.status && appliedFilters.status !== 'all') {
-      params.append('status', appliedFilters.status)
-    }
-    if (appliedFilters.position && appliedFilters.position !== 'all') {
-      params.append('positionId', appliedFilters.position === 'not_set' ? 'not_set' : appliedFilters.position)
-    }
-
-    // Add date range params for debt/production metrics
-    if (appliedFilters.startMonth) {
-      params.append('startMonth', appliedFilters.startMonth)
-    }
-    if (appliedFilters.endMonth) {
-      params.append('endMonth', appliedFilters.endMonth)
-    }
-
-    return `/api/agents?${params.toString()}`
-  }
-
-  // Fetch agents data from API (only when active filters change, not local filters)
-  const { data: agentsResponse, isPending: agentsLoading, isFetching: agentsFetching, error: agentsError } = useApiFetch<{
-    agents?: Agent[]
-    tree?: TreeNode
-    pagination?: { totalPages: number; totalCount: number }
-    allAgents?: Array<{ id: string; name: string }>
-  }>(
-    queryKeys.agentsList(currentPage, view, appliedFilters),
-    buildAgentsUrl(),
+  // Fetch agents data using unified hook (supports Django/Supabase dual-path)
+  const { data: agentsResponse, isPending: agentsLoading, isFetching: agentsFetching, error: agentsError } = useAgentsList(
+    currentPage,
+    view === 'pending-positions' ? 'table' : view,
+    appliedFilters,
     {
       enabled: view === 'table' || view === 'tree',
-      staleTime: 30 * 1000, // 30 seconds
-      placeholderData: (previousData) => previousData, // Keep previous data while fetching new data (stale-while-revalidate)
     }
   )
 
@@ -629,43 +530,9 @@ export default function Agents() {
   // - Tree view: only needs agents (positions data not used in tree)
   // - Pending positions view: only needs pendingPositionsData
 
-  // Fetch all agents for pending positions view (with and without positions)
-  // This loads all data upfront so we can filter client-side without API calls
-  const buildPendingPositionsUrl = async () => {
-    const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    const accessToken = session?.access_token
-
-    if (!accessToken) {
-      throw new Error('No access token available')
-    }
-
-    const url = new URL('/api/agents/without-positions', window.location.origin)
-    url.searchParams.set('all', 'true') // Special parameter to fetch all agents
-
-    return { url: url.toString(), accessToken }
-  }
-
-  const { data: pendingPositionsData, isPending: pendingPositionsLoading } = useQuery({
-    queryKey: queryKeys.agentsPendingPositions(),
-    queryFn: async ({ signal }) => {
-      const { url, accessToken } = await buildPendingPositionsUrl()
-
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        },
-        signal
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch pending positions')
-      }
-
-      return response.json()
-    },
+  // Fetch all agents for pending positions view using unified hook (supports Django/Supabase dual-path)
+  const { data: pendingPositionsData, isPending: pendingPositionsLoading } = useAgentsWithoutPositions({
     enabled: view === 'pending-positions',
-    staleTime: 30 * 1000, // 30 seconds
   })
 
   // Derived pending positions data

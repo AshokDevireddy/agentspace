@@ -6,7 +6,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useInvalidation } from '../useInvalidation'
 import { supabaseRestFetch, updatePassword } from '@/lib/supabase/api'
-import { shouldUseDjangoAuth } from '@/lib/feature-flags'
 import { getDjangoAuthEndpoint } from '@/lib/api-config'
 
 // ============ Register Mutation ============
@@ -345,20 +344,14 @@ export function useDjangoSignIn(options?: {
 }
 
 /**
- * Smart sign-in hook that automatically uses Django or Supabase based on feature flag
+ * Smart sign-in hook - permanently uses Django authentication
  */
 export function useSmartSignIn(options?: {
   onSuccess?: (data: SignInResponse) => void
   onError?: (error: Error) => void
 }) {
-  const djangoSignIn = useDjangoSignIn(options)
-  const supabaseSignIn = useSignIn(options)
-
-  // Return the appropriate mutation based on feature flag
-  if (shouldUseDjangoAuth()) {
-    return djangoSignIn
-  }
-  return supabaseSignIn
+  // Permanently using Django auth
+  return useDjangoSignIn(options)
 }
 
 // ============ Update Password Mutation ============

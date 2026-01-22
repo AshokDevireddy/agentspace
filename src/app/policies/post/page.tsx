@@ -221,6 +221,19 @@ export default function PostDeal() {
         }
       })
 
+      // ============================================================================
+      // NIPR FILTERING REMOVED TEMPORARILY
+      // ============================================================================
+      // Previously, we filtered carriers by NIPR unique_carriers with fuzzy matching.
+      // This was causing issues where some users weren't seeing all their agency carriers.
+      // The NIPR filtering logic has been commented out below for future restoration.
+      //
+      // To restore NIPR filtering, uncomment the try-catch block below and remove
+      // the direct carriersOptions assignment.
+      // ============================================================================
+
+      /*
+      // NIPR FILTERING (COMMENTED OUT)
       // Also fetch NIPR-filtered carriers and intersect
       try {
         const niprResponse = await fetch('/api/carriers?filter=nipr')
@@ -242,6 +255,7 @@ export default function PostDeal() {
         console.error('Error fetching NIPR carriers:', err)
         // Continue with unfiltered carriers on error
       }
+      */
 
       const carriersOptions = Array.from(carrierMap.values()).map(c => ({ value: c.id, label: c.display_name }))
 

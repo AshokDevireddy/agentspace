@@ -21,10 +21,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Get the agency's Discord webhook URL and template
+    // Get the agency's Discord webhook URL, template, and bot username
     const { data: agency, error: agencyError } = await supabase
       .from('agencies')
-      .select('discord_webhook_url, discord_notification_enabled, discord_notification_template')
+      .select('discord_webhook_url, discord_notification_enabled, discord_notification_template, discord_bot_username')
       .eq('id', agencyId)
       .single()
 
@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
     const webhookUrl = agency.discord_webhook_url
     const useCustomTemplate = agency.discord_notification_enabled ?? false
     const customTemplate = agency.discord_notification_template
+    const botUsername = agency.discord_bot_username || 'AgentSpace Deal Bot'
 
     // If no webhook URL is configured, skip silently (not an error)
     if (!webhookUrl) {
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
     // Render the template with placeholders
     const message = replaceDiscordPlaceholders(template, placeholders)
 
-    // Send the Discord webhook
+    // Send the Discord webhook with configurable username
     const discordResponse = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         content: message,
-        username: 'AgentSpace Deal Bot',
+        username: botUsername,
       }),
     })
 

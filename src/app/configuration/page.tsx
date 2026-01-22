@@ -69,6 +69,7 @@ interface Agency {
   discord_webhook_url?: string
   discord_notification_enabled?: boolean
   discord_notification_template?: string
+  discord_bot_username?: string
   display_name?: string
   logo_url?: string
   primary_color?: string
@@ -420,6 +421,7 @@ export default function ConfigurationPage() {
   const [savingDiscordWebhook, setSavingDiscordWebhook] = useState(false)
   const [discordNotificationEnabled, setDiscordNotificationEnabled] = useState(false)
   const [discordNotificationTemplate, setDiscordNotificationTemplate] = useState("")
+  const [discordBotUsername, setDiscordBotUsername] = useState("AgentSpace Deal Bot")
 
   // SMS Templates state
   const [smsWelcomeEnabled, setSmsWelcomeEnabled] = useState(true)
@@ -543,7 +545,7 @@ export default function ConfigurationPage() {
 
       const { data: agencyInfo, error } = await supabase
         .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, discord_notification_enabled, discord_notification_template, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template')
+        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, discord_notification_enabled, discord_notification_template, discord_bot_username, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template')
         .eq('id', userDataLocal.agency_id)
         .single()
 
@@ -793,6 +795,7 @@ export default function ConfigurationPage() {
       setDiscordWebhookUrl(agencyData.discord_webhook_url || "")
       setDiscordNotificationEnabled(agencyData.discord_notification_enabled ?? false)
       setDiscordNotificationTemplate(agencyData.discord_notification_template || "")
+      setDiscordBotUsername(agencyData.discord_bot_username || "AgentSpace Deal Bot")
       setWhitelabelDomain(agencyData.whitelabel_domain || "")
       setSmsWelcomeEnabled(agencyData.sms_welcome_enabled ?? true)
       setSmsWelcomeTemplate(agencyData.sms_welcome_template || "")
@@ -4346,9 +4349,11 @@ export default function ConfigurationPage() {
                       <DiscordTemplateEditor
                         enabled={discordNotificationEnabled}
                         template={discordNotificationTemplate}
+                        botUsername={discordBotUsername}
                         agencyId={agency?.id}
                         onEnabledChange={setDiscordNotificationEnabled}
                         onTemplateChange={setDiscordNotificationTemplate}
+                        onBotUsernameChange={setDiscordBotUsername}
                         showSuccess={showSuccess}
                         showError={showError}
                       />

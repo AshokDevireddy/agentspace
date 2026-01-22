@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, RotateCcw } from "lucide-react"
@@ -12,9 +13,11 @@ import { useUpdateAgencySmsEnabled, useUpdateAgencySmsTemplate } from "@/hooks/m
 interface DiscordTemplateEditorProps {
   enabled: boolean
   template: string
+  botUsername: string
   agencyId?: string
   onEnabledChange: (enabled: boolean) => void
   onTemplateChange: (template: string) => void
+  onBotUsernameChange: (username: string) => void
   showSuccess: (message: string, duration?: number) => void
   showError: (message: string, duration?: number) => void
 }
@@ -22,13 +25,16 @@ interface DiscordTemplateEditorProps {
 export function DiscordTemplateEditor({
   enabled,
   template,
+  botUsername,
   agencyId,
   onEnabledChange,
   onTemplateChange,
+  onBotUsernameChange,
   showSuccess,
   showError,
 }: DiscordTemplateEditorProps) {
   const [localTemplate, setLocalTemplate] = useState(template || DEFAULT_DISCORD_TEMPLATE)
+  const [localBotUsername, setLocalBotUsername] = useState(botUsername || 'AgentSpace Deal Bot')
   const [hasChanges, setHasChanges] = useState(false)
   const [viewMode, setViewMode] = useState<'source' | 'preview'>('source')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -56,12 +62,27 @@ export function DiscordTemplateEditor({
     },
   })
 
-  // Sync template prop to local state when it changes
+  const saveBotUsernameMutation = useUpdateAgencySmsTemplate({
+    onSuccess: () => {
+      onBotUsernameChange(localBotUsername)
+      showSuccess('Discord bot username saved successfully')
+    },
+    onError: () => {
+      showError('Failed to save Discord bot username')
+    },
+  })
+
+  // Sync template and botUsername props to local state when they change
   useEffect(() => {
     const newValue = template || DEFAULT_DISCORD_TEMPLATE
     setLocalTemplate(newValue)
     setHasChanges(false)
   }, [template])
+
+  useEffect(() => {
+    const newValue = botUsername || 'AgentSpace Deal Bot'
+    setLocalBotUsername(newValue)
+  }, [botUsername])
 
   // Sample placeholder values for preview
   const samplePlaceholders: Record<string, string> = {
@@ -114,6 +135,19 @@ export function DiscordTemplateEditor({
       agencyId,
       dbField: 'discord_notification_template',
       template: localTemplate,
+    })
+  }
+
+  const handleBotUsernameChange = (value: string) => {
+    setLocalBotUsername(value)
+  }
+
+  const handleBotUsernameSave = () => {
+    if (!agencyId) return
+    saveBotUsernameMutation.mutate({
+      agencyId,
+      dbField: 'discord_bot_username',
+      template: localBotUsername,
     })
   }
 
@@ -184,6 +218,30 @@ export function DiscordTemplateEditor({
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Bot Username Input */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Bot Username</label>
+          <p className="text-xs text-muted-foreground">
+            The username that will appear for the Discord webhook bot
+          </p>
+          <div className="flex gap-2">
+            <Input
+              value={localBotUsername}
+              onChange={(e) => handleBotUsernameChange(e.target.value)}
+              placeholder="AgentSpace Deal Bot"
+              className="flex-1"
+            />
+            <Button
+              onClick={handleBotUsernameSave}
+              disabled={saveBotUsernameMutation.isPending || localBotUsername === botUsername}
+              variant="outline"
+            >
+              {saveBotUsernameMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save
+            </Button>
+          </div>
+        </div>
+
         {/* Template Editor */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">

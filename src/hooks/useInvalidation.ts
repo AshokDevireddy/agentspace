@@ -21,6 +21,7 @@ export function useInvalidation() {
    */
   const invalidateAgentRelated = useCallback(
     async (agentId?: string, options?: { invalidateAllDownlines?: boolean }) => {
+      // Invalidate first (marks as stale immediately)
       const invalidations = [
         queryClient.invalidateQueries({ queryKey: queryKeys.agents }),
         queryClient.invalidateQueries({ queryKey: queryKeys.positions }),
@@ -42,6 +43,12 @@ export function useInvalidation() {
       }
 
       await Promise.all(invalidations)
+
+      // Then trigger refetch of active queries (don't await - let it happen in background)
+      // This prevents blocking the mutation callback while still triggering immediate updates
+      queryClient.refetchQueries({ queryKey: queryKeys.agents, type: 'active' }).catch(err => {
+        console.error('[Invalidation] Failed to refetch agents:', err)
+      })
     },
     [queryClient]
   )

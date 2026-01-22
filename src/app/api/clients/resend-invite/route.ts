@@ -44,9 +44,9 @@ export async function POST(request: Request) {
     const getRedirectUrl = () => {
       if (agencyData?.whitelabel_domain) {
         const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http'
-        return `${protocol}://${agencyData.whitelabel_domain}/login`
+        return `${protocol}://${agencyData.whitelabel_domain}/auth/confirm`
       }
-      return `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/login`
+      return `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/confirm`
     }
 
     // Get the client to resend invite to (by ID or email)

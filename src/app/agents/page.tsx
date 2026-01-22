@@ -780,6 +780,9 @@ export default function Agents() {
   const resendInviteMutation = useResendInvite()
   const sendInviteMutation = useSendInvite()
 
+  // Track which agent is currently being processed for resend invite
+  const [resendingAgentId, setResendingAgentId] = useState<string | null>(null)
+
   const handleAssignPosition = (agentId: string, positionId: string) => {
     if (!positionId) {
       showWarning('Please select a position')
@@ -804,13 +807,16 @@ export default function Agents() {
   }
 
   const handleResendInvite = (agentId: string) => {
+    setResendingAgentId(agentId)
     resendInviteMutation.mutate(agentId, {
       onSuccess: (data) => {
         // Note: Agent query invalidation is handled by the mutation hook
+        setResendingAgentId(null)
         showSuccess(data.message || 'Invitation resent successfully!')
       },
       onError: (err: Error) => {
         console.error('Error resending invite:', err)
+        setResendingAgentId(null)
         showError(err.message || 'Failed to resend invitation')
       },
     })
@@ -1373,13 +1379,13 @@ export default function Agents() {
                                     e.stopPropagation()
                                     handleResendInvite(agent.id)
                                   }}
-                                  disabled={resendInviteMutation.isPending}
+                                  disabled={resendingAgentId === agent.id}
                                   variant="outline"
                                   size="sm"
                                   className="h-7 px-3 text-xs gap-1.5 bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30 hover:border-blue-500/40"
                                 >
                                   <Mail className="h-3 w-3" />
-                                  {resendInviteMutation.isPending ? 'Sending...' : 'Resend Invite'}
+                                  {resendingAgentId === agent.id ? 'Sending...' : 'Resend Invite'}
                                 </Button>
                               )}
                             </div>

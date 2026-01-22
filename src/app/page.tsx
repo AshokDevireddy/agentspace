@@ -156,9 +156,8 @@ export default function Home() {
   useEffect(() => {
     if (userData) {
       setUserRole(userData.is_admin ? 'admin' : 'agent')
-      if (userData.status === 'onboarding') {
-        setShowWizard(true)
-      }
+      // Show wizard only if status is 'onboarding', hide if status changes to 'active'
+      setShowWizard(userData.status === 'onboarding')
     }
   }, [userData, setUserRole])
 
@@ -201,12 +200,12 @@ export default function Home() {
       onSuccess: async () => {
         // Refresh AuthProvider state so client-layout shows sidebar immediately
         await refreshUserData()
-        // Invalidate all user-related queries to refresh state
+        // Force refetch of active queries to immediately update UI
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.user }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() }),
+          queryClient.refetchQueries({ queryKey: queryKeys.user, type: 'active' }),
+          queryClient.refetchQueries({ queryKey: queryKeys.userProfile(), type: 'active' }),
         ])
-        setShowWizard(false)
+        // showWizard will be automatically set to false by the useEffect watching userData.status
       },
       onError: async (error) => {
         console.error('Error completing onboarding:', error)

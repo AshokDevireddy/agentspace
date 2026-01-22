@@ -67,6 +67,7 @@ export function AuthProvider({
   const [loading, setLoading] = useState(true)
   const [isHydrated, setIsHydrated] = useState(false)
   const [supabaseReady, setSupabaseReady] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
   const queryClient = useQueryClient()
@@ -419,10 +420,13 @@ export function AuthProvider({
   }, [supabase, router])
 
   const signOut = useCallback(async () => {
-    // 1. Clear all TanStack Query cache first (prevents stale data on re-login)
+    // 1. Show loading overlay to hide UI during logout
+    setIsLoggingOut(true)
+
+    // 2. Clear TanStack Query cache (prevents stale data on re-login)
     queryClient.clear()
 
-    // 2. Clear local state (localStorage filters)
+    // 3. Clear localStorage filters
     if (typeof window !== 'undefined') {
       const keysToRemove: string[] = []
       for (let i = 0; i < localStorage.length; i++) {
@@ -432,19 +436,15 @@ export function AuthProvider({
       keysToRemove.forEach(key => localStorage.removeItem(key))
     }
 
-    // 3. Clear React state
-    setUser(null)
-    setUserData(null)
-
-    // 4. Invalidate server session (non-blocking - proceed with redirect on error)
-    try {
-      await supabase.auth.signOut()
-    } catch (err) {
+    // 4. Start server signOut (fire and forget - don't await to avoid delay)
+    supabase.auth.signOut().catch(err => {
       console.error('[AuthProvider] Server signOut failed:', err)
-      // Continue with redirect - local state is already cleared
-    }
+    })
 
-    // 5. Use hard redirect to ensure middleware sees cleared session state
+    // 5. Small delay to ensure overlay renders, then redirect
+    await new Promise(resolve => setTimeout(resolve, 50))
+
+    // 6. Hard redirect to login page
     window.location.href = '/login'
   }, [supabase, queryClient])
 
@@ -455,6 +455,16 @@ export function AuthProvider({
   return (
     <AuthContext.Provider value={contextValue}>
       {children}
+
+      {/* Logout overlay - covers entire screen during logout */}
+      {isLoggingOut && (
+        <div className="fixed inset-0 z-[99999] bg-background/80 backdrop-blur-sm flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            <p className="text-sm font-medium text-foreground">Logging out...</p>
+          </div>
+        </div>
+      )}
     </AuthContext.Provider>
   )
 }

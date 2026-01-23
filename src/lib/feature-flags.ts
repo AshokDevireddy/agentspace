@@ -7,11 +7,8 @@
  */
 
 export enum FeatureFlags {
-  // Auth endpoints
+  // Auth - permanently enabled, master flag kept for reference
   USE_DJANGO_AUTH = 'use_django_auth',
-  USE_DJANGO_AUTH_LOGIN = 'use_django_auth_login',
-  USE_DJANGO_AUTH_SESSION = 'use_django_auth_session',
-  USE_DJANGO_AUTH_REFRESH = 'use_django_auth_refresh',
 
   // Dashboard endpoints
   USE_DJANGO_DASHBOARD = 'use_django_dashboard',
@@ -39,6 +36,7 @@ export enum FeatureFlags {
   USE_DJANGO_CLIENTS = 'use_django_clients',
   USE_DJANGO_SCOREBOARD = 'use_django_scoreboard',
   USE_DJANGO_SEARCH = 'use_django_search',
+  USE_DJANGO_ANALYTICS = 'use_django_analytics',
 }
 
 /**
@@ -46,9 +44,6 @@ export enum FeatureFlags {
  */
 const ENV_VAR_MAP: Record<FeatureFlags, string> = {
   [FeatureFlags.USE_DJANGO_AUTH]: 'NEXT_PUBLIC_DJANGO_AUTH_ENABLED',
-  [FeatureFlags.USE_DJANGO_AUTH_LOGIN]: 'NEXT_PUBLIC_DJANGO_AUTH_LOGIN_ENABLED',
-  [FeatureFlags.USE_DJANGO_AUTH_SESSION]: 'NEXT_PUBLIC_DJANGO_AUTH_SESSION_ENABLED',
-  [FeatureFlags.USE_DJANGO_AUTH_REFRESH]: 'NEXT_PUBLIC_DJANGO_AUTH_REFRESH_ENABLED',
   [FeatureFlags.USE_DJANGO_DASHBOARD]: 'NEXT_PUBLIC_DJANGO_DASHBOARD_ENABLED',
   [FeatureFlags.USE_DJANGO_DASHBOARD_SUMMARY]: 'NEXT_PUBLIC_DJANGO_DASHBOARD_SUMMARY_ENABLED',
   [FeatureFlags.USE_DJANGO_DASHBOARD_SCOREBOARD]: 'NEXT_PUBLIC_DJANGO_DASHBOARD_SCOREBOARD_ENABLED',
@@ -68,15 +63,13 @@ const ENV_VAR_MAP: Record<FeatureFlags, string> = {
   [FeatureFlags.USE_DJANGO_CLIENTS]: 'NEXT_PUBLIC_DJANGO_CLIENTS_ENABLED',
   [FeatureFlags.USE_DJANGO_SCOREBOARD]: 'NEXT_PUBLIC_DJANGO_SCOREBOARD_ENABLED',
   [FeatureFlags.USE_DJANGO_SEARCH]: 'NEXT_PUBLIC_DJANGO_SEARCH_ENABLED',
+  [FeatureFlags.USE_DJANGO_ANALYTICS]: 'NEXT_PUBLIC_DJANGO_ANALYTICS_ENABLED',
 }
 
 /**
  * Parent flag relationships (child inherits from parent unless explicitly set)
  */
 const PARENT_FLAGS: Partial<Record<FeatureFlags, FeatureFlags>> = {
-  [FeatureFlags.USE_DJANGO_AUTH_LOGIN]: FeatureFlags.USE_DJANGO_AUTH,
-  [FeatureFlags.USE_DJANGO_AUTH_SESSION]: FeatureFlags.USE_DJANGO_AUTH,
-  [FeatureFlags.USE_DJANGO_AUTH_REFRESH]: FeatureFlags.USE_DJANGO_AUTH,
   [FeatureFlags.USE_DJANGO_DASHBOARD_SUMMARY]: FeatureFlags.USE_DJANGO_DASHBOARD,
   [FeatureFlags.USE_DJANGO_DASHBOARD_SCOREBOARD]: FeatureFlags.USE_DJANGO_DASHBOARD,
   [FeatureFlags.USE_DJANGO_AGENTS_LIST]: FeatureFlags.USE_DJANGO_AGENTS,
@@ -204,4 +197,8 @@ export function shouldUseDjangoScoreboard(): boolean {
 
 export function shouldUseDjangoSearch(): boolean {
   return isFeatureEnabled(FeatureFlags.USE_DJANGO_SEARCH)
+}
+
+export function shouldUseDjangoAnalytics(): boolean {
+  return isFeatureEnabled(FeatureFlags.USE_DJANGO_ANALYTICS)
 }

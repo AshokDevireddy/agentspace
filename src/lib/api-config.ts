@@ -161,6 +161,17 @@ export const djangoSearchEndpoints = {
 } as const
 
 // ============================================================================
+// Analytics Endpoints (P2-039)
+// ============================================================================
+
+export const djangoAnalyticsEndpoints = {
+  split: '/api/analytics/split',
+  downlineDistribution: '/api/analytics/downline-distribution',
+  deals: '/api/analytics/deals',
+  persistency: '/api/analytics/persistency',
+} as const
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -252,4 +263,10 @@ export function getDjangoSearchEndpoint(
   endpoint: keyof typeof djangoSearchEndpoints
 ): string {
   return `${getDjangoApiUrl()}${djangoSearchEndpoints[endpoint]}`
+}
+
+export function getDjangoAnalyticsEndpoint(
+  endpoint: keyof typeof djangoAnalyticsEndpoints
+): string {
+  return `${getDjangoApiUrl()}${djangoAnalyticsEndpoints[endpoint]}`
 }

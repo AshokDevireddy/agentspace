@@ -326,6 +326,31 @@ export function useInvalidation() {
   }, [queryClient])
 
   /**
+   * Invalidate all onboarding-related queries
+   */
+  const invalidateOnboardingRelated = useCallback(
+    async (userId?: string) => {
+      const invalidations = [
+        queryClient.invalidateQueries({ queryKey: queryKeys.onboarding }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.nipr }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() }),
+      ]
+
+      if (userId) {
+        invalidations.push(
+          queryClient.invalidateQueries({ queryKey: queryKeys.onboardingProgress(userId) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.onboardingInvitations(userId) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.niprStatus(userId) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(userId) })
+        )
+      }
+
+      await Promise.all(invalidations)
+    },
+    [queryClient]
+  )
+
+  /**
    * Invalidate all queries (nuclear option - use sparingly)
    */
   const invalidateAll = useCallback(async () => {
@@ -347,6 +372,7 @@ export function useInvalidation() {
       invalidatePolicyReportRelated,
       invalidateAgencyRelated,
       invalidateCarrierRelated,
+      invalidateOnboardingRelated,
       invalidateAll,
       // Expose queryClient for direct access when needed
       queryClient,
@@ -365,6 +391,7 @@ export function useInvalidation() {
       invalidatePolicyReportRelated,
       invalidateAgencyRelated,
       invalidateCarrierRelated,
+      invalidateOnboardingRelated,
       invalidateAll,
       queryClient,
     ]

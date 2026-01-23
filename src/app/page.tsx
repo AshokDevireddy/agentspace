@@ -7,7 +7,8 @@ import { Users, BarChart3, FileText, Briefcase, AlertCircle } from "lucide-react
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
-import OnboardingWizard from "@/components/onboarding-wizard"
+import OnboardingWizard from "@/components/onboarding/OnboardingWizard"
+import type { UserData as OnboardingUserData } from "@/components/onboarding/types"
 import { useTour } from "@/contexts/onboarding-tour-context"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
@@ -304,7 +305,17 @@ export default function Home() {
   }, [])
 
   if (showWizard && userData) {
-    return <OnboardingWizard userData={userData} onComplete={handleOnboardingComplete} />
+    // Transform camelCase profile data to snake_case expected by OnboardingWizard
+    const wizardUserData: OnboardingUserData = {
+      id: userData.id,
+      first_name: userData.firstName || '',
+      last_name: userData.lastName || '',
+      email: user?.email || '',
+      role: userData.role as 'admin' | 'agent' | 'client',
+      is_admin: userData.is_admin,
+      agency_id: userData.agency_id,
+    }
+    return <OnboardingWizard userData={wizardUserData} onComplete={handleOnboardingComplete} />
   }
 
   return (

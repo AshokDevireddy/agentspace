@@ -137,6 +137,11 @@ export const queryKeys = {
   niprStatus: (userId: string) => ['nipr', 'status', userId] as const,
   niprJob: (jobId: string) => ['nipr', 'job', jobId] as const,
 
+  // Onboarding (server-side state management)
+  onboarding: ['onboarding'] as const,
+  onboardingProgress: (userId?: string) => ['onboarding', 'progress', userId] as const,
+  onboardingInvitations: (userId?: string) => ['onboarding', 'invitations', userId] as const,
+
   // Agency
   agency: ['agency'] as const,
   agencyColor: (agencyId: string) => ['agency', 'color', agencyId] as const,

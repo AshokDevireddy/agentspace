@@ -166,9 +166,9 @@ const withAuthTimeout = <T>(promise: Promise<T>, ms = 15000): Promise<T> => {
   return Promise.race([promise, timeout])
 }
 
-// ============ Django Sign In Mutation ============
+// ============ Sign In Mutation ============
 
-interface DjangoSignInResponse {
+interface SignInApiResponse {
   access_token: string
   refresh_token: string
   expires_in: number
@@ -187,11 +187,9 @@ interface DjangoSignInResponse {
 }
 
 /**
- * Sign in user via Django backend API
- * Django calls Supabase Auth internally and returns Supabase tokens.
- * We then set these tokens in the Supabase client for seamless compatibility.
+ * Sign in user via backend API
  */
-export function useDjangoSignIn(options?: {
+export function useSignIn(options?: {
   onSuccess?: (data: SignInResponse) => void
   onError?: (error: Error) => void
 }) {
@@ -210,7 +208,6 @@ export function useDjangoSignIn(options?: {
         // Ignore sign-out errors - continue with sign-in
       }
 
-      // Call Django login endpoint
       const response = await withAuthTimeout(
         fetch(getAuthEndpoint('login'), {
           method: 'POST',
@@ -226,10 +223,9 @@ export function useDjangoSignIn(options?: {
         throw new Error(errorData.message || 'Invalid login credentials')
       }
 
-      const data: DjangoSignInResponse = await response.json()
+      const data: SignInApiResponse = await response.json()
 
-      // Set the Supabase session with the tokens from Django
-      // This allows all subsequent Supabase RPC calls to work seamlessly
+      // Set the Supabase session with the tokens from the API
       const { error: sessionError } = await supabase.auth.setSession({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
@@ -267,17 +263,6 @@ export function useDjangoSignIn(options?: {
     onSuccess: options?.onSuccess,
     onError: options?.onError,
   })
-}
-
-/**
- * Smart sign-in hook - permanently uses Django authentication
- */
-export function useSmartSignIn(options?: {
-  onSuccess?: (data: SignInResponse) => void
-  onError?: (error: Error) => void
-}) {
-  // Permanently using Django auth
-  return useDjangoSignIn(options)
 }
 
 // ============ Update Password Mutation ============

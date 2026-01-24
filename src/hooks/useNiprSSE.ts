@@ -2,11 +2,9 @@
  * NIPR SSE Hook
  *
  * Real-time updates for NIPR verification progress via Server-Sent Events.
- * Replaces 30-second polling with instant updates from Django backend.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-
-const API_BASE = process.env.NEXT_PUBLIC_DJANGO_API_URL || ''
+import { getApiBaseUrl } from '@/lib/api-config'
 
 type NiprStatus = 'idle' | 'pending' | 'running' | 'completed' | 'failed'
 
@@ -115,7 +113,7 @@ export function useNiprSSE(
     setErrorMessage(null)
 
     try {
-      const url = `${API_BASE}/api/onboarding/nipr/sse?job_id=${jobId}`
+      const url = `${getApiBaseUrl()}/api/onboarding/nipr/sse?job_id=${jobId}`
       const es = new EventSource(url, { withCredentials: true })
       eventSourceRef.current = es
 

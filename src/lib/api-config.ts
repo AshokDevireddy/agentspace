@@ -8,7 +8,7 @@
  * Get the API base URL
  */
 export function getApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://localhost:8000'
+  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 }
 
 // ============================================================================
@@ -158,6 +158,18 @@ export const analyticsEndpoints = {
 } as const
 
 // ============================================================================
+// Onboarding Endpoints
+// ============================================================================
+
+export const onboardingEndpoints = {
+  progress: '/api/onboarding/progress',
+  complete: '/api/onboarding/complete',
+  invitations: '/api/onboarding/invitations',
+  invitationsSend: '/api/onboarding/invitations/send',
+  invitationDelete: (index: number) => `/api/onboarding/invitations/${index}`,
+} as const
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -255,5 +267,14 @@ export function getAnalyticsEndpoint(
   endpoint: keyof typeof analyticsEndpoints
 ): string {
   return `${getApiBaseUrl()}${analyticsEndpoints[endpoint]}`
+}
+
+export function getOnboardingEndpoint(
+  endpoint: keyof typeof onboardingEndpoints,
+  index?: number
+): string {
+  const ep = onboardingEndpoints[endpoint]
+  const path = typeof ep === 'function' ? ep(index!) : ep
+  return `${getApiBaseUrl()}${path}`
 }
 

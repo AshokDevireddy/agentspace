@@ -1,13 +1,11 @@
 /**
  * Analytics Data Hook
- *
- * Unified hook for fetching analytics data.
- * Switches between Django backend and Supabase RPC based on feature flag.
  */
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { shouldUseDjangoAnalytics } from '@/lib/feature-flags'
 import { getAnalyticsEndpoint } from '@/lib/api-config'
+import { fetchApi } from '@/lib/api-client'
+import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
@@ -94,270 +92,119 @@ export interface PersistencyResponse {
   }>
 }
 
-// ============ Fetch Functions ============
+// ============ Helpers ============
 
-async function fetchDjangoAnalyticsSplit(
-  accessToken: string,
-  filters: AnalyticsFilters
-): Promise<AnalyticsSplitResponse> {
-  const url = new URL(getAnalyticsEndpoint('split'))
-
-  // Add filter parameters
-  if (filters.agentId) url.searchParams.set('agent_id', filters.agentId)
-  if (filters.startDate) url.searchParams.set('start_date', filters.startDate)
-  if (filters.endDate) url.searchParams.set('end_date', filters.endDate)
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || 'Failed to fetch analytics split')
-  }
-
-  return response.json()
-}
-
-async function fetchDjangoDownlineDistribution(
-  accessToken: string,
-  filters: AnalyticsFilters
-): Promise<DownlineDistributionResponse> {
-  const url = new URL(getAnalyticsEndpoint('downlineDistribution'))
-
-  // Add filter parameters
-  if (filters.agentId) url.searchParams.set('agent_id', filters.agentId)
-  if (filters.startDate) url.searchParams.set('start_date', filters.startDate)
-  if (filters.endDate) url.searchParams.set('end_date', filters.endDate)
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || 'Failed to fetch downline distribution')
-  }
-
-  return response.json()
-}
-
-async function fetchDjangoDealsAnalytics(
-  accessToken: string,
-  filters: AnalyticsFilters
-): Promise<DealsAnalyticsResponse> {
-  const url = new URL(getAnalyticsEndpoint('deals'))
-
-  // Add filter parameters
-  if (filters.agentId) url.searchParams.set('agent_id', filters.agentId)
-  if (filters.startDate) url.searchParams.set('start_date', filters.startDate)
-  if (filters.endDate) url.searchParams.set('end_date', filters.endDate)
-  if (filters.groupBy) url.searchParams.set('group_by', filters.groupBy)
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || 'Failed to fetch deals analytics')
-  }
-
-  return response.json()
-}
-
-async function fetchDjangoPersistency(
-  accessToken: string,
-  filters: AnalyticsFilters
-): Promise<PersistencyResponse> {
-  const url = new URL(getAnalyticsEndpoint('persistency'))
-
-  // Add filter parameters
-  if (filters.agentId) url.searchParams.set('agent_id', filters.agentId)
-  if (filters.startDate) url.searchParams.set('start_date', filters.startDate)
-  if (filters.endDate) url.searchParams.set('end_date', filters.endDate)
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || 'Failed to fetch persistency data')
-  }
-
-  return response.json()
+function buildAnalyticsFilterParams(filters: AnalyticsFilters, params: URLSearchParams): void {
+  if (filters.agentId) params.set('agent_id', filters.agentId)
+  if (filters.startDate) params.set('start_date', filters.startDate)
+  if (filters.endDate) params.set('end_date', filters.endDate)
+  if (filters.groupBy) params.set('group_by', filters.groupBy)
 }
 
 // ============ Hooks ============
 
-/**
- * Hook for analytics split data (agent production breakdown).
- * Supports both Django backend and Supabase RPC.
- */
 export function useAnalyticsSplit(
   filters: AnalyticsFilters,
   options?: { enabled?: boolean }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoAnalytics()
 
   return useQuery<AnalyticsSplitResponse, Error>({
     queryKey: queryKeys.analyticsData({ ...filters, type: 'split' }),
     queryFn: async () => {
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoAnalyticsSplit(session.access_token, filters)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
 
-      // Supabase RPC fallback
-      const { data, error } = await supabase.rpc('get_analytics_split_view', {
-        p_user_id: filters.agentId,
-        p_start_date: filters.startDate,
-        p_end_date: filters.endDate,
-      })
+      const url = new URL(getAnalyticsEndpoint('split'))
+      buildAnalyticsFilterParams(filters, url.searchParams)
 
-      if (error) throw error
-      return data as AnalyticsSplitResponse
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch analytics split')
     },
     enabled: options?.enabled !== false,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: STALE_TIMES.slow,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,
   })
 }
 
-/**
- * Hook for downline distribution data.
- * Supports both Django backend and Supabase RPC.
- */
 export function useDownlineDistribution(
   filters: AnalyticsFilters,
   options?: { enabled?: boolean }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoAnalytics()
 
   return useQuery<DownlineDistributionResponse, Error>({
     queryKey: queryKeys.analyticsData({ ...filters, type: 'downline' }),
     queryFn: async () => {
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoDownlineDistribution(session.access_token, filters)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
 
-      // Supabase RPC fallback
-      const { data, error } = await supabase.rpc('get_downline_distribution', {
-        p_user_id: filters.agentId,
-        p_start_date: filters.startDate,
-        p_end_date: filters.endDate,
-      })
+      const url = new URL(getAnalyticsEndpoint('downlineDistribution'))
+      buildAnalyticsFilterParams(filters, url.searchParams)
 
-      if (error) throw error
-      return data as DownlineDistributionResponse
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch downline distribution')
     },
     enabled: !!filters.agentId && (options?.enabled !== false),
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: STALE_TIMES.slow,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,
   })
 }
 
-/**
- * Hook for deals analytics data.
- * Supports both Django backend and Supabase RPC.
- */
 export function useDealsAnalytics(
   filters: AnalyticsFilters,
   options?: { enabled?: boolean }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoAnalytics()
 
   return useQuery<DealsAnalyticsResponse, Error>({
     queryKey: queryKeys.analyticsData({ ...filters, type: 'deals' }),
     queryFn: async () => {
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoDealsAnalytics(session.access_token, filters)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
 
-      // Supabase RPC fallback
-      const { data, error } = await supabase.rpc('get_deals_analytics', {
-        p_user_id: filters.agentId,
-        p_start_date: filters.startDate,
-        p_end_date: filters.endDate,
-        p_group_by: filters.groupBy,
-      })
+      const url = new URL(getAnalyticsEndpoint('deals'))
+      buildAnalyticsFilterParams(filters, url.searchParams)
 
-      if (error) throw error
-      return data as DealsAnalyticsResponse
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch deals analytics')
     },
     enabled: options?.enabled !== false,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: STALE_TIMES.slow,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,
   })
 }
 
-/**
- * Hook for persistency analytics data.
- * Supports both Django backend and Supabase RPC.
- */
 export function usePersistencyAnalytics(
   filters: AnalyticsFilters,
   options?: { enabled?: boolean }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoAnalytics()
 
   return useQuery<PersistencyResponse, Error>({
     queryKey: queryKeys.analyticsData({ ...filters, type: 'persistency' }),
     queryFn: async () => {
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoPersistency(session.access_token, filters)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
 
-      // Supabase RPC fallback
-      const { data, error } = await supabase.rpc('get_persistency_analytics', {
-        p_user_id: filters.agentId,
-        p_start_date: filters.startDate,
-        p_end_date: filters.endDate,
-      })
+      const url = new URL(getAnalyticsEndpoint('persistency'))
+      buildAnalyticsFilterParams(filters, url.searchParams)
 
-      if (error) throw error
-      return data as PersistencyResponse
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch persistency data')
     },
     enabled: options?.enabled !== false,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: STALE_TIMES.slow,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,

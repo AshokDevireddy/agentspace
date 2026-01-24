@@ -1,13 +1,11 @@
 /**
  * SMS Data Hook
- *
- * Unified hook for fetching SMS data (conversations, messages, drafts).
- * Switches between Django backend and Next.js API routes based on feature flag.
  */
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { shouldUseDjangoSms } from '@/lib/feature-flags'
 import { getSmsEndpoint } from '@/lib/api-config'
+import { fetchApi } from '@/lib/api-client'
+import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
@@ -83,218 +81,85 @@ export interface DraftsResponse {
   pagination: Pagination
 }
 
-// ============ Fetch Functions ============
-
-async function fetchDjangoConversations(
-  accessToken: string,
-  filters: ConversationsFilters
-): Promise<ConversationsResponse> {
-  const url = new URL(getSmsEndpoint('conversations'))
-
-  // Add filter parameters
-  if (filters.view) url.searchParams.set('view', filters.view)
-  if (filters.searchQuery) url.searchParams.set('search', filters.searchQuery)
-  if (filters.notificationFilter) url.searchParams.set('notification', filters.notificationFilter)
-  if (filters.agent) url.searchParams.set('agent', filters.agent)
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || 'Failed to fetch conversations')
-  }
-
-  return response.json()
-}
-
-async function fetchDjangoMessages(
-  accessToken: string,
-  conversationId: string
-): Promise<MessagesResponse> {
-  const url = new URL(getSmsEndpoint('messages'))
-  url.searchParams.set('conversation_id', conversationId)
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || 'Failed to fetch messages')
-  }
-
-  return response.json()
-}
-
-async function fetchDjangoDrafts(
-  accessToken: string,
-  view?: string
-): Promise<DraftsResponse> {
-  const url = new URL(getSmsEndpoint('drafts'))
-  if (view) url.searchParams.set('view', view)
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || 'Failed to fetch drafts')
-  }
-
-  return response.json()
-}
-
 // ============ Hooks ============
 
-/**
- * Hook for SMS conversations list.
- * Supports both Django backend and Next.js API routes.
- */
 export function useConversationsList(
   filters: ConversationsFilters,
   options?: { enabled?: boolean }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoSms()
 
   return useQuery<ConversationsResponse, Error>({
     queryKey: queryKeys.conversationsList(filters.view || 'all', filters),
     queryFn: async () => {
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoConversations(session.access_token, filters)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
 
-      // Next.js API route fallback
-      const params = new URLSearchParams()
-      if (filters.view) params.append('view', filters.view)
-      if (filters.searchQuery) params.append('search', filters.searchQuery)
-      if (filters.notificationFilter) params.append('notification', filters.notificationFilter)
-      if (filters.agent) params.append('agent', filters.agent)
+      const url = new URL(getSmsEndpoint('conversations'))
+      if (filters.view) url.searchParams.set('view', filters.view)
+      if (filters.searchQuery) url.searchParams.set('search', filters.searchQuery)
+      if (filters.notificationFilter) url.searchParams.set('notification', filters.notificationFilter)
+      if (filters.agent) url.searchParams.set('agent', filters.agent)
 
-      const response = await fetch(`/api/sms/conversations?${params.toString()}`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to fetch conversations')
-      }
-
-      return response.json()
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch conversations')
     },
     enabled: options?.enabled !== false,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: STALE_TIMES.fast,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,
   })
 }
 
-/**
- * Hook for messages in a conversation.
- * Supports both Django backend and Next.js API routes.
- */
 export function useMessages(
   conversationId: string | undefined,
-  viewMode?: string,
   options?: { enabled?: boolean }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoSms()
 
   return useQuery<MessagesResponse, Error>({
     queryKey: queryKeys.messages(conversationId || ''),
     queryFn: async () => {
-      if (!conversationId) {
-        throw new Error('No conversation ID provided')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
 
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoMessages(session.access_token, conversationId)
-      }
+      const url = new URL(getSmsEndpoint('messages'))
+      url.searchParams.set('conversation_id', conversationId!)
 
-      // Next.js API route fallback
-      const params = new URLSearchParams()
-      params.append('conversationId', conversationId)
-      if (viewMode) params.append('view', viewMode)
-
-      const response = await fetch(`/api/sms/messages?${params.toString()}`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to fetch messages')
-      }
-
-      return response.json()
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch messages')
     },
     enabled: !!conversationId && (options?.enabled !== false),
-    staleTime: 10 * 1000, // 10 seconds (messages update frequently)
+    staleTime: STALE_TIMES.realtime,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
   })
 }
 
-/**
- * Hook for SMS drafts list.
- * Supports both Django backend and Next.js API routes.
- */
 export function useDraftsList(
   view?: string,
   options?: { enabled?: boolean }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoSms()
 
   return useQuery<DraftsResponse, Error>({
     queryKey: queryKeys.draftsList(view),
     queryFn: async () => {
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoDrafts(session.access_token, view)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
 
-      // Next.js API route fallback
-      const params = new URLSearchParams()
-      if (view) params.append('view', view)
+      const url = new URL(getSmsEndpoint('drafts'))
+      if (view) url.searchParams.set('view', view)
 
-      const response = await fetch(`/api/sms/drafts?${params.toString()}`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to fetch drafts')
-      }
-
-      return response.json()
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch drafts')
     },
     enabled: options?.enabled !== false,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: STALE_TIMES.fast,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,

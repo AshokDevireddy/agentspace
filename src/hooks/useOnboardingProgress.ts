@@ -1,13 +1,12 @@
 /**
  * Onboarding Progress Hook
- *
- * Server-side state management for onboarding flow.
- * Replaces localStorage-based state with Django backend persistence.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { getOnboardingEndpoint } from '@/lib/api-config'
+import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 
-const API_BASE = process.env.NEXT_PUBLIC_DJANGO_API_URL || ''
+// ============ Types ============
 
 interface OnboardingProgress {
   id: string
@@ -44,6 +43,8 @@ interface UpdateProgressInput {
   nipr_licensed_states?: { resident: string[]; nonResident: string[] }
 }
 
+// ============ Helpers ============
+
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const response = await fetch(url, {
     ...options,
@@ -62,15 +63,11 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   return response.json()
 }
 
-/**
- * Hook for managing onboarding progress state
- *
- * Uses Django backend for state persistence.
- */
+// ============ Hook ============
+
 export function useOnboardingProgress(userId?: string) {
   const queryClient = useQueryClient()
 
-  // Query onboarding progress from server
   const {
     data: progress,
     isLoading,
@@ -78,16 +75,15 @@ export function useOnboardingProgress(userId?: string) {
     refetch,
   } = useQuery({
     queryKey: queryKeys.onboardingProgress(userId),
-    queryFn: () => fetchWithAuth(`${API_BASE}/api/onboarding/progress`),
+    queryFn: () => fetchWithAuth(getOnboardingEndpoint('progress')),
     enabled: !!userId,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: STALE_TIMES.fast,
     retry: 2,
   })
 
-  // Mutation to update progress
   const updateProgressMutation = useMutation({
     mutationFn: (input: UpdateProgressInput) =>
-      fetchWithAuth(`${API_BASE}/api/onboarding/progress`, {
+      fetchWithAuth(getOnboardingEndpoint('progress'), {
         method: 'PATCH',
         body: JSON.stringify(input),
       }),
@@ -96,10 +92,9 @@ export function useOnboardingProgress(userId?: string) {
     },
   })
 
-  // Mutation to complete onboarding
   const completeOnboardingMutation = useMutation({
     mutationFn: () =>
-      fetchWithAuth(`${API_BASE}/api/onboarding/complete`, {
+      fetchWithAuth(getOnboardingEndpoint('complete'), {
         method: 'POST',
       }),
     onSuccess: () => {
@@ -108,10 +103,9 @@ export function useOnboardingProgress(userId?: string) {
     },
   })
 
-  // Mutation to add pending invitation
   const addInvitationMutation = useMutation({
     mutationFn: (invitation: PendingInvitation) =>
-      fetchWithAuth(`${API_BASE}/api/onboarding/invitations`, {
+      fetchWithAuth(getOnboardingEndpoint('invitations'), {
         method: 'POST',
         body: JSON.stringify(invitation),
       }),
@@ -121,10 +115,9 @@ export function useOnboardingProgress(userId?: string) {
     },
   })
 
-  // Mutation to remove pending invitation
   const removeInvitationMutation = useMutation({
     mutationFn: (index: number) =>
-      fetchWithAuth(`${API_BASE}/api/onboarding/invitations/${index}`, {
+      fetchWithAuth(getOnboardingEndpoint('invitationDelete', index), {
         method: 'DELETE',
       }),
     onSuccess: () => {
@@ -133,10 +126,9 @@ export function useOnboardingProgress(userId?: string) {
     },
   })
 
-  // Mutation to send all pending invitations
   const sendInvitationsMutation = useMutation({
     mutationFn: () =>
-      fetchWithAuth(`${API_BASE}/api/onboarding/invitations/send`, {
+      fetchWithAuth(getOnboardingEndpoint('invitationsSend'), {
         method: 'POST',
       }),
     onSuccess: () => {
@@ -146,12 +138,10 @@ export function useOnboardingProgress(userId?: string) {
   })
 
   return {
-    // Data
     progress: progress as OnboardingProgress | undefined,
     isLoading,
     error,
 
-    // Actions
     refetch,
     updateProgress: updateProgressMutation.mutateAsync,
     completeOnboarding: completeOnboardingMutation.mutateAsync,
@@ -159,7 +149,6 @@ export function useOnboardingProgress(userId?: string) {
     removeInvitation: removeInvitationMutation.mutateAsync,
     sendInvitations: sendInvitationsMutation.mutateAsync,
 
-    // Loading states
     isUpdating: updateProgressMutation.isPending,
     isCompleting: completeOnboardingMutation.isPending,
     isAddingInvitation: addInvitationMutation.isPending,

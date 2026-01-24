@@ -4,7 +4,7 @@
  * Onboarding Wizard
  *
  * Main container component for the onboarding flow.
- * Uses Django backend for server-side state management.
+ * Uses backend API for server-side state management.
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'

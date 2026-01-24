@@ -39,8 +39,8 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json()
 
-    // Transform Django response to match expected frontend format
-    // Django returns flat list, frontend expects grouped by conversation
+    // Transform API response to match expected frontend format
+    // API returns flat list, frontend expects grouped by conversation
     const drafts = data.drafts || data || []
 
     // Group drafts by conversation if not already grouped

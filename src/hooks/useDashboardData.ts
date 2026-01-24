@@ -1,18 +1,13 @@
 /**
  * Dashboard Data Hook
- *
- * Unified hook for fetching dashboard data.
  */
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { getDashboardEndpoint } from '@/lib/api-config'
+import { fetchApi } from '@/lib/api-client'
+import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
-
-// ============ Constants ============
-
-const STALE_TIME_SHORT = 60 * 1000 // 1 minute
-const STALE_TIME_LONG = 5 * 60 * 1000 // 5 minutes
 
 // ============ Types ============
 
@@ -72,109 +67,8 @@ interface ProductionEntry {
   hierarchy_production_count: number
 }
 
-// ============ Fetch Functions ============
-
-async function fetchDashboardSummary(
-  accessToken: string,
-  asOfDate?: string
-): Promise<DashboardSummary> {
-  const url = new URL(getDashboardEndpoint('summary'))
-  if (asOfDate) {
-    url.searchParams.set('as_of_date', asOfDate)
-  }
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch dashboard summary')
-  }
-
-  return response.json()
-}
-
-async function fetchScoreboard(
-  accessToken: string,
-  startDate: string,
-  endDate: string
-): Promise<ScoreboardData> {
-  const url = new URL(getDashboardEndpoint('scoreboard'))
-  url.searchParams.set('start_date', startDate)
-  url.searchParams.set('end_date', endDate)
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch scoreboard data')
-  }
-
-  return response.json()
-}
-
-async function fetchProduction(
-  accessToken: string,
-  agentIds: string[],
-  startDate: string,
-  endDate: string
-): Promise<ProductionEntry[]> {
-  const url = new URL(getDashboardEndpoint('production'))
-  url.searchParams.set('agent_ids', agentIds.join(','))
-  url.searchParams.set('start_date', startDate)
-  url.searchParams.set('end_date', endDate)
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch production data')
-  }
-
-  return response.json()
-}
-
-async function fetchScoreboardBillingCycle(
-  accessToken: string,
-  startDate: string,
-  endDate: string,
-  scope: 'agency' | 'downline' = 'agency'
-): Promise<ScoreboardData> {
-  const url = new URL(getDashboardEndpoint('scoreboardBillingCycle'))
-  url.searchParams.set('start_date', startDate)
-  url.searchParams.set('end_date', endDate)
-  url.searchParams.set('scope', scope)
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch scoreboard billing cycle data')
-  }
-
-  return response.json()
-}
-
 // ============ Hooks ============
 
-/**
- * Hook for dashboard summary data.
- */
 export function useDashboardSummary(
   userId: string | undefined,
   options?: { enabled?: boolean }
@@ -188,7 +82,9 @@ export function useDashboardSummary(
       if (!session?.access_token) {
         throw new Error('No session')
       }
-      return fetchDashboardSummary(session.access_token)
+
+      const url = new URL(getDashboardEndpoint('summary'))
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch dashboard summary')
     },
     enabled: !!userId && (options?.enabled !== false),
     retry: shouldRetry,
@@ -197,9 +93,6 @@ export function useDashboardSummary(
   })
 }
 
-/**
- * Hook for scoreboard/leaderboard data.
- */
 export function useScoreboardData(
   userId: string | undefined,
   startDate: string,
@@ -215,19 +108,21 @@ export function useScoreboardData(
       if (!session?.access_token) {
         throw new Error('No session')
       }
-      return fetchScoreboard(session.access_token, startDate, endDate)
+
+      const url = new URL(getDashboardEndpoint('scoreboard'))
+      url.searchParams.set('start_date', startDate)
+      url.searchParams.set('end_date', endDate)
+
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch scoreboard data')
     },
     enabled: !!userId && (options?.enabled !== false),
-    staleTime: options?.staleTime ?? STALE_TIME_SHORT,
+    staleTime: options?.staleTime ?? STALE_TIMES.standard,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,
   })
 }
 
-/**
- * Hook for production progress data.
- */
 export function useProductionData(
   userId: string | undefined,
   agentIds: string[],
@@ -244,21 +139,21 @@ export function useProductionData(
       if (!session?.access_token) {
         throw new Error('No session')
       }
-      return fetchProduction(session.access_token, agentIds, startDate, endDate)
+
+      const url = new URL(getDashboardEndpoint('production'))
+      url.searchParams.set('agent_ids', agentIds.join(','))
+      url.searchParams.set('start_date', startDate)
+      url.searchParams.set('end_date', endDate)
+
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch production data')
     },
     enabled: !!userId && agentIds.length > 0 && (options?.enabled !== false),
-    staleTime: options?.staleTime ?? STALE_TIME_LONG,
+    staleTime: options?.staleTime ?? STALE_TIMES.slow,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
   })
 }
 
-/**
- * Hook for scoreboard data with billing cycle payment calculation.
- *
- * This hook fetches scoreboard data from Django backend with proper
- * billing cycle payment calculation.
- */
 export function useScoreboardBillingCycleData(
   userId: string | undefined,
   startDate: string,
@@ -275,10 +170,16 @@ export function useScoreboardBillingCycleData(
       if (!session?.access_token) {
         throw new Error('No session')
       }
-      return fetchScoreboardBillingCycle(session.access_token, startDate, endDate, scope)
+
+      const url = new URL(getDashboardEndpoint('scoreboardBillingCycle'))
+      url.searchParams.set('start_date', startDate)
+      url.searchParams.set('end_date', endDate)
+      url.searchParams.set('scope', scope)
+
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch scoreboard billing cycle data')
     },
     enabled: !!userId && (options?.enabled !== false),
-    staleTime: options?.staleTime ?? STALE_TIME_SHORT,
+    staleTime: options?.staleTime ?? STALE_TIMES.standard,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,

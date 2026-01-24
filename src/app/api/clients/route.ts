@@ -38,7 +38,7 @@ export async function GET(request: Request) {
 
     const data = await response.json()
 
-    // Transform Django response to match frontend expected format
+    // Transform API response to match frontend expected format
     const clients = (data.clients || data.results || []).map((client: any) => ({
       id: client.id || client.client_id,
       name: client.name || client.client_name || `${client.first_name || ''} ${client.last_name || ''}`.trim(),

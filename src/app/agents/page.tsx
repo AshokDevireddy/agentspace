@@ -507,7 +507,7 @@ export default function Agents() {
   const filterPositions = allPositions // For filter dropdown (all agency positions)
   const positionsLoaded = !positionsLoading
 
-  // Fetch agents data using unified hook (supports Django/Supabase dual-path)
+  // Fetch agents data using unified hook
   const { data: agentsResponse, isPending: agentsLoading, isFetching: agentsFetching, error: agentsError } = useAgentsList(
     currentPage,
     view === 'pending-positions' ? 'table' : view,
@@ -530,7 +530,7 @@ export default function Agents() {
   // - Tree view: only needs agents (positions data not used in tree)
   // - Pending positions view: only needs pendingPositionsData
 
-  // Fetch all agents for pending positions view using unified hook (supports Django/Supabase dual-path)
+  // Fetch all agents for pending positions view using unified hook
   const { data: pendingPositionsData, isPending: pendingPositionsLoading } = useAgentsWithoutPositions({
     enabled: view === 'pending-positions',
   })

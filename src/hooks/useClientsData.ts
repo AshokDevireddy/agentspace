@@ -1,13 +1,11 @@
 /**
  * Clients Data Hook
- *
- * Unified hook for fetching clients data.
- * Switches between Django backend and Next.js API routes based on feature flag.
  */
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { shouldUseDjangoClients } from '@/lib/feature-flags'
 import { getClientEndpoint } from '@/lib/api-config'
+import { fetchApi } from '@/lib/api-client'
+import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
@@ -57,191 +55,87 @@ export interface ClientsListResponse {
   pagination: Pagination
 }
 
-// ============ Fetch Functions ============
-
-async function fetchDjangoClientsList(
-  accessToken: string,
-  page: number,
-  filters: ClientsFilters
-): Promise<ClientsListResponse> {
-  const url = new URL(getClientEndpoint('list'))
-  url.searchParams.set('page', String(page))
-  url.searchParams.set('limit', '20')
-
-  // Add filter parameters
-  if (filters.view) url.searchParams.set('view', filters.view)
-  if (filters.search) url.searchParams.set('search', filters.search)
-  if (filters.agent) url.searchParams.set('agent', filters.agent)
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || 'Failed to fetch clients')
-  }
-
-  return response.json()
-}
-
-async function fetchDjangoClientDetail(
-  accessToken: string,
-  clientId: string
-): Promise<ClientDetail> {
-  const url = new URL(getClientEndpoint('detail', clientId))
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || 'Failed to fetch client detail')
-  }
-
-  return response.json()
-}
-
 // ============ Hooks ============
 
-/**
- * Hook for clients list data.
- * Supports both Django backend and Next.js API routes.
- */
 export function useClientsList(
   page: number,
   filters: ClientsFilters,
   options?: { enabled?: boolean }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoClients()
 
   return useQuery<ClientsListResponse, Error>({
     queryKey: queryKeys.clientsList(page, filters),
     queryFn: async () => {
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoClientsList(session.access_token, page, filters)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
 
-      // Next.js API route fallback
-      const params = new URLSearchParams()
-      params.append('page', String(page))
-      params.append('limit', '20')
-      if (filters.view) params.append('view', filters.view)
-      if (filters.search) params.append('search', filters.search)
-      if (filters.agent) params.append('agent', filters.agent)
+      const url = new URL(getClientEndpoint('list'))
+      url.searchParams.set('page', String(page))
+      url.searchParams.set('limit', '20')
+      if (filters.view) url.searchParams.set('view', filters.view)
+      if (filters.search) url.searchParams.set('search', filters.search)
+      if (filters.agent) url.searchParams.set('agent', filters.agent)
 
-      const response = await fetch(`/api/clients?${params.toString()}`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to fetch clients')
-      }
-
-      return response.json()
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch clients')
     },
     enabled: options?.enabled !== false,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: STALE_TIMES.fast,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,
   })
 }
 
-/**
- * Hook for all clients (for dropdown selections).
- * Supports both Django backend and Next.js API routes.
- */
 export function useAllClients(
   viewMode: string,
   options?: { enabled?: boolean }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoClients()
 
   return useQuery<ClientsListResponse, Error>({
     queryKey: queryKeys.clientsAll(viewMode),
     queryFn: async () => {
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoClientsList(session.access_token, 1, { view: viewMode })
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
 
-      // Next.js API route fallback
-      const response = await fetch(`/api/clients?page=1&limit=1000&view=${viewMode}`, {
-        credentials: 'include',
-      })
+      const url = new URL(getClientEndpoint('list'))
+      url.searchParams.set('page', '1')
+      url.searchParams.set('limit', '1000')
+      url.searchParams.set('view', viewMode)
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to fetch clients')
-      }
-
-      return response.json()
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch clients')
     },
     enabled: options?.enabled !== false,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: STALE_TIMES.slow,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
   })
 }
 
-/**
- * Hook for client detail data.
- * Supports both Django backend and Next.js API routes.
- */
 export function useClientDetail(
   clientId: string | undefined,
   options?: { enabled?: boolean }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoClients()
 
   return useQuery<ClientDetail, Error>({
     queryKey: queryKeys.clientDetail(clientId || ''),
     queryFn: async () => {
-      if (!clientId) {
-        throw new Error('No client ID provided')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
 
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoClientDetail(session.access_token, clientId)
-      }
-
-      // Next.js API route fallback
-      const response = await fetch(`/api/clients/${clientId}`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to fetch client detail')
-      }
-
-      return response.json()
+      const url = new URL(getClientEndpoint('detail', clientId!))
+      return fetchApi(url.toString(), session.access_token, 'Failed to fetch client detail')
     },
     enabled: !!clientId && (options?.enabled !== false),
-    staleTime: 60 * 1000, // 1 minute
+    staleTime: STALE_TIMES.standard,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
   })

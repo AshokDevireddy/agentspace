@@ -31,7 +31,7 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
   const supabase = createClient()
   const onboardingProgress = useOnboardingProgress(userData.id)
 
-  // Local invitation state (used when Django onboarding is disabled)
+  // Local invitation state
   const [invitedAgents, setInvitedAgents] = useState<InvitedAgent[]>([])
   const [showAgentForm, setShowAgentForm] = useState(false)
   const [currentAgentForm, setCurrentAgentForm] = useState({

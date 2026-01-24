@@ -202,7 +202,7 @@ export default function Scoreboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeframe]) // Only update when timeframe changes, not when getDateRange changes (to avoid interfering with custom dates)
 
-  // Fetch scoreboard data using TanStack Query (Django backend)
+  // Fetch scoreboard data using TanStack Query
   const shouldFetch = !!user?.id && (timeframe !== 'custom' || (!!dateRange.startDate && !!dateRange.endDate))
 
   const { data: rpcResponse, isPending: isDataLoading, isFetching, error: queryError } = useScoreboardBillingCycleData(

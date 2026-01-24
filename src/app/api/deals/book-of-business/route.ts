@@ -110,18 +110,18 @@ export async function GET(req: NextRequest) {
         dateValue: string | null | undefined,
       ): string => {
         if (!dateValue) return "N/A";
-      
+
         // Fix timezone shift for YYYY-MM-DD dates by adding "T00:00:00"
         const safeDateString = dateValue.length === 10
           ? `${dateValue}T00:00:00`
           : dateValue;
-      
+
         const date = new Date(safeDateString);
         if (isNaN(date.getTime())) return "N/A";
-      
+
         const year = date.getFullYear();
         if (year < 2000) return "N/A";
-      
+
         // Return in MM/DD/YYYY format
         return date.toLocaleDateString("en-US", {
           month: "2-digit",
@@ -129,26 +129,23 @@ export async function GET(req: NextRequest) {
           year: "numeric", // important: gives 4-digit year
         });
       };
-      
 
       // Determine which date to use for the date column
       const effectiveDateObj = deal.policy_effective_date
-      ? new Date(deal.policy_effective_date + "T00:00:00")
-      : null;
-    
-    const effectiveDateYear =
-      effectiveDateObj && !isNaN(effectiveDateObj.getTime())
-        ? effectiveDateObj.getFullYear()
+        ? new Date(deal.policy_effective_date + "T00:00:00")
         : null;
-    
-    const useEffectiveDate =
-      effectiveDateYear !== null && effectiveDateYear >= 2000;
-    
-    const dateToUse = useEffectiveDate
-      ? deal.policy_effective_date
-      : deal.created_at;
-    
-    
+
+      const effectiveDateYear =
+        effectiveDateObj && !isNaN(effectiveDateObj.getTime())
+          ? effectiveDateObj.getFullYear()
+          : null;
+
+      const useEffectiveDate = effectiveDateYear !== null &&
+        effectiveDateYear >= 2000;
+
+      const dateToUse = useEffectiveDate
+        ? deal.policy_effective_date
+        : deal.created_at;
 
       return {
         id: deal.id,

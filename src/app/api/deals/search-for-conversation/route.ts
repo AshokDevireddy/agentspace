@@ -84,8 +84,12 @@ export async function GET(req: NextRequest) {
       product: deal.product_name || 'Unknown Product',
       policyNumber: deal.policy_number || '',
       status: deal.status || 'draft',
-      agent: deal.agent_last_name
-        ? `${deal.agent_last_name}, ${deal.agent_first_name || 'Agent'}`
+      agent: deal.agent_last_name && deal.agent_first_name
+        ? `${deal.agent_last_name.trim()}, ${deal.agent_first_name.trim()}`
+        : deal.agent_first_name
+        ? deal.agent_first_name.trim()
+        : deal.agent_last_name
+        ? deal.agent_last_name.trim()
         : 'Unknown Agent',
     }))
 

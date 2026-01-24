@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
+import { LeadSourceInput } from "@/components/ui/lead-source-input"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2, MapPin } from "lucide-react"
@@ -494,6 +495,62 @@ export default function PostDeal() {
           }
         })
       console.log('[PostDeal] Normalized beneficiaries:', normalizedBeneficiaries.length, 'total')
+
+      // SECTION 3.5: Add lead source if it doesn't exist
+      console.log('[PostDeal] SECTION 3.5: Checking if lead source needs to be added...')
+      if (formData.leadSource && formData.leadSource.trim()) {
+        const leadSourceValue = formData.leadSource.trim()
+        const existingLeadSource = leadSourceOptions.find(
+          option => option.value.toLowerCase() === leadSourceValue.toLowerCase()
+        )
+
+        if (!existingLeadSource) {
+          console.log('[PostDeal] Lead source not found in existing options, adding to agency...')
+          try {
+            // Get current lead sources from agency
+            const { data: currentAgency, error: agencyFetchError } = await supabase
+              .from('agencies')
+              .select('lead_sources')
+              .eq('id', agencyId)
+              .single()
+
+            if (agencyFetchError) {
+              console.error('[PostDeal] Error fetching agency lead sources:', agencyFetchError)
+              // Don't fail the deal submission if we can't add the lead source
+            } else {
+              const currentLeadSources = currentAgency?.lead_sources || []
+              // Check if it's already in the array (case-insensitive)
+              const alreadyExists = currentLeadSources.some(
+                (source: string) => source.toLowerCase() === leadSourceValue.toLowerCase()
+              )
+
+              if (!alreadyExists) {
+                const updatedLeadSources = [...currentLeadSources, leadSourceValue]
+                const { error: updateError } = await supabase
+                  .from('agencies')
+                  .update({ lead_sources: updatedLeadSources })
+                  .eq('id', agencyId)
+
+                if (updateError) {
+                  console.error('[PostDeal] Error adding lead source:', updateError)
+                  // Don't fail the deal submission if we can't add the lead source
+                } else {
+                  console.log('[PostDeal] Lead source added successfully:', leadSourceValue)
+                  // Invalidate the agency options query to refresh lead sources
+                  queryClient.invalidateQueries({ queryKey: queryKeys.agencyOptions(user?.id || '') })
+                }
+              } else {
+                console.log('[PostDeal] Lead source already exists in agency (case-insensitive match)')
+              }
+            }
+          } catch (leadSourceError) {
+            console.error('[PostDeal] Error in lead source addition process:', leadSourceError)
+            // Don't fail the deal submission if we can't add the lead source
+          }
+        } else {
+          console.log('[PostDeal] Lead source already exists in options')
+        }
+      }
 
       // SECTION 4: Construct payload and submit to API
       console.log('[PostDeal] SECTION 4: Constructing payload...')
@@ -1261,12 +1318,15 @@ export default function PostDeal() {
                     <label className="block text-sm font-semibold text-foreground">
                       Lead Source <span className="text-destructive">*</span>
                     </label>
-                    <SimpleSearchableSelect
+                    <LeadSourceInput
                       options={leadSourceOptions}
                       value={formData.leadSource}
                       onValueChange={(value) => handleInputChange("leadSource", value)}
-                      placeholder="Select lead source"
+                      placeholder="Type or select lead source..."
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Type a new lead source to create it automatically
+                    </p>
                   </div>
                 </div>
               </div>

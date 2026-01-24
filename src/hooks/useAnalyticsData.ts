@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { shouldUseDjangoAnalytics } from '@/lib/feature-flags'
-import { getDjangoAnalyticsEndpoint } from '@/lib/api-config'
+import { getAnalyticsEndpoint } from '@/lib/api-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
@@ -100,7 +100,7 @@ async function fetchDjangoAnalyticsSplit(
   accessToken: string,
   filters: AnalyticsFilters
 ): Promise<AnalyticsSplitResponse> {
-  const url = new URL(getDjangoAnalyticsEndpoint('split'))
+  const url = new URL(getAnalyticsEndpoint('split'))
 
   // Add filter parameters
   if (filters.agentId) url.searchParams.set('agent_id', filters.agentId)
@@ -126,7 +126,7 @@ async function fetchDjangoDownlineDistribution(
   accessToken: string,
   filters: AnalyticsFilters
 ): Promise<DownlineDistributionResponse> {
-  const url = new URL(getDjangoAnalyticsEndpoint('downlineDistribution'))
+  const url = new URL(getAnalyticsEndpoint('downlineDistribution'))
 
   // Add filter parameters
   if (filters.agentId) url.searchParams.set('agent_id', filters.agentId)
@@ -152,7 +152,7 @@ async function fetchDjangoDealsAnalytics(
   accessToken: string,
   filters: AnalyticsFilters
 ): Promise<DealsAnalyticsResponse> {
-  const url = new URL(getDjangoAnalyticsEndpoint('deals'))
+  const url = new URL(getAnalyticsEndpoint('deals'))
 
   // Add filter parameters
   if (filters.agentId) url.searchParams.set('agent_id', filters.agentId)
@@ -179,7 +179,7 @@ async function fetchDjangoPersistency(
   accessToken: string,
   filters: AnalyticsFilters
 ): Promise<PersistencyResponse> {
-  const url = new URL(getDjangoAnalyticsEndpoint('persistency'))
+  const url = new URL(getAnalyticsEndpoint('persistency'))
 
   // Add filter parameters
   if (filters.agentId) url.searchParams.set('agent_id', filters.agentId)

@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { shouldUseDjangoDealsBob, shouldUseDjangoDealsFilters } from '@/lib/feature-flags'
-import { getDjangoDealEndpoint } from '@/lib/api-config'
+import { getDealEndpoint } from '@/lib/api-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
@@ -73,7 +73,7 @@ async function fetchDjangoBookOfBusiness(
   accessToken: string,
   filters: DealsFilters
 ): Promise<BookOfBusinessResponse> {
-  const url = new URL(getDjangoDealEndpoint('bookOfBusiness'))
+  const url = new URL(getDealEndpoint('bookOfBusiness'))
 
   // Add filter parameters
   if (filters.carrier) url.searchParams.set('carrier', filters.carrier)
@@ -106,7 +106,7 @@ async function fetchDjangoBookOfBusiness(
 async function fetchDjangoFilterOptions(
   accessToken: string
 ): Promise<FilterOptionsResponse> {
-  const url = new URL(getDjangoDealEndpoint('filterOptions'))
+  const url = new URL(getDealEndpoint('filterOptions'))
 
   const response = await fetch(url.toString(), {
     headers: {

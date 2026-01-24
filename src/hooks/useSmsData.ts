@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { shouldUseDjangoSms } from '@/lib/feature-flags'
-import { getDjangoSmsEndpoint } from '@/lib/api-config'
+import { getSmsEndpoint } from '@/lib/api-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
@@ -89,7 +89,7 @@ async function fetchDjangoConversations(
   accessToken: string,
   filters: ConversationsFilters
 ): Promise<ConversationsResponse> {
-  const url = new URL(getDjangoSmsEndpoint('conversations'))
+  const url = new URL(getSmsEndpoint('conversations'))
 
   // Add filter parameters
   if (filters.view) url.searchParams.set('view', filters.view)
@@ -116,7 +116,7 @@ async function fetchDjangoMessages(
   accessToken: string,
   conversationId: string
 ): Promise<MessagesResponse> {
-  const url = new URL(getDjangoSmsEndpoint('messages'))
+  const url = new URL(getSmsEndpoint('messages'))
   url.searchParams.set('conversation_id', conversationId)
 
   const response = await fetch(url.toString(), {
@@ -138,7 +138,7 @@ async function fetchDjangoDrafts(
   accessToken: string,
   view?: string
 ): Promise<DraftsResponse> {
-  const url = new URL(getDjangoSmsEndpoint('drafts'))
+  const url = new URL(getSmsEndpoint('drafts'))
   if (view) url.searchParams.set('view', view)
 
   const response = await fetch(url.toString(), {

@@ -100,6 +100,21 @@ interface DebtResponse {
   debt: DebtData
 }
 
+function LoadingSkeletonCard() {
+  return (
+    <Card className="professional-card">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+        <div className="h-4 w-4 bg-muted animate-pulse rounded" />
+      </CardHeader>
+      <CardContent>
+        <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
+        <div className="h-3 w-24 bg-muted animate-pulse rounded" />
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function ExpectedPayoutsPage() {
   const supabase = createClient()
   const queryClient = useQueryClient()
@@ -258,21 +273,14 @@ export default function ExpectedPayoutsPage() {
         throw new Error("Not authenticated")
       }
 
-      // Calculate months difference from now using proper month arithmetic
-      // Important: We need to calculate from the START of the current month
-      // SSR-safe: uses clientDate which is deterministic on server
       const nowYear = clientDate.year
-      const nowMonth = clientDate.month // 0-indexed (0 = January)
+      const nowMonth = clientDate.month
 
-      // Parse start and end months from the filter (format: "YYYY-MM")
       const [startYear, startMonthStr] = appliedFilters.startMonth.split('-').map(Number)
       const [endYear, endMonthStr] = appliedFilters.endMonth.split('-').map(Number)
-      const startMonthIdx = startMonthStr - 1 // Convert to 0-indexed
-      const endMonthIdx = endMonthStr - 1 // Convert to 0-indexed
+      const startMonthIdx = startMonthStr - 1
+      const endMonthIdx = endMonthStr - 1
 
-      // Calculate month differences from current month
-      // For inclusive range: if selecting Jan-Dec, and current is Jan,
-      // we want past=0 (include Jan) and future=11 (include Dec)
       const monthsPast = (nowYear - startYear) * 12 + (nowMonth - startMonthIdx)
       const monthsFuture = (endYear - nowYear) * 12 + (endMonthIdx - nowMonth)
 
@@ -292,7 +300,7 @@ export default function ExpectedPayoutsPage() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        const errorData = await response.json()
         throw new Error(errorData.error || errorData.message || 'Failed to fetch expected payouts')
       }
 
@@ -508,56 +516,9 @@ export default function ExpectedPayoutsPage() {
         <div className={cn("grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6", isViewingOtherAgent && "blur-sm pointer-events-none")}>
         {loading ? (
           <>
-            <Card className="professional-card">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="h-4 w-32 bg-muted animate-pulse rounded" />
-                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
-                <div className="h-3 w-24 bg-muted animate-pulse rounded" />
-              </CardContent>
-            </Card>
-            <Card className="professional-card">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="h-4 w-32 bg-muted animate-pulse rounded" />
-                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
-                <div className="h-3 w-24 bg-muted animate-pulse rounded" />
-              </CardContent>
-            </Card>
-            <Card className="professional-card">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="h-4 w-32 bg-muted animate-pulse rounded" />
-                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
-                <div className="h-3 w-24 bg-muted animate-pulse rounded" />
-              </CardContent>
-            </Card>
-            <Card className="professional-card">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="h-4 w-32 bg-muted animate-pulse rounded" />
-                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
-                <div className="h-3 w-24 bg-muted animate-pulse rounded" />
-              </CardContent>
-            </Card>
-            <Card className="professional-card">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="h-4 w-32 bg-muted animate-pulse rounded" />
-                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 w-40 bg-muted animate-pulse rounded mb-2" />
-                <div className="h-3 w-24 bg-muted animate-pulse rounded" />
-              </CardContent>
-            </Card>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <LoadingSkeletonCard key={i} />
+            ))}
           </>
         ) : (
           <>

@@ -12,9 +12,9 @@ import {
   shouldUseDjangoPositions,
 } from '@/lib/feature-flags'
 import {
-  getDjangoCarrierEndpoint,
-  getDjangoProductEndpoint,
-  getDjangoPositionEndpoint,
+  getCarrierEndpoint,
+  getProductEndpoint,
+  getPositionEndpoint,
 } from '@/lib/api-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
@@ -76,7 +76,7 @@ export interface CommissionsResponse {
 // ============ Fetch Functions ============
 
 async function fetchDjangoCarriers(accessToken: string): Promise<CarriersResponse> {
-  const url = new URL(getDjangoCarrierEndpoint('list'))
+  const url = new URL(getCarrierEndpoint('list'))
 
   const response = await fetch(url.toString(), {
     headers: {
@@ -94,7 +94,7 @@ async function fetchDjangoCarriers(accessToken: string): Promise<CarriersRespons
 }
 
 async function fetchDjangoProducts(accessToken: string): Promise<ProductsResponse> {
-  const url = new URL(getDjangoProductEndpoint('list'))
+  const url = new URL(getProductEndpoint('list'))
 
   const response = await fetch(url.toString(), {
     headers: {
@@ -112,7 +112,7 @@ async function fetchDjangoProducts(accessToken: string): Promise<ProductsRespons
 }
 
 async function fetchDjangoPositions(accessToken: string): Promise<PositionsResponse> {
-  const url = new URL(getDjangoPositionEndpoint('list'))
+  const url = new URL(getPositionEndpoint('list'))
 
   const response = await fetch(url.toString(), {
     headers: {
@@ -133,7 +133,7 @@ async function fetchDjangoCommissions(
   accessToken: string,
   carrierId?: string
 ): Promise<CommissionsResponse> {
-  const url = new URL(getDjangoPositionEndpoint('productCommissions'))
+  const url = new URL(getPositionEndpoint('productCommissions'))
   if (carrierId) {
     url.searchParams.set('carrier_id', carrierId)
   }

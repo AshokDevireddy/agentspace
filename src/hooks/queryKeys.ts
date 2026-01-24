@@ -86,8 +86,10 @@ export const queryKeys = {
   clientDeals: (userId: string) => ['client', 'deals', userId] as const,
 
   // Scoreboard
-  scoreboard: (userId: string, startDate: string, endDate: string) =>
-    ['scoreboard', userId, startDate, endDate] as const,
+  scoreboard: (userId: string, startDate: string, endDate: string, scope?: string) =>
+    ['scoreboard', userId, startDate, endDate, scope] as const,
+  scoreboardBillingCycle: (userId: string, startDate: string, endDate: string, scope?: string) =>
+    ['scoreboard', 'billing-cycle', userId, startDate, endDate, scope] as const,
 
   // Analytics
   analytics: ['analytics'] as const,

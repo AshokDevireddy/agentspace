@@ -5,31 +5,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { getSmsEndpoint } from '@/lib/api-config';
 
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createServerClient();
 
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
-      );
-    }
-
-    // Get user details including admin status
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('id, agency_id, is_admin')
-      .eq('auth_user_id', user.id as any)
-      .single();
-
-    if (userError || !userData) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
       );
     }
 
@@ -45,23 +31,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { data: messages, error: rpcError } = await supabase.rpc('get_conversation_messages', {
-      p_user_id: (userData as any).id,
-      p_conversation_id: conversationId,
-      p_view: view
+    const url = new URL(getSmsEndpoint('messages'));
+    url.searchParams.set('conversation_id', conversationId);
+    url.searchParams.set('view', view);
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
     });
 
-    if (rpcError) {
-      console.error('get_conversation_messages RPC error:', rpcError);
-      const status = rpcError.message?.toLowerCase().includes('unauthorized') ? 403 : 500;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Messages API error:', errorData);
       return NextResponse.json(
-        { error: rpcError.message },
-        { status }
+        { error: errorData.error || 'Failed to fetch messages' },
+        { status: response.status }
       );
     }
 
+    const data = await response.json();
     return NextResponse.json({
-      messages: messages || [],
+      messages: data.messages || data || [],
     });
 
   } catch (error) {

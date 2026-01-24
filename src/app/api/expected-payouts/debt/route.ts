@@ -82,19 +82,14 @@ export async function GET(req: NextRequest) {
         total: result.total_debt || 0,
         lapsedDealsCount: result.lapsed_deals_count || 0,
         breakdown: result.debt_breakdown || []
-      },
-      agent_id,
-      user: {
-        id: userData.id,
-        name: `${userData.first_name} ${userData.last_name}`,
-        role: userData.role
       }
     });
 
-  } catch (err: any) {
+  } catch (err) {
     console.error('[Agent Debt] Unexpected error:', err);
+    const message = err instanceof Error ? err.message : 'Failed to fetch agent debt';
     return NextResponse.json(
-      { error: err.message || "Failed to fetch agent debt" },
+      { error: message },
       { status: 500 }
     );
   }

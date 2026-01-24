@@ -37,9 +37,10 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json(data || []);
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error in search-clients API:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 

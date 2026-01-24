@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { shouldUseDjangoPayouts } from '@/lib/feature-flags'
-import { getDjangoPayoutEndpoint } from '@/lib/api-config'
+import { getPayoutEndpoint } from '@/lib/api-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
@@ -74,7 +74,7 @@ async function fetchDjangoExpectedPayouts(
   accessToken: string,
   filters: PayoutsFilters
 ): Promise<ExpectedPayoutsResponse> {
-  const url = new URL(getDjangoPayoutEndpoint('expectedPayouts'))
+  const url = new URL(getPayoutEndpoint('expectedPayouts'))
 
   // Add filter parameters
   if (filters.agent) url.searchParams.set('agent_id', filters.agent)
@@ -102,7 +102,7 @@ async function fetchDjangoDebt(
   accessToken: string,
   agentId: string
 ): Promise<DebtResponse> {
-  const url = new URL(getDjangoPayoutEndpoint('debt'))
+  const url = new URL(getPayoutEndpoint('debt'))
   url.searchParams.set('agent_id', agentId)
 
   const response = await fetch(url.toString(), {

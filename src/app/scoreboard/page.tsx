@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon, Info } from "lucide-react"
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
-import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
+import { useScoreboardBillingCycleData } from "@/hooks/useDashboardData"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useAgencyScoreboardSettings } from "@/hooks/useUserQueries"
 import { useQueryClient } from "@tanstack/react-query"
@@ -202,34 +202,21 @@ export default function Scoreboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeframe]) // Only update when timeframe changes, not when getDateRange changes (to avoid interfering with custom dates)
 
-  // Fetch scoreboard data using TanStack Query
+  // Fetch scoreboard data using TanStack Query (Django backend)
   const shouldFetch = !!user?.id && (timeframe !== 'custom' || (!!dateRange.startDate && !!dateRange.endDate))
 
-  // Include authLoading to show proper loading state while auth initializes
-  const { data: rpcResponse, isPending: isDataLoading, isFetching, error: queryError } = useSupabaseRpc<ScoreboardRpcResponse>(
-    [
-      ...queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate),
-      'with-lapse',
-      assumedMonthsTillLapse,
-      submittedFilter
-    ],
-    'get_scoreboard_data_updated_lapsed_deals',
-    {
-      p_user_id: user?.id || '',
-      p_start_date: dateRange.startDate,
-      p_end_date: dateRange.endDate,
-      assumed_months_till_lapse: assumedMonthsTillLapse,
-      submitted: submittedFilter === 'submitted'
-    },
+  const { data: rpcResponse, isPending: isDataLoading, isFetching, error: queryError } = useScoreboardBillingCycleData(
+    user?.id,
+    dateRange.startDate,
+    dateRange.endDate,
+    'agency',
     {
       enabled: shouldFetch,
       staleTime: 1000 * 60 * 5, // 5 minutes
-      gcTime: 1000 * 60 * 30, // 30 minutes (formerly cacheTime)
-      refetchOnWindowFocus: false,
     }
   )
 
-  // Extract data and error from RPC response
+  // Extract data and error from response
   const data = rpcResponse?.success ? rpcResponse.data : null
   const error = rpcResponse?.success === false ? rpcResponse.error : queryError?.message
 

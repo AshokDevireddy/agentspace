@@ -6,7 +6,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { useInvalidation } from '../useInvalidation'
 import { supabaseRestFetch, updatePassword } from '@/lib/supabase/api'
-import { getDjangoAuthEndpoint } from '@/lib/api-config'
+import { getAuthEndpoint } from '@/lib/api-config'
 
 // ============ Register Mutation ============
 
@@ -212,7 +212,7 @@ export function useDjangoSignIn(options?: {
 
       // Call Django login endpoint
       const response = await withAuthTimeout(
-        fetch(getDjangoAuthEndpoint('login'), {
+        fetch(getAuthEndpoint('login'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

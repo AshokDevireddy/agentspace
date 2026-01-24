@@ -61,17 +61,18 @@ function getLuminance(r: number, g: number, b: number): number {
  * @returns 'white' or 'black' depending on which provides better contrast
  */
 export function getContrastTextColor(hslColor: string): 'white' | 'black' {
-  try {
-    const { r, g, b } = hslToRgb(hslColor)
-    const luminance = getLuminance(r, g, b)
-
-    // If luminance > 0.5, the color is light, so use black text
-    // If luminance <= 0.5, the color is dark, so use white text
-    return luminance > 0.5 ? 'black' : 'white'
-  } catch (error) {
-    // Fallback to white if there's an error parsing the color
+  if (!hslColor || typeof hslColor !== 'string') {
     return 'white'
   }
+
+  const parts = hslColor.trim().split(' ')
+  if (parts.length !== 3) {
+    return 'white'
+  }
+
+  const { r, g, b } = hslToRgb(hslColor)
+  const luminance = getLuminance(r, g, b)
+  return luminance > 0.5 ? 'black' : 'white'
 }
 
 /**

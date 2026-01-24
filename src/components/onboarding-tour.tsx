@@ -6,6 +6,12 @@ import { useAuth } from '@/providers/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 
+const TOOLTIP_WIDTH = 400
+const TOOLTIP_HEIGHT_ESTIMATE = 200
+const SIDEBAR_WIDTH = 256
+const HIGHLIGHT_PADDING = 8
+const TOOLTIP_PADDING = 20
+
 export default function OnboardingTour() {
   const { user } = useAuth()
   const {
@@ -46,13 +52,12 @@ export default function OnboardingTour() {
         const element = document.querySelector(currentStep.targetSelector)
         if (element) {
           const rect = element.getBoundingClientRect()
-          const padding = 8
 
           setHighlightPosition({
-            top: rect.top + window.scrollY - padding,
-            left: rect.left + window.scrollX - padding,
-            width: rect.width + padding * 2,
-            height: rect.height + padding * 2,
+            top: rect.top + window.scrollY - HIGHLIGHT_PADDING,
+            left: rect.left + window.scrollX - HIGHLIGHT_PADDING,
+            width: rect.width + HIGHLIGHT_PADDING * 2,
+            height: rect.height + HIGHLIGHT_PADDING * 2,
           })
 
           // Calculate tooltip position
@@ -68,84 +73,70 @@ export default function OnboardingTour() {
     }
 
     const calculateTooltipPosition = (targetRect: DOMRect) => {
-      const tooltipWidth = 400 // Approximate tooltip width
-      const tooltipHeight = tooltipRef.current?.offsetHeight || 200
-      const padding = 20
+      const tooltipHeight = tooltipRef.current?.offsetHeight || TOOLTIP_HEIGHT_ESTIMATE
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
+      const isNavbarItem = currentStep.targetSelector?.includes('nav-')
 
       let top = 0
       let left = 0
 
-      // Check if this is a navbar item
-      const isNavbarItem = currentStep.targetSelector?.includes('nav-')
-
       switch (currentStep.position) {
         case 'top':
-          top = targetRect.top + window.scrollY - tooltipHeight - padding
-          left = targetRect.left + window.scrollX + targetRect.width / 2 - tooltipWidth / 2
+          top = targetRect.top + window.scrollY - tooltipHeight - TOOLTIP_PADDING
+          left = targetRect.left + window.scrollX + targetRect.width / 2 - TOOLTIP_WIDTH / 2
           break
         case 'bottom':
-          top = targetRect.bottom + window.scrollY + padding
-          left = targetRect.left + window.scrollX + targetRect.width / 2 - tooltipWidth / 2
+          top = targetRect.bottom + window.scrollY + TOOLTIP_PADDING
+          left = targetRect.left + window.scrollX + targetRect.width / 2 - TOOLTIP_WIDTH / 2
           break
         case 'left':
           top = targetRect.top + window.scrollY + targetRect.height / 2 - tooltipHeight / 2
-          left = targetRect.left + window.scrollX - tooltipWidth - padding
+          left = targetRect.left + window.scrollX - TOOLTIP_WIDTH - TOOLTIP_PADDING
           break
         case 'right':
-          // For navbar items with 'right' position, center the tooltip in the page content area
           if (isNavbarItem) {
             top = viewportHeight / 2 - tooltipHeight / 2 + window.scrollY
-            // On large screens, account for the sidebar width (256px)
             if (viewportWidth >= 1024) {
-              const contentAreaLeft = 256 // Sidebar width
-              const contentAreaWidth = viewportWidth - contentAreaLeft
-              left = contentAreaLeft + (contentAreaWidth - tooltipWidth) / 2
+              const contentAreaWidth = viewportWidth - SIDEBAR_WIDTH
+              left = SIDEBAR_WIDTH + (contentAreaWidth - TOOLTIP_WIDTH) / 2
             } else {
-              left = (viewportWidth - tooltipWidth) / 2
+              left = (viewportWidth - TOOLTIP_WIDTH) / 2
             }
           } else {
-            // For non-navbar items (graph, pending positions), keep below the element
             top = targetRect.top + window.scrollY + targetRect.height / 2 - tooltipHeight / 2
-            left = targetRect.right + window.scrollX + padding
+            left = targetRect.right + window.scrollX + TOOLTIP_PADDING
           }
           break
         case 'center':
         default:
-          // Position in center of viewport
           top = viewportHeight / 2 - tooltipHeight / 2 + window.scrollY
           if (viewportWidth >= 1024) {
-            const contentAreaLeft = 256
-            const contentAreaWidth = viewportWidth - contentAreaLeft
-            left = contentAreaLeft + (contentAreaWidth - tooltipWidth) / 2
+            const contentAreaWidth = viewportWidth - SIDEBAR_WIDTH
+            left = SIDEBAR_WIDTH + (contentAreaWidth - TOOLTIP_WIDTH) / 2
           } else {
-            left = Math.max(padding, (viewportWidth - tooltipWidth) / 2)
+            left = Math.max(TOOLTIP_PADDING, (viewportWidth - TOOLTIP_WIDTH) / 2)
           }
           break
       }
 
-      // Keep tooltip within viewport bounds
-      left = Math.max(padding, Math.min(left, viewportWidth - tooltipWidth - padding))
-      top = Math.max(padding + window.scrollY, top)
+      left = Math.max(TOOLTIP_PADDING, Math.min(left, viewportWidth - TOOLTIP_WIDTH - TOOLTIP_PADDING))
+      top = Math.max(TOOLTIP_PADDING + window.scrollY, top)
 
       setTooltipPosition({ top, left })
     }
 
     const setCenteredTooltip = () => {
-      const tooltipHeight = tooltipRef.current?.offsetHeight || 200
-      const tooltipWidth = 400
+      const tooltipHeight = tooltipRef.current?.offsetHeight || TOOLTIP_HEIGHT_ESTIMATE
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
-      const padding = 20
 
       let left
       if (viewportWidth >= 1024) {
-        const contentAreaLeft = 256 // Sidebar width
-        const contentAreaWidth = viewportWidth - contentAreaLeft
-        left = contentAreaLeft + (contentAreaWidth - tooltipWidth) / 2
+        const contentAreaWidth = viewportWidth - SIDEBAR_WIDTH
+        left = SIDEBAR_WIDTH + (contentAreaWidth - TOOLTIP_WIDTH) / 2
       } else {
-        left = Math.max(padding, (viewportWidth - tooltipWidth) / 2)
+        left = Math.max(TOOLTIP_PADDING, (viewportWidth - TOOLTIP_WIDTH) / 2)
       }
 
       setTooltipPosition({

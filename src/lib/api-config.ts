@@ -1,37 +1,21 @@
 /**
- * API Configuration for Django Backend
+ * API Configuration
  *
- * Provides utilities for constructing API URLs based on the backend being used.
- * Feature flag cutover system (P2-022)
+ * Provides utilities for constructing API URLs.
  */
 
 /**
- * Get the Django API base URL
+ * Get the API base URL
  */
-export function getDjangoApiUrl(): string {
-  return process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://localhost:8000'
-}
-
-/**
- * Get the full API endpoint URL
- *
- * @param path - The API path (e.g., '/api/auth/login')
- * @param useDjango - Whether to use Django backend
- * @returns Full URL for Django, relative path for Next.js
- */
-export function getApiEndpoint(path: string, useDjango: boolean): string {
-  if (useDjango) {
-    return `${getDjangoApiUrl()}${path}`
-  }
-  // Relative URL for Next.js API routes
-  return path
+export function getApiBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_DJANGO_API_URL || 'http://localhost:8000'
 }
 
 // ============================================================================
 // Auth Endpoints
 // ============================================================================
 
-export const djangoAuthEndpoints = {
+export const authEndpoints = {
   login: '/api/auth/login',
   logout: '/api/auth/logout',
   refresh: '/api/auth/refresh',
@@ -47,17 +31,19 @@ export const djangoAuthEndpoints = {
 // Dashboard Endpoints
 // ============================================================================
 
-export const djangoDashboardEndpoints = {
+export const dashboardEndpoints = {
   summary: '/api/dashboard/summary',
   scoreboard: '/api/dashboard/scoreboard',
+  scoreboardLapsed: '/api/dashboard/scoreboard-lapsed',
+  scoreboardBillingCycle: '/api/dashboard/scoreboard-billing-cycle',
   production: '/api/dashboard/production',
 } as const
 
 // ============================================================================
-// Agent Endpoints (P2-023 to P2-026)
+// Agent Endpoints
 // ============================================================================
 
-export const djangoAgentEndpoints = {
+export const agentEndpoints = {
   list: '/api/agents',
   detail: (id: string) => `/api/agents/${id}`,
   downlines: '/api/agents/downlines',
@@ -67,10 +53,10 @@ export const djangoAgentEndpoints = {
 } as const
 
 // ============================================================================
-// Deal Endpoints (P2-027 to P2-028)
+// Deal Endpoints
 // ============================================================================
 
-export const djangoDealEndpoints = {
+export const dealEndpoints = {
   list: '/api/deals',
   detail: (id: string) => `/api/deals/${id}`,
   bookOfBusiness: '/api/deals/book-of-business',
@@ -81,10 +67,10 @@ export const djangoDealEndpoints = {
 } as const
 
 // ============================================================================
-// Carrier Endpoints (P2-030)
+// Carrier Endpoints
 // ============================================================================
 
-export const djangoCarrierEndpoints = {
+export const carrierEndpoints = {
   list: '/api/carriers',
   detail: (id: string) => `/api/carriers/${id}`,
   names: '/api/carriers/names',
@@ -92,30 +78,30 @@ export const djangoCarrierEndpoints = {
 } as const
 
 // ============================================================================
-// Product Endpoints (P2-031)
+// Product Endpoints
 // ============================================================================
 
-export const djangoProductEndpoints = {
+export const productEndpoints = {
   list: '/api/products',
   detail: (id: string) => `/api/products/${id}`,
   all: '/api/products/all',
 } as const
 
 // ============================================================================
-// Position Endpoints (P2-032)
+// Position Endpoints
 // ============================================================================
 
-export const djangoPositionEndpoints = {
+export const positionEndpoints = {
   list: '/api/positions',
   detail: (id: string) => `/api/positions/${id}`,
   productCommissions: '/api/positions/product-commissions',
 } as const
 
 // ============================================================================
-// SMS Endpoints (P2-033 to P2-035)
+// SMS Endpoints
 // ============================================================================
 
-export const djangoSmsEndpoints = {
+export const smsEndpoints = {
   conversations: '/api/sms/conversations',
   messages: '/api/sms/messages',
   drafts: '/api/sms/drafts',
@@ -125,46 +111,46 @@ export const djangoSmsEndpoints = {
 } as const
 
 // ============================================================================
-// Payout Endpoints (P2-029)
+// Payout Endpoints
 // ============================================================================
 
-export const djangoPayoutEndpoints = {
+export const payoutEndpoints = {
   expectedPayouts: '/api/expected-payouts',
   debt: '/api/expected-payouts/debt',
 } as const
 
 // ============================================================================
-// Client Endpoints (P2-037)
+// Client Endpoints
 // ============================================================================
 
-export const djangoClientEndpoints = {
+export const clientEndpoints = {
   list: '/api/clients',
   detail: (id: string) => `/api/clients/${id}`,
 } as const
 
 // ============================================================================
-// Scoreboard Endpoints (P2-036)
+// Scoreboard Endpoints
 // ============================================================================
 
-export const djangoScoreboardEndpoints = {
+export const scoreboardEndpoints = {
   scoreboard: '/api/scoreboard',
 } as const
 
 // ============================================================================
-// Search Endpoints (P2-038)
+// Search Endpoints
 // ============================================================================
 
-export const djangoSearchEndpoints = {
+export const searchEndpoints = {
   agents: '/api/search-agents',
   clients: '/api/search-clients',
   policies: '/api/search-policies',
 } as const
 
 // ============================================================================
-// Analytics Endpoints (P2-039)
+// Analytics Endpoints
 // ============================================================================
 
-export const djangoAnalyticsEndpoints = {
+export const analyticsEndpoints = {
   split: '/api/analytics/split',
   downlineDistribution: '/api/analytics/downline-distribution',
   deals: '/api/analytics/deals',
@@ -175,98 +161,99 @@ export const djangoAnalyticsEndpoints = {
 // Helper Functions
 // ============================================================================
 
-export function getDjangoAuthEndpoint(
-  endpoint: keyof typeof djangoAuthEndpoints
+export function getAuthEndpoint(
+  endpoint: keyof typeof authEndpoints
 ): string {
-  return `${getDjangoApiUrl()}${djangoAuthEndpoints[endpoint]}`
+  return `${getApiBaseUrl()}${authEndpoints[endpoint]}`
 }
 
-export function getDjangoDashboardEndpoint(
-  endpoint: keyof typeof djangoDashboardEndpoints
+export function getDashboardEndpoint(
+  endpoint: keyof typeof dashboardEndpoints
 ): string {
-  return `${getDjangoApiUrl()}${djangoDashboardEndpoints[endpoint]}`
+  return `${getApiBaseUrl()}${dashboardEndpoints[endpoint]}`
 }
 
-export function getDjangoAgentEndpoint(
-  endpoint: keyof typeof djangoAgentEndpoints,
+export function getAgentEndpoint(
+  endpoint: keyof typeof agentEndpoints,
   id?: string
 ): string {
-  const ep = djangoAgentEndpoints[endpoint]
+  const ep = agentEndpoints[endpoint]
   const path = typeof ep === 'function' ? ep(id!) : ep
-  return `${getDjangoApiUrl()}${path}`
+  return `${getApiBaseUrl()}${path}`
 }
 
-export function getDjangoDealEndpoint(
-  endpoint: keyof typeof djangoDealEndpoints,
+export function getDealEndpoint(
+  endpoint: keyof typeof dealEndpoints,
   id?: string
 ): string {
-  const ep = djangoDealEndpoints[endpoint]
+  const ep = dealEndpoints[endpoint]
   const path = typeof ep === 'function' ? ep(id!) : ep
-  return `${getDjangoApiUrl()}${path}`
+  return `${getApiBaseUrl()}${path}`
 }
 
-export function getDjangoCarrierEndpoint(
-  endpoint: keyof typeof djangoCarrierEndpoints,
+export function getCarrierEndpoint(
+  endpoint: keyof typeof carrierEndpoints,
   id?: string
 ): string {
-  const ep = djangoCarrierEndpoints[endpoint]
+  const ep = carrierEndpoints[endpoint]
   const path = typeof ep === 'function' ? ep(id!) : ep
-  return `${getDjangoApiUrl()}${path}`
+  return `${getApiBaseUrl()}${path}`
 }
 
-export function getDjangoProductEndpoint(
-  endpoint: keyof typeof djangoProductEndpoints,
+export function getProductEndpoint(
+  endpoint: keyof typeof productEndpoints,
   id?: string
 ): string {
-  const ep = djangoProductEndpoints[endpoint]
+  const ep = productEndpoints[endpoint]
   const path = typeof ep === 'function' ? ep(id!) : ep
-  return `${getDjangoApiUrl()}${path}`
+  return `${getApiBaseUrl()}${path}`
 }
 
-export function getDjangoPositionEndpoint(
-  endpoint: keyof typeof djangoPositionEndpoints,
+export function getPositionEndpoint(
+  endpoint: keyof typeof positionEndpoints,
   id?: string
 ): string {
-  const ep = djangoPositionEndpoints[endpoint]
+  const ep = positionEndpoints[endpoint]
   const path = typeof ep === 'function' ? ep(id!) : ep
-  return `${getDjangoApiUrl()}${path}`
+  return `${getApiBaseUrl()}${path}`
 }
 
-export function getDjangoSmsEndpoint(
-  endpoint: keyof typeof djangoSmsEndpoints
+export function getSmsEndpoint(
+  endpoint: keyof typeof smsEndpoints
 ): string {
-  return `${getDjangoApiUrl()}${djangoSmsEndpoints[endpoint]}`
+  return `${getApiBaseUrl()}${smsEndpoints[endpoint]}`
 }
 
-export function getDjangoPayoutEndpoint(
-  endpoint: keyof typeof djangoPayoutEndpoints
+export function getPayoutEndpoint(
+  endpoint: keyof typeof payoutEndpoints
 ): string {
-  return `${getDjangoApiUrl()}${djangoPayoutEndpoints[endpoint]}`
+  return `${getApiBaseUrl()}${payoutEndpoints[endpoint]}`
 }
 
-export function getDjangoClientEndpoint(
-  endpoint: keyof typeof djangoClientEndpoints,
+export function getClientEndpoint(
+  endpoint: keyof typeof clientEndpoints,
   id?: string
 ): string {
-  const ep = djangoClientEndpoints[endpoint]
+  const ep = clientEndpoints[endpoint]
   const path = typeof ep === 'function' ? ep(id!) : ep
-  return `${getDjangoApiUrl()}${path}`
+  return `${getApiBaseUrl()}${path}`
 }
 
-export function getDjangoScoreboardEndpoint(
-  endpoint: keyof typeof djangoScoreboardEndpoints
+export function getScoreboardEndpoint(
+  endpoint: keyof typeof scoreboardEndpoints
 ): string {
-  return `${getDjangoApiUrl()}${djangoScoreboardEndpoints[endpoint]}`
+  return `${getApiBaseUrl()}${scoreboardEndpoints[endpoint]}`
 }
 
-export function getDjangoSearchEndpoint(
-  endpoint: keyof typeof djangoSearchEndpoints
+export function getSearchEndpoint(
+  endpoint: keyof typeof searchEndpoints
 ): string {
-  return `${getDjangoApiUrl()}${djangoSearchEndpoints[endpoint]}`
+  return `${getApiBaseUrl()}${searchEndpoints[endpoint]}`
 }
 
-export function getDjangoAnalyticsEndpoint(
-  endpoint: keyof typeof djangoAnalyticsEndpoints
+export function getAnalyticsEndpoint(
+  endpoint: keyof typeof analyticsEndpoints
 ): string {
-  return `${getDjangoApiUrl()}${djangoAnalyticsEndpoints[endpoint]}`
+  return `${getApiBaseUrl()}${analyticsEndpoints[endpoint]}`
 }
+

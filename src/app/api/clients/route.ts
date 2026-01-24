@@ -1,5 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { getClientEndpoint } from '@/lib/api-config'
 
 export async function GET(request: Request) {
   try {
@@ -9,55 +10,53 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '20')
     const view = searchParams.get('view') || 'downlines' // 'all', 'self', 'downlines'
 
-    // Get authenticated user
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
-    if (authError || !authUser) {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get current user data
-    const { data: currentUser, error: currentUserError } = await supabase
-      .from('users')
-      .select('id, agency_id, is_admin')
-      .eq('auth_user_id', authUser.id)
-      .single()
+    const url = new URL(getClientEndpoint('list'))
+    url.searchParams.set('page', page.toString())
+    url.searchParams.set('limit', limit.toString())
+    url.searchParams.set('view', view)
 
-    if (currentUserError || !currentUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    const offset = (page - 1) * limit
-
-    const { data: rows, error: rpcError } = await supabase.rpc('get_clients_overview', {
-      p_user_id: currentUser.id,
-      p_view: view,
-      p_limit: limit,
-      p_offset: offset
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
     })
 
-    if (rpcError) {
-      console.error('get_clients_overview RPC error:', rpcError)
-      return NextResponse.json({ error: rpcError.message }, { status: 500 })
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error('Clients API error:', errorData)
+      return NextResponse.json(
+        { error: errorData.error || 'Failed to fetch clients' },
+        { status: response.status }
+      )
     }
 
-    const totalCount = rows?.[0]?.total_count ? Number(rows[0].total_count) : 0
-    const totalPages = limit > 0 ? Math.ceil(totalCount / limit) : 0
+    const data = await response.json()
 
-    const clients = (rows || []).map((row: any) => ({
-      id: row.client_id,
-      name: row.client_name,
-      email: row.client_email || 'N/A',
-      phone: row.client_phone || 'N/A',
-      supportingAgent: row.supporting_agent || 'N/A',
-      status: row.status || 'N/A',
-      created: row.created_at
-        ? new Date(row.created_at).toLocaleDateString('en-US', {
+    // Transform Django response to match frontend expected format
+    const clients = (data.clients || data.results || []).map((client: any) => ({
+      id: client.id || client.client_id,
+      name: client.name || client.client_name || `${client.first_name || ''} ${client.last_name || ''}`.trim(),
+      email: client.email || client.client_email || 'N/A',
+      phone: client.phone || client.client_phone || 'N/A',
+      supportingAgent: client.supporting_agent || client.agent_name || 'N/A',
+      status: client.status || 'N/A',
+      created: client.created_at
+        ? new Date(client.created_at).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
             day: 'numeric'
           })
         : 'N/A'
     }))
+
+    const totalCount = data.pagination?.totalCount || data.total_count || data.count || clients.length
+    const totalPages = limit > 0 ? Math.ceil(totalCount / limit) : 0
 
     return NextResponse.json({
       clients,

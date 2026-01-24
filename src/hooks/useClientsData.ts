@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { shouldUseDjangoClients } from '@/lib/feature-flags'
-import { getDjangoClientEndpoint } from '@/lib/api-config'
+import { getClientEndpoint } from '@/lib/api-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
@@ -64,7 +64,7 @@ async function fetchDjangoClientsList(
   page: number,
   filters: ClientsFilters
 ): Promise<ClientsListResponse> {
-  const url = new URL(getDjangoClientEndpoint('list'))
+  const url = new URL(getClientEndpoint('list'))
   url.searchParams.set('page', String(page))
   url.searchParams.set('limit', '20')
 
@@ -92,7 +92,7 @@ async function fetchDjangoClientDetail(
   accessToken: string,
   clientId: string
 ): Promise<ClientDetail> {
-  const url = new URL(getDjangoClientEndpoint('detail', clientId))
+  const url = new URL(getClientEndpoint('detail', clientId))
 
   const response = await fetch(url.toString(), {
     headers: {

@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { shouldUseDjangoAgents, shouldUseDjangoAgentsList, shouldUseDjangoAgentsDownlines, shouldUseDjangoAgentsWithoutPositions } from '@/lib/feature-flags'
-import { getDjangoAgentEndpoint } from '@/lib/api-config'
+import { getAgentEndpoint } from '@/lib/api-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
@@ -128,7 +128,7 @@ async function fetchDjangoAgentsList(
     filters: AgentsFilters
   }
 ): Promise<AgentsListResponse> {
-  const url = new URL(getDjangoAgentEndpoint('list'))
+  const url = new URL(getAgentEndpoint('list'))
 
   if (params.view === 'tree') {
     url.searchParams.set('view', 'tree')
@@ -186,7 +186,7 @@ async function fetchDjangoAgentDownlines(
   accessToken: string,
   agentId: string
 ): Promise<AgentDownlinesResponse> {
-  const url = new URL(getDjangoAgentEndpoint('downlines'))
+  const url = new URL(getAgentEndpoint('downlines'))
   url.searchParams.set('agentId', agentId)
 
   const response = await fetch(url.toString(), {
@@ -208,7 +208,7 @@ async function fetchDjangoAgentsWithoutPositions(
   accessToken: string,
   fetchAll: boolean = true
 ): Promise<PendingPositionsResponse> {
-  const url = new URL(getDjangoAgentEndpoint('withoutPositions'))
+  const url = new URL(getAgentEndpoint('withoutPositions'))
   if (fetchAll) {
     url.searchParams.set('all', 'true')
   }

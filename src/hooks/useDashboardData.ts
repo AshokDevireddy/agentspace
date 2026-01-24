@@ -2,14 +2,17 @@
  * Dashboard Data Hook
  *
  * Unified hook for fetching dashboard data.
- * Switches between Django backend and Supabase RPC based on feature flag.
  */
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { shouldUseDjangoDashboard } from '@/lib/feature-flags'
-import { getDjangoDashboardEndpoint } from '@/lib/api-config'
+import { getDashboardEndpoint } from '@/lib/api-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
+
+// ============ Constants ============
+
+const STALE_TIME_SHORT = 60 * 1000 // 1 minute
+const STALE_TIME_LONG = 5 * 60 * 1000 // 5 minutes
 
 // ============ Types ============
 
@@ -71,11 +74,11 @@ interface ProductionEntry {
 
 // ============ Fetch Functions ============
 
-async function fetchDjangoDashboardSummary(
+async function fetchDashboardSummary(
   accessToken: string,
   asOfDate?: string
 ): Promise<DashboardSummary> {
-  const url = new URL(getDjangoDashboardEndpoint('summary'))
+  const url = new URL(getDashboardEndpoint('summary'))
   if (asOfDate) {
     url.searchParams.set('as_of_date', asOfDate)
   }
@@ -94,12 +97,12 @@ async function fetchDjangoDashboardSummary(
   return response.json()
 }
 
-async function fetchDjangoScoreboard(
+async function fetchScoreboard(
   accessToken: string,
   startDate: string,
   endDate: string
 ): Promise<ScoreboardData> {
-  const url = new URL(getDjangoDashboardEndpoint('scoreboard'))
+  const url = new URL(getDashboardEndpoint('scoreboard'))
   url.searchParams.set('start_date', startDate)
   url.searchParams.set('end_date', endDate)
 
@@ -117,13 +120,13 @@ async function fetchDjangoScoreboard(
   return response.json()
 }
 
-async function fetchDjangoProduction(
+async function fetchProduction(
   accessToken: string,
   agentIds: string[],
   startDate: string,
   endDate: string
 ): Promise<ProductionEntry[]> {
-  const url = new URL(getDjangoDashboardEndpoint('production'))
+  const url = new URL(getDashboardEndpoint('production'))
   url.searchParams.set('agent_ids', agentIds.join(','))
   url.searchParams.set('start_date', startDate)
   url.searchParams.set('end_date', endDate)
@@ -142,37 +145,50 @@ async function fetchDjangoProduction(
   return response.json()
 }
 
+async function fetchScoreboardBillingCycle(
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+  scope: 'agency' | 'downline' = 'agency'
+): Promise<ScoreboardData> {
+  const url = new URL(getDashboardEndpoint('scoreboardBillingCycle'))
+  url.searchParams.set('start_date', startDate)
+  url.searchParams.set('end_date', endDate)
+  url.searchParams.set('scope', scope)
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch scoreboard billing cycle data')
+  }
+
+  return response.json()
+}
+
 // ============ Hooks ============
 
 /**
  * Hook for dashboard summary data.
- * Mirrors: get_dashboard_data_with_agency_id RPC
  */
 export function useDashboardSummary(
   userId: string | undefined,
   options?: { enabled?: boolean }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoDashboard()
 
   return useQuery<DashboardSummary, Error>({
     queryKey: queryKeys.dashboard(userId || ''),
     queryFn: async () => {
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoDashboardSummary(session.access_token)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
-
-      // Supabase RPC fallback
-      const { data, error } = await supabase.rpc('get_dashboard_data_with_agency_id', {
-        p_user_id: userId,
-      })
-
-      if (error) throw error
-      return data as DashboardSummary
+      return fetchDashboardSummary(session.access_token)
     },
     enabled: !!userId && (options?.enabled !== false),
     retry: shouldRetry,
@@ -183,7 +199,6 @@ export function useDashboardSummary(
 
 /**
  * Hook for scoreboard/leaderboard data.
- * Mirrors: get_scoreboard_data RPC
  */
 export function useScoreboardData(
   userId: string | undefined,
@@ -192,31 +207,18 @@ export function useScoreboardData(
   options?: { enabled?: boolean; staleTime?: number }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoDashboard()
 
   return useQuery<ScoreboardData, Error>({
     queryKey: queryKeys.scoreboard(userId || '', startDate, endDate),
     queryFn: async () => {
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoScoreboard(session.access_token, startDate, endDate)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
-
-      // Supabase RPC fallback
-      const { data, error } = await supabase.rpc('get_scoreboard_data', {
-        p_user_id: userId,
-        p_start_date: startDate,
-        p_end_date: endDate,
-      })
-
-      if (error) throw error
-      return data as ScoreboardData
+      return fetchScoreboard(session.access_token, startDate, endDate)
     },
     enabled: !!userId && (options?.enabled !== false),
-    staleTime: options?.staleTime ?? 60 * 1000, // 1 minute default
+    staleTime: options?.staleTime ?? STALE_TIME_SHORT,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,
@@ -225,7 +227,6 @@ export function useScoreboardData(
 
 /**
  * Hook for production progress data.
- * Mirrors: get_agents_debt_production RPC
  */
 export function useProductionData(
   userId: string | undefined,
@@ -235,33 +236,51 @@ export function useProductionData(
   options?: { enabled?: boolean; staleTime?: number }
 ) {
   const supabase = createClient()
-  const useDjango = shouldUseDjangoDashboard()
 
   return useQuery<ProductionEntry[], Error>({
     queryKey: ['production', userId, agentIds.join(','), startDate, endDate],
     queryFn: async () => {
-      if (useDjango) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) {
-          throw new Error('No session')
-        }
-        return fetchDjangoProduction(session.access_token, agentIds, startDate, endDate)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
-
-      // Supabase RPC fallback
-      const { data, error } = await supabase.rpc('get_agents_debt_production', {
-        p_user_id: userId,
-        p_agent_ids: agentIds,
-        p_start_date: startDate,
-        p_end_date: endDate,
-      })
-
-      if (error) throw error
-      return data as ProductionEntry[]
+      return fetchProduction(session.access_token, agentIds, startDate, endDate)
     },
     enabled: !!userId && agentIds.length > 0 && (options?.enabled !== false),
-    staleTime: options?.staleTime ?? 5 * 60 * 1000, // 5 minutes default
+    staleTime: options?.staleTime ?? STALE_TIME_LONG,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
+  })
+}
+
+/**
+ * Hook for scoreboard data with billing cycle payment calculation.
+ *
+ * This hook fetches scoreboard data from Django backend with proper
+ * billing cycle payment calculation.
+ */
+export function useScoreboardBillingCycleData(
+  userId: string | undefined,
+  startDate: string,
+  endDate: string,
+  scope: 'agency' | 'downline' = 'agency',
+  options?: { enabled?: boolean; staleTime?: number }
+) {
+  const supabase = createClient()
+
+  return useQuery<ScoreboardData, Error>({
+    queryKey: queryKeys.scoreboardBillingCycle(userId || '', startDate, endDate, scope),
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
+      }
+      return fetchScoreboardBillingCycle(session.access_token, startDate, endDate, scope)
+    },
+    enabled: !!userId && (options?.enabled !== false),
+    staleTime: options?.staleTime ?? STALE_TIME_SHORT,
+    retry: shouldRetry,
+    retryDelay: getRetryDelay,
+    placeholderData: (previousData) => previousData,
   })
 }

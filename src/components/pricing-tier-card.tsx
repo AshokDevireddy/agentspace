@@ -72,7 +72,9 @@ export function PricingTierCard({
 
   // Use centralized subscription mutation hook
   // Note: hasActiveSubscription and currentTier are passed in mutate() call to avoid stale closures
+  // Use unique mutationKey per tier to isolate error states
   const subscriptionMutation = useSubscription({
+    mutationKey: tier, // Unique key per tier to prevent error state sharing
     onCheckoutRedirect: (url) => {
       window.location.href = url;
     },

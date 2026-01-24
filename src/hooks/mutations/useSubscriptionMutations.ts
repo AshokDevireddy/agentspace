@@ -252,6 +252,8 @@ export function useSubscription(options?: {
   onCheckoutRedirect?: (url: string) => void
   onSubscriptionChanged?: (data: ChangeSubscriptionResponse, newTier: SubscriptionTier) => void
   onError?: (error: Error) => void
+  /** Unique key to isolate this mutation instance from others */
+  mutationKey?: string
 }) {
   const { invalidateSubscriptionRelated } = useInvalidation()
 
@@ -260,6 +262,7 @@ export function useSubscription(options?: {
     Error,
     SubscriptionMutationInput
   >({
+    mutationKey: options?.mutationKey ? ['subscription', options.mutationKey] : undefined,
     mutationFn: async ({ tier, priceId, hasActiveSubscription, currentTier }) => {
       if (tier === 'free') {
         throw new Error('Cannot subscribe to free tier')

@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     // Create Stripe customer if doesn't exist
     if (!customerId) {
       const customer = await stripe.customers.create({
-        email: userData.email,
+        email: userData.email?.trim(),
         name: `${userData.first_name} ${userData.last_name}`,
         metadata: {
           supabase_user_id: userData.id,

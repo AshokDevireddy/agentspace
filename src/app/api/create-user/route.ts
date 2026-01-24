@@ -70,7 +70,7 @@ export async function POST(request: Request) {
       .insert([{
         id: newUser.user.id,
         auth_user_id: newUser.user.id,
-        email,
+        email: email?.trim(),
         first_name: firstName,
         last_name: lastName,
         phone_number: phoneNumber,

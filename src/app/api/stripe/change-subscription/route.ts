@@ -44,6 +44,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid tier specified' }, { status: 400 });
     }
 
+    // Check if user is trying to change to Expert tier
+    if (newTier === 'expert') {
+      // Verify user is admin
+      const { data: userCheckData, error: userCheckError } = await adminSupabase
+        .from('users')
+        .select('is_admin, role')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      if (userCheckError || !userCheckData) {
+        return NextResponse.json(
+          { error: 'Failed to verify user permissions' },
+          { status: 500 }
+        );
+      }
+
+      const isAdmin = userCheckData.role === 'admin';
+
+      if (!isAdmin) {
+        return NextResponse.json(
+          { error: 'Expert tier is only available for admin users' },
+          { status: 403 }
+        );
+      }
+    }
+
     const currentTier = userData.subscription_tier || 'free';
 
     // Can't change to the same tier

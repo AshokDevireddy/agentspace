@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   // Create response that will be updated by setAll when session refreshes
   let res = NextResponse.next({
     request: req,

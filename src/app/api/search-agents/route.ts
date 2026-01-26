@@ -292,7 +292,7 @@ export async function GET(request: Request) {
           status
         `)
         .in("id", visibleAgentIds)
-        .in("status", ["active", "invited"])
+        .in("status", ["active", "invited", "onboarding"])
         .neq("role", "client");
 
       // Only add OR conditions if we have search terms

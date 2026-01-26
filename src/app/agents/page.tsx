@@ -1734,7 +1734,7 @@ export default function Agents() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <div className="font-medium text-foreground">
-                          {agent.first_name} {agent.last_name}
+                          {agent.first_name}{agent.last_name ? ` ${agent.last_name}` : ''}
                         </div>
                         {agent.has_position && agent.position_name && (
                           <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs">

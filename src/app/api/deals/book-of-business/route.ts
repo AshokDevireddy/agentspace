@@ -151,9 +151,13 @@ export async function GET(req: NextRequest) {
         id: deal.id,
         carrierId: deal.carrier_id || "",
         date: parseAndFormatDate(dateToUse),
-        agent: deal.agent_last_name
-          ? `${deal.agent_last_name}, ${deal.agent_first_name || "Agent"}`
-          : "Unknown, Agent",
+        agent: deal.agent_last_name && deal.agent_first_name
+          ? `${deal.agent_first_name.trim()} ${deal.agent_last_name.trim()}`
+          : deal.agent_first_name
+          ? deal.agent_first_name.trim()
+          : deal.agent_last_name
+          ? deal.agent_last_name.trim()
+          : "Unknown Agent",
         carrier: deal.carrier_display_name || "Unknown Carrier",
         product: deal.product_name || "Unknown Product",
         policyNumber: deal.policy_number || "",

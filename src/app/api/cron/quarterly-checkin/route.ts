@@ -11,25 +11,17 @@ import {
 } from '@/lib/sms-helpers';
 import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
+import { verifyCronRequest } from '@/lib/cron-auth';
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('📋 ========================================');
-    console.log('📋 QUARTERLY CHECK-IN CRON STARTED');
-    console.log('📋 ========================================');
+    console.log('Quarterly check-in cron started');
 
     // Verify this is a cron request
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      if (process.env.CRON_SECRET) {
-        console.log('❌ Unauthorized - CRON_SECRET mismatch');
-        return NextResponse.json(
-          { error: 'Unauthorized' },
-          { status: 401 }
-        );
-      }
+    const authResult = verifyCronRequest(request);
+    if (!authResult.authorized) {
+      return authResult.response;
     }
-    console.log('✅ Authorization passed');
 
     const supabase = createAdminClient();
 

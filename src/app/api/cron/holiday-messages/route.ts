@@ -11,6 +11,7 @@ import {
 } from '@/lib/sms-helpers';
 import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
+import { verifyCronRequest } from '@/lib/cron-auth';
 
 // US Federal Bank Holidays configuration
 const HOLIDAYS = [
@@ -88,22 +89,13 @@ function getTodaysHoliday(): { name: string; greeting: string } | null {
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('🎉 ========================================');
-    console.log('🎉 HOLIDAY MESSAGES CRON STARTED');
-    console.log('🎉 ========================================');
+    console.log('Holiday messages cron started');
 
     // Verify this is a cron request
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      if (process.env.CRON_SECRET) {
-        console.log('❌ Unauthorized - CRON_SECRET mismatch');
-        return NextResponse.json(
-          { error: 'Unauthorized' },
-          { status: 401 }
-        );
-      }
+    const authResult = verifyCronRequest(request);
+    if (!authResult.authorized) {
+      return authResult.response;
     }
-    console.log('✅ Authorization passed');
 
     // Check if today is a holiday
     const holiday = getTodaysHoliday();

@@ -6,29 +6,19 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { verifyCronRequest } from '@/lib/cron-auth';
 
 export async function GET(request: NextRequest) {
   try {
-    // Verify this is a cron request - CRON_SECRET is required
-    const authHeader = request.headers.get('authorization');
+    console.log('Needs more info notifications cron started');
 
-    if (!process.env.CRON_SECRET) {
-      return NextResponse.json(
-        { error: 'Server configuration error - CRON_SECRET not set' },
-        { status: 500 }
-      );
-    }
-
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Verify this is a cron request
+    const authResult = verifyCronRequest(request);
+    if (!authResult.authorized) {
+      return authResult.response;
     }
 
     const supabase = createAdminClient();
-
-    console.log('Running needs_more_info notifications cron');
 
     // Query deals using RPC function
     console.log('🔍 Querying deals using RPC function...');

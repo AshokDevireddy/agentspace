@@ -11,35 +11,17 @@ import {
 } from '@/lib/sms-helpers';
 import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
+import { verifyCronRequest } from '@/lib/cron-auth';
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('🎂 ========================================');
-    console.log('🎂 BIRTHDAY MESSAGES CRON STARTED');
-    console.log('🎂 ========================================');
+    console.log('Birthday messages cron started');
 
-    // Verify this is a cron request (optional - Vercel adds this header)
-    const authHeader = request.headers.get('authorization');
-    console.log('🔐 Auth header:', authHeader ? 'Present' : 'Not present');
-    console.log('🔐 CRON_SECRET set:', process.env.CRON_SECRET ? 'Yes' : 'No');
-
-    // CRON_SECRET is required for security - must be configured
-    if (!process.env.CRON_SECRET) {
-      console.log('❌ Unauthorized - CRON_SECRET not configured');
-      return NextResponse.json(
-        { error: 'Server configuration error - CRON_SECRET not set' },
-        { status: 500 }
-      );
+    // Verify this is a cron request
+    const authResult = verifyCronRequest(request);
+    if (!authResult.authorized) {
+      return authResult.response;
     }
-
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      console.log('❌ Unauthorized - CRON_SECRET mismatch');
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-    console.log('✅ Authorization passed');
 
     const supabase = createAdminClient();
 

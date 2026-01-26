@@ -3,6 +3,7 @@ import { waitUntil } from '@vercel/functions'
 import { createAdminClient } from '@/lib/supabase/server'
 import { executeNIPRAutomation, type NIPRJobData } from '@/lib/nipr/automation'
 import { updateUserNIPRData } from '@/lib/supabase-helpers'
+import { verifyCronRequest } from '@/lib/cron-auth'
 
 export const maxDuration = 300 // 5 minutes timeout
 
@@ -16,19 +17,10 @@ export async function GET(request: NextRequest) {
   const supabaseAdmin = createAdminClient()
 
   try {
-    // Verify cron secret - required in all environments
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-
-    if (!cronSecret) {
-      return NextResponse.json(
-        { error: 'Server configuration error - CRON_SECRET not set' },
-        { status: 500 }
-      )
-    }
-
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Verify this is a cron request
+    const authResult = verifyCronRequest(request)
+    if (!authResult.authorized) {
+      return authResult.response
     }
 
     // Release any stale locks first

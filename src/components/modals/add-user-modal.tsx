@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { createClient } from '@/lib/supabase/client'
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
@@ -120,6 +119,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     positionId: ""
   })
   const [isOpen, setIsOpen] = useState(false)
+
   const [errors, setErrors] = useState<string[]>([])
   const [errorFields, setErrorFields] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
@@ -148,38 +148,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const { data: positionsData, isLoading: positionsLoading } = useQuery({
     queryKey: queryKeys.positionsList(),
     queryFn: async () => {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        throw new Error('No access token available')
-      }
-
-      // Fetch current user's position level and admin status
-      let userPositionLevel: number | null = null
-      let isAdmin = false
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('position_id, position:positions(level), role')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        if (userData?.position?.level !== undefined) {
-          userPositionLevel = userData.position.level
-        }
-
-        // Check if user is admin by role
-        isAdmin = userData?.role === 'admin'
-      }
-
+      // Fetch positions from API route (server-side handles auth automatically)
       const response = await fetch('/api/positions', {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
+        credentials: 'include'
       })
 
       if (!response.ok) {
@@ -188,24 +160,18 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
       const data = await response.json()
 
-      // Filter positions: admins can assign any position, agents can assign positions at their level or below
-      const filteredData = isAdmin
-        ? data
-        : userPositionLevel !== null
-          ? data.filter((pos: any) => pos.level <= userPositionLevel)
-          : data
-
+      // Transform positions to select options
       return {
-        positions: filteredData.map((pos: any) => ({
+        positions: data.map((pos: any) => ({
           value: pos.position_id,
           label: `${pos.name} (Level ${pos.level})`,
           level: pos.level
         })) as SearchOption[],
-        currentUserPositionLevel: userPositionLevel
+        currentUserPositionLevel: null
       }
     },
     enabled: isOpen,
-    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
+    staleTime: 5 * 60 * 1000,
   })
 
   const positions = positionsData?.positions || []
@@ -215,22 +181,17 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const { data: adminStatusData } = useQuery({
     queryKey: queryKeys.userAdminStatus(),
     queryFn: async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      // Fetch current user profile from API route (server-side handles auth)
+      const response = await fetch('/api/user/profile', {
+        method: 'GET',
+        credentials: 'include'
+      })
 
-      if (!user) {
-        throw new Error('No user found')
+      if (!response.ok) {
+        throw new Error('Failed to fetch user profile')
       }
 
-      const { data: userData } = await supabase
-        .from('users')
-        .select('is_admin, perm_level')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      if (!userData) {
-        throw new Error('User data not found')
-      }
+      const userData = await response.json()
 
       return {
         isAdmin: userData.is_admin || userData.perm_level === 'admin'
@@ -253,22 +214,17 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const { data: defaultUplineData } = useQuery({
     queryKey: queryKeys.userDefaultUpline(),
     queryFn: async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      // Fetch current user profile from API route (server-side handles auth)
+      const response = await fetch('/api/user/profile', {
+        method: 'GET',
+        credentials: 'include'
+      })
 
-      if (!user) {
-        throw new Error('No user found')
+      if (!response.ok) {
+        throw new Error('Failed to fetch user profile')
       }
 
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, email, is_admin, perm_level')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      if (!userData) {
-        throw new Error('User data not found')
-      }
+      const userData = await response.json()
 
       return {
         userId: userData.id,
@@ -581,23 +537,24 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   // Handle pre-invite user selection
   const handlePreInviteUserSelect = async (userId: string, selectedOption: SearchOption) => {
     try {
+      // Clear any previous errors
+      setErrors([])
+      setErrorFields({})
+
       setLoading(true)
       setShowNameDropdown(false) // Hide dropdown immediately
       setPauseNameSearch(true)
       setIsLoadingPreInviteUser(true)
 
-      // Fetch full user details
-      const supabase = createClient()
+      // Fetch user details from API route (server-side handles auth)
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'GET',
+        credentials: 'include'
+      })
 
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, email, phone_number, perm_level, upline_id, position_id, status')
-        .eq('id', userId)
-        .single()
-
-      if (error) {
-        console.error('Error fetching user:', error)
-        setErrors([`Failed to load user data: ${error.message}`])
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        setErrors([`Failed to load user data: ${errorData.error || 'Unknown error'}`])
         setPauseNameSearch(false)
         setShowNameDropdown(false)
         setIsLoadingPreInviteUser(false)
@@ -605,8 +562,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         return
       }
 
+      const user = await response.json()
+
       if (!user) {
-        console.error('No user data returned')
         setErrors(['Failed to load user data: User not found'])
         setPauseNameSearch(false)
         setShowNameDropdown(false)

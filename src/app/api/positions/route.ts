@@ -3,37 +3,29 @@
 // GET: Fetches all positions for the user's agency
 // POST: Creates a new position
 
-import { createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient, createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
   try {
-    const supabase = createAdminClient()
+    // Create server client (handles cookie-based auth automatically)
+    const supabase = await createServerClient()
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({
-        error: 'Unauthorized',
-        detail: 'No valid token provided'
-      }, { status: 401 })
-    }
-
-    const token = authHeader.replace('Bearer ', '')
-
-    // Verify the token and get user info
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token)
+    // Verify authentication via cookies
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
 
     if (userError || !user) {
       return NextResponse.json({
         error: 'Unauthorized',
-        detail: 'Invalid token'
+        detail: 'Authentication required'
       }, { status: 401 })
     }
 
+    // Use admin client for database queries
+    const adminClient = createAdminClient()
+
     // Get the user's agency_id and id from the users table
-    const { data: userData, error: userDataError } = await supabase
+    const { data: userData, error: userDataError } = await adminClient
       .from('users')
       .select('id, agency_id')
       .eq('auth_user_id', user.id)
@@ -49,7 +41,7 @@ export async function GET(request: Request) {
     const { id: userId } = userData
 
     // Use RPC function to get positions for agency
-    const { data: positions, error: fetchError } = await supabase
+    const { data: positions, error: fetchError } = await adminClient
       .rpc('get_positions_for_agency', { p_user_id: userId })
 
     if (fetchError) {

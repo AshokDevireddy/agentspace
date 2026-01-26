@@ -319,7 +319,7 @@ export async function GET(request: Request) {
 
       return {
         id: row.agent_id,
-        name: `${row.first_name} ${row.last_name}`,
+        name: row.last_name ? `${row.first_name} ${row.last_name}` : (row.first_name || ''),
         position,
         upline: row.upline_name || "None",
         created: formatDateTime(row.created_at),

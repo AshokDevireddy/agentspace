@@ -131,6 +131,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const [pauseNameSearch, setPauseNameSearch] = useState(false)
   const [pauseUplineSearch, setPauseUplineSearch] = useState(false)
   const [uplineInputValue, setUplineInputValue] = useState("")
+  const [showNameDropdown, setShowNameDropdown] = useState(false)
 
   // Use the custom agent search hook for upline selection
   const {
@@ -317,6 +318,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setSelectedUplineLabel("")
       setSelectedPreInviteUserId(null)
       setHasSetDefaultUpline(false)
+      setNameSearchTerm("")
+      setShowNameDropdown(false)
     },
     onError: (error: Error) => {
       console.error('Error inviting agent:', error)
@@ -378,8 +381,20 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   useEffect(() => {
     if (!isOpen) {
       setHasSetDefaultUpline(false)
+      setShowNameDropdown(false)
+      setNameSearchTerm("")
+      setPauseNameSearch(false)
     }
   }, [isOpen])
+
+  // Show dropdown when search results are ready
+  useEffect(() => {
+    if (nameSearchResults.length > 0 && nameSearchTerm.length >= 2 && !pauseNameSearch && !selectedPreInviteUserId) {
+      setShowNameDropdown(true)
+    } else if (nameSearchResults.length === 0 || pauseNameSearch || selectedPreInviteUserId) {
+      setShowNameDropdown(false)
+    }
+  }, [nameSearchResults, nameSearchTerm, pauseNameSearch, selectedPreInviteUserId])
 
   // When upline is provided from graph view, trigger search to find the user
   useEffect(() => {
@@ -565,6 +580,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     try {
       setLoading(true)
       setPauseNameSearch(true)
+      setShowNameDropdown(false) // Hide dropdown immediately
 
       // Fetch full user details
       const { createClient } = await import('@/lib/supabase/client')
@@ -579,6 +595,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       if (error || !user) {
         console.error('Error fetching user:', error)
         setErrors(['Failed to load user data'])
+        setPauseNameSearch(false)
+        setShowNameDropdown(false)
         return
       }
 
@@ -595,7 +613,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
       setSelectedPreInviteUserId(userId)
       setNameSearchTerm(selectedOption.label)
-      // No need to clear results - TanStack Query manages this automatically when pauseNameSearch is set
 
       // If there's an upline, set the search term for upline field
       if (user.upline_id) {
@@ -607,6 +624,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     } catch (error) {
       console.error('Error selecting pre-invite user:', error)
       setErrors(['Failed to load user data'])
+      setPauseNameSearch(false)
+      setShowNameDropdown(false)
     } finally {
       setLoading(false)
     }
@@ -654,8 +673,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                 type="text"
                 value={nameSearchTerm}
                 onChange={(e) => {
+                  const newValue = e.target.value
                   setPauseNameSearch(false)
-                  setNameSearchTerm(e.target.value)
+                  setNameSearchTerm(newValue)
+                  setShowNameDropdown(true)
                   // Clear selection if user changes search
                   if (selectedPreInviteUserId) {
                     setSelectedPreInviteUserId(null)
@@ -670,6 +691,11 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                     })
                   }
                 }}
+                onFocus={() => {
+                  if (nameSearchTerm.length >= 2 && !pauseNameSearch) {
+                    setShowNameDropdown(true)
+                  }
+                }}
                 className="h-12"
                 placeholder="Type name to search..."
               />
@@ -681,14 +707,18 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             </div>
 
             {/* Name search results dropdown */}
-            {nameSearchTerm.length >= 2 && !isNameSearching && nameSearchResults.length > 0 && (
+            {showNameDropdown && nameSearchTerm.length >= 2 && !pauseNameSearch && nameSearchResults.length > 0 && (
               <div className="border border-border rounded-lg bg-card shadow-lg max-h-60 overflow-y-auto z-10">
                 {nameSearchResults.map((option) => (
                   <button
                     key={option.value}
                     type="button"
                     className="w-full text-left px-4 py-3 hover:bg-accent/50 border-b border-border last:border-b-0 transition-colors"
-                    onClick={() => handlePreInviteUserSelect(option.value, option)}
+                    onMouseDown={(e) => {
+                      // Use onMouseDown instead of onClick to prevent blur from hiding dropdown first
+                      e.preventDefault()
+                      handlePreInviteUserSelect(option.value, option)
+                    }}
                   >
                     <div className="text-sm font-medium text-foreground">
                       {option.label}
@@ -730,6 +760,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                       setSelectedPreInviteUserId(null)
                       setNameSearchTerm("")
                       setPauseNameSearch(false)
+                      setShowNameDropdown(false)
                       setFormData({
                         firstName: "",
                         lastName: "",

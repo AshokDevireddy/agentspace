@@ -581,10 +581,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   // Handle pre-invite user selection
   const handlePreInviteUserSelect = async (userId: string, selectedOption: SearchOption) => {
     try {
-      setIsLoadingPreInviteUser(true)
       setLoading(true)
       setShowNameDropdown(false) // Hide dropdown immediately
       setPauseNameSearch(true)
+      setIsLoadingPreInviteUser(true)
 
       // Fetch full user details
       const supabase = createClient()
@@ -601,6 +601,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         setPauseNameSearch(false)
         setShowNameDropdown(false)
         setIsLoadingPreInviteUser(false)
+        setLoading(false)
         return
       }
 
@@ -610,15 +611,16 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         setPauseNameSearch(false)
         setShowNameDropdown(false)
         setIsLoadingPreInviteUser(false)
+        setLoading(false)
         return
       }
 
-      // Set all state updates together in a controlled sequence
-      // First set the label and name so UI has data immediately
+      // Set all state updates together
+      // Set the label first so UI has data to display
       setSelectedPreInviteUserLabel(selectedOption.label)
       setNameSearchTerm(selectedOption.label)
 
-      // Then set form data
+      // Set form data
       setFormData({
         firstName: user.first_name || "",
         lastName: user.last_name || "",
@@ -629,14 +631,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         positionId: user.position_id || ""
       })
 
-      // Use setTimeout to ensure state updates are processed before showing the UI indicator
-      // This ensures formData is fully set before selectedPreInviteUserId triggers the UI
-      setTimeout(() => {
-        // Finally set the selected ID - this triggers the UI to show "Updating existing user"
-        // By this point, selectedPreInviteUserLabel and formData are already set
-        setSelectedPreInviteUserId(userId)
-        setIsLoadingPreInviteUser(false)
-      }, 0)
+      // Set selected ID and clear loading state
+      setSelectedPreInviteUserId(userId)
+      setIsLoadingPreInviteUser(false)
+      setLoading(false)
 
       // If there's an upline, set the search term for upline field
       if (user.upline_id) {
@@ -651,7 +649,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setPauseNameSearch(false)
       setShowNameDropdown(false)
       setIsLoadingPreInviteUser(false)
-    } finally {
       setLoading(false)
     }
   }

@@ -479,20 +479,20 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
           const mainItem = allItems[0];
 
           // Build items array: update main price, delete metered prices
-          const itemsToUpdate = [
+          const itemsToUpdate: Stripe.SubscriptionUpdateParams.Item[] = mainItem.id ? [
             {
               id: mainItem.id,
               price: newPriceId,
             }
-          ];
+          ] : [];
 
           // Delete old metered prices
           for (const item of allItems) {
-            if (item.id !== mainItem.id) {
+            if (item.id && item.id !== mainItem.id) {
               console.log(`🗑️  Removing old metered price: ${item.price.id}`);
               itemsToUpdate.push({
                 id: item.id,
-                deleted: true as any, // Type assertion needed for Stripe API
+                deleted: true,
               });
             }
           }

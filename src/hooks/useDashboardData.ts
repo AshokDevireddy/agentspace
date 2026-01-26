@@ -1,13 +1,28 @@
 /**
  * Dashboard Data Hook
+ *
+ * Uses Next.js API routes which proxy to Django backend with httpOnly cookie auth.
  */
 import { useQuery } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
-import { getDashboardEndpoint } from '@/lib/api-config'
-import { fetchApi } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
+
+/**
+ * Fetch from local Next.js API route with credentials (cookies)
+ */
+async function fetchWithCookies<T>(url: string, errorMessage: string): Promise<T> {
+  const response = await fetch(url, {
+    credentials: 'include',
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.error || errorData.message || errorMessage)
+  }
+
+  return response.json()
+}
 
 // ============ Types ============
 
@@ -73,18 +88,10 @@ export function useDashboardSummary(
   userId: string | undefined,
   options?: { enabled?: boolean }
 ) {
-  const supabase = createClient()
-
   return useQuery<DashboardSummary, Error>({
     queryKey: queryKeys.dashboard(userId || ''),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
-      const url = new URL(getDashboardEndpoint('summary'))
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch dashboard summary')
+      return fetchWithCookies('/api/dashboard/summary', 'Failed to fetch dashboard summary')
     },
     enabled: !!userId && (options?.enabled !== false),
     retry: shouldRetry,
@@ -99,21 +106,14 @@ export function useScoreboardData(
   endDate: string,
   options?: { enabled?: boolean; staleTime?: number }
 ) {
-  const supabase = createClient()
-
   return useQuery<ScoreboardData, Error>({
     queryKey: queryKeys.scoreboard(userId || '', startDate, endDate),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
+      const url = new URL('/api/scoreboard', window.location.origin)
+      url.searchParams.set('startDate', startDate)
+      url.searchParams.set('endDate', endDate)
 
-      const url = new URL(getDashboardEndpoint('scoreboard'))
-      url.searchParams.set('start_date', startDate)
-      url.searchParams.set('end_date', endDate)
-
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch scoreboard data')
+      return fetchWithCookies(url.toString(), 'Failed to fetch scoreboard data')
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,
@@ -130,22 +130,15 @@ export function useProductionData(
   endDate: string,
   options?: { enabled?: boolean; staleTime?: number }
 ) {
-  const supabase = createClient()
-
   return useQuery<ProductionEntry[], Error>({
     queryKey: ['production', userId, agentIds.join(','), startDate, endDate],
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
-      const url = new URL(getDashboardEndpoint('production'))
+      const url = new URL('/api/dashboard/production', window.location.origin)
       url.searchParams.set('agent_ids', agentIds.join(','))
       url.searchParams.set('start_date', startDate)
       url.searchParams.set('end_date', endDate)
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch production data')
+      return fetchWithCookies(url.toString(), 'Failed to fetch production data')
     },
     enabled: !!userId && agentIds.length > 0 && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.slow,
@@ -161,22 +154,15 @@ export function useScoreboardBillingCycleData(
   scope: 'agency' | 'downline' = 'agency',
   options?: { enabled?: boolean; staleTime?: number }
 ) {
-  const supabase = createClient()
-
   return useQuery<ScoreboardData, Error>({
     queryKey: queryKeys.scoreboardBillingCycle(userId || '', startDate, endDate, scope),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
-      const url = new URL(getDashboardEndpoint('scoreboardBillingCycle'))
+      const url = new URL('/api/dashboard/scoreboard-billing-cycle', window.location.origin)
       url.searchParams.set('start_date', startDate)
       url.searchParams.set('end_date', endDate)
       url.searchParams.set('scope', scope)
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch scoreboard billing cycle data')
+      return fetchWithCookies(url.toString(), 'Failed to fetch scoreboard billing cycle data')
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,

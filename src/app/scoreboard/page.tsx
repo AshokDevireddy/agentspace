@@ -64,7 +64,7 @@ const timeframeOptions = [
 ]
 
 export default function Scoreboard() {
-  const { user, userData, loading: authLoading } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const queryClient = useQueryClient()
 
   // SSR-safe hydration and date hooks
@@ -94,7 +94,7 @@ export default function Scoreboard() {
   }, [isHydrated, clientDate.month, clientDate.year])
 
   // Fetch agency default scoreboard start date using TanStack Query
-  const { data: agencySettings } = useAgencyScoreboardSettings(userData?.agency_id)
+  const { data: agencySettings } = useAgencyScoreboardSettings(user?.agency_id)
   const defaultScoreboardStartDate = agencySettings?.default_scoreboard_start_date ?? null
 
   // Calculate date range based on timeframe - SSR-safe using clientDate
@@ -597,7 +597,7 @@ export default function Scoreboard() {
       )}
 
       {/* Weekly Stats - Only show for admins (after hydration to avoid mismatch) */}
-      {isHydrated && userData?.role === 'admin' && (
+      {isHydrated && user?.role === 'admin' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="professional-card rounded-md">
             <CardContent className="p-6 text-center">

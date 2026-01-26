@@ -49,6 +49,8 @@ export interface NIPRAnalysisResult {
   savedToDatabase?: boolean
   /** Agency ID where carriers were saved */
   agencyId?: string
+  /** User ID where carriers were saved */
+  userId?: string
 }
 
 /** Result of the NIPR automation */

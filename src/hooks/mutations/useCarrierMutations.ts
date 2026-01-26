@@ -21,7 +21,7 @@ interface Carrier {
  */
 export function useRefreshCarriers() {
   return useAuthenticatedMutation<Carrier[], void>('/api/carriers', {
-    method: 'GET',
+    method: 'POST',
     invalidateKeys: [queryKeys.configurationCarriers(), queryKeys.carriers],
   })
 }

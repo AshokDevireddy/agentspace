@@ -4,11 +4,9 @@ import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { MonthRangePicker } from "@/components/ui/month-range-picker"
-import { createClient } from "@/lib/supabase/client"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { DollarSign, TrendingUp, TrendingDown, Calendar } from "lucide-react"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
-import { useApiFetch } from "@/hooks/useApiFetch"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
@@ -116,7 +114,6 @@ function LoadingSkeletonCard() {
 }
 
 export default function ExpectedPayoutsPage() {
-  const supabase = createClient()
   const queryClient = useQueryClient()
 
   // Get auth state - ensures Supabase client is ready before making queries
@@ -151,22 +148,23 @@ export default function ExpectedPayoutsPage() {
   const { data: userData, isPending: userLoading } = useQuery({
     queryKey: queryKeys.userProfile(),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
+      const response = await fetch('/api/users/me', {
+        method: 'GET',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
         throw new Error("Not authenticated")
       }
 
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error("No user found")
-
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, role, agency_id, subscription_tier')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      if (error) throw error
-      return data as UserData
+      const data = await response.json()
+      return {
+        id: data.id,
+        role: data.role,
+        agency_id: data.agency_id,
+        subscription_tier: data.subscription_tier,
+        auth_user_id: data.auth_user_id
+      } as UserData
     },
     // Only run query when auth is ready (authLoading is false)
     enabled: !authLoading && !!authUser,
@@ -197,35 +195,24 @@ export default function ExpectedPayoutsPage() {
     queryFn: async () => {
       if (!userData) return []
 
-      if (userData.role === 'admin') {
-        // Admin: Get all agents in agency
-        const { data, error } = await supabase
-          .from('users')
-          .select('id, first_name, last_name')
-          .eq('agency_id', userData.agency_id)
-          .in('role', ['agent', 'admin'])
-          .order('first_name')
+      // Use Django API for agents/downlines
+      const response = await fetch('/api/agents/downlines', {
+        method: 'GET',
+        credentials: 'include'
+      })
 
-        if (error) throw error
-        return data as AgentResponse[]
-      } else {
-        // Agent: Get self and downlines
-        const { data, error } = await supabase
-          .rpc('get_agent_downline', { agent_id: userData.id })
-
-        if (error) {
-          console.error('Error fetching downline:', error)
-          // Graceful fallback: fetch current user info only
-          const { data: selfData } = await supabase
-            .from('users')
-            .select('id, first_name, last_name')
-            .eq('id', userData.id)
-            .single()
-
-          return selfData ? [selfData] : []
-        }
-        return data as AgentResponse[]
+      if (!response.ok) {
+        console.error('Error fetching agents')
+        return []
       }
+
+      const data = await response.json()
+      // Map to expected format - backend returns agents with first_name, last_name
+      return (data.agents || data || []).map((agent: { id: string; first_name?: string; last_name?: string; name?: string }) => ({
+        id: agent.id,
+        first_name: agent.first_name || agent.name?.split(' ')[0] || '',
+        last_name: agent.last_name || agent.name?.split(' ').slice(1).join(' ') || ''
+      })) as AgentResponse[]
     },
     enabled: !!userData,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -240,13 +227,16 @@ export default function ExpectedPayoutsPage() {
   const { data: carriers = [] } = useQuery({
     queryKey: queryKeys.carriersList(),
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('carriers')
-        .select('id, name')
-        .order('name')
+      const response = await fetch('/api/carriers/names', {
+        method: 'GET',
+        credentials: 'include'
+      })
 
-      if (error) throw error
-      return data as CarrierResponse[]
+      if (!response.ok) {
+        throw new Error('Failed to fetch carriers')
+      }
+
+      return response.json() as Promise<CarrierResponse[]>
     },
     staleTime: 10 * 60 * 1000, // 10 minutes
   })
@@ -266,13 +256,6 @@ export default function ExpectedPayoutsPage() {
   } = useQuery({
     queryKey: queryKeys.expectedPayoutsData({ ...appliedFilters, agent: effectiveAgentId }),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        throw new Error("Not authenticated")
-      }
-
       const nowYear = clientDate.year
       const nowMonth = clientDate.month
 
@@ -294,9 +277,8 @@ export default function ExpectedPayoutsPage() {
       }
 
       const response = await fetch(`/api/expected-payouts?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
+        method: 'GET',
+        credentials: 'include'
       })
 
       if (!response.ok) {
@@ -324,20 +306,12 @@ export default function ExpectedPayoutsPage() {
   } = useQuery({
     queryKey: queryKeys.expectedPayoutsDebt(effectiveAgentId),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        throw new Error("Not authenticated")
-      }
-
       const params = new URLSearchParams()
       params.append('agent_id', effectiveAgentId)
 
       const response = await fetch(`/api/expected-payouts/debt?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
+        method: 'GET',
+        credentials: 'include'
       })
 
       if (!response.ok) {

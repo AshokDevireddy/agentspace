@@ -34,13 +34,13 @@ const supportedCarriers = [
 
 export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
   const { showSuccess, showError, showWarning } = useNotification()
-  const { userData } = useAuth()
+  const { user } = useAuth()
   const [policyReportFiles, setPolicyReportFiles] = useState<PolicyReportFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
 
   // Use centralized mutation hooks
   const createJobMutation = useCreatePolicyReportJob()
-  const signFilesMutation = useSignPolicyReportFiles({ agencyId: userData?.agency_id })
+  const signFilesMutation = useSignPolicyReportFiles({ agencyId: user?.agency_id ?? undefined })
 
   // Drag and drop handlers
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
@@ -117,7 +117,7 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
   const uploadMutation = useMutation({
     mutationFn: async (files: PolicyReportFile[]) => {
       // Use agency_id from AuthProvider (already cached)
-      const agencyId = userData?.agency_id
+      const agencyId = user?.agency_id
 
       if (!agencyId) {
         throw new Error('Could not resolve your agency. Please refresh and try again.')

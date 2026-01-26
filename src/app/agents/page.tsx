@@ -456,8 +456,8 @@ export default function Agents() {
           .eq('auth_user_id', user.id)
           .single()
 
-        if (userData?.position?.level !== undefined) {
-          userPositionLevel = userData.position.level
+        if (userData?.position?.[0]?.level !== undefined) {
+          userPositionLevel = userData.position[0].level
         }
 
         // Check if user is admin by role

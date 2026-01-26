@@ -67,7 +67,7 @@ const isDefaultColorForMode = (color: string, mode: 'light' | 'dark' | 'system' 
 }
 
 export default function Navigation() {
-  const { signOut, user, userData } = useAuth()
+  const { signOut, user } = useAuth()
   const pathname = usePathname()
   const { resolvedTheme } = useTheme()
   const queryClient = useQueryClient()
@@ -82,9 +82,9 @@ export default function Navigation() {
   const updateAgencyColorMutation = useUpdateAgencyColor()
 
   // Derive admin status and subscription tier from AuthProvider context
-  const isAdmin = userData?.is_admin || false
-  const subscriptionTier = userData?.subscription_tier || 'free'
-  const agencyId = userData?.agency_id || null
+  const isAdmin = user?.is_admin || false
+  const subscriptionTier = user?.subscription_tier || 'free'
+  const agencyId = user?.agency_id || null
 
   // Fetch agency branding with TanStack Query
   const { data: agencyData, isLoading: isLoadingAgency } = useQuery({

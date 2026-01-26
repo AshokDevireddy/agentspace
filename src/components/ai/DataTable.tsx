@@ -1,23 +1,43 @@
 'use client';
 
+type CellValue = string | number | boolean | null | undefined | Record<string, unknown>;
+
 interface Column {
   key: string;
   label: string;
-  format?: (value: any) => string;
+  format?: (value: CellValue) => string;
 }
+
+type RowData = Record<string, CellValue>;
 
 interface DataTableProps {
   title?: string;
   description?: string;
   columns: Column[];
-  data: any[];
+  data: RowData[];
   maxRows?: number;
+}
+
+interface AgentNameObject {
+  first_name: string;
+  last_name: string;
+}
+
+function isAgentNameObject(value: unknown): value is AgentNameObject {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'first_name' in value &&
+    'last_name' in value &&
+    typeof (value as AgentNameObject).first_name === 'string' &&
+    typeof (value as AgentNameObject).last_name === 'string'
+  );
 }
 
 export default function DataTable({ title, description, columns, data, maxRows = 10 }: DataTableProps) {
   const displayData = maxRows ? data.slice(0, maxRows) : data;
 
-  const formatValue = (value: any, format?: (value: any) => string) => {
+  const formatValue = (value: CellValue, format?: (value: CellValue) => string): string => {
     if (value === null || value === undefined) return '-';
     if (format) return format(value);
     if (typeof value === 'number') {
@@ -33,9 +53,9 @@ export default function DataTable({ title, description, columns, data, maxRows =
       return value.toLocaleString();
     }
     if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-    if (typeof value === 'object') {
+    if (typeof value === 'object' && value !== null) {
       // Handle nested objects (like agent names)
-      if (value.first_name && value.last_name) {
+      if (isAgentNameObject(value)) {
         return `${value.first_name} ${value.last_name}`;
       }
       return JSON.stringify(value);

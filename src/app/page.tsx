@@ -10,8 +10,8 @@ import { useAuth } from "@/providers/AuthProvider"
 import OnboardingWizard from "@/components/onboarding/OnboardingWizard"
 import type { UserData as OnboardingUserData } from "@/components/onboarding/types"
 import { useTour } from "@/contexts/onboarding-tour-context"
+import type { ApiResponse, UserProfile, CarrierActive, PieChartEntry, LeaderboardProducer, DashboardData, DealsSummary } from "@/types"
 import { useApiFetch } from "@/hooks/useApiFetch"
-import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
 import { useDashboardSummary, useScoreboardData, useProductionData } from "@/hooks/useDashboardData"
 import { useCompleteOnboarding } from "@/hooks/mutations"
 import { useQueryClient } from "@tanstack/react-query"
@@ -22,11 +22,11 @@ import Link from "next/link"
 import { useWeekDateRange } from "@/hooks/useClientDate"
 import { useLocalStorage } from "@/hooks/useLocalStorage"
 import { useHydrated } from "@/hooks/useHydrated"
-
-const PIE_CHART_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347', '#d084d0', '#84d0d0', '#d0d084'] as const
+import { getYTDDateRange, getMTDDateRange } from "@/lib/date-utils"
+import { PIE_CHART_COLORS, PIE_CHART_GROUP_THRESHOLD } from "@/lib/chart-colors"
 
 export default function Home() {
-  const { user, loading: authLoading, refreshUserData } = useAuth()
+  const { user, loading: authLoading, refreshUser } = useAuth()
   const { startTour, setUserRole, isTourActive } = useTour()
   const [showWizard, setShowWizard] = useState(false)
   const [hasStartedTour, setHasStartedTour] = useState(false)
@@ -40,12 +40,12 @@ export default function Home() {
   const queryClient = useQueryClient()
   const completeOnboardingMutation = useCompleteOnboarding()
 
-  const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useApiFetch<any>(
+  const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useApiFetch<ApiResponse<UserProfile>>(
     queryKeys.userProfile(user?.id),
     `/api/user/profile?user_id=${user?.id}`,
     {
       enabled: !!user?.id,
-      placeholderData: (previousData: any) => previousData,
+      placeholderData: (previousData) => previousData,
     }
   )
 
@@ -68,15 +68,9 @@ export default function Home() {
 
   // Calculate YTD/MTD date ranges for production and top producers
   const productionDateRanges = useMemo(() => {
-    const today = new Date()
-    const year = today.getFullYear()
-    const month = String(today.getMonth() + 1).padStart(2, '0')
-    const day = String(today.getDate()).padStart(2, '0')
-    const todayStr = `${year}-${month}-${day}`
-
     return {
-      ytd: { start: `${year}-01-01`, end: todayStr },
-      mtd: { start: `${year}-${month}-01`, end: todayStr }
+      ytd: getYTDDateRange(),
+      mtd: getMTDDateRange()
     }
   }, [])
 
@@ -140,7 +134,7 @@ export default function Home() {
   const queryError = dashboardError || scoreboardError || profileError
 
   const userData = profileData?.success ? profileData.data : null
-  const firstName = userData?.firstName || user?.user_metadata?.first_name || 'User'
+  const firstName = userData?.firstName || 'User'
 
   useEffect(() => {
     if (userData) {
@@ -158,7 +152,7 @@ export default function Home() {
   const topProducersData = topProducersResult?.success ? topProducersResult.data : null
   const topProducers: { rank: number; name: string; amount: string }[] = useMemo(() => {
     if (!topProducersData?.leaderboard) return []
-    return topProducersData.leaderboard.slice(0, 5).map((producer: { rank: number; name: string; total: number }) => ({
+    return topProducersData.leaderboard.slice(0, 5).map((producer: LeaderboardProducer) => ({
       rank: producer.rank,
       name: producer.name,
       amount: `$${producer.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -189,7 +183,7 @@ export default function Home() {
     completeOnboardingMutation.mutate(undefined, {
       onSuccess: async () => {
         // Refresh AuthProvider state so client-layout shows sidebar immediately
-        await refreshUserData()
+        await refreshUser()
         // Invalidate all user-related queries to refresh state
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: queryKeys.user }),
@@ -223,7 +217,7 @@ export default function Home() {
     return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
   }, [dateRange])
 
-  const currentData = useMemo(() => {
+  const currentData = useMemo((): DealsSummary | DashboardData | null => {
     if (dashboardData?.your_deals || dashboardData?.downline_production) {
       return viewMode === 'just_me' ? dashboardData?.your_deals : dashboardData?.downline_production
     }
@@ -232,22 +226,21 @@ export default function Home() {
 
   const pieChartData = useMemo(() => {
     if (!currentData?.carriers_active) return []
-    const totalPolicies = currentData.carriers_active.reduce((sum: number, carrier: any) => sum + carrier.active_policies, 0)
-    const GROUP_THRESHOLD = 4
+    const totalPolicies = currentData.carriers_active.reduce((sum: number, carrier: CarrierActive) => sum + carrier.active_policies, 0)
 
-    const largeCarriers: any[] = []
-    const smallCarriers: any[] = []
+    const largeCarriers: PieChartEntry[] = []
+    const smallCarriers: PieChartEntry[] = []
 
-    currentData.carriers_active.forEach((carrier: any, index: number) => {
+    currentData.carriers_active.forEach((carrier: CarrierActive, index: number) => {
       const percentage = (carrier.active_policies / totalPolicies) * 100
-      const carrierData = {
+      const carrierData: PieChartEntry = {
         name: carrier.carrier,
         value: carrier.active_policies,
         percentage: percentage.toFixed(1),
         fill: PIE_CHART_COLORS[index % PIE_CHART_COLORS.length],
         showLabel: true
       }
-      if (percentage >= GROUP_THRESHOLD) {
+      if (percentage >= PIE_CHART_GROUP_THRESHOLD) {
         largeCarriers.push(carrierData)
       } else {
         smallCarriers.push(carrierData)
@@ -273,7 +266,15 @@ export default function Home() {
     return largeCarriers
   }, [currentData])
 
-  const renderCustomLabel = useCallback((props: any) => {
+  interface PieLabelProps {
+    cx: number
+    cy: number
+    x: number
+    y: number
+    payload: PieChartEntry
+  }
+
+  const renderCustomLabel = useCallback((props: PieLabelProps) => {
     const { cx, cy, x, y, payload } = props
     if (x === undefined || y === undefined || !payload) return null
     const { name, percentage, fill } = payload
@@ -350,7 +351,7 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {(dashboardData?.totals?.pending_positions || dashboardData?.pending_positions) > 0 && (
+            {(dashboardData?.totals?.pending_positions || 0) > 0 && (
               <Link href="/agents?tab=pending-positions" className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
                 <AlertCircle className="h-5 w-5" />
                 <span className="font-semibold">Pending Positions</span>
@@ -532,19 +533,19 @@ export default function Home() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={pieChartData} cx="50%" cy="50%" labelLine={false} label={renderCustomLabel} outerRadius={100} dataKey="value" animationDuration={800}>
-                      {pieChartData.map((entry: any, index: number) => (
+                      {pieChartData.map((entry: PieChartEntry, index: number) => (
                         <Cell key={`cell-${index}`} fill={entry.fill} />
                       ))}
                     </Pie>
                     <Tooltip content={({ active, payload }) => {
                       if (!active || !payload?.[0]) return null
-                      const data = payload[0].payload
-                      if (data?.isOthers && data?.originalCarriers?.length > 0) {
+                      const data = payload[0].payload as PieChartEntry
+                      if (data?.isOthers && data?.originalCarriers && data.originalCarriers.length > 0) {
                         return (
                           <div style={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', padding: '12px', color: 'hsl(var(--foreground))' }}>
                             <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Others: {data.value} policies ({data.percentage}%)</div>
                             <div style={{ borderTop: '1px solid hsl(var(--border))', paddingTop: '8px', fontSize: '12px' }}>
-                              {data.originalCarriers.map((carrier: any, idx: number) => (
+                              {data.originalCarriers.map((carrier, idx: number) => (
                                 <div key={idx} style={{ padding: '4px 0', display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
                                   <span>{carrier.name}:</span>
                                   <span>{carrier.value} ({carrier.percentage}%)</span>

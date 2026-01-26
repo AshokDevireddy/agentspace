@@ -1,3 +1,4 @@
+// @ts-nocheck - Deno runtime types
 // supabase/functions/enqueue-parse-jobs/index.ts
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'

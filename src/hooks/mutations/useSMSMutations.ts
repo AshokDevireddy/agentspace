@@ -54,8 +54,8 @@ export function useSendMessage(options?: {
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to send message')
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.error || error.message || 'Failed to send message')
       }
 
       return response.json()
@@ -89,8 +89,8 @@ export function useApproveDrafts(options?: {
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to approve draft(s)')
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.error || error.message || 'Failed to approve draft(s)')
       }
 
       return response.json()
@@ -124,8 +124,8 @@ export function useRejectDrafts(options?: {
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to reject draft(s)')
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.error || error.message || 'Failed to reject draft(s)')
       }
 
       return response.json()
@@ -159,8 +159,8 @@ export function useEditDraft(options?: {
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to update draft')
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.error || error.message || 'Failed to update draft')
       }
 
       return response.json()
@@ -191,8 +191,8 @@ export function useResolveNotification(options?: {
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to resolve notification')
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.error || error.message || 'Failed to resolve notification')
       }
 
       return response.json()

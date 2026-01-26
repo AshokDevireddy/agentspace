@@ -6,6 +6,7 @@ import { createServerClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import Papa from 'papaparse'  // For CSV parsing
 import * as XLSX from 'xlsx'  // For Excel parsing
+import { normalizePhoneForStorage } from '@/lib/telnyx'
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -580,33 +581,27 @@ function normalizePaymentFrequency(mode: string): string | null {
 
 /**
  * AMAM: Processes phone number - removes dashes and converts to number
+ * Uses centralized phone normalization from telnyx.ts
  *
  * @param phone - Phone number string from AMAM CSV
  * @returns string | null - Cleaned phone number with only digits
  */
 function processAMAMPhoneNumber(phone: string): string | null {
   if (!phone || phone.trim() === '') return null
-
-  // Remove all non-numeric characters (dashes, spaces, parentheses, etc.)
-  const cleanedPhone = phone.replace(/\D/g, '')
-
-  // Return null if no digits found
+  const cleanedPhone = normalizePhoneForStorage(phone)
   return cleanedPhone.length > 0 ? cleanedPhone : null
 }
 
 /**
  * Standardizes phone number - removes all non-numeric characters
+ * Uses centralized phone normalization from telnyx.ts
  *
  * @param phone - Phone number string
  * @returns string | null - Cleaned phone number with only digits
  */
 function standardizePhoneNumber(phone: string): string | null {
   if (!phone || phone.trim() === '') return null
-
-  // Remove all non-numeric characters (dashes, spaces, parentheses, etc.)
-  const cleanedPhone = phone.replace(/\D/g, '')
-
-  // Return null if no digits found
+  const cleanedPhone = normalizePhoneForStorage(phone)
   return cleanedPhone.length > 0 ? cleanedPhone : null
 }
 
@@ -629,25 +624,19 @@ function standardizeEmail(email: string): string | null {
  * @returns string - Cleaned value
  */
 function cleanCSVValue(value: string): string {
-  console.log(`Original CSV value: "${value}"`)
-
   if (!value || value.trim() === '') {
-    console.log('Value is empty, returning empty string')
     return ''
   }
 
   const trimmedValue = value.trim()
-  console.log(`Trimmed value: "${trimmedValue}"`)
 
   // Handle CSV format like =("0110097180")
   if (trimmedValue.match(/^=\("([^"]+)"\)$/)) {
     const match = trimmedValue.match(/^=\("([^"]+)"\)$/)
     const extractedValue = match ? match[1] : ''
-    console.log(`Extracted value from CSV =("...") format: "${extractedValue}"`)
     return extractedValue
   }
 
-  console.log(`Returning original value: "${trimmedValue}"`)
   return trimmedValue
 }
 
@@ -707,7 +696,6 @@ async function parseAMAMCSVToPolicyReports(
         const missingFields = requiredFields.filter(field => !record[field as keyof AMAMPolicyData] || record[field as keyof AMAMPolicyData].toString().trim() === '')
 
         if (missingFields.length > 0) {
-          console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
         }
 
@@ -985,7 +973,6 @@ async function parseRNACSVToPolicyReports(
         const missingFields = requiredFields.filter(field => !record[field as keyof RNAPolicyData] || record[field as keyof RNAPolicyData].toString().trim() === '')
 
         if (missingFields.length > 0) {
-          console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
         }
 
@@ -1216,7 +1203,6 @@ async function parseCombinedCSVToPolicyReports(
         const missingFields = requiredFields.filter(field => !record[field as keyof CombinedPolicyData] || record[field as keyof CombinedPolicyData].toString().trim() === '')
 
         if (missingFields.length > 0) {
-          console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
         }
 
@@ -1565,6 +1551,7 @@ function buildAHLClientAddress(
 
 /**
  * AHL: Processes phone number - removes spaces, parentheses, and other non-numeric characters
+ * Uses centralized phone normalization from telnyx.ts
  *
  * @param phone - Phone number string
  * @returns string | null - Cleaned phone number with only digits
@@ -1573,11 +1560,7 @@ function processAHLPhoneNumber(phone: any): string | null {
   if (phone == null) return null
   const phoneStr = String(phone)
   if (phoneStr.trim() === '') return null
-
-  // Remove all non-numeric characters (spaces, parentheses, dashes, etc.)
-  const cleanedPhone = phoneStr.replace(/\D/g, '')
-
-  // Return null if no digits found
+  const cleanedPhone = normalizePhoneForStorage(phoneStr)
   return cleanedPhone.length > 0 ? cleanedPhone : null
 }
 
@@ -1689,7 +1672,6 @@ async function parseAHLExcelToPolicyReports(
         const missingFields = requiredFields.filter(field => !record[field] || record[field].toString().trim() === '')
 
         if (missingFields.length > 0) {
-          console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
         }
 
@@ -2167,7 +2149,6 @@ async function parseAflacExcelToPolicyReports(
         const missingFields = requiredFields.filter(field => !record[field] || record[field].toString().trim() === '')
 
         if (missingFields.length > 0) {
-          console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
         }
 
@@ -2645,7 +2626,6 @@ async function parseAetnaExcelToPolicyReports(
         const missingFields = requiredFields.filter(field => !record[field] || record[field].toString().trim() === '')
 
         if (missingFields.length > 0) {
-          console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
         }
 
@@ -2929,7 +2909,6 @@ async function parseLBLCSVToPolicyReports(
         const missingFields = requiredFields.filter(field => !record[field as keyof LBLPolicyData] || record[field as keyof LBLPolicyData].toString().trim() === '')
 
         if (missingFields.length > 0) {
-          console.log(`Row ${i + 1} missing required fields: ${missingFields.join(', ')}`, record)
           continue // Skip this row but continue processing others
         }
 
@@ -3018,7 +2997,6 @@ async function processCSVUploads(
       let policyReports: PolicyReportStaging[] = []
 
       // Add detailed logging for debugging carrier matching
-      console.log(`Processing upload - Original carrier: "${upload.carrier}", Lowercase: "${carrierLower}", File: "${upload.file.name}"`)
 
       if (carrierLower === 'american amicable' || carrierLower === 'amam') {
         // Read CSV file content for AMAM
@@ -3031,7 +3009,6 @@ async function processCSVUploads(
           continue
         }
 
-        console.log(`Successfully processed ${policyReports.length} AMAM records for carrier ${upload.carrier}`)
 
       } else if (carrierLower === 'royal neighbors' || carrierLower === 'rna') {
         // Read CSV file content for RNA
@@ -3044,13 +3021,11 @@ async function processCSVUploads(
           continue
         }
 
-        console.log(`Successfully processed ${policyReports.length} RNA records for carrier ${upload.carrier}`)
 
       } else if (carrierLower === 'combined' || carrierLower.includes('combined')) {
         // Read CSV file content for Combined
         const csvContent = await upload.file.text()
         // Parse Combined CSV to policy reports
-        console.log(`Matched Combined carrier: "${upload.carrier}"`)
         policyReports = await parseCombinedCSVToPolicyReports(csvContent, upload.carrier, agencyId)
 
         if (policyReports.length === 0) {
@@ -3058,11 +3033,9 @@ async function processCSVUploads(
           continue
         }
 
-        console.log(`Successfully processed ${policyReports.length} Combined records for carrier ${upload.carrier}`)
 
       } else if (carrierLower === 'american home life' || carrierLower === 'ahl') {
         // Parse AHL Excel to policy reports
-        console.log(`Matched AHL carrier: "${upload.carrier}"`)
 
         // Convert file to buffer for Excel processing
         const excelBuffer = Buffer.from(await upload.file.arrayBuffer())
@@ -3073,11 +3046,9 @@ async function processCSVUploads(
           continue
         }
 
-        console.log(`Successfully processed ${policyReports.length} AHL records for carrier ${upload.carrier}`)
 
       } else if (carrierLower === 'aflac') {
         // Parse Aflac Excel to policy reports
-        console.log(`Matched Aflac carrier: "${upload.carrier}"`)
 
         // Convert file to buffer for Excel processing
         const excelBuffer = Buffer.from(await upload.file.arrayBuffer())
@@ -3088,11 +3059,9 @@ async function processCSVUploads(
           continue
         }
 
-        console.log(`Successfully processed ${policyReports.length} Aflac records for carrier ${upload.carrier}`)
 
       } else if (carrierLower === 'aetna') {
         // Parse Aetna Excel to policy reports
-        console.log(`Matched Aetna carrier: "${upload.carrier}"`)
 
         // Convert file to buffer for Excel processing
         const excelBuffer = Buffer.from(await upload.file.arrayBuffer())
@@ -3103,11 +3072,9 @@ async function processCSVUploads(
           continue
         }
 
-        console.log(`Successfully processed ${policyReports.length} Aetna records for carrier ${upload.carrier}`)
 
       } else if (carrierLower === 'liberty bankers life' || carrierLower === 'lbl' || carrierLower.includes('liberty bankers')) {
         // Read CSV file content for LBL
-        console.log(`Matched LBL carrier: "${upload.carrier}"`)
         const csvContent = await upload.file.text()
         // Parse LBL CSV to policy reports
         policyReports = await parseLBLCSVToPolicyReports(csvContent, upload.carrier, agencyId)
@@ -3117,10 +3084,8 @@ async function processCSVUploads(
           continue
         }
 
-        console.log(`Successfully processed ${policyReports.length} LBL records for carrier ${upload.carrier}`)
 
       } else {
-        console.log(`No carrier match found for: "${upload.carrier}" (lowercase: "${carrierLower}")`)
         errors.push(`${upload.carrier}: Only American Amicable (AMAM), Royal Neighbors (RNA), Combined, American Home Life (AHL), Aflac, Aetna, and Liberty Bankers Life (LBL) policy reports are currently supported for staging`)
         continue
       }
@@ -3179,26 +3144,21 @@ export async function POST(request: NextRequest) {
     const uploads: Array<{carrier: string, file: File}> = []
 
     // Extract files from form data
-    console.log('Extracting files from form data...')
     for (const [key, value] of formData.entries()) {
-      console.log(`Form field: "${key}", Value type: ${typeof value}, Is File: ${value instanceof File}`)
       if (value instanceof File && value.size > 0) {
         // Extract carrier name from the key (assuming format like "carrier_Aetna")
         const carrierMatch = key.match(/carrier_(.+)/)
         if (carrierMatch) {
           const extractedCarrier = carrierMatch[1]
-          console.log(`Extracted carrier: "${extractedCarrier}" from field: "${key}"`)
           uploads.push({
             carrier: extractedCarrier,
             file: value
           })
         } else {
-          console.log(`No carrier match found for field: "${key}"`)
         }
       }
     }
 
-    console.log(`Found ${uploads.length} uploads:`, uploads.map(u => ({ carrier: u.carrier, fileName: u.file.name })))
 
     // Check if any files were uploaded
     if (uploads.length === 0) {
@@ -3219,7 +3179,6 @@ export async function POST(request: NextRequest) {
     let orchestrationResult = null
     if (totalRecordsInserted > 0) {
       try {
-        console.log(`Triggering orchestrate_policy_report_ingest_with_agency_id RPC function for agency ${agencyId} with ${totalRecordsInserted} records`)
 
         const { data: orchestrationData, error: orchestrationError } = await supabase
           .rpc('orchestrate_policy_report_ingest_with_agency_id', {
@@ -3233,7 +3192,6 @@ export async function POST(request: NextRequest) {
             error: orchestrationError.message
           }
         } else {
-          console.log('Successfully executed orchestrate_policy_report_ingest_with_agency_id RPC:', orchestrationData)
           orchestrationResult = {
             success: true,
             data: orchestrationData
@@ -3247,7 +3205,6 @@ export async function POST(request: NextRequest) {
         }
       }
     } else {
-      console.log('Skipping orchestrate_policy_report_ingest_with_agency_id RPC - no successful uploads or no records inserted')
     }
 
     // Prepare response

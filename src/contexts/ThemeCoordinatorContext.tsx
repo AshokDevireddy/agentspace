@@ -22,7 +22,7 @@ const DEFAULT_USER_THEME = 'system'
 const CLIENT_THEME = 'light'
 
 export function ThemeCoordinator({ children }: { children: React.ReactNode }) {
-  const { user, userData } = useAuth()
+  const { user } = useAuth()
   const { setTheme } = useTheme()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const pathname = usePathname()
@@ -42,8 +42,8 @@ export function ThemeCoordinator({ children }: { children: React.ReactNode }) {
 
     if (isAuthPage) {
       newTheme = (isWhiteLabel && branding?.theme_mode) ? branding.theme_mode : DEFAULT_AUTH_THEME
-    } else if (user && userData) {
-      newTheme = userData.role === 'client' ? CLIENT_THEME : (userData.theme_mode || DEFAULT_USER_THEME)
+    } else if (user) {
+      newTheme = user.role === 'client' ? CLIENT_THEME : (user.theme_mode || DEFAULT_USER_THEME)
     }
 
     if (!newTheme || lastAppliedTheme.current === newTheme) return
@@ -57,7 +57,7 @@ export function ThemeCoordinator({ children }: { children: React.ReactNode }) {
       lastAppliedTheme.current = newTheme
       themeDebounceTimeout.current = null
     }, THEME_DEBOUNCE_MS)
-  }, [user, userData, brandingLoading, branding, isWhiteLabel, isAuthPage, setTheme])
+  }, [user, brandingLoading, branding, isWhiteLabel, isAuthPage, setTheme])
 
   useEffect(() => {
     return () => {

@@ -1,3 +1,4 @@
+// @ts-nocheck - Deno runtime types
 // supabase/functions/send-lapse-notification/index.ts
 // Triggered by database trigger when a deal's status matches a lapse status in status_mapping
 // Uses staged notification system:

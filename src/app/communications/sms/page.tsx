@@ -191,7 +191,6 @@ function SMSMessagingPageContent() {
       const userTier = userData?.subscription_tier || 'free'
       const currentUserId = userData?.id || null
 
-      console.log('🔐 Admin status:', isAdmin, 'Tier:', userTier)
 
       return { isAdmin, userTier, currentUserId }
     },
@@ -384,11 +383,9 @@ function SMSMessagingPageContent() {
   // Subscribe to real-time updates - Global subscription for all conversations
   useEffect(() => {
     if (!user?.id) {
-      console.log('⚠️ Skipping real-time setup - no user')
       return
     }
 
-    console.log('🔔 Setting up global real-time subscription for all conversations')
 
     // Create a unique channel name based on user ID
     const channelName = `realtime-sms-all-${user.id}`
@@ -407,13 +404,11 @@ function SMSMessagingPageContent() {
           table: 'messages',
         },
         (payload) => {
-          console.log('📨 New message in any conversation:', payload.new)
           const newMessage = payload.new as Message
 
           // Event deduplication - prevent double-processing
           const eventKey = `global-${newMessage.id}-INSERT`
           if (processedEventsRef.current.has(eventKey)) {
-            console.log('🔄 Skipping duplicate global event:', eventKey)
             return
           }
           processedEventsRef.current.add(eventKey)
@@ -431,9 +426,7 @@ function SMSMessagingPageContent() {
         }
       )
       .subscribe((status, err) => {
-        console.log('🔌 Global real-time channel status:', status)
         if (status === 'SUBSCRIBED') {
-          console.log('✅ Successfully subscribed to global real-time updates!')
         } else if (status === 'CHANNEL_ERROR') {
           console.error('❌ Channel error:', err)
         }
@@ -441,7 +434,6 @@ function SMSMessagingPageContent() {
 
     // Cleanup on unmount
     return () => {
-      console.log('🔕 Cleaning up global real-time subscription')
       supabase.removeChannel(allConversationsChannel)
     }
   }, [user?.id]) // Removed selectedConversation?.id - using ref instead to avoid re-subscriptions
@@ -449,11 +441,9 @@ function SMSMessagingPageContent() {
   // Subscribe to real-time updates - Only for the selected conversation
   useEffect(() => {
     if (!user?.id || !selectedConversation) {
-      console.log('⚠️ Skipping conversation-specific real-time setup - no conversation selected')
       return
     }
 
-    console.log('🔔 Setting up real-time subscriptions for conversation:', selectedConversation.id)
 
     // Create a unique channel name based on user ID and conversation ID
     const channelName = `realtime-sms-${user.id}-${selectedConversation.id}`
@@ -473,19 +463,16 @@ function SMSMessagingPageContent() {
           filter: `conversation_id=eq.${selectedConversation.id}`,
         },
         (payload) => {
-          console.log('📨 New message received via real-time:', payload.new)
           const newMessage = payload.new as Message
 
           // Event deduplication - prevent double-processing
           const eventKey = `specific-${newMessage.id}-INSERT`
           if (processedEventsRef.current.has(eventKey)) {
-            console.log('🔄 Skipping duplicate specific event:', eventKey)
             return
           }
           processedEventsRef.current.add(eventKey)
           setTimeout(() => processedEventsRef.current.delete(eventKey), DEDUP_WINDOW_MS)
 
-          console.log('✅ Message belongs to current conversation - invalidating queries')
 
           // Invalidate messages query to refetch
           queryClient.invalidateQueries({ queryKey: queryKeys.messages(selectedConversation.id) })
@@ -516,7 +503,6 @@ function SMSMessagingPageContent() {
                   .update({ read_at: new Date().toISOString() })
                   .eq('id', messageId)
                   .is('read_at', null)
-                console.log('✅ Marked message as read')
 
                 // Invalidate conversations to update unread count
                 // Get fresh filter values at the time of invalidation
@@ -541,7 +527,6 @@ function SMSMessagingPageContent() {
           filter: `conversation_id=eq.${selectedConversation.id}`,
         },
         (payload) => {
-          console.log('📝 Message updated:', payload.new)
           // Invalidate messages query to refetch and re-sort
           queryClient.invalidateQueries({ queryKey: queryKeys.messages(selectedConversation.id) })
         }
@@ -555,7 +540,6 @@ function SMSMessagingPageContent() {
           filter: `id=eq.${selectedConversation.id}`,
         },
         (payload) => {
-          console.log('🔄 Current conversation updated:', payload)
           // Invalidate conversations list to update opt-in/opt-out status
           // Use filtersRef.current to get fresh filter values and avoid stale closures
           const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
@@ -563,21 +547,17 @@ function SMSMessagingPageContent() {
         }
       )
       .subscribe((status, err) => {
-        console.log('🔌 Real-time channel status:', status)
         if (status === 'SUBSCRIBED') {
-          console.log('✅ Successfully subscribed to real-time updates!')
         } else if (status === 'CHANNEL_ERROR') {
           console.error('❌ Channel error:', err)
         } else if (status === 'TIMED_OUT') {
           console.error('⏱️ Channel subscription timed out')
         } else if (status === 'CLOSED') {
-          console.log('🔒 Channel closed')
         }
       })
 
     // Cleanup on unmount or conversation change
     return () => {
-      console.log('🔕 Cleaning up real-time subscription')
       if (conversationRefreshTimeoutRef.current) {
         clearTimeout(conversationRefreshTimeoutRef.current)
       }
@@ -804,7 +784,6 @@ function SMSMessagingPageContent() {
       if (currentConversationId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
       }
-      console.log('✅ Draft approved successfully')
     },
     onError: (error: Error) => {
       console.error('Error approving draft:', error)
@@ -824,7 +803,6 @@ function SMSMessagingPageContent() {
       if (currentConversationId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
       }
-      console.log('✅ Draft rejected successfully')
     },
     onError: (error: Error) => {
       console.error('Error rejecting draft:', error)
@@ -856,7 +834,6 @@ function SMSMessagingPageContent() {
       }
       setEditingDraftId(null)
       setEditingDraftBody("")
-      console.log('✅ Draft updated successfully')
     },
     onError: (error: Error) => {
       console.error('Error updating draft:', error)
@@ -1249,15 +1226,6 @@ function SMSMessagingPageContent() {
 
             {/* Message Input */}
             <div className="p-4 bg-card border-t border-border">
-              {(() => {
-                console.log('🔍 Message input check:', {
-                  currentUserId,
-                  conversationAgentId: selectedConversation.agentId,
-                  matches: selectedConversation.agentId === currentUserId,
-                  shouldBlock: currentUserId && selectedConversation.agentId !== currentUserId
-                })
-                return null
-              })()}
               {currentUserId && selectedConversation.agentId !== currentUserId ? (
                 <div className="flex items-center justify-center p-4 bg-muted/50 rounded-lg border border-border">
                   <p className="text-sm text-muted-foreground text-center">

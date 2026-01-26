@@ -12,7 +12,7 @@ type MutationMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 /** Default mutation timeout in milliseconds */
 const DEFAULT_MUTATION_TIMEOUT = 30000 // 30 seconds
 
-interface ApiMutationOptions<TData, TVariables> {
+interface ApiMutationOptions<TData, TVariables, TContext = unknown> {
   /** HTTP method */
   method?: MutationMethod
   /** Static query keys to invalidate on success */
@@ -22,7 +22,7 @@ interface ApiMutationOptions<TData, TVariables> {
   /** Request timeout in milliseconds (default: 30000) */
   timeout?: number
   /** Additional mutation options */
-  options?: Omit<UseMutationOptions<TData, Error, TVariables>, 'mutationFn'>
+  options?: Omit<UseMutationOptions<TData, Error, TVariables, TContext>, 'mutationFn'>
 }
 
 /**
@@ -77,14 +77,14 @@ async function parseResponseBody<T>(response: Response): Promise<T> {
  * @param urlOrFn - API endpoint URL or function that returns URL based on variables
  * @param config - Configuration options
  */
-export function useApiMutation<TData = unknown, TVariables = unknown>(
+export function useApiMutation<TData = unknown, TVariables = unknown, TContext = unknown>(
   urlOrFn: string | ((variables: TVariables) => string),
-  config: ApiMutationOptions<TData, TVariables> = {}
+  config: ApiMutationOptions<TData, TVariables, TContext> = {}
 ) {
   const queryClient = useQueryClient()
   const { method = 'POST', invalidateKeys = [], getInvalidateKeys, timeout, options = {} } = config
 
-  return useMutation<TData, Error, TVariables>({
+  return useMutation<TData, Error, TVariables, TContext>({
     mutationFn: async (variables) => {
       const url = typeof urlOrFn === 'function' ? urlOrFn(variables) : urlOrFn
 
@@ -107,7 +107,7 @@ export function useApiMutation<TData = unknown, TVariables = unknown>(
 
       return parseResponseBody<TData>(response)
     },
-    onSuccess: (data, variables, context) => {
+    onSuccess: (data, variables, context, mutation) => {
       // Invalidate static query keys
       invalidateKeys.forEach((key) => {
         queryClient.invalidateQueries({ queryKey: [...key] })
@@ -122,23 +122,27 @@ export function useApiMutation<TData = unknown, TVariables = unknown>(
       }
 
       // Call user's onSuccess if provided
-      options.onSuccess?.(data, variables, context)
+      if (options.onSuccess) {
+        options.onSuccess(data, variables, context, mutation)
+      }
     },
-    ...options,
+    onError: options.onError,
+    onMutate: options.onMutate,
+    onSettled: options.onSettled,
   })
 }
 
 /**
  * Mutation hook for form data (file uploads, etc.)
  */
-export function useFormDataMutation<TData = unknown, TVariables extends FormData = FormData>(
+export function useFormDataMutation<TData = unknown, TVariables extends FormData = FormData, TContext = unknown>(
   url: string,
-  config: Omit<ApiMutationOptions<TData, TVariables>, 'method'> & { method?: 'POST' | 'PUT' } = {}
+  config: Omit<ApiMutationOptions<TData, TVariables, TContext>, 'method'> & { method?: 'POST' | 'PUT' } = {}
 ) {
   const queryClient = useQueryClient()
   const { method = 'POST', invalidateKeys = [], timeout = 60000, options = {} } = config // 60s default for uploads
 
-  return useMutation<TData, Error, TVariables>({
+  return useMutation<TData, Error, TVariables, TContext>({
     mutationFn: async (formData) => {
       const response = await fetchWithTimeout(
         url,
@@ -157,13 +161,17 @@ export function useFormDataMutation<TData = unknown, TVariables extends FormData
 
       return parseResponseBody<TData>(response)
     },
-    onSuccess: (data, variables, context) => {
+    onSuccess: (data, variables, context, mutation) => {
       invalidateKeys.forEach((key) => {
         queryClient.invalidateQueries({ queryKey: [...key] })
       })
-      options.onSuccess?.(data, variables, context)
+      if (options.onSuccess) {
+        options.onSuccess(data, variables, context, mutation)
+      }
     },
-    ...options,
+    onError: options.onError,
+    onMutate: options.onMutate,
+    onSettled: options.onSettled,
   })
 }
 
@@ -173,7 +181,7 @@ export function useFormDataMutation<TData = unknown, TVariables extends FormData
  */
 export function useOptimisticMutation<TData, TVariables, TContext = { previousData: TData | undefined }>(
   urlOrFn: string | ((variables: TVariables) => string),
-  config: ApiMutationOptions<TData, TVariables> & {
+  config: ApiMutationOptions<TData, TVariables, TContext> & {
     /** Query key for the data being optimistically updated */
     queryKey: QueryKeyType
     /** Function to compute optimistic data */
@@ -206,7 +214,7 @@ export function useOptimisticMutation<TData, TVariables, TContext = { previousDa
 
       return parseResponseBody<TData>(response)
     },
-    onMutate: async (variables) => {
+    onMutate: async (variables): Promise<TContext> => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: [...queryKey] })
 
@@ -221,15 +229,20 @@ export function useOptimisticMutation<TData, TVariables, TContext = { previousDa
       // Return context with the snapshot
       return { previousData } as TContext
     },
-    onError: (_err, _variables, context) => {
+    onError: (err, variables, context) => {
       // Rollback on error
       if (context && typeof context === 'object' && 'previousData' in context) {
         queryClient.setQueryData([...queryKey], (context as { previousData: TData }).previousData)
       }
       // Invalidate to ensure consistency after error
       queryClient.invalidateQueries({ queryKey: [...queryKey] })
+
+      // Call user's onError if provided
+      if (options.onError) {
+        options.onError(err, variables, context, undefined as any)
+      }
     },
-    onSuccess: (data, variables, ctx) => {
+    onSuccess: (data, variables, context, mutation) => {
       // Update cache with actual server response (instead of invalidating)
       queryClient.setQueryData([...queryKey], data)
 
@@ -238,9 +251,11 @@ export function useOptimisticMutation<TData, TVariables, TContext = { previousDa
         queryClient.invalidateQueries({ queryKey: [...key] })
       })
 
-      options.onSuccess?.(data, variables, ctx)
+      if (options.onSuccess) {
+        options.onSuccess(data, variables, context, mutation)
+      }
     },
-    ...options,
+    onSettled: options.onSettled,
   })
 }
 
@@ -263,14 +278,14 @@ export function useInvalidateQueries() {
  * @param urlOrFn - API endpoint URL or function that returns URL based on variables
  * @param config - Configuration options
  */
-export function useAuthenticatedMutation<TData = unknown, TVariables = unknown>(
+export function useAuthenticatedMutation<TData = unknown, TVariables = unknown, TContext = unknown>(
   urlOrFn: string | ((variables: TVariables) => string),
-  config: ApiMutationOptions<TData, TVariables> = {}
+  config: ApiMutationOptions<TData, TVariables, TContext> = {}
 ) {
   const queryClient = useQueryClient()
   const { method = 'POST', invalidateKeys = [], getInvalidateKeys, timeout, options = {} } = config
 
-  return useMutation<TData, Error, TVariables>({
+  return useMutation<TData, Error, TVariables, TContext>({
     mutationFn: async (variables) => {
       // Dynamic import to avoid circular dependencies
       const { createClient } = await import('@/lib/supabase/client')
@@ -305,7 +320,7 @@ export function useAuthenticatedMutation<TData = unknown, TVariables = unknown>(
 
       return parseResponseBody<TData>(response)
     },
-    onSuccess: (data, variables, context) => {
+    onSuccess: (data, variables, context, mutation) => {
       // Invalidate static query keys
       invalidateKeys.forEach((key) => {
         queryClient.invalidateQueries({ queryKey: [...key] })
@@ -319,8 +334,12 @@ export function useAuthenticatedMutation<TData = unknown, TVariables = unknown>(
         })
       }
 
-      options.onSuccess?.(data, variables, context)
+      if (options.onSuccess) {
+        options.onSuccess(data, variables, context, mutation)
+      }
     },
-    ...options,
+    onError: options.onError,
+    onMutate: options.onMutate,
+    onSettled: options.onSettled,
   })
 }

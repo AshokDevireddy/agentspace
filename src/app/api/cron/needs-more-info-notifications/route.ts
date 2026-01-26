@@ -10,7 +10,6 @@ import { verifyCronRequest } from '@/lib/cron-auth';
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('Needs more info notifications cron started');
 
     // Verify this is a cron request
     const authResult = verifyCronRequest(request);
@@ -50,9 +49,6 @@ export async function GET(request: NextRequest) {
     for (const deal of deals) {
       try {
         console.log(`\n📋 Processing deal ${deal.deal_id} (${deal.client_name})`);
-        console.log(`  Agent: ${deal.agent_first_name} ${deal.agent_last_name} (ID: ${deal.agent_id})`);
-        console.log(`  Agent Tier: ${deal.agent_subscription_tier}`);
-        console.log(`  Agency: ${deal.agency_name}`);
         console.log(`  Messaging Enabled: ${deal.messaging_enabled}`);
 
         // Check if messaging is disabled for agency (RPC already filters, but double-check)

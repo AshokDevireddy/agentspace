@@ -7,6 +7,12 @@
 /** Purple color for cumulative values in charts */
 export const CUMULATIVE_COLOR = "#8b5cf6"
 
+/** Default pie chart colors for general use */
+export const PIE_CHART_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347', '#d084d0', '#84d0d0', '#d0d084'] as const
+
+/** Threshold percentage for grouping small pie chart segments into "Others" category */
+export const PIE_CHART_GROUP_THRESHOLD = 4
+
 /** Fixed age range colors - distinct and consistent */
 export const AGE_RANGE_COLORS: Record<string, string> = {
   "18-30": "#2563eb",   // Blue

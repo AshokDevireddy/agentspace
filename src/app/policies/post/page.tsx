@@ -8,12 +8,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { useAuth } from "@/providers/AuthProvider"
-import { createClient } from "@/lib/supabase/client"
 import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2, MapPin } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { formatPhoneInput, normalizePhoneForStorage } from "@/lib/telnyx"
 
 // Options are loaded dynamically from Supabase based on the user's agency
 
@@ -60,7 +60,6 @@ const STEPS = [
 export default function PostDeal() {
   const [formData, setFormData] = useState<typeof initialFormData>(initialFormData)
   const { user } = useAuth()
-  const supabase = createClient()
   const router = useRouter()
   const queryClient = useQueryClient()
   const { showSuccess, showError, showWarning } = useNotification()
@@ -122,19 +121,9 @@ export default function PostDeal() {
     queryFn: async () => {
       if (!user?.id) return null
 
-      // Safe to use getSession() here - only extracting access token for API auth, not using for client-side auth decisions
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        return null
-      }
-
       const response = await fetch('/api/agents/check-positions', {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
+        credentials: 'include'
       })
 
       if (response.ok) {
@@ -158,127 +147,37 @@ export default function PostDeal() {
   const hasAllPositions = positionCheckData?.has_all_positions ?? false
   const missingPositions = positionCheckData?.missing_positions ?? []
 
-  // Query: Load user's agency and initial options
+  // Query: Load user's agency and initial options via Django API
   const { data: agencyData } = useQuery({
     queryKey: queryKeys.agencyOptions(user?.id || ''),
     queryFn: async () => {
-      console.log('[PostDeal AgencyQuery] Starting agency data fetch')
-      console.log('[PostDeal AgencyQuery] User auth ID:', user?.id)
 
       if (!user?.id) {
-        console.log('[PostDeal AgencyQuery] No user ID, returning null')
         return null
       }
 
-      // Fetch the current user's agency_id
-      console.log('[PostDeal AgencyQuery] Querying users table with auth_user_id:', user.id)
-      console.log('[PostDeal AgencyQuery] Query: SELECT id, agency_id, is_admin, role FROM users WHERE auth_user_id =', user.id)
+      const response = await fetch('/api/deals/form-data', {
+        method: 'GET',
+        credentials: 'include'
+      })
 
-      const { data: currentUser, error: currentUserError } = await supabase
-        .from('users')
-        .select('id, agency_id, is_admin, role, first_name, last_name')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      console.log('[PostDeal AgencyQuery] Query result:', { currentUser, currentUserError })
-
-      if (currentUserError || !currentUser?.agency_id) {
-        console.error('[PostDeal AgencyQuery] Error or missing agency_id:', currentUserError)
+      if (!response.ok) {
+        console.error('[PostDeal AgencyQuery] Error fetching form data:', response.statusText)
         return null
       }
 
-      console.log('[PostDeal AgencyQuery] User found:', currentUser.id, 'Agency:', currentUser.agency_id)
+      const data = await response.json()
 
-      const agencyIdVal = currentUser.agency_id as string
-      const isAdminUser = Boolean(currentUser.is_admin || currentUser.role === 'admin')
-
-      // Load agency's lead sources and deactivated_post_a_deal flag
-      const { data: agencyData } = await supabase
-        .from('agencies')
-        .select('lead_sources, deactivated_post_a_deal')
-        .eq('id', agencyIdVal)
-        .single()
-
-      const leadSourceOptions = agencyData?.lead_sources
-        ? agencyData.lead_sources.map((source: string) => ({
-            value: source,
-            label: source
-          }))
-        : []
-
-      // Load carriers that have products for this agency
-      const { data: productsForAgency } = await supabase
-        .from('products')
-        .select('carrier_id, carriers(id, display_name, is_active)')
-        .eq('agency_id', agencyIdVal)
-        .eq('is_active', true)
-
-      const carrierMap = new Map<string, { id: string, display_name: string }>()
-      ;(productsForAgency || []).forEach((p: any) => {
-        const c = p.carriers
-        if (c && c.is_active !== false && !carrierMap.has(c.id)) {
-          carrierMap.set(c.id, { id: c.id, display_name: c.display_name })
-        }
-      })
-
-      // ============================================================================
-      // NIPR FILTERING REMOVED TEMPORARILY
-      // ============================================================================
-      // Previously, we filtered carriers by NIPR unique_carriers with fuzzy matching.
-      // This was causing issues where some users weren't seeing all their agency carriers.
-      // The NIPR filtering logic has been commented out below for future restoration.
-      //
-      // To restore NIPR filtering, uncomment the try-catch block below and remove
-      // the direct carriersOptions assignment.
-      // ============================================================================
-
-      /*
-      // NIPR FILTERING (COMMENTED OUT)
-      // Also fetch NIPR-filtered carriers and intersect
-      try {
-        const niprResponse = await fetch('/api/carriers?filter=nipr')
-        if (niprResponse.ok) {
-          const niprCarriers = await niprResponse.json()
-          if (Array.isArray(niprCarriers) && niprCarriers.length > 0) {
-            // Create a set of NIPR carrier IDs for quick lookup
-            const niprCarrierIds = new Set(niprCarriers.map((c: { id: string }) => c.id))
-            // Filter carrierMap to only include carriers that match NIPR
-            for (const [id] of carrierMap) {
-              if (!niprCarrierIds.has(id)) {
-                carrierMap.delete(id)
-              }
-            }
-          }
-          // If niprCarriers is empty, we don't filter (backwards compatibility)
-        }
-      } catch (err) {
-        console.error('Error fetching NIPR carriers:', err)
-        // Continue with unfiltered carriers on error
+      return {
+        userId: data.user_id,
+        agencyId: data.agency_id,
+        isAdminUser: data.is_admin,
+        leadSourceOptions: data.lead_sources || [],
+        carriersOptions: data.carriers || [],
+        userFirstName: data.user_first_name,
+        userLastName: data.user_last_name,
+        deactivatedPostADeal: data.deactivated_post_a_deal || false
       }
-      */
-
-      const carriersOptions = Array.from(carrierMap.values()).map(c => ({ value: c.id, label: c.display_name }))
-
-      const result = {
-        userId: currentUser.id,
-        agencyId: agencyIdVal,
-        isAdminUser,
-        leadSourceOptions,
-        carriersOptions,
-        userFirstName: currentUser.first_name,
-        userLastName: currentUser.last_name,
-        deactivatedPostADeal: agencyData?.deactivated_post_a_deal || false
-      }
-
-      console.log('[PostDeal AgencyQuery] Query complete, returning:', {
-        userId: result.userId,
-        agencyId: result.agencyId,
-        isAdminUser: result.isAdminUser,
-        leadSourcesCount: result.leadSourceOptions.length,
-        carriersCount: result.carriersOptions.length
-      })
-
-      return result
     },
     enabled: !!user?.id,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -293,7 +192,7 @@ export default function PostDeal() {
   const userLastName = agencyData?.userLastName ?? ''
   const deactivatedPostADeal = agencyData?.deactivatedPostADeal ?? false
 
-  // Query: Load products when carrier changes
+  // Query: Load products when carrier changes via Django API
   const { data: productsOptions = [], isFetching: isProductsFetching } = useQuery({
     queryKey: queryKeys.productsByCarrier(agencyId || '', formData.carrierId),
     queryFn: async () => {
@@ -301,15 +200,17 @@ export default function PostDeal() {
         return []
       }
 
-      const { data: products } = await supabase
-        .from('products')
-        .select('id, name, is_active')
-        .eq('agency_id', agencyId)
-        .eq('carrier_id', formData.carrierId)
-        .eq('is_active', true)
-        .order('name')
+      const response = await fetch(`/api/deals/products-by-carrier?carrier_id=${formData.carrierId}`, {
+        method: 'GET',
+        credentials: 'include'
+      })
 
-      return (products || []).map((p: any) => ({ value: p.id, label: p.name }))
+      if (!response.ok) {
+        console.error('Failed to fetch products by carrier')
+        return []
+      }
+
+      return response.json()
     },
     enabled: !!agencyId && !!formData.carrierId,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -368,10 +269,6 @@ export default function PostDeal() {
   // Mutation: Submit deal
   const submitDealMutation = useMutation({
     mutationFn: async () => {
-      console.log('[PostDeal] Starting mutation...')
-      console.log('[PostDeal] Auth User ID:', user?.id)
-      console.log('[PostDeal] User ID (from cache):', userId)
-      console.log('[PostDeal] Agency ID:', agencyId)
 
       // SECTION 1: Get current user's agent_id from cached data
       if (!user?.id) {
@@ -392,24 +289,18 @@ export default function PostDeal() {
       }
 
       const agent_id = userId
-      console.log('[PostDeal] Agent ID (using cached value):', agent_id)
 
       // SECTION 2: Use selected IDs directly
       const carrier_id = formData.carrierId
       const product_id = formData.productId
-      console.log('[PostDeal] Carrier ID:', carrier_id, 'Product ID:', product_id)
 
       // SECTION 3: Invite client if email is provided
-      console.log('[PostDeal] SECTION 3: Starting client invitation process...')
       let client_id = null
       let invitationMessage = ''
 
-      console.log('[PostDeal] Checking client email:', formData.clientEmail ? 'present' : 'missing')
       if (formData.clientEmail) {
-        console.log('[PostDeal] Client email provided, sending invitation to:', formData.clientEmail)
         try {
           // Call the invite API directly - it handles checking for existing clients
-          console.log('[PostDeal] Calling /api/clients/invite...')
 
           // Add timeout to invitation API call
           const inviteController = new AbortController()
@@ -437,7 +328,6 @@ export default function PostDeal() {
               signal: inviteController.signal
             })
             clearTimeout(inviteTimeoutId)
-            console.log('[PostDeal] Invite API response status:', inviteResponse.status)
           } catch (inviteFetchError: any) {
             clearTimeout(inviteTimeoutId)
             if (inviteFetchError.name === 'AbortError') {
@@ -453,14 +343,12 @@ export default function PostDeal() {
 
           if (inviteResponse) {
             const inviteData = await inviteResponse.json()
-            console.log('[PostDeal] Invite API response data:', inviteData)
 
             if (inviteResponse.ok && inviteData.success) {
               client_id = inviteData.userId
               invitationMessage = inviteData.alreadyExists
                 ? 'Client invitation was previously sent.'
                 : '✓ Invitation email sent to client successfully!'
-              console.log('[PostDeal] Client invitation successful, client_id:', client_id)
             } else {
               const errorMsg = inviteData.error || 'Unknown error'
               console.error('[PostDeal] Failed to invite client:', errorMsg)
@@ -472,15 +360,10 @@ export default function PostDeal() {
           invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
         }
       } else {
-        console.log('[PostDeal] No client email provided')
         invitationMessage = 'No client email provided - client will not receive portal access.'
       }
 
-      console.log('[PostDeal] SECTION 3 COMPLETE: Client invitation process finished')
-      console.log('[PostDeal] Final client_id:', client_id)
-      console.log('[PostDeal] Invitation message:', invitationMessage)
 
-      console.log('[PostDeal] Processing beneficiaries...')
       const normalizedBeneficiaries = beneficiaries
         .filter(b =>
       b.name.trim() ||
@@ -493,10 +376,8 @@ export default function PostDeal() {
             allocation_percentage: null,
           }
         })
-      console.log('[PostDeal] Normalized beneficiaries:', normalizedBeneficiaries.length, 'total')
 
       // SECTION 4: Construct payload and submit to API
-      console.log('[PostDeal] SECTION 4: Constructing payload...')
       const monthlyPremium = parseFloat(formData.monthlyPremium)
 
       // Strip formatting from phone number - remove parentheses, spaces, and dashes
@@ -529,9 +410,6 @@ export default function PostDeal() {
         beneficiaries: normalizedBeneficiaries,
       }
 
-      console.log('[PostDeal] ===== ABOUT TO SUBMIT TO API =====')
-      console.log('[PostDeal] Payload:', JSON.stringify(payload, null, 2))
-      console.log('[PostDeal] Agency ID being sent:', agencyId)
 
       // Add timeout to prevent infinite hanging
       const controller = new AbortController()
@@ -541,7 +419,6 @@ export default function PostDeal() {
       }, 30000) // 30 second timeout
 
       let res
-      console.log('[PostDeal] Starting fetch to /api/deals...')
       try {
         res = await fetch("/api/deals", {
           method: "POST",
@@ -550,7 +427,6 @@ export default function PostDeal() {
           signal: controller.signal
         })
         clearTimeout(timeoutId)
-        console.log('[PostDeal] Fetch completed successfully')
       } catch (fetchError: any) {
         clearTimeout(timeoutId)
         console.error('[PostDeal] Fetch threw an error:', fetchError)
@@ -562,11 +438,7 @@ export default function PostDeal() {
         throw new Error("Network error. Please check your connection and try again.")
       }
 
-      console.log('[PostDeal] Response received, status:', res.status)
-      console.log('[PostDeal] Response headers:', Object.fromEntries(res.headers.entries()))
-      console.log('[PostDeal] Parsing response JSON...')
       const data = await res.json()
-      console.log('[PostDeal] JSON parsed successfully:', { ok: res.ok, status: res.status, data })
 
       if (!res.ok) {
         console.error('[PostDeal] Response not OK, throwing error')
@@ -574,7 +446,6 @@ export default function PostDeal() {
       }
 
       // Success: show appropriate message based on operation
-      console.log('[PostDeal] Response OK, building success message...')
       let successMessage = ''
       if (data.operation === 'updated') {
         successMessage = "Deal updated successfully! This policy already existed and has been updated with your additional information."
@@ -587,7 +458,6 @@ export default function PostDeal() {
         successMessage += '\n\n' + invitationMessage
       }
 
-      console.log("[PostDeal] Deal operation complete:", successMessage)
 
       // Send Discord notification (don't block on this - fire and forget)
       sendDiscordNotification(agencyId, agent_id, userFirstName, userLastName, formData, monthlyPremium)
@@ -622,36 +492,29 @@ export default function PostDeal() {
       setError(error.message || "An unexpected error occurred.")
     },
     onSettled: () => {
-      console.log('[PostDeal] onSettled callback triggered')
       submitIntentRef.current = false
     }
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log('[PostDeal] handleSubmit called')
 
     // Only submit if we're on the final step
     if (currentStep !== STEPS.length) {
-      console.log('[PostDeal] Not on final step, aborting. Current step:', currentStep)
       submitIntentRef.current = false
       return
     }
 
     // Require explicit submit intent (button click)
     if (!submitIntentRef.current) {
-      console.log('[PostDeal] No submit intent, aborting')
       return
     }
 
-    console.log('[PostDeal] Validating form...')
     if (!validateForm()) {
-      console.log('[PostDeal] Form validation failed')
       submitIntentRef.current = false
       return
     }
 
-    console.log('[PostDeal] Form valid, calling mutation')
     setError(null)
     submitDealMutation.mutate()
   }
@@ -663,23 +526,8 @@ export default function PostDeal() {
     }
   }
 
-  // Format phone number as (XXX) XXX-XXXX
-  const formatPhoneNumber = (value: string) => {
-    // Remove all non-digits
-    const phoneNumber = value.replace(/\D/g, '')
-
-    // Limit to 10 digits
-    const limitedPhone = phoneNumber.slice(0, 10)
-
-    // Format based on length
-    if (limitedPhone.length <= 3) {
-      return limitedPhone
-    } else if (limitedPhone.length <= 6) {
-      return `(${limitedPhone.slice(0, 3)}) ${limitedPhone.slice(3)}`
-    } else {
-      return `(${limitedPhone.slice(0, 3)}) ${limitedPhone.slice(3, 6)}-${limitedPhone.slice(6)}`
-    }
-  }
+  // Use centralized phone formatting from telnyx.ts
+  const formatPhoneNumber = formatPhoneInput
 
   // Search for address suggestions using Nominatim (free, no API key needed)
   const searchAddress = async (query: string) => {
@@ -885,7 +733,7 @@ export default function PostDeal() {
         return false
       }
       // Validate phone number format (must be 10 digits)
-      const phoneDigits = formData.clientPhone.replace(/\D/g, '')
+      const phoneDigits = normalizePhoneForStorage(formData.clientPhone)
       if (phoneDigits.length !== 10) {
         setError("Please enter a valid 10-digit phone number.")
         return false
@@ -916,11 +764,11 @@ export default function PostDeal() {
   }
 
   const getCarrierName = (id: string) => {
-    return carriersOptions.find(c => c.value === id)?.label || id
+    return carriersOptions.find((c: { value: string; label: string }) => c.value === id)?.label || id
   }
 
   const getProductName = (id: string) => {
-    return productsOptions.find(p => p.value === id)?.label || id
+    return productsOptions.find((p: { value: string; label: string }) => p.value === id)?.label || id
   }
 
   const activeBeneficiaries = beneficiaries.filter(b =>

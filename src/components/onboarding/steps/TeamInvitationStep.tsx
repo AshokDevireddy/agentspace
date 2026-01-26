@@ -14,7 +14,7 @@ import { SimpleSearchableSelect } from '@/components/ui/simple-searchable-select
 import { createClient } from '@/lib/supabase/client'
 import { useInviteAgent } from '@/hooks/mutations'
 import { useOnboardingProgress } from '@/hooks/useOnboardingProgress'
-import type { UserData, InvitedAgent, SearchOption, PERMISSION_LEVELS } from '../types'
+import type { UserData, InvitedAgent, SearchOption } from '../types'
 
 interface TeamInvitationStepProps {
   userData: UserData
@@ -243,13 +243,23 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
         return
       }
 
+      // Type assertion for user data from Supabase
+      const userData = user as {
+        first_name?: string
+        last_name?: string
+        email?: string
+        phone_number?: string
+        perm_level?: string
+        upline_id?: string
+      }
+
       setCurrentAgentForm({
-        firstName: user.first_name || '',
-        lastName: user.last_name || '',
-        email: user.email || '',
-        phoneNumber: user.phone_number || '',
-        permissionLevel: user.perm_level || '',
-        uplineAgentId: user.upline_id || '',
+        firstName: userData.first_name || '',
+        lastName: userData.last_name || '',
+        email: userData.email || '',
+        phoneNumber: userData.phone_number || '',
+        permissionLevel: userData.perm_level || '',
+        uplineAgentId: userData.upline_id || '',
       })
 
       setSelectedPreInviteUserId(userId)
@@ -364,20 +374,28 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
             <label className="block text-sm font-medium text-foreground">
               Search Existing (Optional)
             </label>
-            <SimpleSearchableSelect
-              value={selectedPreInviteUserId || ''}
-              onValueChange={(value) => {
-                const option = nameSearchResults.find((r) => r.value === value)
-                if (option) {
-                  handlePreInviteUserSelect(value, option)
-                }
-              }}
-              options={nameSearchResults}
+            <Input
+              value={nameSearchTerm}
+              onChange={(e) => setNameSearchTerm(e.target.value)}
               placeholder="Search by name..."
-              searchValue={nameSearchTerm}
-              onSearchChange={setNameSearchTerm}
-              isLoading={isNameSearching}
             />
+            {isNameSearching && (
+              <p className="text-xs text-muted-foreground">Searching...</p>
+            )}
+            {nameSearchResults.length > 0 && (
+              <div className="border rounded-md divide-y max-h-48 overflow-y-auto">
+                {nameSearchResults.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className="w-full text-left px-3 py-2 hover:bg-accent text-sm"
+                    onClick={() => handlePreInviteUserSelect(option.value, option)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -454,17 +472,31 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
 
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">Upline (Optional)</label>
-              <SimpleSearchableSelect
-                value={currentAgentForm.uplineAgentId}
-                onValueChange={(value) =>
-                  setCurrentAgentForm({ ...currentAgentForm, uplineAgentId: value })
-                }
-                options={agentSearchResults}
+              <Input
+                value={agentSearchTerm}
+                onChange={(e) => setAgentSearchTerm(e.target.value)}
                 placeholder="Search agents..."
-                searchValue={agentSearchTerm}
-                onSearchChange={setAgentSearchTerm}
-                isLoading={isSearching}
               />
+              {isSearching && (
+                <p className="text-xs text-muted-foreground">Searching...</p>
+              )}
+              {agentSearchResults.length > 0 && (
+                <div className="border rounded-md divide-y max-h-48 overflow-y-auto">
+                  {agentSearchResults.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-accent text-sm"
+                      onClick={() => {
+                        setCurrentAgentForm({ ...currentAgentForm, uplineAgentId: option.value })
+                        setAgentSearchTerm(option.label)
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

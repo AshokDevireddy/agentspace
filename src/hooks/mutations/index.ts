@@ -102,7 +102,9 @@ export {
 
 // Agency mutations
 export {
+  useUpdateAgencySettings,
   useUpdateAgencySmsEnabled,
   useUpdateAgencySmsTemplate,
   useUpdateAgencyColor,
+  useUploadAgencyLogo,
 } from './useAgencyMutations'

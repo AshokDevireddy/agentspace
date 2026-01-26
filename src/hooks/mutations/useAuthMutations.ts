@@ -5,8 +5,8 @@
 
 import { useMutation } from '@tanstack/react-query'
 import { useInvalidation } from '../useInvalidation'
-import { supabaseRestFetch, updatePassword } from '@/lib/supabase/api'
 import { getAuthEndpoint } from '@/lib/api-config'
+import { authApi, AuthApiError } from '@/lib/api/auth'
 
 // ============ Register Mutation ============
 
@@ -16,20 +16,17 @@ interface RegisterInput {
   lastName: string
   phoneNumber: string
   agencyName?: string
-  inviteCode?: string
 }
 
 interface RegisterResponse {
   success: boolean
-  user?: {
-    id: string
-    email: string
-  }
-  error?: string
+  message?: string
+  user_id?: string
+  agency_id?: string
 }
 
 /**
- * Register a new user
+ * Register a new user via backend API
  */
 export function useRegister(options?: {
   onSuccess?: (data: RegisterResponse) => void
@@ -37,19 +34,26 @@ export function useRegister(options?: {
 }) {
   return useMutation<RegisterResponse, Error, RegisterInput>({
     mutationFn: async (input) => {
-      const response = await fetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Registration failed')
+      try {
+        const result = await authApi.register({
+          email: input.email,
+          first_name: input.firstName,
+          last_name: input.lastName,
+          phone_number: input.phoneNumber,
+          agency_name: input.agencyName || '',
+        })
+        return {
+          success: true,
+          message: result.message,
+          user_id: result.user_id,
+          agency_id: result.agency_id,
+        }
+      } catch (err) {
+        if (err instanceof AuthApiError) {
+          throw new Error(err.message)
+        }
+        throw err
       }
-
-      return data
     },
     onSuccess: options?.onSuccess,
     onError: options?.onError,
@@ -65,11 +69,10 @@ interface ResetPasswordInput {
 interface ResetPasswordResponse {
   success: boolean
   message?: string
-  error?: string
 }
 
 /**
- * Request password reset email
+ * Request password reset email via backend API
  */
 export function useResetPassword(options?: {
   onSuccess?: (data: ResetPasswordResponse) => void
@@ -77,19 +80,18 @@ export function useResetPassword(options?: {
 }) {
   return useMutation<ResetPasswordResponse, Error, ResetPasswordInput>({
     mutationFn: async (input) => {
-      const response = await fetch('/api/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to send reset email')
+      try {
+        const result = await authApi.forgotPassword({ email: input.email })
+        return {
+          success: true,
+          message: result.message,
+        }
+      } catch (err) {
+        if (err instanceof AuthApiError) {
+          throw new Error(err.message)
+        }
+        throw err
       }
-
-      return data
     },
     onSuccess: options?.onSuccess,
     onError: options?.onError,
@@ -236,13 +238,15 @@ export function useSignIn(options?: {
       }
 
       // Fetch agency data for whitelabel validation
-      const { data: agencyData, error: agencyError } = await withAuthTimeout(
+      const agencyPromise = Promise.resolve(
         supabase
           .from('agencies')
           .select('whitelabel_domain')
           .eq('id', data.user.agency_id)
           .single()
       )
+
+      const { data: agencyData, error: agencyError } = await withAuthTimeout(agencyPromise)
 
       if (agencyError || !agencyData) {
         throw new Error('Agency not found')
@@ -277,7 +281,7 @@ interface UpdatePasswordResponse {
 }
 
 /**
- * Update user password using access token
+ * Update user password using access token via backend API
  * Used by forgot-password and setup-account pages
  */
 export function useUpdatePassword(options?: {
@@ -286,15 +290,69 @@ export function useUpdatePassword(options?: {
 }) {
   return useMutation<UpdatePasswordResponse, Error, UpdatePasswordInput>({
     mutationFn: async ({ accessToken, newPassword }) => {
-      const result = await updatePassword(accessToken, newPassword)
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update password')
+      try {
+        await authApi.resetPassword({
+          access_token: accessToken,
+          password: newPassword,
+        })
+        return { success: true }
+      } catch (err) {
+        if (err instanceof AuthApiError) {
+          throw new Error(err.message)
+        }
+        throw err
       }
-
-      return { success: true }
     },
     onSuccess: options?.onSuccess,
+    onError: options?.onError,
+  })
+}
+
+// ============ Setup Account Mutation ============
+
+interface SetupAccountInput {
+  accessToken: string
+  password?: string
+  firstName?: string
+  lastName?: string
+  phoneNumber?: string
+}
+
+interface SetupAccountResponse {
+  success: boolean
+}
+
+/**
+ * Setup account during onboarding (set password and update profile) via backend API
+ * Used by setup-account page
+ */
+export function useSetupAccount(options?: {
+  onSuccess?: () => void
+  onError?: (error: Error) => void
+}) {
+  const { invalidateUserRelated } = useInvalidation()
+
+  return useMutation<SetupAccountResponse, Error, SetupAccountInput>({
+    mutationFn: async ({ accessToken, password, firstName, lastName, phoneNumber }) => {
+      try {
+        await authApi.setupAccount(accessToken, {
+          password,
+          first_name: firstName,
+          last_name: lastName,
+          phone_number: phoneNumber,
+        })
+        return { success: true }
+      } catch (err) {
+        if (err instanceof AuthApiError) {
+          throw new Error(err.message)
+        }
+        throw err
+      }
+    },
+    onSuccess: async () => {
+      await invalidateUserRelated()
+      options?.onSuccess?.()
+    },
     onError: options?.onError,
   })
 }
@@ -302,8 +360,6 @@ export function useUpdatePassword(options?: {
 // ============ Update User Profile Mutation ============
 
 interface UpdateUserProfileInput {
-  userId: string
-  accessToken: string
   data: {
     first_name?: string
     last_name?: string
@@ -317,7 +373,7 @@ interface UpdateUserProfileResponse {
 }
 
 /**
- * Update user profile data
+ * Update user profile data via Django API
  * Used by setup-account page for profile updates
  */
 export function useUpdateUserProfile(options?: {
@@ -327,21 +383,18 @@ export function useUpdateUserProfile(options?: {
   const { invalidateUserRelated } = useInvalidation()
 
   return useMutation<UpdateUserProfileResponse, Error, UpdateUserProfileInput>({
-    mutationFn: async ({ userId, accessToken, data }) => {
-      const { error } = await supabaseRestFetch(
-        `/rest/v1/users?id=eq.${userId}`,
-        {
-          accessToken,
-          method: 'PATCH',
-          body: {
-            ...data,
-            updated_at: new Date().toISOString(),
-          },
-        }
-      )
+    mutationFn: async ({ data }) => {
+      const response = await fetch('/api/user/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      })
 
-      if (error) {
-        throw new Error(error || 'Failed to update profile')
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || result.message || 'Failed to update profile')
       }
 
       return { success: true }
@@ -357,8 +410,6 @@ export function useUpdateUserProfile(options?: {
 // ============ Update User Status Mutation ============
 
 interface UpdateUserStatusInput {
-  userId: string
-  accessToken: string
   status: string
 }
 
@@ -367,7 +418,7 @@ interface UpdateUserStatusResponse {
 }
 
 /**
- * Update user status
+ * Update user status via Django API
  * Used by auth/confirm page for status updates during email confirmation
  */
 export function useUpdateUserStatus(options?: {
@@ -377,21 +428,18 @@ export function useUpdateUserStatus(options?: {
   const { invalidateUserRelated } = useInvalidation()
 
   return useMutation<UpdateUserStatusResponse, Error, UpdateUserStatusInput>({
-    mutationFn: async ({ userId, accessToken, status }) => {
-      const { error } = await supabaseRestFetch(
-        `/rest/v1/users?id=eq.${userId}`,
-        {
-          accessToken,
-          method: 'PATCH',
-          body: {
-            status,
-            updated_at: new Date().toISOString(),
-          },
-        }
-      )
+    mutationFn: async ({ status }) => {
+      const response = await fetch('/api/user/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status }),
+      })
 
-      if (error) {
-        throw new Error(error || 'Failed to update status')
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || result.message || 'Failed to update status')
       }
 
       return { success: true }

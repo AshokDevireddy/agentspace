@@ -188,8 +188,8 @@ interface ConversationResult {
   agent_id: string;
   deal_id: string;
   agency_id: string;
-  sms_opt_in_status: string;
-  client_phone: string;
+  sms_opt_in_status?: string;
+  client_phone?: string;
 }
 
 interface Agent {
@@ -297,9 +297,19 @@ export async function processAIMessage(
     const aiResponse = await generateAIResponse(messageText, dealDetails);
 
     // Send the response via SMS
+    const agencyPhoneNumber = agency.phone_number;
+    if (!agencyPhoneNumber) {
+      throw new Error('Agency phone number not configured');
+    }
+
+    const clientPhone = conversation.client_phone;
+    if (!clientPhone) {
+      throw new Error('Client phone number not available');
+    }
+
     await sendSMS({
-      from: agency.phone_number,
-      to: normalizePhoneNumber(conversation.client_phone),
+      from: agencyPhoneNumber,
+      to: normalizePhoneNumber(clientPhone),
       text: aiResponse,
     });
 

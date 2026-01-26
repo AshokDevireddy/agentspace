@@ -164,8 +164,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           .eq('auth_user_id', user.id)
           .single()
 
-        if (userData?.position?.level !== undefined) {
-          userPositionLevel = userData.position.level
+        if (userData?.position?.[0]?.level !== undefined) {
+          userPositionLevel = userData.position[0].level
         }
 
         // Check if user is admin by role
@@ -185,15 +185,21 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
       const data = await response.json()
 
+      interface PositionData {
+        position_id: string
+        name: string
+        level: number
+      }
+
       // Filter positions: admins can assign any position, agents can assign positions at their level or below
       const filteredData = isAdmin
         ? data
         : userPositionLevel !== null
-          ? data.filter((pos: any) => pos.level <= userPositionLevel)
+          ? data.filter((pos: PositionData) => pos.level <= userPositionLevel)
           : data
 
       return {
-        positions: filteredData.map((pos: any) => ({
+        positions: filteredData.map((pos: PositionData) => ({
           value: pos.position_id,
           label: `${pos.name} (Level ${pos.level})`,
           level: pos.level
@@ -290,7 +296,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
   // Mutation: Submit form to invite agent - using centralized hook
   const inviteAgentMutation = useSendInvite({
-    invalidateAdditional: true, // Also invalidate clients and agentsPendingPositions
+    invalidateClients: true, // Also invalidate clients and agentsPendingPositions
     onSuccess: (data, variables) => {
       const message = selectedPreInviteUserId
         ? `User ${variables.firstName} ${variables.lastName} updated and invitation sent to ${variables.email}!`

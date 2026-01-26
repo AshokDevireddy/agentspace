@@ -1,31 +1,35 @@
-import { createServerClient } from '@/lib/supabase/server'
+/**
+ * SMS Drafts API Route
+ *
+ * Proxies to Django backend for SMS drafts.
+ * Reads authentication from httpOnly session cookie.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
-import { getSmsEndpoint } from '@/lib/api-config'
+import { getAccessToken } from '@/lib/session'
+import { getApiBaseUrl } from '@/lib/api-config'
 
 export async function GET(request: NextRequest) {
+  const accessToken = await getAccessToken()
+
+  if (!accessToken) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
-    const supabase = await createServerClient()
-
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
     // Get view mode from query params (default: 'downlines')
     const { searchParams } = new URL(request.url)
     const viewMode = searchParams.get('view') || 'downlines'
 
-    const url = new URL(getSmsEndpoint('drafts'))
+    const url = new URL(`${getApiBaseUrl()}/api/sms/drafts`)
     url.searchParams.set('view', viewMode)
 
     const response = await fetch(url.toString(), {
       headers: {
-        Authorization: `Bearer ${session.access_token}`,
+        Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
+      cache: 'no-store',
     })
 
     if (!response.ok) {
@@ -45,8 +49,8 @@ export async function GET(request: NextRequest) {
 
     // Group drafts by conversation if not already grouped
     if (Array.isArray(drafts) && drafts.length > 0 && drafts[0].conversation_id) {
-      const groupedDrafts = drafts.reduce((acc: any, draft: any) => {
-        const convId = draft.conversation_id
+      const groupedDrafts = drafts.reduce((acc: Record<string, unknown>, draft: Record<string, unknown>) => {
+        const convId = draft.conversation_id as string
         if (!acc[convId]) {
           acc[convId] = {
             conversationId: convId,
@@ -57,7 +61,7 @@ export async function GET(request: NextRequest) {
             messages: []
           }
         }
-        acc[convId].messages.push({
+        (acc[convId] as { messages: unknown[] }).messages.push({
           id: draft.id,
           body: draft.body,
           direction: draft.direction,

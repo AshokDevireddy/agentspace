@@ -2,6 +2,65 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getOrCreateConversation, logMessage } from "@/lib/sms-helpers";
 
+// Type definitions for database responses
+interface UplineChainEntry {
+  agent_id: string;
+  upline_id: string | null;
+}
+
+interface AgentWithPosition {
+  id: string;
+  position_id: string | null;
+}
+
+interface AgentWithPositionAndName extends AgentWithPosition {
+  first_name: string;
+  last_name: string;
+}
+
+interface PositionProductCommission {
+  position_id: string;
+  commission_percentage: number;
+}
+
+interface DealHierarchySnapshotEntry {
+  deal_id: string;
+  agent_id: string;
+  upline_id: string | null;
+  commission_percentage: number | null;
+  created_at: string;
+}
+
+interface AgencyData {
+  name: string;
+  phone_number: string | null;
+}
+
+interface AgentData {
+  id: string;
+  first_name: string;
+  last_name: string;
+  agency_id: string;
+  agency: AgencyData | null;
+}
+
+interface CarrierData {
+  name: string;
+}
+
+interface DealWithCarrier {
+  id: string;
+  status_standardized: string | null;
+  client_name: string;
+  monthly_premium: number | null;
+  annual_premium: number | null;
+  policy_number: string | null;
+  policy_effective_date: string | null;
+  agent_id: string;
+  agency_id: string;
+  carrier: CarrierData | null;
+}
+
 /**
  * Creates a hierarchy snapshot for a deal
  * This captures the agent hierarchy at the time the deal is created
@@ -14,7 +73,7 @@ async function createDealHierarchySnapshot(
   writingAgentId: string,
   productId: string,
 ) {
-  console.log("[Hierarchy Snapshot] START createDealHierarchySnapshot", {
+  console.log("[Hierarchy Snapshot] Creating snapshot for deal", {
     dealId,
     writingAgentId,
     productId,
@@ -48,7 +107,7 @@ async function createDealHierarchySnapshot(
     );
 
     // Get all agent IDs from the chain
-    const agentIds = uplineChain.map((entry: any) => entry.agent_id);
+    const agentIds = uplineChain.map((entry: UplineChainEntry) => entry.agent_id);
 
     // Fetch position_id for each agent
     const { data: agentsWithPositions, error: positionsError } = await supabase
@@ -67,8 +126,8 @@ async function createDealHierarchySnapshot(
     }
 
     // Create a map of agent_id -> position_id for quick lookup
-    const positionMap = new Map(
-      agentsWithPositions?.map((agent) => [agent.id, agent.position_id]) || [],
+    const positionMap = new Map<string, string | null>(
+      agentsWithPositions?.map((agent: AgentWithPosition) => [agent.id, agent.position_id]) || [],
     );
 
     // Get all unique position IDs (filter out nulls)
@@ -96,7 +155,7 @@ async function createDealHierarchySnapshot(
       } else if (commissions) {
         // Create map of position_id -> commission_percentage
         commissionMap = new Map(
-          commissions.map((c) => [c.position_id, c.commission_percentage]),
+          commissions.map((c: PositionProductCommission) => [c.position_id, c.commission_percentage]),
         );
       }
     }
@@ -109,7 +168,7 @@ async function createDealHierarchySnapshot(
 
     // Create snapshot entries for each agent in the chain
     // The uplineChain includes the writing agent themselves and all their uplines
-    const snapshotEntries = uplineChain.map((chainEntry: any) => {
+    const snapshotEntries: DealHierarchySnapshotEntry[] = uplineChain.map((chainEntry: UplineChainEntry) => {
       const agentId = chainEntry.agent_id;
       const positionId = positionMap.get(agentId);
       const commissionPercentage = positionId
@@ -304,7 +363,7 @@ export async function POST(req: NextRequest) {
       existingDeal = existing;
     }
 
-    let dealData;
+    let dealData: Record<string, unknown>;
     let operation;
 
     if (existingDeal) {
@@ -329,26 +388,26 @@ export async function POST(req: NextRequest) {
         notes: notes || existingDeal.notes,
         // Update timestamp
         updated_at: new Date().toISOString(),
-      } as any;
+      };
 
       // Only update these fields if they're provided and the existing deal doesn't have them
       if (client_name && !existingDeal.client_name) {
-        dealData.client_name = client_name;
+        (dealData as Record<string, unknown>).client_name = client_name;
       }
       if (agent_id && !existingDeal.agent_id) {
-        dealData.agent_id = agent_id;
+        (dealData as Record<string, unknown>).agent_id = agent_id;
       }
       if (product_id && !existingDeal.product_id) {
-        dealData.product_id = product_id;
+        (dealData as Record<string, unknown>).product_id = product_id;
       }
       if (monthly_premium && !existingDeal.monthly_premium) {
-        dealData.monthly_premium = monthly_premium;
+        (dealData as Record<string, unknown>).monthly_premium = monthly_premium;
       }
       if (annual_premium && !existingDeal.annual_premium) {
-        dealData.annual_premium = annual_premium;
+        (dealData as Record<string, unknown>).annual_premium = annual_premium;
       }
       if (policy_effective_date && !existingDeal.policy_effective_date) {
-        dealData.policy_effective_date = policy_effective_date;
+        (dealData as Record<string, unknown>).policy_effective_date = policy_effective_date;
       }
 
       const { data: deal, error } = await supabase
@@ -371,13 +430,13 @@ export async function POST(req: NextRequest) {
           deal.agency_id,
           beneficiaries,
         );
-      } catch (beneficiaryError: any) {
+      } catch (beneficiaryError: unknown) {
         console.error(
           "[Deals API] Failed to sync beneficiaries for updated deal:",
           beneficiaryError,
         );
         return NextResponse.json(
-          { error: beneficiaryError.message },
+          { error: beneficiaryError instanceof Error ? beneficiaryError.message : 'Failed to sync beneficiaries' },
           { status: 500 },
         );
       }
@@ -491,7 +550,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Get all agent IDs from the chain
-        const agentIds = uplineChain.map((entry: any) => entry.agent_id);
+        const agentIds = uplineChain.map((entry: UplineChainEntry) => entry.agent_id);
 
         // Fetch position_id for each agent in the upline
         const { data: agentsWithPositions, error: positionsError } =
@@ -515,13 +574,13 @@ export async function POST(req: NextRequest) {
         }
 
         // Check if ANY agent in the upline doesn't have a position
-        const agentsWithoutPositions = agentsWithPositions?.filter((agent) =>
+        const agentsWithoutPositions = agentsWithPositions?.filter((agent: AgentWithPositionAndName) =>
           !agent.position_id
         ) || [];
 
         if (agentsWithoutPositions.length > 0) {
           const agentNames = agentsWithoutPositions
-            .map((a) => `${a.first_name} ${a.last_name}`)
+            .map((a: AgentWithPositionAndName) => `${a.first_name} ${a.last_name}`)
             .join(", ");
 
           console.error(
@@ -532,7 +591,7 @@ export async function POST(req: NextRequest) {
             {
               error:
                 `Cannot create deal: The following agents in the upline hierarchy do not have positions assigned: ${agentNames}. All agents in the upline must have positions set before deals can be created.`,
-              agents_without_positions: agentsWithoutPositions.map((a) => ({
+              agents_without_positions: agentsWithoutPositions.map((a: AgentWithPositionAndName) => ({
                 id: a.id,
                 name: `${a.first_name} ${a.last_name}`,
               })),
@@ -543,8 +602,8 @@ export async function POST(req: NextRequest) {
 
         // Additionally verify that commission mappings exist for all positions + product
         const positionIds = agentsWithPositions
-          ?.map((agent) => agent.position_id)
-          .filter((pid) => pid !== null) || [];
+          ?.map((agent: AgentWithPosition) => agent.position_id)
+          .filter((pid): pid is string => pid !== null) || [];
 
         if (positionIds.length > 0) {
           const { data: commissions, error: commissionsError } = await supabase
@@ -642,13 +701,13 @@ export async function POST(req: NextRequest) {
           deal.agency_id,
           beneficiaries,
         );
-      } catch (beneficiaryError: any) {
+      } catch (beneficiaryError: unknown) {
         console.error(
           "[Deals API] Failed to sync beneficiaries for new deal:",
           beneficiaryError,
         );
         return NextResponse.json(
-          { error: beneficiaryError.message },
+          { error: beneficiaryError instanceof Error ? beneficiaryError.message : 'Failed to sync beneficiaries' },
           { status: 500 },
         );
       }
@@ -723,9 +782,11 @@ export async function POST(req: NextRequest) {
             .eq("id", deal.agent_id)
             .single();
 
-          if (agentData && agentData.agency?.phone_number) {
-            const agentName = `${agentData.first_name} ${agentData.last_name}`;
-            const agencyName = agentData.agency.name;
+          const typedAgentData = agentData as AgentData | null;
+
+          if (typedAgentData && typedAgentData.agency?.phone_number) {
+            const agentName = `${typedAgentData.first_name} ${typedAgentData.last_name}`;
+            const agencyName = typedAgentData.agency.name;
             const clientFirstName = deal.client_name?.split(" ")[0] || "there";
             const clientEmail = deal.client_email || "your email";
 
@@ -734,16 +795,16 @@ export async function POST(req: NextRequest) {
 
             // Create conversation and log message as DRAFT (not sent automatically)
             const conversation = await getOrCreateConversation(
-              agentData.id,
+              typedAgentData.id,
               deal.id,
-              agentData.agency_id,
+              typedAgentData.agency_id,
               deal.client_phone,
             );
 
             await logMessage({
               conversationId: conversation.id,
-              senderId: agentData.id,
-              receiverId: agentData.id, // Placeholder
+              senderId: typedAgentData.id,
+              receiverId: typedAgentData.id, // Placeholder
               body: welcomeMessage,
               direction: "outbound",
               status: "draft", // Create as draft - requires approval before sending
@@ -778,9 +839,9 @@ export async function POST(req: NextRequest) {
         message: "Deal created successfully",
       }, { status: 201 });
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     return NextResponse.json(
-      { error: err.message || "Failed to create deal" },
+      { error: err instanceof Error ? err.message : "Failed to create deal" },
       { status: 500 },
     );
   }
@@ -830,17 +891,19 @@ export async function PUT(req: NextRequest) {
         .eq("id", id)
         .single();
 
-      if (currentDeal && !LAPSE_STATUSES.includes(currentDeal.status_standardized || '')) {
+      const typedCurrentDeal = currentDeal as DealWithCarrier | null;
+
+      if (typedCurrentDeal && !LAPSE_STATUSES.includes(typedCurrentDeal.status_standardized || '')) {
         isTransitioningToLapse = true;
         currentDealForNotification = {
-          client_name: currentDeal.client_name,
-          monthly_premium: currentDeal.monthly_premium,
-          annual_premium: currentDeal.annual_premium,
-          carrier_name: (currentDeal.carrier as any)?.name || '',
-          policy_number: currentDeal.policy_number,
-          policy_effective_date: currentDeal.policy_effective_date,
-          agent_id: currentDeal.agent_id,
-          agency_id: currentDeal.agency_id,
+          client_name: typedCurrentDeal.client_name,
+          monthly_premium: typedCurrentDeal.monthly_premium,
+          annual_premium: typedCurrentDeal.annual_premium,
+          carrier_name: typedCurrentDeal.carrier?.name || '',
+          policy_number: typedCurrentDeal.policy_number,
+          policy_effective_date: typedCurrentDeal.policy_effective_date,
+          agent_id: typedCurrentDeal.agent_id,
+          agency_id: typedCurrentDeal.agency_id,
         };
       }
     }
@@ -910,9 +973,9 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ deal, message: "Deal updated successfully" }, {
       status: 200,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     return NextResponse.json(
-      { error: err.message || "Failed to update deal" },
+      { error: err instanceof Error ? err.message : "Failed to update deal" },
       { status: 500 },
     );
   }

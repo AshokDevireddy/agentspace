@@ -172,7 +172,7 @@ export async function POST(request: Request) {
       existingError,
     })
 
-    let parsingInfoResult = existingParsingInfo
+    let parsingInfoResult: { id: string; created_at?: string; password?: string } = existingParsingInfo || { id: '', created_at: '' }
 
     if (existingError) {
       console.error(
@@ -241,7 +241,7 @@ export async function POST(request: Request) {
         )
       }
 
-      parsingInfoResult = inserted
+      parsingInfoResult = inserted || { id: '', created_at: '' }
     }
 
     return NextResponse.json(

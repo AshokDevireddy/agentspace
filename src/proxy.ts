@@ -1,175 +1,89 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { jwtVerify } from 'jose'
 
-export async function proxy(req: NextRequest) {
-  // Create response that will be updated by setAll when session refreshes
-  let res = NextResponse.next({
-    request: req,
-  })
-  const pathname = req.nextUrl.pathname
-  const isApiRoute = pathname.startsWith('/api/')
+const SECRET = new TextEncoder().encode(process.env.SESSION_SECRET!)
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return req.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          // Update cookies on the request for any subsequent middleware
-          cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value))
-          // Create a new response with the updated request
-          res = NextResponse.next({
-            request: req,
-          })
-          // Set cookies on the response for the browser
-          cookiesToSet.forEach(({ name, value, options }) =>
-            res.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
+// Routes that don't require authentication
+const PUBLIC_ROUTES = [
+  '/login',
+  '/register',
+  '/forgot-password',
+  '/reset-password',
+  '/setup-account',
+]
 
-  // Use getSession() instead of getUser() - faster, no network request, handles token refresh
-  const { data: { session } } = await supabase.auth.getSession()
-  const user = session?.user ?? null
+// Auth callback routes (OAuth, email confirmation, etc.)
+const AUTH_ROUTES = ['/auth/callback', '/auth/confirm']
 
-  // Public routes that don't require authentication
-  const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password', '/setup-account']
-  const isPublicRoute = publicRoutes.includes(pathname) || pathname.startsWith('/auth/confirm') || pathname.startsWith('/auth/callback')
+// API routes that should be public
+const PUBLIC_API_PREFIXES = [
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+  '/api/auth/verify-invite',
+  '/api/cron/',
+  '/api/telnyx-webhook',
+  '/api/webhooks/stripe',
+  '/api/favicon',
+]
 
-  // Public API prefixes that should bypass auth (cron jobs, webhooks, registration, password reset, favicon, etc.)
-  const publicApiPrefixes = ['/api/cron/', '/api/telnyx-webhook', '/api/webhooks/stripe', '/api/register', '/api/reset-password', '/api/favicon']
-  const isPublicApi = publicApiPrefixes.some(prefix => pathname.startsWith(prefix))
+export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl
 
-  // If no user and trying to access protected route
-  if (!user && !isPublicRoute && !isPublicApi) {
-    if (isApiRoute) {
-      return NextResponse.json(
-        { error: 'Unauthorized', message: 'Authentication required' },
-        { status: 401 }
-      )
-    }
-    return NextResponse.redirect(new URL('/login', req.url))
+  // Allow public routes
+  if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {
+    return NextResponse.next()
   }
 
-  // If user is authenticated, check role-based access
-  let userProfile: { role: string | null; is_admin: boolean | null; status: string | null; subscription_tier: string | null } | null = null
-
-  if (user) {
-    const { data } = await supabase
-      .from('users')
-      .select('role, is_admin, status, subscription_tier')
-      .eq('auth_user_id', user.id)
-      .maybeSingle()
-
-    userProfile = data
-
-    // Handle user status
-    if (userProfile) {
-      // Allow password recovery flow - users need to access /forgot-password even with certain statuses
-      if (req.nextUrl.pathname === '/forgot-password') {
-        return res
-      }
-
-      // If user is onboarding, allow access to setup-account page and dashboard
-      // (setup-account for Phase 1 password setup, dashboard for Phase 2 onboarding)
-      if (userProfile.status === 'onboarding') {
-        const allowedPaths = ['/setup-account', '/', '/api/']
-        const isAllowedPath = allowedPaths.some(path => req.nextUrl.pathname.startsWith(path))
-
-        if (!isAllowedPath) {
-          // Redirect to dashboard where they can complete onboarding
-          return NextResponse.redirect(new URL('/', req.url))
-        }
-        // Allow access to allowed paths
-        return res
-      }
-
-      // If user is invited (hasn't clicked invite link yet), redirect to login
-      // Note: Don't call signOut() here as it creates race conditions with the client-side session
-      if (userProfile.status === 'invited') {
-        return NextResponse.redirect(new URL('/login?message=check-email', req.url))
-      }
-
-      // If user is inactive, sign them out and redirect to login
-      if (userProfile.status === 'inactive') {
-        await supabase.auth.signOut()
-        return NextResponse.redirect(new URL('/login?message=account-deactivated', req.url))
-      }
-    }
-
-    // Client-specific routes
-    if (req.nextUrl.pathname.startsWith('/client/')) {
-      if (!userProfile || userProfile.role !== 'client') {
-        return NextResponse.redirect(new URL('/unauthorized', req.url))
-      }
-      return res
-    }
-
-    // If client tries to access non-client routes (except public routes and logout)
-    if (userProfile && userProfile.role === 'client' && !isPublicRoute && !req.nextUrl.pathname.startsWith('/client/')) {
-      return NextResponse.redirect(new URL('/client/dashboard', req.url))
-    }
+  // Allow auth callback routes
+  if (AUTH_ROUTES.some((route) => pathname.startsWith(route))) {
+    return NextResponse.next()
   }
 
-  // Admin-only routes
-  const adminRoutes = ['/configuration', '/api/create-user', '/api/setup-account', '/api/carriers/agency']
-  const isAdminRoute = adminRoutes.some(route => req.nextUrl.pathname.startsWith(route))
-
-  if (isAdminRoute && user) {
-    // Use already-fetched userProfile instead of making another query
-    if (!userProfile?.is_admin) {
-      const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
-      if (isApiRoute) {
-        return NextResponse.json(
-          { error: 'Forbidden', message: 'Admin access required' },
-          { status: 403 }
-        )
-      }
-      return NextResponse.redirect(new URL('/unauthorized', req.url))
-    }
+  // Allow public API routes
+  if (PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+    return NextResponse.next()
   }
 
-  // Pro/Expert tier routes (Underwriting)
-  const proExpertRoutes = ['/underwriting', '/api/underwriting']
-  const isProExpertRoute = proExpertRoutes.some(route => req.nextUrl.pathname.startsWith(route))
-
-  if (isProExpertRoute && user) {
-    // Use already-fetched userProfile instead of making another query
-    const tier = userProfile?.subscription_tier || 'free'
-    if (tier !== 'pro' && tier !== 'expert') {
-      const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
-      if (isApiRoute) {
-        return NextResponse.json(
-          {
-            error: 'Forbidden',
-            message: 'Pro or Expert tier subscription required',
-            current_tier: tier,
-            required_tiers: ['pro', 'expert']
-          },
-          { status: 403 }
-        )
-      }
-      return NextResponse.redirect(new URL('/unauthorized', req.url))
+  // Check session cookie
+  const sessionCookie = request.cookies.get('session')?.value
+  if (!sessionCookie) {
+    // For API routes, return 401
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    // For pages, redirect to login
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  return res
+  try {
+    await jwtVerify(sessionCookie, SECRET)
+    return NextResponse.next()
+  } catch {
+    // Invalid/expired session - clear cookie and redirect
+    if (pathname.startsWith('/api/')) {
+      const response = NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      response.cookies.delete('session')
+      return response
+    }
+
+    const response = NextResponse.redirect(new URL('/login', request.url))
+    response.cookies.delete('session')
+    return response
+  }
 }
 
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
+     * Match all request paths except:
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - public files (images, etc.)
      */
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.jpg$|.*\\.svg$|.*\\.ico$).*)',
   ],
 }

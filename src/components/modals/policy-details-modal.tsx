@@ -916,7 +916,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                     {messages.length > 0 ? (
                       <div className="flex-1 flex flex-col min-h-0">
                         <div className="space-y-2 flex-1 overflow-y-auto custom-scrollbar pr-2">
-                          {messages.map((message) => {
+                          {messages.map((message: Message) => {
                             const isOutbound = message.direction === 'outbound'
                             const isAutomated = message.metadata?.automated
                             const isDraft = message.status === 'draft'

@@ -61,6 +61,10 @@ export async function GET(req: NextRequest) {
 
     const activeConversation = conversation || existingConversation;
 
+    if (!activeConversation) {
+      return NextResponse.json({ conversation: null, messages: [], existingConversation: null }, { status: 200 });
+    }
+
     // Fetch last 10 messages for this conversation
     const { data: messages, error: messagesError } = await supabase
       .from("messages")

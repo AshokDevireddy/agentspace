@@ -9,7 +9,6 @@ import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Pa
 import Link from "next/link"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
-import { createClient } from "@/lib/supabase/client"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn, getContrastTextColor } from "@/lib/utils"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
@@ -37,7 +36,11 @@ import {
   useSaveCarrierLogin,
   useCreatePolicyReportJob,
   useSignPolicyReportFiles,
+  useUpdateAgencySettings,
+  useUploadAgencyLogo,
+  useUpdateAgencyColor,
 } from '@/hooks/mutations'
+import { useAgencySettings, type AgencySettings } from '@/hooks/useAgencySettings'
 
 // Types for carrier data
 interface Carrier {
@@ -59,34 +62,8 @@ interface Product {
   created_at?: string
 }
 
-// Types for agency data
-interface Agency {
-  id: string
-  name: string
-  lead_sources?: string[]
-  phone_number?: string
-  messaging_enabled?: boolean
-  discord_webhook_url?: string
-  discord_notification_enabled?: boolean
-  discord_notification_template?: string
-  discord_bot_username?: string
-  display_name?: string
-  logo_url?: string
-  primary_color?: string
-  theme_mode?: 'light' | 'dark' | 'system'
-  whitelabel_domain?: string
-  sms_welcome_enabled?: boolean
-  sms_welcome_template?: string
-  sms_billing_reminder_enabled?: boolean
-  sms_billing_reminder_template?: string
-  sms_lapse_reminder_enabled?: boolean
-  sms_lapse_reminder_template?: string
-  sms_birthday_enabled?: boolean
-  sms_birthday_template?: string
-  lapse_email_notifications_enabled?: boolean
-  lapse_email_subject?: string
-  lapse_email_body?: string
-}
+// Use AgencySettings type from hook for agency data
+type Agency = AgencySettings
 
 // Types for position data
 interface Position {
@@ -135,7 +112,7 @@ const isDefaultColorForMode = (color: string, mode: 'light' | 'dark' | 'system' 
 export default function ConfigurationPage() {
   const { showSuccess, showError, showWarning } = useNotification()
   const { theme, setTheme, resolvedTheme } = useTheme()
-  const { userData, refreshUserData, signOut } = useAuth()
+  const { user, refreshUser, signOut } = useAuth()
   const [isMounted, setIsMounted] = useState(false)
   const queryClient = useQueryClient()
   const router = useRouter()
@@ -270,74 +247,62 @@ export default function ConfigurationPage() {
   // Save all agency profile changes
   const handleSaveAllChanges = async () => {
     if (!agency) return
-    
+
     try {
       setSavingAllChanges(true)
-      const supabase = createClient()
-      
+
       const updates: any = {}
-      
+
       // Save color if changed
       if (pendingColor) {
         updates.primary_color = pendingColor
       }
-      
+
       // Save display name if changed
       if (displayName !== (agency.display_name || agency.name)) {
         updates.display_name = displayName
       }
-      
+
       // Save theme if changed
       if (agencyThemeMode !== agency.theme_mode) {
         updates.theme_mode = agencyThemeMode
       }
-      
+
       // Save whitelabel domain if changed
       if (whitelabelDomain !== (agency.whitelabel_domain || '')) {
         updates.whitelabel_domain = whitelabelDomain || null
       }
-      
+
       // Save logo if changed
       if (pendingLogo !== null) {
         updates.logo_url = pendingLogo || null
       }
-      
+
       if (Object.keys(updates).length === 0) {
         showWarning('No changes to save')
         return
       }
-      
-      const { error } = await supabase
-        .from('agencies')
-        .update(updates)
-        .eq('id', agency.id)
-      
-      if (error) throw error
-      
+
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: updates,
+      })
+
       // Update local state
       if (pendingColor) {
         setPrimaryColor(pendingColor)
         setPendingColor(null)
       }
-      
+
       if (pendingLogo !== null) {
         setPendingLogo(null)
       }
-      
+
       setAgency({ ...agency, ...updates })
 
       // Update theme if changed
       if (updates.theme_mode) {
         setTheme(agencyThemeMode)
-      }
-
-      // Invalidate queries to refresh all agency-related data (client-side only)
-      if (isMounted) {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.agency }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.agencyBranding(agency.id) }),
-        ])
       }
 
       showSuccess('Changes saved successfully')
@@ -526,52 +491,22 @@ export default function ConfigurationPage() {
 
   // ============ TanStack Query Hooks ============
 
-  // Fetch agency data - only when user is authenticated
-  const { data: agencyData, isLoading: loadingAgencyProfile, error: agencyError } = useQuery({
-    queryKey: queryKeys.configurationAgency(),
-    queryFn: async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+  // Fetch agency data via Django API
+  const { data: agencyData, isLoading: loadingAgencyProfile, error: agencyError } = useAgencySettings()
 
-      if (!user) throw new Error('Not authenticated')
-
-      const { data: userDataLocal } = await supabase
-        .from('users')
-        .select('agency_id')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      if (!userDataLocal?.agency_id) throw new Error('No agency found')
-
-      const { data: agencyInfo, error } = await supabase
-        .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, discord_notification_enabled, discord_notification_template, discord_bot_username, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template')
-        .eq('id', userDataLocal.agency_id)
-        .single()
-
-      if (error) throw error
-      return agencyInfo as Agency
-    },
-    // Wait for auth to be ready before fetching
-    enabled: !!userData,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  })
+  // Agency mutations via Django API
+  const updateAgencySettingsMutation = useUpdateAgencySettings()
+  const uploadAgencyLogoMutation = useUploadAgencyLogo()
+  const updateAgencyColorMutation = useUpdateAgencyColor()
 
   // Fetch carriers - only when user is authenticated
   const { data: carriersData = [], isLoading: carriersLoading, error: carriersError } = useQuery({
     queryKey: queryKeys.configurationCarriers(),
     queryFn: async () => {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) throw new Error('No access token')
-
       const response = await fetch('/api/carriers', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
         },
         credentials: 'include'
       })
@@ -584,7 +519,7 @@ export default function ConfigurationPage() {
       return response.json() as Promise<Carrier[]>
     },
     // Wait for auth to be ready before fetching
-    enabled: !!userData,
+    enabled: !!user,
     staleTime: 10 * 60 * 1000, // 10 minutes
   })
 
@@ -592,17 +527,10 @@ export default function ConfigurationPage() {
   const { data: allProductsData = [], isLoading: productsLoading, error: productsError } = useQuery({
     queryKey: queryKeys.configurationProducts(),
     queryFn: async () => {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) throw new Error('No access token')
-
       const response = await fetch('/api/products/all', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
         },
         credentials: 'include'
       })
@@ -620,7 +548,7 @@ export default function ConfigurationPage() {
       return response.json() as Promise<Product[]>
     },
     // Wait for auth to be ready before fetching
-    enabled: !!userData,
+    enabled: !!user,
     staleTime: 10 * 60 * 1000, // 10 minutes
   })
 
@@ -628,23 +556,15 @@ export default function ConfigurationPage() {
   const { data: positionsData = [], isLoading: positionsLoading, error: positionsError, refetch: refetchPositions } = useQuery({
     queryKey: queryKeys.configurationPositions(),
     queryFn: async () => {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) return []
-
       const response = await fetch('/api/positions', {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
+        credentials: 'include'
       })
 
       if (!response.ok) return []
       return response.json() as Promise<Position[]>
     },
-    enabled: activeTab === 'positions',
+    enabled: activeTab === 'positions' && !!user,
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
@@ -652,17 +572,10 @@ export default function ConfigurationPage() {
   const { data: commissionsCarriersData = [], isLoading: commissionsCarriersLoading } = useQuery({
     queryKey: queryKeys.configurationCommissionsCarriers(),
     queryFn: async () => {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) return []
-
       const response = await fetch('/api/carriers/with-products', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
         },
         credentials: 'include'
       })
@@ -670,7 +583,7 @@ export default function ConfigurationPage() {
       if (!response.ok) return []
       return response.json() as Promise<Carrier[]>
     },
-    enabled: activeTab === 'commissions' && !!userData,
+    enabled: activeTab === 'commissions' && !!user,
     staleTime: 10 * 60 * 1000, // 10 minutes
   })
 
@@ -678,27 +591,19 @@ export default function ConfigurationPage() {
   const { data: commissionsData = [], isLoading: commissionsLoading, error: commissionsError, refetch: refetchCommissions } = useQuery({
     queryKey: queryKeys.configurationCommissions(selectedCommissionCarrier),
     queryFn: async () => {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) return []
-
       const url = selectedCommissionCarrier
         ? `/api/positions/product-commissions?carrier_id=${selectedCommissionCarrier}`
         : '/api/positions/product-commissions'
 
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
+        credentials: 'include'
       })
 
       if (!response.ok) return []
       return response.json() as Promise<Commission[]>
     },
-    enabled: activeTab === 'commissions' && !!selectedCommissionCarrier,
+    enabled: activeTab === 'commissions' && !!selectedCommissionCarrier && !!user,
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
@@ -724,32 +629,25 @@ export default function ConfigurationPage() {
 
   // ============ Mutations ============
 
-  // Mutation for updating agency primary color (used for automatic theme sync)
-  const updatePrimaryColorMutation = useMutation({
-    mutationFn: async ({ agencyId, color }: { agencyId: string; color: string }) => {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from('agencies')
-        .update({ primary_color: color })
-        .eq('id', agencyId)
-
-      if (error) throw error
-      return { color }
-    },
-    onSuccess: (data) => {
-      // Update local state
-      if (agency) {
-        setAgency({ ...agency, primary_color: data.color })
-      }
-      // Invalidate agency query to ensure cache is consistent (client-side only)
-      if (isMounted) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
-      }
-    },
-    onError: (error) => {
-      console.error('Error updating primary color:', error)
+  // Alias for consistency with existing code
+  const updatePrimaryColorMutation = {
+    mutate: ({ agencyId, color }: { agencyId: string; color: string }) => {
+      updateAgencyColorMutation.mutate(
+        { agencyId, primaryColor: color },
+        {
+          onSuccess: () => {
+            // Update local state
+            if (agency) {
+              setAgency({ ...agency, primary_color: color })
+            }
+          },
+          onError: (error) => {
+            console.error('Error updating primary color:', error)
+          }
+        }
+      )
     }
-  })
+  }
 
   // Position mutations
   const createPositionMutation = useCreatePosition()
@@ -866,12 +764,12 @@ export default function ConfigurationPage() {
 
   // ============ Original useEffects (keeping non-fetch logic) ============
 
-  // Sync theme state when userData changes (e.g., after login or theme update)
+  // Sync theme state when user changes (e.g., after login or theme update)
   useEffect(() => {
-    if (userData?.theme_mode) {
-      setAgencyThemeMode(userData.theme_mode)
+    if (user?.theme_mode) {
+      setAgencyThemeMode(user.theme_mode)
     }
-  }, [userData?.theme_mode])
+  }, [user?.theme_mode])
 
   // Close carrier dropdown when clicking outside
   useEffect(() => {
@@ -913,18 +811,14 @@ export default function ConfigurationPage() {
 
     try {
       setSavingDisplayName(true)
-      const supabase = createClient()
 
-      // Update both name and display_name to keep them in sync
-      const { error } = await supabase
-        .from('agencies')
-        .update({
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: {
           name: displayNameValue.trim(),
           display_name: displayNameValue.trim()
-        })
-        .eq('id', agency.id)
-
-      if (error) throw error
+        },
+      })
 
       setDisplayName(displayNameValue.trim())
       setEditingDisplayName(false)
@@ -964,7 +858,6 @@ export default function ConfigurationPage() {
 
     try {
       setUploadingLogo(true)
-      const supabase = createClient()
 
       console.log('Starting logo upload...', {
         agencyId: agency.id,
@@ -973,33 +866,16 @@ export default function ConfigurationPage() {
         fileType: file.type
       })
 
-      // Upload to storage
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${agency.id}/logo.${fileExt}`
+      // Upload via Django API
+      const result = await uploadAgencyLogoMutation.mutateAsync({
+        agencyId: agency.id,
+        file,
+      })
 
-      console.log('Uploading to storage path:', fileName)
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('logos')
-        .upload(fileName, file, {
-          upsert: true,
-          contentType: file.type
-        })
-
-      if (uploadError) {
-        console.error('Storage upload error:', uploadError)
-        throw new Error(`Upload failed: ${uploadError.message}`)
-      }
-
-      console.log('Upload successful:', uploadData)
-
-      // Get public URL with cache-busting timestamp
-      const { data: { publicUrl } } = supabase.storage
-        .from('logos')
-        .getPublicUrl(fileName)
+      console.log('Upload successful:', result)
 
       // Add timestamp query parameter to bust browser and CDN cache
-      const cacheBustedUrl = `${publicUrl}?t=${Date.now()}`
+      const cacheBustedUrl = `${result.logo_url}?t=${Date.now()}`
 
       console.log('Public URL generated:', cacheBustedUrl)
 
@@ -1007,7 +883,7 @@ export default function ConfigurationPage() {
       setPendingLogo(cacheBustedUrl)
 
       // Extract dominant color from the uploaded image (use original URL without cache param)
-      await extractDominantColor(publicUrl)
+      await extractDominantColor(result.logo_url)
     } catch (error) {
       console.error('Error uploading logo:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
@@ -1067,19 +943,20 @@ export default function ConfigurationPage() {
         )
 
         if (useSuggested && agency) {
-          const supabase = createClient()
-          const { error } = await supabase
-            .from('agencies')
-            .update({ primary_color: suggestedColor })
-            .eq('id', agency.id)
+          try {
+            await updateAgencyColorMutation.mutateAsync({
+              agencyId: agency.id,
+              primaryColor: suggestedColor,
+            })
 
-          if (!error) {
             setPrimaryColor(suggestedColor)
             document.documentElement.style.setProperty('--primary', suggestedColor)
 
             // Set the foreground color based on the primary color's luminance
             const textColor = getContrastTextColor(suggestedColor)
             document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
+          } catch (colorError) {
+            console.error('Error updating primary color:', colorError)
           }
         }
       }
@@ -1158,7 +1035,7 @@ export default function ConfigurationPage() {
     setSavingTheme(false)
 
     if (result.success) {
-      await refreshUserData()
+      await refreshUser()
     } else {
       showError('Failed to update theme preference')
       setAgencyThemeMode(previousTheme)
@@ -1182,17 +1059,14 @@ export default function ConfigurationPage() {
 
     try {
       setSavingWhitelabelDomain(true)
-      const supabase = createClient()
 
-      const { error } = await supabase
-        .from('agencies')
-        .update({ whitelabel_domain: whitelabelDomainValue.trim() || null })
-        .eq('id', agency.id)
-
-      if (error) throw error
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: { whitelabel_domain: whitelabelDomainValue.trim() || null },
+      })
 
       setWhitelabelDomain(whitelabelDomainValue.trim())
-      setAgency({ ...agency, whitelabel_domain: whitelabelDomainValue.trim() || undefined })
+      setAgency({ ...agency, whitelabel_domain: whitelabelDomainValue.trim() || null })
       setEditingWhitelabelDomain(false)
     } catch (error) {
       console.error('Error updating whitelabel domain:', error)
@@ -1466,26 +1340,15 @@ export default function ConfigurationPage() {
   // Helper function to sync commissions for a specific carrier (silently)
   const syncCommissionsForCarrier = async (carrierId: string, forceRefresh: boolean = false): Promise<void> => {
     try {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        console.warn(`No access token available for syncing carrier ${carrierId}`)
-        return
-      }
-
       const response = await fetch(`/api/positions/product-commissions/sync?carrier_id=${carrierId}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
+        credentials: 'include'
       })
 
       if (response.ok) {
         const data = await response.json()
         console.log(`Auto-synced commissions for carrier ${carrierId}: created ${data.created || 0} entries`)
-        
+
         // Refresh commissions only when we added new entries and this carrier is active.
         // Avoid forcing a refetch here to prevent double-loading; the tab/useEffect will handle initial fetch.
         if (data.created > 0 && selectedCommissionCarrier === carrierId) {
@@ -1504,23 +1367,14 @@ export default function ConfigurationPage() {
   // Helper function to sync commissions for all carriers (silently)
   const syncCommissionsForAllCarriers = async (): Promise<void> => {
     try {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
-
-      if (!accessToken) {
-        console.warn('No access token available for syncing all carriers')
-        return
-      }
-
       console.log('Auto-syncing commissions for all active carriers...')
-      
+
       // Sync for all active carriers
       const activeCarriers = carriers.filter(c => c.is_active)
       for (const carrier of activeCarriers) {
         await syncCommissionsForCarrier(carrier.id, false)
       }
-      
+
       console.log(`Completed auto-sync for ${activeCarriers.length} carriers`)
     } catch (error) {
       console.error('Error auto-syncing commissions for all carriers:', error)
@@ -1572,24 +1426,17 @@ export default function ConfigurationPage() {
     const existingCarrier = carriers.find(carrier => carrier.id === newProduct.carrier_id)
     if (!existingCarrier) {
       try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        const accessToken = session?.access_token
+        const response = await fetch('/api/carriers', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include'
+        })
 
-        if (accessToken) {
-          const response = await fetch('/api/carriers', {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${accessToken}`
-            },
-            credentials: 'include'
-          })
-
-          if (response.ok) {
-            const updatedCarriers = await response.json()
-            setCarriers(updatedCarriers)
-          }
+        if (response.ok) {
+          const updatedCarriers = await response.json()
+          setCarriers(updatedCarriers)
         }
       } catch (error) {
         console.error('Error refreshing carriers:', error)
@@ -1755,14 +1602,11 @@ export default function ConfigurationPage() {
 
     try {
       setSavingLeadSources(true)
-      const supabase = createClient()
 
-      const { error } = await supabase
-        .from('agencies')
-        .update({ lead_sources: updatedLeadSources })
-        .eq('id', agency.id)
-
-      if (error) throw error
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: { lead_sources: updatedLeadSources },
+      })
 
       setLeadSources(updatedLeadSources)
       setNewLeadSource("")
@@ -1787,14 +1631,11 @@ export default function ConfigurationPage() {
 
     try {
       setSavingLeadSources(true)
-      const supabase = createClient()
 
-      const { error } = await supabase
-        .from('agencies')
-        .update({ lead_sources: updatedLeadSources })
-        .eq('id', agency.id)
-
-      if (error) throw error
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: { lead_sources: updatedLeadSources },
+      })
 
       setLeadSources(updatedLeadSources)
       setEditingLeadSourceIndex(null)
@@ -1822,14 +1663,11 @@ export default function ConfigurationPage() {
 
     try {
       setSavingLeadSources(true)
-      const supabase = createClient()
 
-      const { error } = await supabase
-        .from('agencies')
-        .update({ lead_sources: updatedLeadSources })
-        .eq('id', agency.id)
-
-      if (error) throw error
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: { lead_sources: updatedLeadSources },
+      })
 
       setLeadSources(updatedLeadSources)
     } catch (error) {
@@ -1851,14 +1689,11 @@ export default function ConfigurationPage() {
 
     try {
       setSavingPhoneNumber(true)
-      const supabase = createClient()
 
-      const { error } = await supabase
-        .from('agencies')
-        .update({ phone_number: phoneNumberValue.trim() || null })
-        .eq('id', agency.id)
-
-      if (error) throw error
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: { phone_number: phoneNumberValue.trim() || null },
+      })
 
       setAgencyPhoneNumber(phoneNumberValue.trim())
       setEditingPhoneNumber(false)
@@ -1882,14 +1717,11 @@ export default function ConfigurationPage() {
 
     try {
       setSavingMessagingEnabled(true)
-      const supabase = createClient()
 
-      const { error } = await supabase
-        .from('agencies')
-        .update({ messaging_enabled: enabled })
-        .eq('id', agency.id)
-
-      if (error) throw error
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: { messaging_enabled: enabled },
+      })
 
       setMessagingEnabled(enabled)
     } catch (error) {
@@ -1912,14 +1744,11 @@ export default function ConfigurationPage() {
 
     try {
       setSavingDiscordWebhook(true)
-      const supabase = createClient()
 
-      const { error } = await supabase
-        .from('agencies')
-        .update({ discord_webhook_url: discordWebhookValue.trim() || null })
-        .eq('id', agency.id)
-
-      if (error) throw error
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: { discord_webhook_url: discordWebhookValue.trim() || null },
+      })
 
       setDiscordWebhookUrl(discordWebhookValue.trim())
       setEditingDiscordWebhook(false)
@@ -1943,14 +1772,11 @@ export default function ConfigurationPage() {
 
     try {
       setSavingLapseEmail(true)
-      const supabase = createClient()
 
-      const { error } = await supabase
-        .from('agencies')
-        .update({ lapse_email_notifications_enabled: enabled })
-        .eq('id', agency.id)
-
-      if (error) throw error
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: { lapse_email_notifications_enabled: enabled },
+      })
 
       setLapseEmailEnabled(enabled)
       showSuccess(enabled ? 'Lapse email notifications enabled' : 'Lapse email notifications disabled')
@@ -1973,14 +1799,11 @@ export default function ConfigurationPage() {
 
     try {
       setSavingLapseEmail(true)
-      const supabase = createClient()
 
-      const { error } = await supabase
-        .from('agencies')
-        .update({ lapse_email_subject: lapseSubjectValue.trim() })
-        .eq('id', agency.id)
-
-      if (error) throw error
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: { lapse_email_subject: lapseSubjectValue.trim() },
+      })
 
       setLapseEmailSubject(lapseSubjectValue.trim())
       setEditingLapseSubject(false)
@@ -2009,14 +1832,11 @@ export default function ConfigurationPage() {
 
     try {
       setSavingLapseEmail(true)
-      const supabase = createClient()
 
-      const { error } = await supabase
-        .from('agencies')
-        .update({ lapse_email_body: lapseBodyValue })
-        .eq('id', agency.id)
-
-      if (error) throw error
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: { lapse_email_body: lapseBodyValue },
+      })
 
       setLapseEmailBody(lapseBodyValue)
       setEditingLapseBody(false)
@@ -2084,7 +1904,6 @@ export default function ConfigurationPage() {
 
     try {
       setSavingLapseEmail(true)
-      const supabase = createClient()
 
       const updates: { lapse_email_subject?: string; lapse_email_body?: string } = {}
 
@@ -2101,12 +1920,10 @@ export default function ConfigurationPage() {
         return
       }
 
-      const { error } = await supabase
-        .from('agencies')
-        .update(updates)
-        .eq('id', agency.id)
-
-      if (error) throw error
+      await updateAgencySettingsMutation.mutateAsync({
+        agencyId: agency.id,
+        data: updates,
+      })
 
       if (updates.lapse_email_subject) {
         setLapseEmailSubject(updates.lapse_email_subject)
@@ -2210,23 +2027,8 @@ export default function ConfigurationPage() {
       const expectedFiles = policyReportFiles.length
       const clientJobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-      // Resolve agencyId from current session
-      let agencyId: string | null = null
-      try {
-        const supabase = createClient()
-        const { data: auth } = await supabase.auth.getUser()
-        const userId = auth?.user?.id
-        if (userId) {
-          const { data: userRow, error: userError } = await supabase
-            .from('users')
-            .select('agency_id')
-            .eq('auth_user_id', userId)
-            .single()
-          if (!userError) {
-            agencyId = userRow?.agency_id ?? null
-          }
-        }
-      } catch {}
+      // Resolve agencyId from current user context
+      const agencyId = user?.agency_id
 
       if (!agencyId) {
         showError('Could not resolve your agency. Please refresh and try again.')
@@ -2696,7 +2498,7 @@ export default function ConfigurationPage() {
                             {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) ? (
                               <div className="relative w-full h-full flex items-center justify-center">
                                 <img
-                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url}
+                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url || undefined}
                                   alt="Agency Logo"
                                   className="max-w-full max-h-full object-contain p-2"
                                   crossOrigin="anonymous"
@@ -3102,7 +2904,7 @@ export default function ConfigurationPage() {
                             <div className="flex items-center space-x-3">
                               {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) ? (
                                 <img
-                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url}
+                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url || undefined}
                                   alt="Logo Preview"
                                   className="w-10 h-10 rounded-xl object-contain"
                                   crossOrigin="anonymous"

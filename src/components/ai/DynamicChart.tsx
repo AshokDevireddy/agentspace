@@ -190,7 +190,7 @@ export default function DynamicChart({ type, data, config }: ChartProps) {
               <Legend />
               <Area
                 type="monotone"
-                dataKey={config.yKey}
+                dataKey={config.yKey || 'value'}
                 stroke={COLORS[0]}
                 fill={COLORS[0]}
                 fillOpacity={0.6}

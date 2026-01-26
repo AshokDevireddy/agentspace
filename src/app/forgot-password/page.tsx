@@ -2,17 +2,15 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
-import { updatePassword } from '@/lib/supabase/api'
 import { captureHashTokens } from '@/lib/auth/constants'
+import { authApi, AuthApiError } from '@/lib/api/auth'
 
 export default function ForgotPassword() {
-  const supabase = createClient()
   const router = useRouter()
 
   const [formData, setFormData] = useState({
@@ -117,13 +115,19 @@ export default function ForgotPassword() {
     }
 
     console.log('[ForgotPassword] Using recovery token from URL hash')
-    console.log('[ForgotPassword] Calling updatePassword API')
-    const result = await updatePassword(initialHashTokens.accessToken, newPassword)
-    console.log('[ForgotPassword] updatePassword result:', result)
+    console.log('[ForgotPassword] Calling resetPassword API')
 
-    return {
-      success: result.success,
-      message: result.error || undefined
+    try {
+      await authApi.resetPassword({
+        access_token: initialHashTokens.accessToken,
+        password: newPassword,
+      })
+      console.log('[ForgotPassword] resetPassword succeeded')
+      return { success: true }
+    } catch (err) {
+      console.log('[ForgotPassword] resetPassword failed:', err)
+      const message = err instanceof AuthApiError ? err.message : 'Failed to reset password'
+      return { success: false, message }
     }
   }
 

@@ -58,7 +58,6 @@ async function updateProgress(jobId: string, step: keyof typeof PROGRESS_STEPS):
       p_progress: progress,
       p_message: message
     })
-    console.log(`[NIPR] Progress: ${progress}% - ${message}`)
   } catch (error) {
     // Non-blocking - just log the error
     console.error('[NIPR] Failed to update progress:', error)
@@ -396,13 +395,10 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
   }
 
   try {
-    console.log(`[NIPR-HA] Starting HyperAgent automation (job: ${job.job_id}, request: ${requestId})...`)
     await updateProgress(job.job_id, 'STARTING')
 
     // Initialize HyperAgent with Anthropic Claude
     await updateProgress(job.job_id, 'BROWSER_LAUNCH')
-    console.log('[NIPR-HA] Initializing HyperAgent with Claude Sonnet 4...')
-    console.log('[NIPR-HA] ANTHROPIC_API_KEY present:', !!process.env.ANTHROPIC_API_KEY)
 
     const llm = createAnthropicClient({
       apiKey: process.env.ANTHROPIC_API_KEY,
@@ -431,14 +427,12 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
       downloadPath: '/tmp/downloads',
       eventsEnabled: true,
     })
-    console.log('[NIPR-HA] CDP download behavior configured')
 
     // Register with queue manager
     queueManager.registerJob(job.job_id, agent, job.job_user_id)
 
     // Navigate to NIPR
     await updateProgress(job.job_id, 'NAVIGATING')
-    console.log('[NIPR-HA] Navigating to NIPR...')
     await page.goto('https://pdb.nipr.com/my-nipr/frontend/user-menu')
     await delay(2000)
 
@@ -446,27 +440,21 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
     await updateProgress(job.job_id, 'ENTERING_INFO')
 
     // Step 1: Click first button to begin
-    console.log('[NIPR-HA] Clicking initial button...')
     await page.perform('Click the first button to begin')
 
     // Step 2: Select NPN radio button
-    console.log('[NIPR-HA] Selecting NPN radio...')
     await page.perform('Click the NPN radio button')
 
     // Step 3: Check use agreement checkbox
-    console.log('[NIPR-HA] Checking agreement...')
     await page.perform('Check the use agreement checkbox')
 
     // Step 4: Fill in lastName field
-    console.log('[NIPR-HA] Filling lastName...')
     await page.perform(`Type "${input.lastName}" into the Last Name field`)
 
     // Step 5: Fill in NPN field
-    console.log('[NIPR-HA] Filling NPN...')
     await page.perform(`Type "${input.npn}" into the NPN field`)
 
     // Step 6: Click submit button
-    console.log('[NIPR-HA] Submitting lookup form...')
     await page.perform('Click the Submit button')
 
     // Check for NPN/lookup errors before proceeding
@@ -478,14 +466,11 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
 
     // Step 7-8: Fill SSN and DOB
     await updateProgress(job.job_id, 'VERIFYING_IDENTITY')
-    console.log('[NIPR-HA] Filling SSN...')
     await page.perform(`Type "${input.ssn}" into the SSN field`)
 
-    console.log('[NIPR-HA] Filling DOB...')
     await page.perform(`Type "${input.dob}" into the Date of Birth field`)
 
     // Step 9: Click submit again
-    console.log('[NIPR-HA] Submitting verification...')
     await page.perform('Click the Submit button')
 
     // Check for verification errors before proceeding
@@ -497,24 +482,19 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
 
     // Step 10: Click start-flow button
     await updateProgress(job.job_id, 'SELECTING_REPORT')
-    console.log('[NIPR-HA] Starting flow...')
     await page.perform('Click the Start Flow button')
 
     // Step 11: Select PDB Detail Report
-    console.log('[NIPR-HA] Selecting PDB Detail Report...')
     await page.perform('Click the PDB Detail Report radio button or label')
 
     // Step 12: Click submit (third time)
-    console.log('[NIPR-HA] Submitting report selection...')
     await page.perform('Click the Next button')
 
     // Step 13: Click primary button
     await updateProgress(job.job_id, 'PROCESSING_REQUEST')
-    console.log('[NIPR-HA] Proceeding to payment...')
     await page.perform('Click the Submit Request button')
 
     // Step 14: Check userAccepted checkbox
-    console.log('[NIPR-HA] Accepting terms...')
     await page.perform('Check the user acceptance checkbox')
 
     // Step 15: Click submit (fourth time)
@@ -522,27 +502,21 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
 
     // Step 16: Click submit and pay button
     await updateProgress(job.job_id, 'CONFIRMING_DETAILS')
-    console.log('[NIPR-HA] Initiating payment...')
     await page.perform('Click the Submit and Pay button')
 
     // Wait for billing details page
-    console.log('[NIPR-HA] Waiting for billing details page to load...')
     await waitForURLPattern(page, '**/billingDetails**', { timeout: 60000 })
-    console.log('[NIPR-HA] On billing details page')
 
     // Payment Page Steps - Using AI for form filling
-    console.log('[NIPR-HA] Selecting payment method...')
     await page.perform('Click the Credit Card radio button')
 
     // Fill billing details using config values from environment variables
-    console.log('[NIPR-HA] Filling billing details...')
     await page.perform(`Type "${config.billing.firstName}" into the First Name field`)
     await page.perform(`Type "${config.billing.lastName}" into the Last Name field`)
     await page.perform(`Type "${config.billing.address}" into the Address field`)
     await page.perform(`Type "${config.billing.city}" into the City field`)
 
     // Use direct Playwright for native <select> dropdown
-    console.log('[NIPR-HA] Selecting state...')
     await page.locator('#state').selectOption(config.billing.state)
 
     await page.perform(`Type "${config.billing.zip}" into the ZIP field`)
@@ -552,54 +526,42 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
     const areaCode = phoneDigits.substring(0, 3)
     const prefix = phoneDigits.substring(3, 6)
     const lineNumber = phoneDigits.substring(6, 10)
-    console.log('[NIPR-HA] Filling phone fields...')
     await page.locator('#phone_areaCode').fill(areaCode)
     await page.locator('#phone_prefix').fill(prefix)
     await page.locator('#phone_number').fill(lineNumber)
 
     // Click Next button
-    console.log('[NIPR-HA] Submitting billing...')
     await page.perform('Click the Next button')
     await delay(3000)
 
     // Wait for Stripe page
-    console.log('[NIPR-HA] Waiting for Stripe payment page...')
     await waitForURLPattern(page, '**/stripeDetails**', { timeout: 60000 })
-    console.log('[NIPR-HA] On Stripe page')
 
     // Check userAgreement checkbox - this reveals the Stripe form
-    console.log('[NIPR-HA] Accepting payment agreement...')
     await page.perform('Check the I agree checkbox')
     await delay(3000) // Wait for Stripe iframes to load
 
     // Fill Stripe payment details using page.perform()
-    console.log('[NIPR-HA] Filling payment details...')
     await delay(3000) // Wait for Stripe to fully load
 
     // Card Number
     await page.perform(`Type "${config.payment.cardNumber}" into the card number field`)
-    console.log('[NIPR-HA] Card number filled')
 
     // Expiry
     await page.perform(`Type "${config.payment.expiry}" into the expiry field`)
-    console.log('[NIPR-HA] Expiry date filled')
 
     // CVC
     await page.perform(`Type "${config.payment.cvc}" into the CVC field`)
-    console.log('[NIPR-HA] CVC filled')
 
     // Click payment submit
     await updateProgress(job.job_id, 'FINALIZING_REQUEST')
-    console.log('[NIPR-HA] Submitting payment...')
     await page.perform('Click the Submit button')
 
     // Wait for payment to process
-    console.log('[NIPR-HA] Processing payment...')
     await delay(5000)
 
     // Download Detail Report
     await updateProgress(job.job_id, 'DOWNLOADING_REPORT')
-    console.log('[NIPR-HA] Downloading report...')
 
     // Wait for the report page to be ready
     await delay(3000)
@@ -612,7 +574,6 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
 
     // Wait for download to complete on cloud (NOT saveAs - that doesn't work remotely)
     await download.path()
-    console.log(`[NIPR-HA] Download triggered: ${download.suggestedFilename()}`)
 
     // Get session ID before closing agent
     const session = agent.getSession() as SessionDetail
@@ -620,62 +581,46 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
     if (!sessionId) {
       throw new Error('Could not get Hyperbrowser session ID')
     }
-    console.log(`[NIPR-HA] Session ID: ${sessionId}`)
 
     // Unregister from queue manager before closing
     queueManager.unregisterJob(job.job_id)
 
     // Close agent (this stops the session)
     await agent.closeAgent()
-    console.log('[NIPR-HA] Agent closed, waiting for downloads zip...')
 
     // Wait for downloads zip to be ready on Hyperbrowser cloud
     await delay(3000)
     const zipUrl = await waitForDownloadZip(sessionId)
-    console.log(`[NIPR-HA] Downloads zip ready: ${zipUrl}`)
 
     // Extract PDF from zip
     const reportPath = path.join(downloadsFolder, `report_${requestId}.pdf`)
     await extractPdfFromZip(zipUrl, reportPath)
-    console.log(`[NIPR-HA] Report extracted: ${reportPath}`)
 
     // Files are in temp directory (not publicly accessible, but analyzed immediately)
     const files = [reportPath]
-
-    console.log('[NIPR-HA] PDFs downloaded successfully!')
 
     // Run AI analysis if enabled
     let analysis: NIPRAnalysisResult | undefined
 
     if (config.analyzeWithAI && config.anthropicApiKey) {
       await updateProgress(job.job_id, 'ANALYZING_REPORT')
-      console.log('[NIPR-HA] Running AI analysis on report...')
       try {
         analysis = await analyzePDFReport(reportPath)
-        if (analysis.success) {
-          console.log(`[NIPR-HA] AI analysis complete. Found ${analysis.unique_carriers.length} carriers.`)
-        } else {
-          console.log('[NIPR-HA] AI analysis returned no results.')
-        }
       } catch (error) {
         console.error('[NIPR-HA] AI analysis error:', error)
       }
-    } else {
-      console.log('[NIPR-HA] AI analysis skipped (not configured).')
     }
 
     // Clean up temp file after analysis
     try {
       if (fs.existsSync(reportPath)) {
         fs.unlinkSync(reportPath)
-        console.log(`[NIPR-HA] Cleaned up temp file: ${reportPath}`)
       }
     } catch (cleanupError) {
       console.warn('[NIPR-HA] Failed to clean up temp file:', cleanupError)
     }
 
     await updateProgress(job.job_id, 'COMPLETE')
-    console.log('[NIPR-HA] HyperAgent automation completed successfully!')
 
     return {
       success: true,

@@ -1,19 +1,22 @@
-import { createServerClient } from '@/lib/supabase/server'
+/**
+ * Edit SMS Draft API Route
+ *
+ * Updates the body of a draft SMS message.
+ * Reads authentication from httpOnly session cookie.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
+import { getSession } from '@/lib/session'
+import { createAdminClient } from '@/lib/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
-
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = createAdminClient()
 
     const body = await request.json()
     const { messageId, body: newBody } = body
@@ -36,7 +39,7 @@ export async function POST(request: NextRequest) {
     const { data, error: updateError } = await supabase
       .from('messages')
       .update({
-        body: newBody.trim()
+        body: newBody.trim(),
       })
       .eq('id', messageId)
       .eq('status', 'draft')
@@ -62,9 +65,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: data
+      message: data,
     })
-
   } catch (error) {
     console.error('Error in edit draft endpoint:', error)
     return NextResponse.json(

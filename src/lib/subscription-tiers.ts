@@ -154,5 +154,9 @@ export function getTierFromPriceId(priceId: string): SubscriptionTier {
 
 // Get price ID from tier
 export function getPriceIdFromTier(tier: SubscriptionTier): string {
-  return TIER_PRICE_IDS[tier] || '';
+  // Free tier has no Stripe price ID
+  if (tier === SUBSCRIPTION_TIERS.FREE) {
+    return '';
+  }
+  return TIER_PRICE_IDS[tier as keyof typeof TIER_PRICE_IDS] || '';
 }

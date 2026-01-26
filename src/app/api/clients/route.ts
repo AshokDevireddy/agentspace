@@ -1,17 +1,16 @@
-import { createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { getClientEndpoint } from '@/lib/api-config'
+import { getAccessToken } from '@/lib/session'
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createServerClient()
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '20')
     const view = searchParams.get('view') || 'downlines' // 'all', 'self', 'downlines'
 
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) {
+    const accessToken = await getAccessToken()
+    if (!accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -22,7 +21,7 @@ export async function GET(request: Request) {
 
     const response = await fetch(url.toString(), {
       headers: {
-        Authorization: `Bearer ${session.access_token}`,
+        Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
     })
@@ -72,4 +71,3 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
   }
 }
-

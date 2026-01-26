@@ -58,7 +58,7 @@ interface AgencyData {
 export default function ClientDashboard() {
   const router = useRouter()
   const supabase = createClient()
-  const { user: authUser, userData: authUserData, loading: authLoading } = useAuth()
+  const { user: authUser, loading: authLoading, signOut } = useAuth()
 
   // Query for full user profile data (extends AuthProvider's basic userData)
   const { data: userData, isLoading: userLoading, error: userError } = useQuery({
@@ -145,7 +145,7 @@ export default function ClientDashboard() {
     }
 
     // If user is not a client (from AuthProvider), redirect to main dashboard
-    if (authUserData?.role && authUserData.role !== 'client') {
+    if (authUser?.role && authUser.role !== 'client') {
       router.push('/')
       return
     }
@@ -159,7 +159,7 @@ export default function ClientDashboard() {
         router.push('/')
       }
     }
-  }, [authLoading, authUser, authUserData, userError, router])
+  }, [authLoading, authUser, userError, router])
 
   // Derived values
   const user = userData
@@ -169,7 +169,7 @@ export default function ClientDashboard() {
   const loading = authLoading || userLoading || (!!userData && dealsLoading)
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
+    await signOut()
     router.push('/login')
   }
 

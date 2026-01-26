@@ -3,43 +3,32 @@
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
-import { useSmartSignIn } from "@/hooks/mutations"
-import { createClient } from "@/lib/supabase/client"
+import { useAuth } from "@/providers/AuthProvider"
 import { clearInviteTokens, clearRecoveryTokens } from "@/lib/auth/constants"
 
 export default function LoginPage() {
   const router = useRouter()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
+  const { signIn } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
-  const [isNavigating, setIsNavigating] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   const processedRef = useRef(false)
   const cleanedRef = useRef(false)
-  const signInMutation = useSmartSignIn()
 
-  // Clean up any stale auth state on mount (fixes login after confirmation flow)
+  // Clean up any stale tokens on mount
   useEffect(() => {
     if (cleanedRef.current) return
     cleanedRef.current = true
 
-    const cleanup = async () => {
-      try {
-        // Clear any stored tokens from invite/recovery flows
-        clearInviteTokens()
-        clearRecoveryTokens()
-
-        // Clear Supabase session to ensure fresh state
-        const supabase = createClient()
-        await supabase.auth.signOut({ scope: 'local' })
-      } catch {
-        // Ignore errors - just ensuring clean state
-      }
-    }
-    cleanup()
+    // Clear any stored tokens from invite/recovery flows
+    clearInviteTokens()
+    clearRecoveryTokens()
   }, [])
 
+  // Handle URL error parameters
   useEffect(() => {
     if (processedRef.current) return
     processedRef.current = true
@@ -86,72 +75,41 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setIsLoading(true)
 
-    signInMutation.mutate(
-      { email, password },
-      {
-        onSuccess: async (result) => {
-          const { user: userData, agency: userAgency } = result
+    try {
+      const result = await signIn(email, password)
+      const { user: userData, agency: userAgency } = result
 
-          // Whitelabel validation
-          const isLocalhost = typeof window !== 'undefined' &&
-            (window.location.hostname === 'localhost' ||
-             window.location.hostname === '127.0.0.1' ||
-             window.location.hostname.includes('localhost'))
+      // Whitelabel validation
+      const isLocalhost = typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' ||
+         window.location.hostname === '127.0.0.1' ||
+         window.location.hostname.includes('localhost'))
 
-          if (!isLocalhost) {
-            if (isWhiteLabel && branding) {
-              if (userData.agency_id !== branding.id) {
-                signInMutation.reset()
-                setError('No account found with these credentials')
-                return
-              }
-            }
-
-            if (!isWhiteLabel && userAgency.whitelabel_domain) {
-              signInMutation.reset()
-              setError('No account found with these credentials')
-              return
-            }
-          }
-
-          // Status validation
-          if (userData.status === 'invited') {
-            signInMutation.reset()
-            setError('Please check your email and click the invite link to complete account setup')
+      if (!isLocalhost) {
+        if (isWhiteLabel && branding) {
+          if (userData.agency_id !== branding.id) {
+            setError('No account found with these credentials')
+            setIsLoading(false)
             return
           }
+        }
 
-          if (userData.status === 'inactive') {
-            signInMutation.reset()
-            setError('Your account has been deactivated')
-            return
-          }
-
-          if (userData.status !== 'active' && userData.status !== 'onboarding') {
-            signInMutation.reset()
-            setError('Account status is invalid. Please contact support.')
-            return
-          }
-
-          // Mark as navigating (disables button)
-          setIsNavigating(true)
-          const destination = userData.role === 'client' ? '/client/dashboard' : '/'
-
-          // Small delay to ensure cookies are synced, then navigate
-          // We don't wait for onAuthStateChange because it can be unreliable
-          // when there's existing auth state from previous flows
-          await new Promise(resolve => setTimeout(resolve, 500))
-
-          // Use hard navigation to ensure auth cookies are sent fresh
-          window.location.href = destination
-        },
-        onError: (err) => {
-          setIsNavigating(false)
-          setError(err.message || 'Login failed')
-        },
+        if (!isWhiteLabel && userAgency?.whitelabel_domain) {
+          setError('No account found with these credentials')
+          setIsLoading(false)
+          return
+        }
       }
-    )
+
+      // Navigate based on role
+      const destination = userData.role === 'client' ? '/client/dashboard' : '/'
+      window.location.href = destination
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed')
+      setIsLoading(false)
+    }
   }
 
   const displayName = isWhiteLabel && branding ? branding.display_name : 'AgentSpace'
@@ -218,9 +176,9 @@ export default function LoginPage() {
               <button
                 type="submit"
                 className="w-full py-2 rounded-md bg-foreground text-background font-semibold text-lg hover:bg-foreground/90 transition disabled:opacity-60"
-                disabled={signInMutation.isPending || isNavigating}
+                disabled={isLoading}
               >
-                {signInMutation.isPending || isNavigating ? 'Signing in...' : 'Sign In'}
+                {isLoading ? 'Signing in...' : 'Sign In'}
               </button>
               <button
                 type="button"

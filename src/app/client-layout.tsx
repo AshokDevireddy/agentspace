@@ -31,15 +31,15 @@ export default function ClientLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
-  const { userData, loading } = useAuth()
+  const { user, loading } = useAuth()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isClientPage = CLIENT_PAGES.some(page => pathname.startsWith(page))
   const isFullPageLayout = FULL_PAGE_LAYOUTS.some(page => pathname.startsWith(page))
 
   // Get role and status from centralized auth state (no duplicate fetching)
-  const userRole = userData?.role || null
-  const userStatus = userData?.status || null
+  const userRole = user?.role || null
+  const userStatus = user?.status || null
 
   // On auth pages, show a simple layout with just the logo
   if (isAuthPage) {

@@ -60,6 +60,16 @@ export async function GET(request: NextRequest) {
 
     // Assign to function-scoped variable for catch block access
     acquiredJob = acquiredJobs[0]
+
+    // Null check for type safety
+    if (!acquiredJob) {
+      return NextResponse.json({
+        success: true,
+        message: 'No pending jobs',
+        processed: 0
+      })
+    }
+
     console.log(`[CRON/NIPR] Processing job: ${acquiredJob.job_id}`)
 
     // Build job data for automation

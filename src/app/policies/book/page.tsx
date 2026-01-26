@@ -22,6 +22,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { formatPhoneForDisplay } from "@/lib/telnyx"
 
 // Types for the API responses
 interface Deal {
@@ -355,21 +356,7 @@ export default function BookOfBusiness() {
   }
 
   const formatPhoneNumber = (phone: string) => {
-    // Remove all non-digit characters
-    const digits = phone.replace(/\D/g, '');
-
-    // Check if we have a valid 10-digit phone number
-    if (digits.length === 10) {
-      return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-    }
-
-    // If it's 11 digits and starts with 1, remove the 1 and format
-    if (digits.length === 11 && digits[0] === '1') {
-      return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
-    }
-
-    // Return original if it doesn't match expected format
-    return phone;
+    return formatPhoneForDisplay(phone);
   }
 
   const hasActiveFilters =

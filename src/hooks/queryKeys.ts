@@ -163,4 +163,9 @@ export const queryKeys = {
 }
 
 // Helper type for query key
-export type QueryKeyType = ReturnType<typeof queryKeys[keyof typeof queryKeys]> | (typeof queryKeys)[keyof typeof queryKeys]
+// Extracts all possible query key types (both static arrays and function return types)
+type QueryKeyValues = (typeof queryKeys)[keyof typeof queryKeys]
+type QueryKeyFunctions = Extract<QueryKeyValues, (...args: any) => any>
+type QueryKeyArrays = Exclude<QueryKeyValues, (...args: any) => any>
+
+export type QueryKeyType = QueryKeyArrays | ReturnType<QueryKeyFunctions>

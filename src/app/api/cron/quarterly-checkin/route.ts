@@ -15,7 +15,6 @@ import { verifyCronRequest } from '@/lib/cron-auth';
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('Quarterly check-in cron started');
 
     // Verify this is a cron request
     const authResult = verifyCronRequest(request);
@@ -26,7 +25,6 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient();
 
     // Query deals using RPC function
-    console.log('🔍 Querying deals for quarterly check-in (90-day intervals)...');
     const { data: deals, error: dealsError } = await supabase
       .rpc('get_quarterly_checkin_deals');
 
@@ -36,7 +34,6 @@ export async function GET(request: NextRequest) {
     }
 
     if (!deals || deals.length === 0) {
-      console.log('⚠️  No deals due for quarterly check-in today');
       return NextResponse.json({
         success: true,
         sent: 0,
@@ -44,7 +41,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    console.log(`📊 Found ${deals.length} unique clients due for quarterly check-in`);
 
     const agencyIds = deals.map((d: { agency_id: string }) => d.agency_id);
     const agencySettingsMap = await batchFetchAgencySmsSettings(agencyIds);
@@ -54,25 +50,18 @@ export async function GET(request: NextRequest) {
     let skippedCount = 0;
 
     // Process each deal
-    console.log('\n📞 Processing quarterly check-in messages...');
     for (const deal of deals) {
       try {
-        console.log(`\n📬 Processing: ${deal.client_name} (${deal.client_phone})`);
         console.log(`  Policy Effective: ${deal.policy_effective_date}`);
         console.log(`  Days Since Effective: ${deal.days_since_effective}`);
-        console.log(`  Agent: ${deal.agent_first_name} ${deal.agent_last_name}`);
         console.log(`  Agent Phone: ${deal.agent_phone}`);
-        console.log(`  Agent Tier: ${deal.agent_subscription_tier}`);
-        console.log(`  Agency: ${deal.agency_name}`);
 
         if (!deal.messaging_enabled) {
-          console.log(`  ⚠️  SKIPPED: Messaging is disabled for agency ${deal.agency_name}`);
           skippedCount++;
           continue;
         }
 
         if (deal.agent_subscription_tier === 'free' || deal.agent_subscription_tier === 'basic') {
-          console.log(`  ⏭️  SKIPPED: Agent is on ${deal.agent_subscription_tier} tier`);
           skippedCount++;
           continue;
         }
@@ -80,12 +69,10 @@ export async function GET(request: NextRequest) {
         // Get agency settings for this deal
         const agencySettings = agencySettingsMap.get(deal.agency_id);
         if (!agencySettings?.sms_quarterly_enabled) {
-          console.log(`  ⏭️  SKIPPED: Quarterly messages disabled for agency`);
           skippedCount++;
           continue;
         }
 
-        console.log(`  🔍 Checking for existing conversation...`);
         const conversation = await getConversationIfExists(
           deal.agent_id,
           deal.deal_id,
@@ -94,16 +81,12 @@ export async function GET(request: NextRequest) {
         );
 
         if (!conversation) {
-          console.log(`  ⏭️  SKIPPED: No existing conversation found`);
           skippedCount++;
           continue;
         }
 
-        console.log(`  📞 Conversation ID: ${conversation.id}`);
-        console.log(`  📱 SMS Opt-in Status: ${conversation.sms_opt_in_status}`);
 
         if (conversation.sms_opt_in_status !== 'opted_in') {
-          console.log(`  ⏭️  SKIPPED: Client not opted in (status: ${conversation.sms_opt_in_status})`);
           skippedCount++;
           continue;
         }
@@ -120,7 +103,6 @@ export async function GET(request: NextRequest) {
           agent_phone: agentPhone,
         });
 
-        console.log(`  📝 Message: ${messageBody.substring(0, 80)}...`);
 
         // Create draft message
         await logMessage({
@@ -141,7 +123,6 @@ export async function GET(request: NextRequest) {
           },
         });
 
-        console.log(`  ✅ Draft message created successfully`);
         successCount++;
       } catch (dealError) {
         console.error(`  ❌ Error processing deal ${deal.deal_id}:`, dealError);

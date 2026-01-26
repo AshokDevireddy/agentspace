@@ -72,6 +72,50 @@ export function normalizePhoneForStorage(phone: string): string {
 }
 
 /**
+ * Formats a phone number for display as (XXX) XXX-XXXX
+ * Handles both 10-digit and 11-digit (with leading 1) phone numbers
+ */
+export function formatPhoneForDisplay(phone: string): string {
+  // Remove all non-digit characters
+  const digits = phone.replace(/\D/g, '');
+
+  // If it's 10 digits, format as (XXX) XXX-XXXX
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
+  // If it's 11 digits and starts with 1, remove the 1 and format
+  if (digits.length === 11 && digits[0] === '1') {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+
+  // Return original if it doesn't match expected patterns
+  return phone;
+}
+
+/**
+ * Formats a phone number as the user types (with live formatting)
+ * Used for input fields to provide real-time formatting
+ * Limits to 10 digits and formats as (XXX) XXX-XXXX
+ */
+export function formatPhoneInput(value: string): string {
+  // Remove all non-digits
+  const phoneNumber = value.replace(/\D/g, '');
+
+  // Limit to 10 digits
+  const limitedPhone = phoneNumber.slice(0, 10);
+
+  // Format based on length
+  if (limitedPhone.length <= 3) {
+    return limitedPhone;
+  } else if (limitedPhone.length <= 6) {
+    return `(${limitedPhone.slice(0, 3)}) ${limitedPhone.slice(3)}`;
+  } else {
+    return `(${limitedPhone.slice(0, 3)}) ${limitedPhone.slice(3, 6)}-${limitedPhone.slice(6)}`;
+  }
+}
+
+/**
  * Sends an SMS message via Telnyx API
  */
 export async function sendSMS({ from, to, text }: SendSMSParams): Promise<TelnyxResponse> {

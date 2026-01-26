@@ -10,8 +10,9 @@ import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 import { useTheme } from "next-themes"
 import { useNotification } from '@/contexts/notification-context'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
-import { supabaseRestFetch, updatePassword } from '@/lib/supabase/api'
+import { supabaseRestFetch } from '@/lib/supabase/api'
 import { AUTH_TIMEOUT_MS, getInviteTokens, clearInviteTokens, withTimeout } from '@/lib/auth/constants'
+import { authApi, AuthApiError } from '@/lib/api/auth'
 
 interface UserData {
   id: string
@@ -321,35 +322,24 @@ export default function SetupAccount() {
         return
       }
 
-      // Update password
-      const passwordResult = await updatePassword(accessToken, formData.password)
-      if (!passwordResult.success) {
-        setErrors([passwordResult.error || 'Failed to update password. Please try again.'])
-        window.scrollTo({ top: 0, behavior: 'smooth' })
-        return
-      }
-
-      // Update profile - only set clients to active, admins/agents stay in onboarding for the wizard
-      const updateData: Record<string, unknown> = {
+      // Use backend API to setup account (handles password + profile update)
+      await authApi.setupAccount(accessToken, {
+        password: formData.password,
         first_name: formData.firstName,
         last_name: formData.lastName,
-        phone_number: formData.phoneNumber || null,
-        updated_at: new Date().toISOString(),
-      }
+        phone_number: formData.phoneNumber || undefined,
+      })
 
-      // Only clients skip the onboarding wizard and go directly to active
+      // Update user status - only clients skip the onboarding wizard
       if (userData?.role === 'client') {
-        updateData.status = 'active'
-      }
-
-      const { error: profileError } = await supabaseRestFetch(
-        `/rest/v1/users?id=eq.${userData?.id}`,
-        { accessToken, method: 'PATCH', body: updateData }
-      )
-
-      if (profileError) {
-        setErrors(['Failed to update profile. Please try again.'])
-        return
+        await supabaseRestFetch(
+          `/rest/v1/users?id=eq.${userData?.id}`,
+          {
+            accessToken,
+            method: 'PATCH',
+            body: { status: 'active', updated_at: new Date().toISOString() }
+          }
+        )
       }
 
       setFormData({
@@ -364,8 +354,12 @@ export default function SetupAccount() {
 
       showSuccess('Account setup complete! Please log in with your new password.')
       router.push('/login?message=setup-complete')
-    } catch {
-      setErrors(['Failed to complete setup. Please try again.'])
+    } catch (err) {
+      if (err instanceof AuthApiError) {
+        setErrors([err.message])
+      } else {
+        setErrors(['Failed to complete setup. Please try again.'])
+      }
     } finally {
       setSubmitting(false)
     }

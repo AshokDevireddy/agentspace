@@ -82,7 +82,7 @@ export function usePersistedFilters<T extends Record<string, unknown>>(
   const appliedState = useSyncExternalStore(subscribe, getAppliedSnapshot, getServerSnapshot)
 
   // Debounced save for local state
-  const saveTimeoutRef = useRef<NodeJS.Timeout>()
+  const saveTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
 
   // Helper to save and notify
   const saveToStorage = useCallback((storageKey: string, value: T) => {
@@ -177,7 +177,11 @@ export function usePersistedFilters<T extends Record<string, unknown>>(
 
   // Cleanup timeout on unmount
   useEffect(() => {
-    return () => clearTimeout(saveTimeoutRef.current)
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
   }, [])
 
   return {

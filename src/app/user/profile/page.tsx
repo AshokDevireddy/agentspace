@@ -66,7 +66,7 @@ const formatRenewalDate = (dateString: string | null | undefined): string => {
 };
 
 export default function ProfilePage() {
-  const { user, userData, refreshUserData, loading: authLoading } = useAuth();
+  const { user, refreshUser, loading: authLoading } = useAuth();
   const { showSuccess, showError } = useNotification()
   const { setTheme } = useTheme()
   const queryClient = useQueryClient()
@@ -191,7 +191,7 @@ export default function ProfilePage() {
     setTheme(newTheme)
     const result = await updateUserTheme(newTheme)
     if (result.success) {
-      await refreshUserData()
+      await refreshUser()
     } else {
       showError('Failed to update theme preference')
     }
@@ -338,7 +338,7 @@ export default function ProfilePage() {
       )}
 
       {/* Theme Preference (Non-admin agents only - Admins use Settings page) */}
-      {!profileData.is_admin && userData?.role === 'agent' && (
+      {!profileData.is_admin && user?.role === 'agent' && (
         <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
           <h2 className="text-xl font-bold text-foreground mb-2">
             <Moon className="h-5 w-5 inline mr-2" />
@@ -355,7 +355,7 @@ export default function ProfilePage() {
               disabled={savingTheme}
               className={cn(
                 "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (userData?.theme_mode || 'system') === 'light'
+                (user?.theme_mode || 'system') === 'light'
                   ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
                   : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
               )}
@@ -363,12 +363,12 @@ export default function ProfilePage() {
               <div className="flex flex-col items-center gap-3">
                 <Sun className={cn(
                   "h-10 w-10",
-                  (userData?.theme_mode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                  (user?.theme_mode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                 )} />
                 <div className="text-center">
                   <p className={cn(
                     "font-semibold text-lg",
-                    (userData?.theme_mode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                    (user?.theme_mode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                   )}>
                     Light
                   </p>
@@ -376,7 +376,7 @@ export default function ProfilePage() {
                     Bright, clean interface
                   </p>
                 </div>
-                {(userData?.theme_mode || 'system') === 'light' && (
+                {(user?.theme_mode || 'system') === 'light' && (
                   <div className="absolute top-3 right-3">
                     <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
@@ -390,7 +390,7 @@ export default function ProfilePage() {
               disabled={savingTheme}
               className={cn(
                 "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (userData?.theme_mode || 'system') === 'dark'
+                (user?.theme_mode || 'system') === 'dark'
                   ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
                   : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
               )}
@@ -398,12 +398,12 @@ export default function ProfilePage() {
               <div className="flex flex-col items-center gap-3">
                 <Moon className={cn(
                   "h-10 w-10",
-                  (userData?.theme_mode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                  (user?.theme_mode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                 )} />
                 <div className="text-center">
                   <p className={cn(
                     "font-semibold text-lg",
-                    (userData?.theme_mode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                    (user?.theme_mode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                   )}>
                     Dark
                   </p>
@@ -411,7 +411,7 @@ export default function ProfilePage() {
                     Easy on the eyes
                   </p>
                 </div>
-                {(userData?.theme_mode || 'system') === 'dark' && (
+                {(user?.theme_mode || 'system') === 'dark' && (
                   <div className="absolute top-3 right-3">
                     <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
@@ -425,7 +425,7 @@ export default function ProfilePage() {
               disabled={savingTheme}
               className={cn(
                 "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (userData?.theme_mode || 'system') === 'system'
+                (user?.theme_mode || 'system') === 'system'
                   ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
                   : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
               )}
@@ -433,12 +433,12 @@ export default function ProfilePage() {
               <div className="flex flex-col items-center gap-3">
                 <Monitor className={cn(
                   "h-10 w-10",
-                  (userData?.theme_mode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                  (user?.theme_mode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                 )} />
                 <div className="text-center">
                   <p className={cn(
                     "font-semibold text-lg",
-                    (userData?.theme_mode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                    (user?.theme_mode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                   )}>
                     System
                   </p>
@@ -446,7 +446,7 @@ export default function ProfilePage() {
                     Follow device settings
                   </p>
                 </div>
-                {(userData?.theme_mode || 'system') === 'system' && (
+                {(user?.theme_mode || 'system') === 'system' && (
                   <div className="absolute top-3 right-3">
                     <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>

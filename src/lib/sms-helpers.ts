@@ -115,8 +115,6 @@ export async function getOrCreateConversation(
   if (existingByDeal) {
     // If conversation exists but phone number has changed, update it
     if (normalizedPhone && existingByDeal.client_phone !== normalizedPhone) {
-      console.log(`📞 Updating phone number for conversation ${existingByDeal.id}: ${existingByDeal.client_phone} → ${normalizedPhone}`);
-
       const { data: updated, error: updateError } = await supabase
         .from('conversations')
         .update({ client_phone: normalizedPhone })
@@ -170,7 +168,6 @@ export async function getOrCreateConversation(
         agentId,
         newConversation.id
       );
-      console.log(`Sent welcome message to ${normalizedPhone}`);
     } catch (error) {
       console.error('Failed to send welcome message:', error);
       // Don't throw - conversation was created successfully
@@ -270,8 +267,6 @@ export async function findDealByClientPhone(clientPhone: string, agencyId: strin
   // Normalize phone number for comparison (remove all non-digits)
   const normalizedSearch = clientPhone.replace(/\D/g, '');
 
-  console.log('🔍 Searching for deal with phone:', normalizedSearch, 'in agency:', agencyId);
-
   // Try multiple phone format variations to match against database
   const phoneVariations = [
     normalizedSearch,                    // e.g., "6692456363"
@@ -306,14 +301,12 @@ export async function findDealByClientPhone(clientPhone: string, agencyId: strin
     }
 
     if (deal) {
-      console.log(`✅ Match found with variation "${variation}": ${deal.client_name} (${deal.client_phone}) in agency ${agencyId}`);
       return deal;
     }
   }
 
   // If no exact match found, try pattern matching using ilike
   // This searches for the phone number anywhere in the client_phone field
-  console.log('🔄 No exact match, trying pattern matching...');
 
   const { data: deals, error: patternError } = await supabase
     .from('deals')
@@ -337,18 +330,10 @@ export async function findDealByClientPhone(clientPhone: string, agencyId: strin
   }
 
   if (deals && deals.length > 0) {
-    console.log(`📊 Found ${deals.length} potential matches with pattern matching in agency ${agencyId}`);
-
     // Find the best match by normalizing and comparing
     const matchingDeal = deals.find(deal => {
       const dealPhone = (deal.client_phone || '').replace(/\D/g, '');
-      const matches = dealPhone === normalizedSearch;
-
-      if (matches) {
-        console.log(`✅ Best match found: ${deal.client_name} (${deal.client_phone}) in agency ${agencyId}`);
-      }
-
-      return matches;
+      return dealPhone === normalizedSearch;
     });
 
     if (matchingDeal) {
@@ -356,7 +341,6 @@ export async function findDealByClientPhone(clientPhone: string, agencyId: strin
     }
   }
 
-  console.log('❌ No matching deal found for phone:', normalizedSearch, 'in agency:', agencyId);
   return null;
 }
 
@@ -408,12 +392,10 @@ export async function findAgencyByPhoneNumber(phoneNumber: string): Promise<{ id
     }
 
     if (data) {
-      console.log(`✅ Found agency: ${data.name} (${data.phone_number})`);
       return data;
     }
   }
 
-  console.log('❌ No agency found for phone number:', phoneNumber);
   return null;
 }
 
@@ -504,7 +486,6 @@ export async function sendWelcomeMessage(
 
   // Check if welcome SMS is enabled for this agency
   if (agencySettings?.sms_welcome_enabled === false) {
-    console.log('⏭️ Welcome message skipped: disabled for agency');
     return;
   }
 
@@ -535,7 +516,5 @@ export async function sendWelcomeMessage(
       client_phone: normalizePhoneForStorage(clientPhone),
     },
   });
-
-  console.log('✅ Welcome message created as draft');
 }
 

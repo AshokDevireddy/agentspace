@@ -109,3 +109,77 @@ export const POSITIONS = [
 ] as const
 
 export type PositionType = typeof POSITIONS[number]
+
+// Dashboard and Analytics Types
+export interface CarrierActive {
+  carrier: string
+  active_policies: number
+}
+
+export interface PieChartEntry {
+  name: string
+  value: number
+  percentage: string
+  fill: string
+  showLabel: boolean
+  isOthers?: boolean
+  originalCarriers?: Array<{
+    name: string
+    value: number
+    percentage: string
+  }>
+}
+
+export interface LeaderboardProducer {
+  rank: number
+  name: string
+  total: number
+}
+
+// API Response Types
+export interface ApiResponse<T> {
+  success: boolean
+  data: T
+  error?: string
+}
+
+export interface UserProfile {
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  role: 'admin' | 'agent' | 'client'
+  is_admin: boolean
+  status: 'pre-invite' | 'invited' | 'onboarding' | 'active' | 'inactive'
+  agency_id: string
+  position_id?: string
+  upline_id?: string
+}
+
+export interface DealsSummary {
+  active_policies: number
+  total_clients: number
+  carriers_active: CarrierActive[]
+  monthly_commissions?: number
+  new_policies?: number
+}
+
+export interface DashboardData {
+  your_deals?: DealsSummary
+  downline_production?: DealsSummary
+  totals?: {
+    pending_positions?: number
+  }
+  pending_positions?: number
+  active_policies?: number
+  total_clients?: number
+  carriers_active?: CarrierActive[]
+}
+
+export interface ScoreboardData {
+  dateRange: {
+    startDate: string
+    endDate: string
+  }
+  leaderboard?: LeaderboardProducer[]
+}

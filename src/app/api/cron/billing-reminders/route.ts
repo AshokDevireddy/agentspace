@@ -16,7 +16,6 @@ import { verifyCronRequest } from '@/lib/cron-auth';
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('Billing reminders cron started');
 
     // Verify this is a cron request
     const authResult = verifyCronRequest(request);
@@ -32,12 +31,8 @@ export async function GET(request: NextRequest) {
     const threeDaysFromNow = new Date(todayPST);
     threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
 
-    console.log(`📅 Current time (UTC): ${new Date().toISOString()}`);
-    console.log(`📅 Today (PST): ${todayPST.toLocaleDateString('en-US')}`);
-    console.log(`📅 Looking for billing due on: ${threeDaysFromNow.toLocaleDateString('en-US')} (3 days from now)`);
 
     // Query deals using new RPC function with custom billing date support
-    console.log('🔍 Querying deals using RPC function with status_mapping and custom billing dates...');
     const { data: deals, error: dealsError } = await supabase
       .rpc('get_billing_reminder_deals_v2');
 
@@ -47,7 +42,6 @@ export async function GET(request: NextRequest) {
     }
 
     if (!deals || deals.length === 0) {
-      console.log('⚠️  No deals with billing reminders due found');
       return NextResponse.json({
         success: true,
         sent: 0,
@@ -55,7 +49,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    console.log(`📊 Found ${deals.length} deals with billing reminders due`);
 
     const agencyIds = deals.map((d: { agency_id: string }) => d.agency_id);
     const agencySettingsMap = await batchFetchAgencySmsSettings(agencyIds);
@@ -65,37 +58,27 @@ export async function GET(request: NextRequest) {
     let skippedCount = 0;
 
     // Process each deal
-    console.log('\n💌 Processing billing reminders...');
     for (const deal of deals) {
       try {
         let nextBillingDate: Date;
         if (deal.ssn_benefit && deal.billing_day_of_month && deal.billing_weekday) {
           const customDate = calculateNextCustomBillingDate(deal.billing_day_of_month, deal.billing_weekday);
           nextBillingDate = customDate || new Date(deal.next_billing_date);
-          console.log(`  Using custom billing pattern: ${deal.billing_day_of_month} ${deal.billing_weekday}`);
         } else {
           nextBillingDate = new Date(deal.next_billing_date);
         }
         const nextBillingDateStr = nextBillingDate.toLocaleDateString('en-US');
-        console.log(`\n📬 Processing: ${deal.client_name} (${deal.client_phone})`);
-        console.log(`  Next billing: ${nextBillingDateStr} (due in 3 days)`);
-        console.log(`  Agent: ${deal.agent_first_name} ${deal.agent_last_name} (ID: ${deal.agent_id})`);
-        console.log(`  Agent Tier: ${deal.agent_subscription_tier}`);
-        console.log(`  Agency: ${deal.agency_name} (Phone: ${deal.agency_phone})`);
 
         if (!deal.messaging_enabled) {
-          console.log(`  ⚠️  SKIPPED: Messaging is disabled for agency ${deal.agency_name}`);
           skippedCount++;
           continue;
         }
 
         if (deal.agent_subscription_tier === 'free' || deal.agent_subscription_tier === 'basic') {
-          console.log(`  ⏭️  SKIPPED: Agent is on ${deal.agent_subscription_tier} tier (automated messaging restricted to Pro/Expert only)`);
           skippedCount++;
           continue;
         }
 
-        console.log(`  🔍 Checking for existing conversation...`);
         const conversation = await getConversationIfExists(
           deal.agent_id,
           deal.deal_id,
@@ -104,23 +87,18 @@ export async function GET(request: NextRequest) {
         );
 
         if (!conversation) {
-          console.log(`  ⏭️  SKIPPED: No existing conversation found for ${deal.client_name}`);
           skippedCount++;
           continue;
         }
 
-        console.log(`  📞 Conversation ID: ${conversation.id}`);
-        console.log(`  📱 SMS Opt-in Status: ${conversation.sms_opt_in_status}`);
 
         if (conversation.sms_opt_in_status !== 'opted_in') {
-          console.log(`  ❌ SKIPPED: Client has not opted in (status: ${conversation.sms_opt_in_status})`);
           skippedCount++;
           continue;
         }
 
         const agencySettings = agencySettingsMap.get(deal.agency_id);
         if (agencySettings?.sms_billing_reminder_enabled === false) {
-          console.log(`  ⏭️  SKIPPED: Billing reminder SMS disabled for agency ${deal.agency_name}`);
           skippedCount++;
           continue;
         }
@@ -131,8 +109,6 @@ export async function GET(request: NextRequest) {
           client_first_name: firstName,
         });
 
-        console.log(`  📝 Message: "${messageText}"`);
-        console.log(`  📤 Creating draft message...`);
 
         await logMessage({
           conversationId: conversation.id,
@@ -154,7 +130,6 @@ export async function GET(request: NextRequest) {
         });
 
         successCount++;
-        console.log(`  🎉 SUCCESS: Billing reminder created as draft for ${deal.client_name}`);
 
       } catch (error) {
         console.error(`  ❌ ERROR sending to ${deal.client_name}:`, error);
@@ -165,10 +140,6 @@ export async function GET(request: NextRequest) {
     console.log('\n💰 ========================================');
     console.log('💰 BILLING REMINDERS CRON COMPLETED');
     console.log('💰 ========================================');
-    console.log(`✅ Sent: ${successCount}`);
-    console.log(`❌ Failed: ${errorCount}`);
-    console.log(`⏭️  Skipped: ${skippedCount}`);
-    console.log(`📊 Total deals checked: ${deals.length}`);
     console.log('💰 ========================================\n');
 
     return NextResponse.json({

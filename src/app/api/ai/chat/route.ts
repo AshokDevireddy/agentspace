@@ -941,7 +941,7 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
 
           // Log warning if iteration limit was reached
           if (iterationCount >= MAX_TOOL_ITERATIONS && shouldContinue) {
-            console.warn(`AI chat reached maximum tool iterations (${MAX_TOOL_ITERATIONS}) for user ${userId}`);
+            console.warn(`AI chat reached maximum tool iterations (${MAX_TOOL_ITERATIONS}) for user ${userData.id}`);
           }
 
           // Send done signal only if stream is still active

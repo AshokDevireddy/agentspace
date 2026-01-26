@@ -10,6 +10,7 @@ import { useNotification } from '@/contexts/notification-context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useCheckConversation, useCreateConversation } from '@/hooks/mutations'
+import { formatPhoneForDisplay } from "@/lib/telnyx"
 
 interface Deal {
   id: string
@@ -100,8 +101,8 @@ export function CreateConversationModal({
 
   // Create conversation mutation - using centralized hook
   const createConversationMutation = useCreateConversation({
-    onSuccess: (conversationId) => {
-      onConversationCreated(conversationId)
+    onSuccess: (data) => {
+      onConversationCreated(data.conversationId)
       handleClose()
     },
     onError: (error) => {
@@ -130,16 +131,7 @@ export function CreateConversationModal({
     onOpenChange(false)
   }
 
-  const formatPhoneNumber = (phone: string) => {
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length === 10) {
-      return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-    }
-    if (digits.length === 11 && digits[0] === '1') {
-      return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
-    }
-    return phone;
-  }
+  const formatPhoneNumber = formatPhoneForDisplay
 
   const creating = checkConversationMutation.isPending || createConversationMutation.isPending
 
@@ -205,7 +197,7 @@ export function CreateConversationModal({
                 </div>
               ) : (
                 <div className="divide-y">
-                  {searchResults.map((deal) => (
+                  {searchResults.map((deal: Deal) => (
                     <div
                       key={deal.id}
                       onClick={() => handleDealSelect(deal)}

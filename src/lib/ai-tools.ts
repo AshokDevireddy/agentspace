@@ -1030,7 +1030,7 @@ export async function getDataSummary(params: any, agencyId: string) {
 
         const totalPremium = sampleDeals?.reduce((sum, deal) => sum + (Number(deal.annual_premium) || 0), 0) || 0;
         const statusCounts = sampleDeals?.reduce((acc: any, deal) => {
-          const status = deal.status_standardized || deal.status || 'unknown';
+          const status = deal.status_standardized || 'unknown';
           acc[status] = (acc[status] || 0) + 1;
           return acc;
         }, {}) || {};
@@ -1052,7 +1052,7 @@ export async function getDataSummary(params: any, agencyId: string) {
       const { data: deals } = await query;
       const totalPremium = deals?.reduce((sum, deal) => sum + (Number(deal.annual_premium) || 0), 0) || 0;
       const statusCounts = deals?.reduce((acc: any, deal) => {
-        const status = deal.status_standardized || deal.status || 'unknown';
+        const status = deal.status_standardized || 'unknown';
         acc[status] = (acc[status] || 0) + 1;
         return acc;
       }, {}) || {};

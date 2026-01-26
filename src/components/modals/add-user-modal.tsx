@@ -124,6 +124,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const [errorFields, setErrorFields] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [selectedPreInviteUserId, setSelectedPreInviteUserId] = useState<string | null>(null)
+  const [selectedPreInviteUserLabel, setSelectedPreInviteUserLabel] = useState<string>("")
+  const [isLoadingPreInviteUser, setIsLoadingPreInviteUser] = useState(false)
   const [nameSearchTerm, setNameSearchTerm] = useState("")
   const [debouncedNameSearchTerm, setDebouncedNameSearchTerm] = useState("")
   const [selectedUplineLabel, setSelectedUplineLabel] = useState<string>("")
@@ -317,6 +319,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setUplineInputValue("")
       setSelectedUplineLabel("")
       setSelectedPreInviteUserId(null)
+      setSelectedPreInviteUserLabel("")
       setHasSetDefaultUpline(false)
       setNameSearchTerm("")
       setShowNameDropdown(false)
@@ -578,29 +581,44 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   // Handle pre-invite user selection
   const handlePreInviteUserSelect = async (userId: string, selectedOption: SearchOption) => {
     try {
+      setIsLoadingPreInviteUser(true)
       setLoading(true)
-      setPauseNameSearch(true)
       setShowNameDropdown(false) // Hide dropdown immediately
+      setPauseNameSearch(true)
 
       // Fetch full user details
-      const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
 
       const { data: user, error } = await supabase
         .from('users')
-        .select('*')
+        .select('id, first_name, last_name, email, phone_number, perm_level, upline_id, position_id, status')
         .eq('id', userId)
         .single()
 
-      if (error || !user) {
+      if (error) {
         console.error('Error fetching user:', error)
-        setErrors(['Failed to load user data'])
+        setErrors([`Failed to load user data: ${error.message}`])
         setPauseNameSearch(false)
         setShowNameDropdown(false)
+        setIsLoadingPreInviteUser(false)
         return
       }
 
-      // Pre-fill the form with user data
+      if (!user) {
+        console.error('No user data returned')
+        setErrors(['Failed to load user data: User not found'])
+        setPauseNameSearch(false)
+        setShowNameDropdown(false)
+        setIsLoadingPreInviteUser(false)
+        return
+      }
+
+      // Set all state updates together in a controlled sequence
+      // First set the label and name so UI has data immediately
+      setSelectedPreInviteUserLabel(selectedOption.label)
+      setNameSearchTerm(selectedOption.label)
+
+      // Then set form data
       setFormData({
         firstName: user.first_name || "",
         lastName: user.last_name || "",
@@ -611,8 +629,14 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         positionId: user.position_id || ""
       })
 
-      setSelectedPreInviteUserId(userId)
-      setNameSearchTerm(selectedOption.label)
+      // Use setTimeout to ensure state updates are processed before showing the UI indicator
+      // This ensures formData is fully set before selectedPreInviteUserId triggers the UI
+      setTimeout(() => {
+        // Finally set the selected ID - this triggers the UI to show "Updating existing user"
+        // By this point, selectedPreInviteUserLabel and formData are already set
+        setSelectedPreInviteUserId(userId)
+        setIsLoadingPreInviteUser(false)
+      }, 0)
 
       // If there's an upline, set the search term for upline field
       if (user.upline_id) {
@@ -623,9 +647,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       }
     } catch (error) {
       console.error('Error selecting pre-invite user:', error)
-      setErrors(['Failed to load user data'])
+      setErrors([`Failed to load user data: ${error instanceof Error ? error.message : 'Unknown error'}`])
       setPauseNameSearch(false)
       setShowNameDropdown(false)
+      setIsLoadingPreInviteUser(false)
     } finally {
       setLoading(false)
     }
@@ -680,6 +705,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                   // Clear selection if user changes search
                   if (selectedPreInviteUserId) {
                     setSelectedPreInviteUserId(null)
+                    setSelectedPreInviteUserLabel("")
                     setFormData({
                       firstName: "",
                       lastName: "",
@@ -714,9 +740,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                     key={option.value}
                     type="button"
                     className="w-full text-left px-4 py-3 hover:bg-accent/50 border-b border-border last:border-b-0 transition-colors"
-                    onMouseDown={(e) => {
-                      // Use onMouseDown instead of onClick to prevent blur from hiding dropdown first
+                    onClick={(e) => {
                       e.preventDefault()
+                      e.stopPropagation()
                       handlePreInviteUserSelect(option.value, option)
                     }}
                   >
@@ -748,34 +774,42 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             )}
 
             {/* Selected pre-invite user indicator */}
-            {selectedPreInviteUserId && (
+            {(selectedPreInviteUserId || isLoadingPreInviteUser) && (
               <div className="mt-2 p-2 bg-blue-500/20 rounded border border-blue-500/30">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-blue-400">
-                    Updating existing user: {formData.firstName} {formData.lastName}
+                    {isLoadingPreInviteUser ? (
+                      <>Loading user data...</>
+                    ) : (
+                      <>Updating existing user: {selectedPreInviteUserLabel || `${formData.firstName} ${formData.lastName}`}</>
+                    )}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedPreInviteUserId(null)
-                      setNameSearchTerm("")
-                      setPauseNameSearch(false)
-                      setShowNameDropdown(false)
-                      setFormData({
-                        firstName: "",
-                        lastName: "",
-                        email: "",
-                        phoneNumber: "",
-                        permissionLevel: "",
-                        uplineAgentId: "",
-                        positionId: ""
-                      })
-                      clearUplineSelection()
-                    }}
-                    className="text-destructive hover:text-destructive/80 text-sm transition-colors"
-                  >
-                    Clear
-                  </button>
+                  {!isLoadingPreInviteUser && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPreInviteUserId(null)
+                        setSelectedPreInviteUserLabel("")
+                        setNameSearchTerm("")
+                        setPauseNameSearch(false)
+                        setShowNameDropdown(false)
+                        setIsLoadingPreInviteUser(false)
+                        setFormData({
+                          firstName: "",
+                          lastName: "",
+                          email: "",
+                          phoneNumber: "",
+                          permissionLevel: "",
+                          uplineAgentId: "",
+                          positionId: ""
+                        })
+                        clearUplineSelection()
+                      }}
+                      className="text-destructive hover:text-destructive/80 text-sm transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
               </div>
             )}

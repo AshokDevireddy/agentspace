@@ -36,6 +36,8 @@ export function AsyncSearchableSelect({
   const [searchTerm, setSearchTerm] = React.useState("")
   const [debouncedSearchTerm, setDebouncedSearchTerm] = React.useState("")
   const [selectedLabel, setSelectedLabel] = React.useState<string | null>(defaultLabel || null)
+  const [showDropdown, setShowDropdown] = React.useState(false)
+  const [pauseSearch, setPauseSearch] = React.useState(false)
   const dropdownRef = React.useRef<HTMLDivElement>(null)
 
   // Track endpoint changes to reset state
@@ -46,6 +48,8 @@ export function AsyncSearchableSelect({
       setSearchTerm("")
       setDebouncedSearchTerm("")
       setSelectedLabel(defaultLabel || null)
+      setShowDropdown(false)
+      setPauseSearch(false)
       prevEndpointRef.current = searchEndpoint
     }
   }, [searchEndpoint, defaultLabel])
@@ -76,7 +80,7 @@ export function AsyncSearchableSelect({
       const data = await response.json()
       return data || []
     },
-    enabled: open,
+    enabled: open && !pauseSearch,
     staleTime: 30000,
     // Keep previous results visible while fetching new ones (prevents flicker)
     placeholderData: (previous) => previous ?? [],
@@ -84,19 +88,41 @@ export function AsyncSearchableSelect({
 
   // Close dropdown when clicking outside
   React.useEffect(() => {
+    if (!open || !showDropdown) return
+
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false)
         setOpen(false)
       }
     }
 
-    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('mousedown', handleClickOutside, true)
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('mousedown', handleClickOutside, true)
     }
-  }, [])
+  }, [open, showDropdown])
+
+  // Show dropdown when options are ready
+  React.useEffect(() => {
+    if (open && options.length > 0 && !pauseSearch) {
+      setShowDropdown(true)
+    } else if (!open || pauseSearch) {
+      setShowDropdown(false)
+    }
+  }, [open, options, pauseSearch])
+
+  // Reset states when dropdown closes
+  React.useEffect(() => {
+    if (!open) {
+      setShowDropdown(false)
+      setPauseSearch(false)
+    }
+  }, [open])
 
   const handleSelect = (option: Option) => {
+    setPauseSearch(true)
+    setShowDropdown(false)
     onValueChange?.(option.value === value ? "all" : option.value)
     setSelectedLabel(option.label)
     setOpen(false)
@@ -120,14 +146,22 @@ export function AsyncSearchableSelect({
         <ChevronDown className={cn("ml-2 h-4 w-4 shrink-0 opacity-50", open && "rotate-180")} />
       </Button>
 
-      {open && (
+      {showDropdown && open && (
         <div className="absolute top-full left-0 z-[51] w-full mt-1 bg-card border border-border rounded-md shadow-2xl backdrop-blur-sm">
           <div className="p-1.5">
             <Input
               type="text"
               placeholder={searchPlaceholder}
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value)
+                setPauseSearch(false)
+              }}
+              onFocus={() => {
+                if (!pauseSearch) {
+                  setShowDropdown(true)
+                }
+              }}
               className="h-7 text-xs bg-background text-foreground border-border"
               autoFocus
             />
@@ -151,7 +185,10 @@ export function AsyncSearchableSelect({
                     "w-full flex items-center px-2.5 py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors text-left",
                     (!value || value === 'all') && "bg-primary/20 text-primary"
                   )}
-                  onClick={() => {
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    setPauseSearch(true)
+                    setShowDropdown(false)
                     onValueChange?.("all")
                     setSelectedLabel(null)
                     setOpen(false)
@@ -174,7 +211,10 @@ export function AsyncSearchableSelect({
                       "w-full flex items-center px-2.5 py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors text-left",
                       value === option.value && "bg-primary/20 text-primary"
                     )}
-                    onClick={() => handleSelect(option)}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      handleSelect(option)
+                    }}
                   >
                     <Check
                       className={cn(

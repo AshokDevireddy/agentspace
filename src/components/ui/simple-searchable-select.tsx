@@ -29,6 +29,7 @@ export function SimpleSearchableSelect({
 }: SimpleSearchableSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [searchTerm, setSearchTerm] = React.useState("")
+  const [showDropdown, setShowDropdown] = React.useState(false)
   const dropdownRef = React.useRef<HTMLDivElement>(null)
   const buttonRef = React.useRef<HTMLButtonElement>(null)
   const [dropdownPosition, setDropdownPosition] = React.useState({ top: 0, left: 0, width: 0 })
@@ -49,50 +50,43 @@ export function SimpleSearchableSelect({
 
   // Close dropdown when clicking outside
   React.useEffect(() => {
-    if (!open) return
+    if (!open || !showDropdown) return
 
-    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+    const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement
-      
-      // If clicking inside our dropdown, don't close
-      if (dropdownRef.current?.contains(target)) {
+
+      // If clicking inside our dropdown or button, don't close
+      if (dropdownRef.current?.contains(target) || buttonRef.current?.contains(target)) {
         return
       }
-      
-      // Close on any click outside - use setTimeout to ensure it happens after other handlers
-      setTimeout(() => {
-        setOpen(false)
-      }, 0)
+
+      // Close dropdown
+      setShowDropdown(false)
+      setOpen(false)
     }
 
-    // Watch for Radix Select content appearing (when other Select dropdowns open)
-    const checkForOtherDropdowns = () => {
-      if (!open) return
-      
-      // Check if any Radix Select content is visible
-      const selectContent = document.querySelector('[data-radix-select-content]')
-      if (selectContent) {
-        setOpen(false)
-      }
-    }
-
-    const observer = new MutationObserver(checkForOtherDropdowns)
-    observer.observe(document.body, { childList: true, subtree: true })
-
-    // Check periodically for other dropdowns
-    const intervalId = setInterval(checkForOtherDropdowns, 50)
-
-    // Use capture phase to catch clicks early, before other handlers
+    // Use capture phase to catch clicks early
     document.addEventListener('mousedown', handleClickOutside, true)
-    document.addEventListener('click', handleClickOutside, true)
-    document.addEventListener('touchstart', handleClickOutside, true)
-    
+
     return () => {
       document.removeEventListener('mousedown', handleClickOutside, true)
-      document.removeEventListener('click', handleClickOutside, true)
-      document.removeEventListener('touchstart', handleClickOutside, true)
-      observer.disconnect()
-      clearInterval(intervalId)
+    }
+  }, [open, showDropdown])
+
+  // Show dropdown when opened and has filtered options
+  React.useEffect(() => {
+    if (open && filteredOptions.length > 0) {
+      setShowDropdown(true)
+    } else if (!open) {
+      setShowDropdown(false)
+    }
+  }, [open, filteredOptions])
+
+  // Reset search term when dropdown closes
+  React.useEffect(() => {
+    if (!open) {
+      setSearchTerm("")
+      setShowDropdown(false)
     }
   }, [open])
 
@@ -111,7 +105,7 @@ export function SimpleSearchableSelect({
   }, [portal, open])
 
   // Dropdown content
-  const dropdownContent = open && (
+  const dropdownContent = showDropdown && open && (
     <div
       className={cn(
         "bg-card border border-border rounded-md shadow-2xl backdrop-blur-sm",
@@ -130,6 +124,7 @@ export function SimpleSearchableSelect({
           placeholder={searchPlaceholder}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
+          onFocus={() => setShowDropdown(true)}
           className="h-8 text-sm bg-background text-foreground border-border"
           autoFocus
         />
@@ -149,7 +144,9 @@ export function SimpleSearchableSelect({
                 className={cn(
                   "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none text-foreground hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground transition-colors"
                 )}
-                onClick={() => {
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  setShowDropdown(false)
                   onValueChange?.(option.value === value ? "" : option.value)
                   setOpen(false)
                   setSearchTerm("")

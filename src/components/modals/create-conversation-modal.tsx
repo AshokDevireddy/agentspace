@@ -43,6 +43,7 @@ export function CreateConversationModal({
   const [debouncedPhoneSearch, setDebouncedPhoneSearch] = useState("")
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null)
   const [confirmCreate, setConfirmCreate] = useState(false)
+  const [pauseSearch, setPauseSearch] = useState(false)
 
   // Debounce search terms
   useEffect(() => {
@@ -57,14 +58,15 @@ export function CreateConversationModal({
   // Search deals query
   const { data: searchData, isLoading: loading } = useQuery({
     queryKey: queryKeys.searchDeals(debouncedNameSearch.trim(), debouncedPhoneSearch.trim()),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams()
       if (debouncedNameSearch.trim()) params.append('client_name', debouncedNameSearch.trim())
       if (debouncedPhoneSearch.trim()) params.append('client_phone', debouncedPhoneSearch.trim())
       params.append('limit', '20')
 
       const response = await fetch(`/api/deals/search-for-conversation?${params.toString()}`, {
-        credentials: 'include'
+        credentials: 'include',
+        signal
       })
 
       if (!response.ok) {
@@ -74,7 +76,7 @@ export function CreateConversationModal({
       const data = await response.json()
       return data.deals || []
     },
-    enabled: !!(debouncedNameSearch.trim() || debouncedPhoneSearch.trim()),
+    enabled: !pauseSearch && !!(debouncedNameSearch.trim() || debouncedPhoneSearch.trim()),
     staleTime: 30000, // 30 seconds
   })
 
@@ -111,6 +113,7 @@ export function CreateConversationModal({
   })
 
   const handleDealSelect = (deal: Deal) => {
+    setPauseSearch(true) // Pause search to prevent stale results from appearing
     setSelectedDeal(deal)
     checkConversationMutation.mutate(deal.id)
   }
@@ -127,6 +130,7 @@ export function CreateConversationModal({
     setDebouncedPhoneSearch("")
     setSelectedDeal(null)
     setConfirmCreate(false)
+    setPauseSearch(false)
     onOpenChange(false)
   }
 
@@ -166,7 +170,10 @@ export function CreateConversationModal({
                   <Input
                     placeholder="Search by name..."
                     value={clientNameSearch}
-                    onChange={(e) => setClientNameSearch(e.target.value)}
+                    onChange={(e) => {
+                      setClientNameSearch(e.target.value)
+                      setPauseSearch(false)
+                    }}
                     className="pl-10"
                   />
                 </div>
@@ -181,7 +188,10 @@ export function CreateConversationModal({
                   <Input
                     placeholder="Search by phone..."
                     value={clientPhoneSearch}
-                    onChange={(e) => setClientPhoneSearch(e.target.value)}
+                    onChange={(e) => {
+                      setClientPhoneSearch(e.target.value)
+                      setPauseSearch(false)
+                    }}
                     className="pl-10"
                   />
                 </div>
@@ -283,7 +293,11 @@ export function CreateConversationModal({
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"
-                onClick={() => setConfirmCreate(false)}
+                onClick={() => {
+                  setConfirmCreate(false)
+                  setPauseSearch(false)
+                  setSelectedDeal(null)
+                }}
                 disabled={creating}
               >
                 Cancel

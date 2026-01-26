@@ -79,8 +79,10 @@ export function categorizeError(error: unknown): ErrorCategory {
       message.includes('unauthenticated') ||
       message.includes('invalid token') ||
       message.includes('session expired') ||
+      message.includes('token expired') ||
       message.includes('not logged in') ||
-      message.includes('invalid credentials')
+      message.includes('invalid credentials') ||
+      message.includes('401')
     ) {
       return 'auth'
     }

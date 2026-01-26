@@ -54,6 +54,41 @@ export function AuthProvider({
     setIsHydrated(true)
   }, [])
 
+  // Proactive token refresh - checks every minute and refreshes if needed
+  useEffect(() => {
+    if (!user) return // Only run when logged in
+
+    const checkAndRefreshToken = async () => {
+      try {
+        const res = await fetch('/api/auth/refresh-session', {
+          method: 'POST',
+          credentials: 'include',
+        })
+        const data = await res.json()
+
+        if (data.error) {
+          // Refresh failed - redirect to login
+          console.warn('[Auth] Token refresh failed:', data.error)
+          window.location.href = '/login'
+          return
+        }
+
+        if (data.refreshed) {
+          console.info('[Auth] Token refreshed successfully')
+        }
+      } catch (error) {
+        console.error('[Auth] Token refresh check failed:', error)
+      }
+    }
+
+    // Check immediately on mount
+    checkAndRefreshToken()
+
+    // Then check every minute
+    const interval = setInterval(checkAndRefreshToken, 60 * 1000)
+    return () => clearInterval(interval)
+  }, [user])
+
   // Fetch user session from Next.js API route
   const refreshUser = useCallback(async () => {
     try {

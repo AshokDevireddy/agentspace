@@ -13,42 +13,50 @@ import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
 export interface Conversation {
   id: string
-  phone_number: string
-  client_id: string | null
-  client_name: string | null
+  agency_id: string
   agent_id: string | null
   agent_name: string | null
   deal_id: string | null
-  policy_number: string | null
+  client_phone: string | null
+  type: 'sms'
+  is_active: boolean
   last_message_at: string | null
-  unread_count: number
-  is_archived: boolean
-  status?: string
   created_at: string
+  sms_opt_in_status: 'opted_in' | 'opted_out' | 'pending' | null
+  opted_in_at: string | null
+  opted_out_at: string | null
 }
 
 export interface Message {
   id: string
   conversation_id: string
-  content: string
+  sender_id: string | null
+  sender_name: string | null
+  receiver_id: string | null
+  body: string
   direction: 'inbound' | 'outbound'
+  message_type: 'sms'
+  sent_at: string | null
   status: 'pending' | 'sent' | 'delivered' | 'failed' | 'received'
-  sent_by: string | null
+  metadata: Record<string, unknown>
+  read_at: string | null
   is_read: boolean
-  created_at: string
 }
 
 export interface DraftMessage {
   id: string
+  agency_id: string
   conversation_id: string | null
   agent_id: string | null
   agent_name: string | null
   content: string
   status: 'pending' | 'approved' | 'rejected'
-  client_name: string | null
-  phone_number: string | null
+  approved_by_id: string | null
+  approved_by_name: string | null
+  approved_at: string | null
   rejection_reason: string | null
   created_at: string
+  updated_at: string
 }
 
 export interface ConversationsFilters extends Record<string, unknown> {

@@ -1,12 +1,30 @@
 'use client'
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { useState } from 'react'
 import { categorizeError, getRetryDelay } from '@/lib/error-utils'
 
+// Global handler for auth errors - redirects to login
+function handleAuthError(error: unknown) {
+  const category = categorizeError(error)
+  if (category === 'auth') {
+    // Prevent multiple redirects
+    if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+      console.warn('[QueryProvider] Auth error detected, redirecting to login')
+      window.location.href = '/login'
+    }
+  }
+}
+
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
+    queryCache: new QueryCache({
+      onError: handleAuthError,
+    }),
+    mutationCache: new MutationCache({
+      onError: handleAuthError,
+    }),
     defaultOptions: {
       queries: {
         staleTime: 30 * 1000,

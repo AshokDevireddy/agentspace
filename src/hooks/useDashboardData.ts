@@ -51,27 +51,16 @@ interface DashboardSummary {
 interface LeaderboardEntry {
   rank: number
   agent_id: string
-  name: string
-  total: number
-  dailyBreakdown: Record<string, number>
-  dealCount: number
+  agent_name: string
+  position: string | null
+  production: string
+  deals_count: number
 }
 
 interface ScoreboardData {
-  success: boolean
-  data?: {
-    leaderboard: LeaderboardEntry[]
-    stats: {
-      totalProduction: number
-      totalDeals: number
-      activeAgents: number
-    }
-    dateRange: {
-      startDate: string
-      endDate: string
-    }
-  }
-  error?: string
+  entries: LeaderboardEntry[]
+  user_rank: number | null
+  user_production: string | null
 }
 
 interface ProductionEntry {

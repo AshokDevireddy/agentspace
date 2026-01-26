@@ -23,6 +23,8 @@ const PUBLIC_API_PREFIXES = [
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
   '/api/auth/verify-invite',
+  '/api/auth/update-session', // Token refresh - validates existing session internally
+  '/api/auth/refresh-session', // Proactive token refresh - validates existing session internally
   '/api/cron/',
   '/api/telnyx-webhook',
   '/api/webhooks/stripe',
@@ -59,7 +61,34 @@ export async function proxy(request: NextRequest) {
   }
 
   try {
-    await jwtVerify(sessionCookie, SECRET)
+    const { payload } = await jwtVerify(sessionCookie, SECRET)
+    const session = payload as { accessToken: string }
+
+    // Check if accessToken (Supabase JWT) is expired
+    // The outer session cookie (7 days) may be valid but the accessToken (~1 hour) may have expired
+    if (session.accessToken) {
+      const tokenParts = session.accessToken.split('.')
+      if (tokenParts.length === 3) {
+        try {
+          const tokenPayload = JSON.parse(atob(tokenParts[1]))
+          // Check if accessToken is expired (with 30 second buffer)
+          if (tokenPayload.exp && tokenPayload.exp * 1000 < Date.now() - 30000) {
+            // Token expired - redirect to login and clear session
+            if (pathname.startsWith('/api/')) {
+              const response = NextResponse.json({ error: 'Token expired' }, { status: 401 })
+              response.cookies.delete('session')
+              return response
+            }
+            const response = NextResponse.redirect(new URL('/login', request.url))
+            response.cookies.delete('session')
+            return response
+          }
+        } catch {
+          // Failed to parse token - continue with normal flow
+        }
+      }
+    }
+
     return NextResponse.next()
   } catch {
     // Invalid/expired session - clear cookie and redirect

@@ -14,29 +14,28 @@ import { shouldRetry, getRetryDelay } from './useQueryRetry'
 export interface Agent {
   id: string
   name: string
-  position: string
-  upline: string
-  created: string
-  lastLogin: string
-  earnings: string
-  downlines: number
+  email: string | null
+  first_name: string | null
+  last_name: string | null
+  position: string | null
+  position_id: string | null
+  position_name: string | null
+  position_level: number | null
+  upline: string | null
   status: string
   badge: string
-  position_id?: string | null
-  position_name?: string | null
-  position_level?: number | null
-  email?: string | null
-  first_name?: string
-  last_name?: string
-  individual_debt: number
+  created: string
+  earnings: string
+  downlines: number
+  individual_debt: string
   individual_debt_count: number
-  individual_production: number
+  individual_production: string
   individual_production_count: number
-  hierarchy_debt: number
+  hierarchy_debt: string
   hierarchy_debt_count: number
-  hierarchy_production: number
+  hierarchy_production: string
   hierarchy_production_count: number
-  debt_to_production_ratio: number | null
+  debt_to_production_ratio: string | null
 }
 
 export interface TreeNode {

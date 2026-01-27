@@ -77,6 +77,7 @@ export const queryKeys = {
   userById: (id: string) => ['user', 'by-id', id] as const,
   userAdminStatus: (id?: string) => ['user', 'admin-status', id] as const,
   userDefaultUpline: () => ['user', 'default-upline'] as const,
+  addUserModalInitData: () => ['user', 'add-user-modal-init'] as const,
 
   // Dashboard
   dashboard: (userId: string) => ['dashboard', userId] as const,

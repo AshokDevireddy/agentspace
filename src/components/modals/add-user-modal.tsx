@@ -39,72 +39,6 @@ const allPermissionLevels = [
   { value: "admin", label: "Admin" }
 ]
 
-// Custom hook for debounced agent search using TanStack Query
-// Uses proper abort signals to prevent race conditions from slow responses
-function useAgentSearch(pauseSearch = false) {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
-
-  // Debounce search term to prevent excessive API calls
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm)
-    }, 400) // 400ms debounce delay
-    return () => clearTimeout(timer)
-  }, [searchTerm])
-
-  // Use TanStack Query with abort signal for proper request cancellation
-  const { data: searchResults = [], isLoading: isSearching, error } = useQuery<SearchOption[]>({
-    queryKey: queryKeys.searchAgents(debouncedSearchTerm),
-    queryFn: async ({ signal }) => {
-      // API ROUTE CALL - This calls the secure endpoint for upline search (current user + downline)
-      const response = await fetch(
-        `/api/search-agents?q=${encodeURIComponent(debouncedSearchTerm)}&limit=10&type=downline`,
-        {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          signal, // Abort signal cancels in-flight requests when search term changes
-        }
-      )
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null)
-        const errorMessage = errorData?.error || `HTTP ${response.status}: ${response.statusText}`
-        throw new Error(`Failed to search agents: ${errorMessage}`)
-      }
-
-      const agents: AgentSearchResult[] = await response.json()
-
-      // Handle empty results gracefully
-      if (!Array.isArray(agents)) {
-        console.warn('Search API returned non-array result:', agents)
-        return []
-      }
-
-      // Transform search results into select options
-      return agents.map(agent => ({
-        value: agent.id,
-        label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
-        status: agent.status
-      }))
-    },
-    // Only fetch when: not paused, and search term is at least 2 characters
-    enabled: !pauseSearch && debouncedSearchTerm.length >= 2,
-    staleTime: 30000, // Cache results for 30 seconds
-    retry: false, // Don't retry failed searches
-  })
-
-  const searchError = error ? 'Failed to search agents. Please try again.' : null
-
-  return {
-    searchTerm,
-    setSearchTerm,
-    searchResults,
-    isSearching,
-    searchError
-  }
-}
 
 export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const { showSuccess } = useNotification()
@@ -135,76 +69,88 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const [uplineInputValue, setUplineInputValue] = useState("")
   const [showNameDropdown, setShowNameDropdown] = useState(false)
 
-  // Use the custom agent search hook for upline selection
-  const {
-    searchTerm: uplineSearchTerm,
-    setSearchTerm: setUplineSearchTerm,
-    searchResults: uplineSearchResults,
-    isSearching: isUplineSearching,
-    searchError: uplineSearchError
-  } = useAgentSearch(pauseUplineSearch)
+  // State for upline search
+  const [uplineSearchTerm, setUplineSearchTerm] = useState("")
+  const [debouncedUplineSearchTerm, setDebouncedUplineSearchTerm] = useState("")
 
-  // Query: Fetch positions when modal opens
-  const { data: positionsData, isLoading: positionsLoading } = useQuery({
-    queryKey: queryKeys.positionsList(),
+  // Query: Fetch all modal initialization data in one request
+  const { data: modalData, isLoading: modalDataLoading } = useQuery({
+    queryKey: queryKeys.addUserModalInitData(),
     queryFn: async () => {
-      // Fetch positions from API route (server-side handles auth automatically)
-      const response = await fetch('/api/positions', {
+      const response = await fetch('/api/user/modal-init-data', {
         method: 'GET',
         credentials: 'include'
       })
 
       if (!response.ok) {
-        throw new Error('Failed to fetch positions')
+        throw new Error('Failed to fetch modal data')
       }
 
-      const data = await response.json()
-
-      // The API now returns positions already filtered by user level
-      // along with userPositionLevel and isAdmin flags
-      // Transform positions to select options
-      return {
-        positions: (data.positions || []).map((pos: any) => ({
-          value: pos.position_id || pos.id, // Handle both position_id and id field names
-          label: `${pos.name} (Level ${pos.level})`,
-          level: pos.level
-        })) as SearchOption[],
-        currentUserPositionLevel: data.userPositionLevel ?? null,
-        isAdmin: data.isAdmin || false
-      }
+      return await response.json()
     },
     enabled: isOpen,
     staleTime: 5 * 60 * 1000,
   })
 
-  const positions = positionsData?.positions || []
-  const currentUserPositionLevel = positionsData?.currentUserPositionLevel || null
+  const positions = modalData?.positions || []
+  const currentUserPositionLevel = modalData?.userPositionLevel || null
+  const isCurrentUserAdmin = modalData?.isAdmin || false
+  const defaultUplineData = modalData?.currentUser || null
+  const preloadedAgents = modalData?.downlineAgents || []
 
-  // Query: Fetch current user's admin status when modal opens
-  const { data: adminStatusData } = useQuery({
-    queryKey: queryKeys.userAdminStatus(),
-    queryFn: async () => {
-      // Fetch current user profile from API route (server-side handles auth)
-      const response = await fetch('/api/user/profile', {
-        method: 'GET',
-        credentials: 'include'
-      })
+  // Debounce upline search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedUplineSearchTerm(uplineSearchTerm)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [uplineSearchTerm])
+
+  // Dynamic search query - only triggers when user types 2+ characters
+  const { data: searchedAgents = [], isLoading: isUplineSearching } = useQuery<SearchOption[]>({
+    queryKey: queryKeys.searchAgents(debouncedUplineSearchTerm),
+    queryFn: async ({ signal }) => {
+      const response = await fetch(
+        `/api/search-agents?q=${encodeURIComponent(debouncedUplineSearchTerm)}&limit=20&type=downline`,
+        {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          signal,
+        }
+      )
 
       if (!response.ok) {
-        throw new Error('Failed to fetch user profile')
+        return []
       }
 
-      const userData = await response.json()
+      const agents = await response.json()
+      if (!Array.isArray(agents)) return []
 
-      return {
-        isAdmin: userData.is_admin || userData.perm_level === 'admin'
-      }
+      return agents.map((agent: any) => ({
+        value: agent.id,
+        label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}`,
+        status: agent.status
+      }))
     },
-    enabled: isOpen,
-    staleTime: 5 * 60 * 1000,
+    enabled: !pauseUplineSearch && debouncedUplineSearchTerm.length >= 2,
+    staleTime: 30000,
+    retry: false,
   })
 
-  const isCurrentUserAdmin = adminStatusData?.isAdmin || false
+  // Hybrid search results:
+  // - If user is typing (2+ chars): use API search results
+  // - Otherwise: show pre-loaded agents (filtered if 1 char typed)
+  const uplineSearchResults = debouncedUplineSearchTerm.length >= 2
+    ? searchedAgents
+    : uplineSearchTerm.length > 0
+      ? preloadedAgents.filter((agent: SearchOption) => {
+          const searchLower = uplineSearchTerm.toLowerCase()
+          return agent.label.toLowerCase().includes(searchLower)
+        })
+      : preloadedAgents
+
+  const uplineSearchError = null
 
   // Effect to auto-set permission level for non-admin users
   useEffect(() => {
@@ -213,42 +159,16 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     }
   }, [isOpen, isCurrentUserAdmin, formData.permissionLevel])
 
-  // Query: Fetch current user as default upline when no upline is provided
-  const { data: defaultUplineData } = useQuery({
-    queryKey: queryKeys.userDefaultUpline(),
-    queryFn: async () => {
-      // Fetch current user profile from API route (server-side handles auth)
-      const response = await fetch('/api/user/profile', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch user profile')
-      }
-
-      const userData = await response.json()
-
-      return {
-        userId: userData.id,
-        userLabel: `${userData.first_name} ${userData.last_name} - ${userData.email}`,
-        isAdmin: userData.is_admin || userData.perm_level === 'admin'
-      }
-    },
-    enabled: !upline && isOpen && !hasSetDefaultUpline,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  // Effect to apply default upline when fetched
+  // Effect to apply default upline when modal data is fetched
   useEffect(() => {
-    if (defaultUplineData && !hasSetDefaultUpline) {
+    if (defaultUplineData && !hasSetDefaultUpline && !upline) {
       applyUplineSelection({
         value: defaultUplineData.userId,
         label: defaultUplineData.userLabel
       })
       setHasSetDefaultUpline(true)
     }
-  }, [defaultUplineData, hasSetDefaultUpline])
+  }, [defaultUplineData, hasSetDefaultUpline, upline])
 
   // Mutation: Submit form to invite agent - using centralized hook
   const inviteAgentMutation = useSendInvite({
@@ -358,38 +278,14 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     }
   }, [nameSearchResults, nameSearchTerm, pauseNameSearch, selectedPreInviteUserId])
 
-  // When upline is provided from graph view, trigger search to find the user
+  // When upline is provided from graph view, auto-select from preloaded agents
   useEffect(() => {
-    if (upline && isOpen) {
-      // Small delay to ensure modal is fully loaded before triggering search
-      const timer = setTimeout(() => {
-        // Convert "Last, First" format to "First Last" format for better search matching
-        let searchQuery = upline;
-        if (upline.includes(',')) {
-          const parts = upline.split(',').map(part => part.trim());
-          if (parts.length === 2) {
-            searchQuery = `${parts[1]} ${parts[0]}`; // "Devireddy, Ashok" -> "Ashok Devireddy"
-          }
-        }
-
-        // Auto-populate search term with converted name to trigger search
-        setPauseUplineSearch(false)
-        setUplineInputValue(searchQuery);
-        setUplineSearchTerm(searchQuery);
-      }, 100); // Small delay to prevent race conditions
-
-      return () => clearTimeout(timer);
-    }
-  }, [upline, isOpen]);
-
-  // Auto-select upline agent when search results include the upline
-  useEffect(() => {
-    if (upline && uplineSearchResults.length > 0) {
+    if (upline && preloadedAgents.length > 0 && !formData.uplineAgentId) {
       // Try to find the upline user using multiple matching strategies
       let uplineUser = null;
 
       // Strategy 1: Direct match with original format (case insensitive)
-      uplineUser = uplineSearchResults.find(agent =>
+      uplineUser = preloadedAgents.find((agent: SearchOption) =>
         agent.label.toLowerCase().includes(upline.toLowerCase())
       );
 
@@ -398,7 +294,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         const parts = upline.split(',').map(part => part.trim());
         if (parts.length === 2) {
           const convertedName = `${parts[1]} ${parts[0]}`;
-          uplineUser = uplineSearchResults.find(agent =>
+          uplineUser = preloadedAgents.find((agent: SearchOption) =>
             agent.label.toLowerCase().includes(convertedName.toLowerCase())
           );
         }
@@ -410,7 +306,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           ? upline.split(',').map(part => part.trim())
           : upline.split(' ').map(part => part.trim());
 
-        uplineUser = uplineSearchResults.find(agent => {
+        uplineUser = preloadedAgents.find((agent: SearchOption) => {
           const agentLabel = agent.label.toLowerCase();
           return nameParts.every(part =>
             part.length > 1 && agentLabel.includes(part.toLowerCase())
@@ -418,11 +314,11 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         });
       }
 
-      if (uplineUser && !formData.uplineAgentId) {
+      if (uplineUser) {
         applyUplineSelection(uplineUser)
       }
     }
-  }, [upline, uplineSearchResults, formData.uplineAgentId]);
+  }, [upline, preloadedAgents, formData.uplineAgentId]);
 
 
   const validateForm = () => {
@@ -597,9 +493,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setIsLoadingPreInviteUser(false)
       setLoading(false)
 
-      // If there's an upline, set the search term for upline field
+      // If there's an upline, set it from the preloaded agents list
       if (user.upline_id) {
-        const uplineOption = uplineSearchResults.find(r => r.value === user.upline_id)
+        const uplineOption = preloadedAgents.find((r: SearchOption) => r.value === user.upline_id)
         if (uplineOption) {
           applyUplineSelection(uplineOption)
         }
@@ -902,6 +798,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                     setSelectedUplineLabel("")
                   }
                 }}
+                onFocus={() => {
+                  setPauseUplineSearch(false)
+                }}
                 className={`h-12 ${errorFields.uplineAgentId ? 'border-red-500' : ''}`}
                 placeholder="Type to search for upline agent..."
               />
@@ -913,10 +812,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               )}
             </div>
 
-            {/* Search results dropdown */}
+            {/* Search results dropdown - show all agents or filtered results */}
             {uplineSearchResults.length > 0 && !pauseUplineSearch && (
               <div className="border border-border rounded-lg bg-card shadow-lg max-h-60 overflow-y-auto z-10">
-                {uplineSearchResults.map((option) => (
+                {uplineSearchResults.slice(0, 20).map((option: SearchOption) => (
                   <button
                     key={option.value}
                     type="button"
@@ -950,7 +849,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             )}
 
             <p className="text-xs text-muted-foreground">
-              Start typing to search by name or email. Minimum 2 characters required.
+              Click to see recent agents, or type 2+ characters to search all agents.
             </p>
             {errorFields.uplineAgentId && (
               <p className="text-sm text-red-500">{errorFields.uplineAgentId}</p>

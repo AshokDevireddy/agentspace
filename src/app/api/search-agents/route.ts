@@ -12,8 +12,6 @@ import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
   try {
-    console.log("[SEARCH-AGENTS] === New search request ===");
-
     // Parse URL parameters
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("q");
@@ -21,24 +19,12 @@ export async function GET(request: Request) {
     const searchType = searchParams.get("type") || "downline"; // 'downline' or 'pre-invite'
     const newFormat = searchParams.get("format");
 
-    console.log(
-      "[SEARCH-AGENTS] Query:",
-      query,
-      "Limit:",
-      limitParam,
-      "Type:",
-      searchType,
-      "Format:",
-      newFormat,
-    );
-
     // Validate query parameter (allow empty for format=options to show all agents)
     const allowEmptyQuery = newFormat === "options";
     const trimmedQuery = query ? query.trim() : "";
 
     if (!trimmedQuery || trimmedQuery.length < 2) {
       if (!allowEmptyQuery) {
-        console.log("[SEARCH-AGENTS] Query too short or missing");
         return NextResponse.json({
           error: "Search query must be at least 2 characters long",
         }, { status: 400 });
@@ -48,30 +34,23 @@ export async function GET(request: Request) {
     // Validate and set limit (default to 10, max 20 for performance)
     const limit = limitParam ? Math.min(parseInt(limitParam), 20) : 10;
     if (isNaN(limit) || limit <= 0) {
-      console.log("[SEARCH-AGENTS] Invalid limit");
       return NextResponse.json({
         error: "Invalid limit parameter",
       }, { status: 400 });
     }
 
-    console.log("[SEARCH-AGENTS] Creating Supabase clients...");
     // Create Supabase clients
     const supabase = createAdminClient();
     const userClient = await createServerClient();
 
     // Get authenticated user
-    console.log("[SEARCH-AGENTS] Getting authenticated user...");
     const { data: { user: authUser } } = await userClient.auth.getUser();
 
     if (!authUser) {
-      console.log("[SEARCH-AGENTS] No authenticated user found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    console.log("[SEARCH-AGENTS] Auth user ID:", authUser.id);
-
     // Get current user's data
-    console.log("[SEARCH-AGENTS] Fetching current user data...");
     const { data: currentUser, error: currentUserError } = await supabase
       .from("users")
       .select("id, agency_id, perm_level, role")
@@ -83,23 +62,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    console.log("[SEARCH-AGENTS] Current user:", {
-      id: currentUser.id,
-      agency_id: currentUser.agency_id,
-      perm_level: currentUser.perm_level,
-      role: currentUser.role,
-    });
-
     // Check if user is admin
     const isAdmin = currentUser.perm_level === "admin" ||
       currentUser.role === "admin";
-    console.log("[SEARCH-AGENTS] Is admin:", isAdmin);
 
     // Sanitize search query for SQL injection protection
     const finalSanitizedQuery = trimmedQuery
       ? trimmedQuery.replace(/[%_]/g, "\\$&")
       : "";
-    console.log("[SEARCH-AGENTS] Sanitized query:", finalSanitizedQuery);
 
     // Split the search query into individual words for better matching
     const searchWords: string[] = finalSanitizedQuery
@@ -107,7 +77,6 @@ export async function GET(request: Request) {
         word.length > 0
       )
       : [];
-    console.log("[SEARCH-AGENTS] Search words:", searchWords);
 
     // Build OR conditions that search for individual words in fields
     const orConditions = [];
@@ -130,22 +99,10 @@ export async function GET(request: Request) {
       }
     }
 
-    console.log(
-      "[SEARCH-AGENTS] OR conditions:",
-      orConditions.length,
-      "conditions",
-    );
-    console.log("[SEARCH-AGENTS] Sample conditions:", orConditions.slice(0, 3));
-
     let allAgents: any[] = [];
 
     if (searchType === "pre-invite") {
       // Search for pre-invite users in the agency (for updating existing pre-invite users)
-      console.log(
-        "[SEARCH-AGENTS] Pre-invite search - querying agency:",
-        currentUser.agency_id,
-      );
-
       let query = supabase
         .from("users")
         .select(`
@@ -177,111 +134,49 @@ export async function GET(request: Request) {
       }
 
       allAgents = data || [];
-      console.log(
-        "[SEARCH-AGENTS] Pre-invite search returned",
-        allAgents.length,
-        "results",
-      );
     } else {
       // Search for downline agents (current user + their downline) - for upline selection
-      console.log(
-        "[SEARCH-AGENTS] Downline search - fetching downline for:",
-        currentUser.id,
-      );
-      console.log("[SEARCH-AGENTS] Auth user ID:", authUser.id);
-      console.log(
-        "[SEARCH-AGENTS] Current user agency_id:",
-        currentUser.agency_id,
-      );
-      console.log("[SEARCH-AGENTS] Current user role:", currentUser.role);
-      console.log(
-        "[SEARCH-AGENTS] Current user perm_level:",
-        currentUser.perm_level,
-      );
+      // Admins can search all agents in agency, regular agents can search self + downline
+      let visibleAgentIds: string[] = [];
 
-      // Test RPC call with detailed error logging
-      console.log(
-        "[SEARCH-AGENTS] Attempting RPC call to get_agent_downline...",
-      );
+      if (isAdmin) {
+        // Admins can search all agents in their agency
+        const { data: allAgentsData, error: allAgentsError } = await supabase
+          .from("users")
+          .select("id")
+          .eq("agency_id", currentUser.agency_id)
+          .neq("role", "client")
+          .in("status", ["active", "invited", "onboarding"]);
 
-      let downline: any[] = [];
-
-      try {
-        const { data: downlineData, error: downlineError } = await userClient
+        if (allAgentsError) {
+          console.error(
+            "[SEARCH-AGENTS] Error fetching all agents for admin:",
+            allAgentsError,
+          );
+          visibleAgentIds = [currentUser.id];
+        } else {
+          visibleAgentIds = (allAgentsData || []).map((u: any) => u.id);
+        }
+      } else {
+        // Regular agents see self + their downline
+        const { data: downlineData, error: downlineError } = await supabase
           .rpc("get_agent_downline", {
             agent_id: currentUser.id,
           });
 
-        console.log("[SEARCH-AGENTS] RPC call completed");
-        console.log(
-          "[SEARCH-AGENTS] RPC returned data:",
-          downlineData ? `${downlineData.length} records` : "null",
-        );
-        console.log("[SEARCH-AGENTS] RPC returned error:", downlineError);
-
         if (downlineError) {
-          console.error("[SEARCH-AGENTS] ===== RPC ERROR DETAILS =====");
-          console.error("[SEARCH-AGENTS] Error code:", downlineError.code);
-          console.error(
-            "[SEARCH-AGENTS] Error message:",
-            downlineError.message,
-          );
-          console.error(
-            "[SEARCH-AGENTS] Error details:",
-            downlineError.details,
-          );
-          console.error("[SEARCH-AGENTS] Error hint:", downlineError.hint);
-          console.error(
-            "[SEARCH-AGENTS] Full error object:",
-            JSON.stringify(downlineError, null, 2),
-          );
-          console.error("[SEARCH-AGENTS] ===========================");
-
-          return NextResponse.json({
-            error: "Failed to fetch downline",
-            detail: downlineError.message,
-            code: downlineError.code,
-            hint: downlineError.hint,
-            debugInfo: {
-              userId: currentUser.id,
-              authUserId: authUser.id,
-              agencyId: currentUser.agency_id,
-              role: currentUser.role,
-              permLevel: currentUser.perm_level,
-            },
-          }, { status: 500 });
+          console.error("[SEARCH-AGENTS] Downline fetch error:", downlineError);
+          visibleAgentIds = [currentUser.id];
+        } else {
+          // Include current user + all their downline
+          visibleAgentIds = [
+            currentUser.id,
+            ...((downlineData as any[])?.map((u: any) => u.id) || []),
+          ];
         }
-
-        downline = downlineData || [];
-      } catch (rpcException) {
-        console.error("[SEARCH-AGENTS] ===== RPC EXCEPTION =====");
-        console.error("[SEARCH-AGENTS] Exception:", rpcException);
-        console.error("[SEARCH-AGENTS] Exception type:", typeof rpcException);
-        console.error(
-          "[SEARCH-AGENTS] Exception message:",
-          rpcException instanceof Error ? rpcException.message : "Unknown",
-        );
-        console.error(
-          "[SEARCH-AGENTS] Exception stack:",
-          rpcException instanceof Error ? rpcException.stack : "No stack",
-        );
-        console.error("[SEARCH-AGENTS] ========================");
-
-        throw rpcException;
       }
 
-      // Include current user + all their downline
-      const visibleAgentIds = [
-        currentUser.id,
-        ...((downline as any[])?.map((u: any) => u.id) || []),
-      ];
-      console.log(
-        "[SEARCH-AGENTS] Found",
-        visibleAgentIds.length,
-        "visible agents (self + downline)",
-      );
-
-      // Query only these visible agents with active/invited status
+      // Query only these visible agents with active/invited/onboarding status
       let query = supabase
         .from("users")
         .select(`
@@ -313,11 +208,6 @@ export async function GET(request: Request) {
       }
 
       allAgents = data || [];
-      console.log(
-        "[SEARCH-AGENTS] Downline search returned",
-        allAgents.length,
-        "results",
-      );
     }
 
     // Client-side filtering for multi-word searches to ensure all words match
@@ -325,11 +215,6 @@ export async function GET(request: Request) {
 
     // Only filter if we have search words
     if (searchWords.length > 1 && finalSanitizedQuery) {
-      console.log(
-        "[SEARCH-AGENTS] Filtering",
-        filteredAgents.length,
-        "results for multi-word match",
-      );
       filteredAgents = filteredAgents.filter((agent) => {
         const fullName = `${agent.first_name} ${agent.last_name}`.toLowerCase();
         const email = agent.email ? agent.email.toLowerCase() : "";
@@ -346,16 +231,10 @@ export async function GET(request: Request) {
           return fullName.includes(wordLower) || email.includes(wordLower);
         });
       });
-      console.log(
-        "[SEARCH-AGENTS] After filtering:",
-        filteredAgents.length,
-        "results",
-      );
     }
 
     // Apply the limit after filtering
     const agents = filteredAgents.slice(0, limit);
-    console.log("[SEARCH-AGENTS] Returning", agents.length, "agents");
 
     // Check if format parameter is set to 'options' for select components
     if (newFormat === "options") {

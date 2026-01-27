@@ -642,7 +642,9 @@ export default function ConfigurationPage() {
       })
 
       if (!response.ok) return []
-      return response.json() as Promise<Position[]>
+      const data = await response.json()
+      // The API now returns an object with positions array (for admins, this will be all positions)
+      return (data.positions || data) as Position[]
     },
     enabled: activeTab === 'positions',
     staleTime: 5 * 60 * 1000, // 5 minutes

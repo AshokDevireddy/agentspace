@@ -160,14 +160,17 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
       const data = await response.json()
 
+      // The API now returns positions already filtered by user level
+      // along with userPositionLevel and isAdmin flags
       // Transform positions to select options
       return {
-        positions: data.map((pos: any) => ({
-          value: pos.position_id,
+        positions: (data.positions || []).map((pos: any) => ({
+          value: pos.position_id || pos.id, // Handle both position_id and id field names
           label: `${pos.name} (Level ${pos.level})`,
           level: pos.level
         })) as SearchOption[],
-        currentUserPositionLevel: null
+        currentUserPositionLevel: data.userPositionLevel ?? null,
+        isAdmin: data.isAdmin || false
       }
     },
     enabled: isOpen,

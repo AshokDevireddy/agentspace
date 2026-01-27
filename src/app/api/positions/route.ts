@@ -24,10 +24,10 @@ export async function GET(request: Request) {
     // Use admin client for database queries
     const adminClient = createAdminClient()
 
-    // Get the user's agency_id and id from the users table
+    // Get the user's agency_id, id, position info, and admin status from the users table
     const { data: userData, error: userDataError } = await adminClient
       .from('users')
-      .select('id, agency_id')
+      .select('id, agency_id, position_id, position:positions(level), role, is_admin, perm_level')
       .eq('auth_user_id', user.id)
       .single()
 
@@ -39,6 +39,10 @@ export async function GET(request: Request) {
     }
 
     const { id: userId } = userData
+
+    // Determine user's position level and admin status
+    const userPositionLevel = userData.position?.level ?? null
+    const isAdmin = userData.is_admin || userData.perm_level === 'admin' || userData.role === 'admin'
 
     // Use RPC function to get positions for agency
     const { data: positions, error: fetchError } = await adminClient
@@ -52,7 +56,20 @@ export async function GET(request: Request) {
       }, { status: 500 })
     }
 
-    return NextResponse.json(positions || [])
+    // Filter positions based on user's role
+    // Admins can see and assign all positions
+    // Agents can only see and assign positions at their level or below
+    const filteredPositions = isAdmin
+      ? positions
+      : userPositionLevel !== null && userPositionLevel !== undefined
+        ? (positions || []).filter((p: any) => p.level <= userPositionLevel)
+        : positions
+
+    return NextResponse.json({
+      positions: filteredPositions || [],
+      userPositionLevel,
+      isAdmin
+    })
 
   } catch (error) {
     console.error('API Error in positions:', error)

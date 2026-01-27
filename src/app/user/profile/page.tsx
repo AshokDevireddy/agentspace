@@ -131,8 +131,9 @@ export default function ProfilePage() {
         }
 
         const data = await response.json();
-        // API returns array directly - validate to prevent cache collision issues
-        return Array.isArray(data) ? data : [];
+        // API now returns an object with positions array
+        // Fallback to array check for backwards compatibility
+        return data.positions || (Array.isArray(data) ? data : []);
       } catch (err) {
         console.error('[Profile] Positions query error:', err);
         return [];

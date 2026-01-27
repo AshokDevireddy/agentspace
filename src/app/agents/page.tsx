@@ -356,6 +356,7 @@ export default function Agents() {
   const [selectedPositionId, setSelectedPositionId] = useState<string>("")
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [pendingSearchTerm, setPendingSearchTerm] = useState("")
+  const [showPendingOnly, setShowPendingOnly] = useState(true) // Filter toggle for positions view
   const [selectedAgentIdForModal, setSelectedAgentIdForModal] = useState<string | null>(null)
   const [agentModalOpen, setAgentModalOpen] = useState(false)
 
@@ -491,29 +492,15 @@ export default function Agents() {
         throw new Error('Failed to fetch positions')
       }
 
-      const positions = await response.json()
+      const data = await response.json()
 
-      // Fetch current user's position level and admin status (for filtering assignment dropdown)
-      const { data: { user } } = await supabase.auth.getUser()
-      let userPositionLevel = null
-      let isAdmin = false
-
-      if (user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('position_id, position:positions(level), role')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        if (userData?.position?.level !== undefined) {
-          userPositionLevel = userData.position.level
-        }
-
-        // Check if user is admin by role
-        isAdmin = userData?.role === 'admin'
+      // The API now returns positions already filtered by user level
+      // along with userPositionLevel and isAdmin flags
+      return {
+        positions: data.positions || [],
+        userPositionLevel: data.userPositionLevel ?? null,
+        isAdmin: data.isAdmin || false
       }
-
-      return { positions, userPositionLevel, isAdmin }
     },
     staleTime: 10 * 60 * 1000, // 10 minutes - positions rarely change
     placeholderData: (previousData) => previousData, // Stale-while-revalidate
@@ -539,21 +526,12 @@ export default function Agents() {
   }, [positionsData?.positions])
 
   // Derived positions data
-  const allPositions = positionsData?.positions || []
+  // The API now returns positions already filtered by user level for agents
+  // Admins get all positions, agents get only positions at their level or below
+  const positions = positionsData?.positions || [] // For pending positions assignment (already filtered by API)
   const userPositionLevel = positionsData?.userPositionLevel || null
   const isAdmin = positionsData?.isAdmin || false
-  const positions = allPositions.filter((p: Position) => {
-    // Admins can assign any position
-    if (isAdmin) {
-      return true
-    }
-    // Agents can assign positions at their level or below
-    if (userPositionLevel === null || userPositionLevel === undefined) {
-      return true
-    }
-    return p.level <= userPositionLevel
-  }) // For pending positions assignment (filtered by user level)
-  const filterPositions = allPositions // For filter dropdown (all agency positions)
+  const filterPositions = positions // For filter dropdown (use same filtered positions)
   const positionsLoaded = !positionsLoading
 
   // Build query params for agents fetch
@@ -903,15 +881,22 @@ export default function Agents() {
     { value: "inactive", label: "Inactive" },
   ]
 
-  // Filter agents client-side based on search term (all data is already loaded)
+  // Filter agents client-side based on search term and pending-only toggle
   const normalizedPendingSearch = pendingSearchTerm.trim().toLowerCase()
-  const visiblePendingAgents = normalizedPendingSearch
-    ? pendingAgents.filter((agent: PendingAgent) => {
+  const visiblePendingAgents = pendingAgents
+    .filter((agent: PendingAgent) => {
+      // Apply pending-only filter if toggle is on
+      if (showPendingOnly && agent.has_position) {
+        return false
+      }
+      // Apply search filter if search term exists
+      if (normalizedPendingSearch) {
         const fullName = `${agent.first_name} ${agent.last_name}`.toLowerCase()
         const email = (agent.email || "").toLowerCase()
         return fullName.includes(normalizedPendingSearch) || email.includes(normalizedPendingSearch)
-      })
-    : pendingAgents
+      }
+      return true
+    })
 
   const nodeSize = { x: 220, y: 200 };
   const foreignObjectProps = { width: nodeSize.x, height: nodeSize.y, x: -110, y: 10 };
@@ -957,10 +942,10 @@ export default function Agents() {
                 onClick={() => setView('pending-positions')}
                 disabled={loading}
                 className={`flex items-center gap-2 relative ${view === 'pending-positions' ? 'bg-primary hover:bg-primary/90 text-primary-foreground' : ''}`}
-                data-tour="pending-positions"
+                data-tour="positions"
               >
                 <UserCog className="h-4 w-4" />
-                Pending Positions
+                Positions
                 {!loading && pendingCount > 0 && (
                   <Badge
                     className="ml-1 h-5 min-w-5 flex items-center justify-center bg-amber-500 text-white border-0 text-xs px-1.5"
@@ -1645,14 +1630,14 @@ export default function Agents() {
         <Card className="professional-card">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>Agents Without Positions</span>
+              <span>Position Management</span>
               {loading ? (
                 <div className="h-5 w-16 bg-muted animate-pulse rounded" />
-              ) : (
+              ) : pendingCount > 0 ? (
                 <Badge className="bg-amber-500 text-white border-0">
                   {pendingCount} Pending
                 </Badge>
-              )}
+              ) : null}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1678,13 +1663,45 @@ export default function Agents() {
               </div>
             ) : (
               <div className="space-y-4">
+                {/* Filter Toggle */}
+                <div className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg border border-border">
+                  <div className="flex items-center gap-2 flex-1">
+                    <label className="text-sm font-medium text-foreground">Show:</label>
+                    <div className="flex items-center gap-1 bg-background rounded-md p-1 border border-border">
+                      <Button
+                        variant={showPendingOnly ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => setShowPendingOnly(true)}
+                        className={`h-8 px-3 text-xs ${showPendingOnly ? 'bg-primary text-primary-foreground' : ''}`}
+                      >
+                        Pending Only
+                        {pendingCount > 0 && (
+                          <Badge className="ml-1.5 h-4 min-w-4 flex items-center justify-center bg-amber-500 text-white border-0 text-[10px] px-1">
+                            {pendingCount}
+                          </Badge>
+                        )}
+                      </Button>
+                      <Button
+                        variant={!showPendingOnly ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => setShowPendingOnly(false)}
+                        className={`h-8 px-3 text-xs ${!showPendingOnly ? 'bg-primary text-primary-foreground' : ''}`}
+                      >
+                        All Agents
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="space-y-4 mb-6">
                   <p className="text-sm text-muted-foreground">
                     {visiblePendingAgents.length === 0 && pendingSearchTerm
                       ? "No agents match your search."
                       : pendingSearchTerm
                       ? "Search results: You can assign or update positions for any agent shown below."
-                      : "The following agents need position assignments. Select a position for each agent and click Assign. Use the search bar to find and modify positions for agents who already have positions."}
+                      : showPendingOnly
+                      ? "The following agents need position assignments. Select a position for each agent and click Assign."
+                      : "All agents you can manage are shown below. You can assign or update their positions."}
                   </p>
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium text-foreground">
@@ -1702,12 +1719,12 @@ export default function Agents() {
                           setSelectedPositionId("")
                         }
                       }}
-                      placeholder="Search by name or email to find and modify agent positions..."
+                      placeholder="Search by name or email..."
                       className="h-11 text-sm"
                     />
                   </div>
                 </div>
-                {visiblePendingAgents.length === 0 && !pendingSearchTerm ? (
+                {visiblePendingAgents.length === 0 && !pendingSearchTerm && showPendingOnly ? (
                   <div className="py-12 text-center">
                     <UserCog className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                     <p className="text-lg font-medium text-foreground mb-2">
@@ -1715,6 +1732,16 @@ export default function Agents() {
                     </p>
                     <p className="text-sm text-muted-foreground">
                       There are no agents waiting for position assignment.
+                    </p>
+                  </div>
+                ) : visiblePendingAgents.length === 0 && !pendingSearchTerm && !showPendingOnly ? (
+                  <div className="py-12 text-center">
+                    <UserCog className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-lg font-medium text-foreground mb-2">
+                      No agents found
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      There are no agents you can manage.
                     </p>
                   </div>
                 ) : visiblePendingAgents.length === 0 && pendingSearchTerm ? (

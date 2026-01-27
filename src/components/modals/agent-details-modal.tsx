@@ -148,8 +148,12 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
 
       const data = await response.json()
 
+      // API now returns an object with positions array
+      // Fallback to array check for backwards compatibility
+      const positions = data.positions || (Array.isArray(data) ? data : [])
+
       // Sort positions by level (descending - highest level first)
-      const sortedPositions = [...data].sort((a: any, b: any) => b.level - a.level)
+      const sortedPositions = [...positions].sort((a: any, b: any) => b.level - a.level)
 
       // Create a map of level -> color based on rank
       const colorMap = new Map<number, string>()

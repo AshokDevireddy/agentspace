@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/server';
+import { getApiBaseUrl } from '@/lib/api-config';
 import {
   getConversationIfExists,
   logMessage,
@@ -22,22 +22,29 @@ export async function GET(request: NextRequest) {
       return authResult.response;
     }
 
-    const supabase = createAdminClient();
-
     // Get current date in PST (Pacific Time)
     const pstDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
     const month = pstDate.getMonth() + 1; // JavaScript months are 0-indexed
     const day = pstDate.getDate();
 
 
-    // Query deals using RPC function with proper status checking
-    const { data: birthdayDeals, error: dealsError } = await supabase
-      .rpc('get_birthday_message_deals');
+    // Query deals using Django API
+    const apiUrl = getApiBaseUrl()
+    const response = await fetch(`${apiUrl}/api/messaging/birthdays`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+    });
 
-    if (dealsError) {
-      console.error('❌ Error querying deals:', dealsError);
-      throw dealsError;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Error querying deals:', errorData);
+      throw new Error(errorData.error || 'Failed to fetch birthday deals');
     }
+
+    const birthdayDeals = await response.json();
 
 
     if (!birthdayDeals || birthdayDeals.length === 0) {

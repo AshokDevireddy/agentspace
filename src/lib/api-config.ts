@@ -151,7 +151,7 @@ export const searchEndpoints = {
 // ============================================================================
 
 export const analyticsEndpoints = {
-  split: '/api/analytics/split',
+  split: '/api/analytics/split-view',
   downlineDistribution: '/api/analytics/downline-distribution',
   deals: '/api/analytics/deals',
   persistency: '/api/analytics/persistency',
@@ -167,6 +167,49 @@ export const onboardingEndpoints = {
   invitations: '/api/onboarding/invitations',
   invitationsSend: '/api/onboarding/invitations/send',
   invitationDelete: (index: number) => `/api/onboarding/invitations/${index}`,
+} as const
+
+// ============================================================================
+// Messaging Endpoints (Cron jobs)
+// ============================================================================
+
+export const messagingEndpoints = {
+  billingReminders: '/api/messaging/billing-reminders',
+  birthdays: '/api/messaging/birthdays',
+  holidays: '/api/messaging/holidays',
+  lapseReminders: '/api/messaging/lapse-reminders',
+  needsInfo: '/api/messaging/needs-info',
+  policyCheckups: '/api/messaging/policy-checkups',
+  quarterlyCheckins: '/api/messaging/quarterly-checkins',
+} as const
+
+// ============================================================================
+// NIPR Endpoints
+// ============================================================================
+
+export const niprEndpoints = {
+  acquireJob: '/api/nipr/acquire-job',
+  completeJob: '/api/nipr/complete-job',
+  jobProgress: '/api/nipr/job-progress',
+  releaseLocks: '/api/nipr/release-locks',
+  jobStatus: (jobId: string) => `/api/nipr/job/${jobId}`,
+} as const
+
+// ============================================================================
+// Ingest Endpoints
+// ============================================================================
+
+export const ingestEndpoints = {
+  enqueueJob: '/api/ingest/enqueue-job',
+  orchestrate: '/api/ingest/orchestrate',
+  syncStaging: '/api/ingest/sync-staging',
+  stagingSummary: '/api/ingest/staging-summary',
+  createClientsFromDeals: '/api/ingest/create-clients-from-deals',
+  createClientsFromStaging: '/api/ingest/create-clients-from-staging',
+  createUsersFromStaging: '/api/ingest/create-users-from-staging',
+  createProductsFromStaging: '/api/ingest/create-products-from-staging',
+  createWritingAgentNumbers: '/api/ingest/create-writing-agent-numbers',
+  dedupeStaging: '/api/ingest/dedupe-staging',
 } as const
 
 // ============================================================================
@@ -276,5 +319,26 @@ export function getOnboardingEndpoint(
   const ep = onboardingEndpoints[endpoint]
   const path = typeof ep === 'function' ? ep(index!) : ep
   return `${getApiBaseUrl()}${path}`
+}
+
+export function getMessagingEndpoint(
+  endpoint: keyof typeof messagingEndpoints
+): string {
+  return `${getApiBaseUrl()}${messagingEndpoints[endpoint]}`
+}
+
+export function getNiprEndpoint(
+  endpoint: keyof typeof niprEndpoints,
+  jobId?: string
+): string {
+  const ep = niprEndpoints[endpoint]
+  const path = typeof ep === 'function' ? ep(jobId!) : ep
+  return `${getApiBaseUrl()}${path}`
+}
+
+export function getIngestEndpoint(
+  endpoint: keyof typeof ingestEndpoints
+): string {
+  return `${getApiBaseUrl()}${ingestEndpoints[endpoint]}`
 }
 

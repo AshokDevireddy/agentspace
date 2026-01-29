@@ -41,7 +41,7 @@ function generateRequestId(): string {
 }
 
 /**
- * Update job progress in the database
+ * Update job progress in the database via Django API
  */
 async function updateProgress(jobId: string, step: keyof typeof PROGRESS_STEPS): Promise<void> {
   if (!jobId || jobId.startsWith('legacy-')) {
@@ -52,12 +52,24 @@ async function updateProgress(jobId: string, step: keyof typeof PROGRESS_STEPS):
   const { progress, message } = PROGRESS_STEPS[step]
 
   try {
-    const supabase = createAdminClient()
-    await supabase.rpc('update_nipr_job_progress', {
-      p_job_id: jobId,
-      p_progress: progress,
-      p_message: message
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
+    const response = await fetch(`${apiUrl}/api/nipr/job-progress`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+      body: JSON.stringify({
+        job_id: jobId,
+        progress,
+        message
+      })
     })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error('[NIPR] Failed to update progress:', errorData)
+    }
   } catch (error) {
     // Non-blocking - just log the error
     console.error('[NIPR] Failed to update progress:', error)

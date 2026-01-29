@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/server';
+import { getApiBaseUrl } from '@/lib/api-config';
 import {
   getConversationIfExists,
   logMessage,
@@ -23,8 +23,6 @@ export async function GET(request: NextRequest) {
       return authResult.response;
     }
 
-    const supabase = createAdminClient();
-
     // Get dates in PST
     const todayPST = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
     todayPST.setHours(0, 0, 0, 0);
@@ -32,14 +30,23 @@ export async function GET(request: NextRequest) {
     threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
 
 
-    // Query deals using new RPC function with custom billing date support
-    const { data: deals, error: dealsError } = await supabase
-      .rpc('get_billing_reminder_deals_v2');
+    // Query deals using Django API
+    const apiUrl = getApiBaseUrl()
+    const response = await fetch(`${apiUrl}/api/messaging/billing-reminders`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+    });
 
-    if (dealsError) {
-      console.error('❌ Error querying deals:', dealsError);
-      throw dealsError;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Error querying deals:', errorData);
+      throw new Error(errorData.error || 'Failed to fetch billing reminder deals');
     }
+
+    const deals = await response.json();
 
     if (!deals || deals.length === 0) {
       return NextResponse.json({

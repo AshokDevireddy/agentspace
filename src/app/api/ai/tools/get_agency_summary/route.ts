@@ -1,107 +1,147 @@
-import { createServerClient } from '@/lib/supabase/server';
-import { getUserContext } from '@/lib/auth/get-user-context';
+import { getSession } from '@/lib/session';
+import { getApiBaseUrl } from '@/lib/api-config';
 import { NextRequest } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    // SECURITY: Get agency ID from authenticated user, not from headers
-    const userContextResult = await getUserContext();
-    if (!userContextResult.success) {
-      return Response.json({ error: userContextResult.error }, { status: userContextResult.status });
+    // Get authenticated session
+    const session = await getSession();
+    if (!session) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const { agencyId } = userContextResult.context;
 
-    const supabase = await createServerClient();
+    const accessToken = session.accessToken;
+    const apiUrl = getApiBaseUrl();
     const params = await request.json();
 
     // Get date range based on time period
-    let startDate: Date | null = null;
+    let startDate: string | null = null;
+    let endDate: string | null = null;
     const now = new Date();
 
     switch (params.time_period) {
       case 'current_month':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        endDate = now.toISOString().split('T')[0];
         break;
       case 'last_month':
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+        const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        startDate = lastMonth.toISOString().split('T')[0];
+        endDate = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0];
         break;
       case 'ytd':
-        startDate = new Date(now.getFullYear(), 0, 1);
+        startDate = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
+        endDate = now.toISOString().split('T')[0];
         break;
       default:
         startDate = null;
+        endDate = null;
     }
 
-    // Get agency info
-    const { data: agency } = await supabase
-      .from('agencies')
-      .select('*')
-      .eq('id', agencyId)
-      .single();
+    // Fetch dashboard summary from Django
+    const summaryResponse = await fetch(
+      `${apiUrl}/api/dashboard/summary`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: 'no-store',
+      }
+    );
 
-    // Get agent count
-    const { count: agentCount } = await supabase
-      .from('users')
-      .select('*', { count: 'exact', head: true })
-      .eq('agency_id', agencyId)
-      .neq('role', 'client')
-      .eq('is_active', true);
-
-    // Get deals with date filter if applicable
-    let dealsQuery = supabase
-      .from('deals')
-      .select('annual_premium, status_standardized, created_at')
-      .eq('agency_id', agencyId);
-
-    if (startDate) {
-      dealsQuery = dealsQuery.gte('created_at', startDate.toISOString());
+    let dashboardData: any = {};
+    if (summaryResponse.ok) {
+      dashboardData = await summaryResponse.json();
     }
 
-    const { data: deals } = await dealsQuery;
+    // Fetch user profile to get agency info
+    const profileResponse = await fetch(
+      `${apiUrl}/api/user/profile`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: 'no-store',
+      }
+    );
 
-    // Calculate metrics
-    const totalProduction = deals?.reduce((sum, deal) => sum + (Number(deal.annual_premium) || 0), 0) || 0;
-    const totalPolicies = deals?.length || 0;
-    const activePolicies = deals?.filter(d => d.status_standardized === 'active').length || 0;
+    let agencyName = '';
+    let agencyId = '';
+    if (profileResponse.ok) {
+      const profileData = await profileResponse.json();
+      agencyName = profileData.agencyName || '';
+      agencyId = profileData.agencyId || '';
+    }
 
-    // Get top agents
-    const { data: topAgents } = await supabase
-      .from('users')
-      .select('id, first_name, last_name, total_prod, total_policies_sold')
-      .eq('agency_id', agencyId)
-      .neq('role', 'client')
-      .eq('is_active', true)
-      .order('total_prod', { ascending: false })
-      .limit(5);
+    // Fetch top agents
+    const agentsResponse = await fetch(
+      `${apiUrl}/api/agents/?view=table&limit=5`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: 'no-store',
+      }
+    );
 
-    // Get recent activity
-    const { data: recentDeals } = await supabase
-      .from('deals')
-      .select(`
-        id,
-        client_name,
-        annual_premium,
-        created_at,
-        status_standardized,
-        agent:users!deals_agent_id_fkey(first_name, last_name)
-      `)
-      .eq('agency_id', agencyId)
-      .order('created_at', { ascending: false })
-      .limit(10);
+    let topAgents: any[] = [];
+    if (agentsResponse.ok) {
+      const agentsData = await agentsResponse.json();
+      topAgents = (agentsData.agents || [])
+        .sort((a: any, b: any) => (b.totalProd || 0) - (a.totalProd || 0))
+        .slice(0, 5)
+        .map((agent: any) => ({
+          id: agent.agentId || agent.id,
+          first_name: agent.firstName || agent.first_name,
+          last_name: agent.lastName || agent.last_name,
+          total_prod: agent.totalProd || agent.total_prod || 0,
+          total_policies_sold: agent.totalPoliciesSold || agent.total_policies_sold || 0,
+        }));
+    }
+
+    // Fetch recent deals
+    const dealsParams = new URLSearchParams();
+    dealsParams.set('limit', '10');
+    dealsParams.set('view', 'all');
+
+    const dealsResponse = await fetch(
+      `${apiUrl}/api/deals/?${dealsParams.toString()}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: 'no-store',
+      }
+    );
+
+    let recentDeals: any[] = [];
+    if (dealsResponse.ok) {
+      const dealsData = await dealsResponse.json();
+      recentDeals = (dealsData.deals || []).slice(0, 10).map((deal: any) => ({
+        id: deal.id,
+        client_name: deal.clientName || deal.client_name,
+        annual_premium: deal.annualPremium || deal.annual_premium || 0,
+        created_at: deal.createdAt || deal.created_at,
+        status_standardized: deal.statusStandardized || deal.status_standardized,
+        agent: deal.agent ? {
+          first_name: deal.agent.firstName || deal.agent.first_name,
+          last_name: deal.agent.lastName || deal.agent.last_name,
+        } : null,
+      }));
+    }
+
+    // Calculate metrics from dashboard data or deals
+    const totalProduction = dashboardData.totalProduction ||
+      recentDeals.reduce((sum: number, d: any) => sum + (Number(d.annual_premium) || 0), 0);
+    const totalPolicies = dashboardData.totalPolicies || recentDeals.length;
+    const activePolicies = dashboardData.activePolicies ||
+      recentDeals.filter((d: any) => d.status_standardized === 'active').length;
+    const agentCount = dashboardData.agentCount || topAgents.length;
 
     return Response.json({
       agency: {
-        name: agency?.name,
-        display_name: agency?.display_name,
-        code: agency?.code,
-        is_active: agency?.is_active
+        name: agencyName,
+        display_name: agencyName,
+        code: agencyId,
+        is_active: true
       },
       metrics: {
         total_production: totalProduction,
         total_policies: totalPolicies,
         active_policies: activePolicies,
-        agent_count: agentCount || 0,
+        agent_count: agentCount,
         time_period: params.time_period || 'all'
       },
       top_agents: topAgents,
@@ -112,4 +152,3 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-

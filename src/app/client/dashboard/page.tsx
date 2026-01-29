@@ -9,50 +9,60 @@ import { FileText, User, Mail, Phone, MapPin, Calendar, DollarSign, CreditCard, 
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useAuth } from '@/providers/AuthProvider'
+import { fetchApi } from '@/lib/api-client'
 
 interface Deal {
   id: string
-  policy_number: string
-  application_number: string
-  client_name: string
-  client_email: string
-  client_phone: string
-  date_of_birth: string
-  ssn_last_4: string
-  client_address: string
-  monthly_premium: number
-  annual_premium: number
-  policy_effective_date: string
+  policyNumber: string
+  applicationNumber: string
+  clientName: string
+  clientEmail: string
+  clientPhone: string
+  dateOfBirth: string
+  ssnLast4: string
+  clientAddress: string
+  monthlyPremium: number
+  annualPremium: number
+  policyEffectiveDate: string
   status: string
-  created_at: string
+  createdAt: string
   agent: {
-    first_name: string
-    last_name: string
+    firstName: string
+    lastName: string
     email: string
-    phone_number: string
-  }
+    phoneNumber: string
+  } | null
   carrier: {
-    display_name: string
-  }
+    displayName: string
+  } | null
   product: {
     name: string
-  }
+  } | null
 }
 
 interface UserData {
   id: string
-  first_name: string
-  last_name: string
+  firstName: string
+  lastName: string
   email: string
-  phone_number?: string
+  phoneNumber?: string
   role: string
-  agency_id?: string
+  agencyId?: string
 }
 
 interface AgencyData {
-  display_name?: string
+  displayName?: string
   name?: string
-  logo_url?: string
+  logoUrl?: string
+}
+
+interface DashboardResponse {
+  user: UserData
+  agency: AgencyData | null
+}
+
+interface DealsResponse {
+  deals: Deal[]
 }
 
 export default function ClientDashboard() {
@@ -60,76 +70,52 @@ export default function ClientDashboard() {
   const supabase = createClient()
   const { user: authUser, loading: authLoading, signOut } = useAuth()
 
-  // Query for full user profile data (extends AuthProvider's basic userData)
-  const { data: userData, isLoading: userLoading, error: userError } = useQuery({
+  // Query for dashboard data (user profile + agency branding)
+  const { data: dashboardData, isLoading: dashboardLoading, error: dashboardError } = useQuery({
     queryKey: queryKeys.clientUser(),
     queryFn: async () => {
-      if (!authUser) {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
         throw new Error('Not authenticated')
       }
 
-      const { data: profile, error: profileError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('auth_user_id', authUser.id)
-        .single()
+      const response = await fetchApi<DashboardResponse>(
+        '/api/client/dashboard',
+        session.access_token,
+        'Failed to fetch dashboard'
+      )
 
-      if (profileError || !profile) {
-        throw new Error('Profile not found')
-      }
-
-      if (profile.role !== 'client') {
+      if (response.user.role !== 'client') {
         throw new Error('Not a client')
       }
 
-      return profile as UserData
+      return response
     },
-    // Wait for AuthProvider to complete before running this query
     enabled: !authLoading && !!authUser,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: 2, // Allow retries for resilience
+    staleTime: 5 * 60 * 1000,
+    retry: 2,
   })
 
-  // Query for agency data
-  const { data: agencyData } = useQuery({
-    queryKey: queryKeys.agencyBranding(userData?.agency_id ?? null),
-    queryFn: async () => {
-      if (!userData?.agency_id) return null
-
-      const { data } = await supabase
-        .from('agencies')
-        .select('display_name, name, logo_url')
-        .eq('id', userData.agency_id)
-        .maybeSingle()
-
-      return data as AgencyData | null
-    },
-    enabled: !!userData?.agency_id,
-    staleTime: 60 * 60 * 1000, // 1 hour
-  })
+  const userData = dashboardData?.user
+  const agencyData = dashboardData?.agency
 
   // Query for client's deals
   const { data: deals = [], isLoading: dealsLoading, error: dealsError } = useQuery({
     queryKey: queryKeys.clientDeals(userData?.id || ''),
     queryFn: async () => {
-      if (!userData?.id) return []
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token || !userData?.id) return []
 
-      const { data, error } = await supabase
-        .from('deals')
-        .select(`
-          *,
-          agent:agent_id(first_name, last_name, email, phone_number),
-          carrier:carrier_id(display_name),
-          product:product_id(name)
-        `)
-        .eq('client_id', userData.id)
-        .order('created_at', { ascending: false })
+      const response = await fetchApi<DealsResponse>(
+        '/api/client/deals',
+        session.access_token,
+        'Failed to fetch deals'
+      )
 
-      if (error) throw error
-      return (data || []) as Deal[]
+      return response.deals
     },
     enabled: !!userData?.id,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
     retry: 2,
   })
 
@@ -151,22 +137,22 @@ export default function ClientDashboard() {
     }
 
     // Handle query errors
-    if (userError) {
-      const errorMessage = userError.message
+    if (dashboardError) {
+      const errorMessage = dashboardError.message
       if (errorMessage === 'Not authenticated' || errorMessage === 'Profile not found') {
         router.push('/login')
       } else if (errorMessage === 'Not a client') {
         router.push('/')
       }
     }
-  }, [authLoading, authUser, userError, router])
+  }, [authLoading, authUser, dashboardError, router])
 
   // Derived values
   const user = userData
-  const agencyName = agencyData?.display_name || agencyData?.name || "AgentSpace"
-  const agencyLogo = agencyData?.logo_url || null
+  const agencyName = agencyData?.displayName || agencyData?.name || "AgentSpace"
+  const agencyLogo = agencyData?.logoUrl || null
   // Include authLoading to prevent rendering before auth state is known
-  const loading = authLoading || userLoading || (!!userData && dealsLoading)
+  const loading = authLoading || dashboardLoading || (!!userData && dealsLoading)
 
   const handleSignOut = async () => {
     await signOut()
@@ -234,7 +220,7 @@ export default function ClientDashboard() {
               <div className="text-right">
                 <p className="text-sm text-gray-600 dark:text-white">Welcome,</p>
                 <p className="text-base font-semibold text-black dark:text-white">
-                  {user.first_name} {user.last_name}
+                  {user.firstName} {user.lastName}
                 </p>
               </div>
               <Button
@@ -265,7 +251,7 @@ export default function ClientDashboard() {
                   <User className="h-5 w-5 text-black dark:text-foreground" />
                   <div>
                     <p className="text-sm font-medium text-gray-600 dark:text-muted-foreground">Name</p>
-                    <p className="text-lg font-semibold text-black dark:text-foreground">{user.first_name} {user.last_name}</p>
+                    <p className="text-lg font-semibold text-black dark:text-foreground">{user.firstName} {user.lastName}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -275,12 +261,12 @@ export default function ClientDashboard() {
                     <p className="text-lg font-semibold text-black dark:text-foreground">{user.email}</p>
                   </div>
                 </div>
-                {user.phone_number && (
+                {user.phoneNumber && (
                   <div className="flex items-center gap-3">
                     <Phone className="h-5 w-5 text-black dark:text-foreground" />
                     <div>
                       <p className="text-sm font-medium text-gray-600 dark:text-muted-foreground">Phone</p>
-                      <p className="text-lg font-semibold text-black dark:text-foreground">{user.phone_number}</p>
+                      <p className="text-lg font-semibold text-black dark:text-foreground">{user.phoneNumber}</p>
                     </div>
                   </div>
                 )}
@@ -333,11 +319,11 @@ export default function ClientDashboard() {
                     <div className="flex justify-between items-start">
                       <div>
                         <CardTitle className="text-2xl text-black dark:text-foreground flex items-center gap-2">
-                          {deal.carrier?.display_name || 'N/A'} - {deal.product?.name || 'N/A'}
+                          {deal.carrier?.displayName || 'N/A'} - {deal.product?.name || 'N/A'}
                         </CardTitle>
                         <p className="text-base text-gray-600 dark:text-muted-foreground mt-2 flex items-center gap-2">
                           <Hash className="h-4 w-4" />
-                          Policy: {deal.policy_number || deal.application_number || 'Pending'}
+                          Policy: {deal.policyNumber || deal.applicationNumber || 'Pending'}
                         </p>
                       </div>
                       <span className={`px-4 py-2 rounded-md text-sm font-bold ${
@@ -356,7 +342,7 @@ export default function ClientDashboard() {
                         <DollarSign className="h-5 w-5 text-black dark:text-white mt-1" />
                         <div>
                           <p className="text-sm font-medium text-gray-600 dark:text-muted-foreground">Monthly Premium</p>
-                          <p className="text-xl font-bold text-black dark:text-foreground">{formatCurrency(deal.monthly_premium)}</p>
+                          <p className="text-xl font-bold text-black dark:text-foreground">{formatCurrency(deal.monthlyPremium)}</p>
                         </div>
                       </div>
 
@@ -364,7 +350,7 @@ export default function ClientDashboard() {
                         <CreditCard className="h-5 w-5 text-black dark:text-white mt-1" />
                         <div>
                           <p className="text-sm font-medium text-gray-600 dark:text-muted-foreground">Annual Premium</p>
-                          <p className="text-xl font-bold text-black dark:text-foreground">{formatCurrency(deal.annual_premium)}</p>
+                          <p className="text-xl font-bold text-black dark:text-foreground">{formatCurrency(deal.annualPremium)}</p>
                         </div>
                       </div>
 
@@ -373,28 +359,28 @@ export default function ClientDashboard() {
                         <Calendar className="h-5 w-5 text-black dark:text-foreground mt-1" />
                         <div>
                           <p className="text-sm font-medium text-gray-600 dark:text-muted-foreground">Effective Date</p>
-                          <p className="text-base font-semibold text-black dark:text-foreground">{formatDate(deal.policy_effective_date)}</p>
+                          <p className="text-base font-semibold text-black dark:text-foreground">{formatDate(deal.policyEffectiveDate)}</p>
                         </div>
                       </div>
 
                       {/* Client Address */}
-                      {deal.client_address && (
+                      {deal.clientAddress && (
                         <div className="flex items-start gap-3">
                           <MapPin className="h-5 w-5 text-black dark:text-foreground mt-1" />
                           <div>
                             <p className="text-sm font-medium text-gray-600 dark:text-muted-foreground">Address</p>
-                            <p className="text-base font-semibold text-black dark:text-foreground">{deal.client_address}</p>
+                            <p className="text-base font-semibold text-black dark:text-foreground">{deal.clientAddress}</p>
                           </div>
                         </div>
                       )}
 
                       {/* Date of Birth */}
-                      {deal.date_of_birth && (
+                      {deal.dateOfBirth && (
                         <div className="flex items-start gap-3">
                           <Calendar className="h-5 w-5 text-black dark:text-foreground mt-1" />
                           <div>
                             <p className="text-sm font-medium text-gray-600 dark:text-muted-foreground">Date of Birth</p>
-                            <p className="text-base font-semibold text-black dark:text-foreground">{formatDate(deal.date_of_birth)}</p>
+                            <p className="text-base font-semibold text-black dark:text-foreground">{formatDate(deal.dateOfBirth)}</p>
                           </div>
                         </div>
                       )}
@@ -413,7 +399,7 @@ export default function ClientDashboard() {
                             <div>
                               <p className="text-sm font-medium text-gray-600 dark:text-muted-foreground">Name</p>
                               <p className="text-base font-semibold text-black dark:text-foreground">
-                                {deal.agent.first_name} {deal.agent.last_name}
+                                {deal.agent.firstName} {deal.agent.lastName}
                               </p>
                             </div>
                           </div>
@@ -429,16 +415,16 @@ export default function ClientDashboard() {
                               </a>
                             </div>
                           </div>
-                          {deal.agent.phone_number && (
+                          {deal.agent.phoneNumber && (
                             <div className="flex items-center gap-2">
                               <Phone className="h-4 w-4 text-black dark:text-foreground" />
                               <div>
                                 <p className="text-sm font-medium text-gray-600 dark:text-muted-foreground">Phone</p>
                                 <a
-                                  href={`tel:${deal.agent.phone_number}`}
+                                  href={`tel:${deal.agent.phoneNumber}`}
                                   className="text-base font-semibold text-black dark:text-foreground hover:underline"
                                 >
-                                  {deal.agent.phone_number}
+                                  {deal.agent.phoneNumber}
                                 </a>
                               </div>
                             </div>

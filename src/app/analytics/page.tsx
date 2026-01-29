@@ -18,7 +18,6 @@ import {
 import { Info } from "lucide-react"
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
-import { useSupabaseRpc } from '@/hooks/useSupabaseQuery'
 import { queryKeys } from '@/hooks/queryKeys'
 import { QueryErrorDisplay } from '@/components/ui/query-error-display'
 import { RefreshingIndicator } from '@/components/ui/refreshing-indicator'
@@ -563,16 +562,21 @@ export default function AnalyticsTestPage() {
 				.single()
 			if (userError || !userRow?.id) throw userError || new Error('User not found')
 
-			console.log("🏢 Current User Agency ID:", userRow.agency_id)
+			console.log("Current User Agency ID:", userRow.agency_id)
 
-			const { data: rpcData, error: rpcError } = await supabase
-				.rpc("get_analytics_split_view", { p_user_id: userRow.id })
-
-			if (rpcError) throw rpcError
+			// Call the API route instead of direct Supabase RPC
+			const analyticsResponse = await fetch('/api/analytics/split-view', {
+				credentials: 'include',
+			})
+			if (!analyticsResponse.ok) {
+				const errorData = await analyticsResponse.json().catch(() => ({}))
+				throw new Error(errorData.error || 'Failed to fetch analytics')
+			}
+			const rpcData = await analyticsResponse.json()
 			if (!rpcData) throw new Error('No analytics data returned')
 
 			return {
-				analyticsFullData: rpcData as {your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null},
+				analyticsFullData: rpcData as {yourDeals: AnalyticsTestValue | null, downlineProduction: AnalyticsTestValue | null},
 				userId: userRow.id,
 				subscriptionTier: userRow.subscription_tier || 'free',
 				userRole: userRow.role || null,
@@ -610,24 +614,31 @@ export default function AnalyticsTestPage() {
 
 	// 3. Fetch analytics when selected agent changes
 	const targetUserId = selectedAgentId || originalUserId
-	const { data: selectedAgentAnalytics, isPending: isSelectedAgentLoading } = useSupabaseRpc<{your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null}>(
-		queryKeys.analyticsData({ agentId: targetUserId }),
-		'get_analytics_split_view',
-		{ p_user_id: targetUserId },
-		{
-			enabled: !!targetUserId,
-			staleTime: 5 * 60 * 1000, // 5 minutes
-		}
-	)
+	const { data: selectedAgentAnalytics, isPending: isSelectedAgentLoading } = useQuery({
+		queryKey: queryKeys.analyticsData({ agentId: targetUserId }),
+		queryFn: async () => {
+			const url = targetUserId
+				? `/api/analytics/split-view?agent_id=${targetUserId}`
+				: '/api/analytics/split-view'
+			const response = await fetch(url, { credentials: 'include' })
+			if (!response.ok) {
+				const errorData = await response.json().catch(() => ({}))
+				throw new Error(errorData.error || 'Failed to fetch analytics')
+			}
+			return response.json() as Promise<{yourDeals: AnalyticsTestValue | null, downlineProduction: AnalyticsTestValue | null}>
+		},
+		enabled: !!targetUserId,
+		staleTime: 5 * 60 * 1000, // 5 minutes
+	})
 
 	// Compute the active analytics data based on viewMode and selectedAgentAnalytics
 	const _analyticsFullData = selectedAgentAnalytics || mainAnalyticsData?.analyticsFullData || null
 	const _analyticsData = React.useMemo(() => {
 		if (!_analyticsFullData) return null
 		if (viewMode === 'just_me') {
-			return _analyticsFullData.your_deals as AnalyticsTestValue
+			return _analyticsFullData.yourDeals as AnalyticsTestValue
 		} else {
-			return _analyticsFullData.downline_production as AnalyticsTestValue
+			return _analyticsFullData.downlineProduction as AnalyticsTestValue
 		}
 	}, [viewMode, _analyticsFullData])
 

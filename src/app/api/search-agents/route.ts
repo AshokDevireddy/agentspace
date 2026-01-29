@@ -9,6 +9,8 @@
 
 import { createAdminClient, createServerClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { getApiBaseUrl } from "@/lib/api-config";
+import { getAccessToken } from "@/lib/session";
 
 export async function GET(request: Request) {
   try {
@@ -207,41 +209,37 @@ export async function GET(request: Request) {
       let downline: any[] = [];
 
       try {
-        const { data: downlineData, error: downlineError } = await userClient
-          .rpc("get_agent_downline", {
-            agent_id: currentUser.id,
-          });
+        // Call Django API endpoint for agent downline
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          console.error("[SEARCH-AGENTS] No access token available for Django API call");
+          return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
 
-        console.log("[SEARCH-AGENTS] RPC call completed");
-        console.log(
-          "[SEARCH-AGENTS] RPC returned data:",
-          downlineData ? `${downlineData.length} records` : "null",
-        );
-        console.log("[SEARCH-AGENTS] RPC returned error:", downlineError);
+        const djangoUrl = `${getApiBaseUrl()}/api/agents/${currentUser.id}/downline?include_self=false`;
+        console.log("[SEARCH-AGENTS] Calling Django API:", djangoUrl);
 
-        if (downlineError) {
-          console.error("[SEARCH-AGENTS] ===== RPC ERROR DETAILS =====");
-          console.error("[SEARCH-AGENTS] Error code:", downlineError.code);
-          console.error(
-            "[SEARCH-AGENTS] Error message:",
-            downlineError.message,
-          );
-          console.error(
-            "[SEARCH-AGENTS] Error details:",
-            downlineError.details,
-          );
-          console.error("[SEARCH-AGENTS] Error hint:", downlineError.hint);
-          console.error(
-            "[SEARCH-AGENTS] Full error object:",
-            JSON.stringify(downlineError, null, 2),
-          );
-          console.error("[SEARCH-AGENTS] ===========================");
+        const djangoResponse = await fetch(djangoUrl, {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+        });
+
+        console.log("[SEARCH-AGENTS] Django API response status:", djangoResponse.status);
+
+        if (!djangoResponse.ok) {
+          const errorData = await djangoResponse.json().catch(() => ({}));
+          console.error("[SEARCH-AGENTS] ===== DJANGO API ERROR =====");
+          console.error("[SEARCH-AGENTS] Status:", djangoResponse.status);
+          console.error("[SEARCH-AGENTS] Error data:", errorData);
+          console.error("[SEARCH-AGENTS] =============================");
 
           return NextResponse.json({
             error: "Failed to fetch downline",
-            detail: downlineError.message,
-            code: downlineError.code,
-            hint: downlineError.hint,
+            detail: errorData.detail || errorData.error || "Django API error",
             debugInfo: {
               userId: currentUser.id,
               authUserId: authUser.id,
@@ -249,25 +247,31 @@ export async function GET(request: Request) {
               role: currentUser.role,
               permLevel: currentUser.perm_level,
             },
-          }, { status: 500 });
+          }, { status: djangoResponse.status });
         }
 
-        downline = downlineData || [];
-      } catch (rpcException) {
-        console.error("[SEARCH-AGENTS] ===== RPC EXCEPTION =====");
-        console.error("[SEARCH-AGENTS] Exception:", rpcException);
-        console.error("[SEARCH-AGENTS] Exception type:", typeof rpcException);
+        const downlineData = await djangoResponse.json();
+        console.log(
+          "[SEARCH-AGENTS] Django API returned data:",
+          downlineData?.downline ? `${downlineData.downline.length} records` : "null",
+        );
+
+        downline = downlineData?.downline || [];
+      } catch (djangoException) {
+        console.error("[SEARCH-AGENTS] ===== DJANGO API EXCEPTION =====");
+        console.error("[SEARCH-AGENTS] Exception:", djangoException);
+        console.error("[SEARCH-AGENTS] Exception type:", typeof djangoException);
         console.error(
           "[SEARCH-AGENTS] Exception message:",
-          rpcException instanceof Error ? rpcException.message : "Unknown",
+          djangoException instanceof Error ? djangoException.message : "Unknown",
         );
         console.error(
           "[SEARCH-AGENTS] Exception stack:",
-          rpcException instanceof Error ? rpcException.stack : "No stack",
+          djangoException instanceof Error ? djangoException.stack : "No stack",
         );
-        console.error("[SEARCH-AGENTS] ========================");
+        console.error("[SEARCH-AGENTS] ================================");
 
-        throw rpcException;
+        throw djangoException;
       }
 
       // Include current user + all their downline

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase/server'
+import { getSession } from '@/lib/session'
+import { getApiBaseUrl } from '@/lib/api-config'
 
 /**
  * Get the status of a specific NIPR job
@@ -10,55 +11,33 @@ export async function GET(
 ) {
   try {
     const { jobId } = await params
-    const supabase = await createServerClient()
-    const { data: { user: authUser } } = await supabase.auth.getUser()
+    const session = await getSession()
 
-    if (!authUser) {
+    if (!session?.accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user record
-    const { data: currentUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_user_id', authUser.id)
-      .single()
+    // Get job status from Django API
+    const apiUrl = getApiBaseUrl()
+    const response = await fetch(`${apiUrl}/api/nipr/job/${jobId}`, {
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+      },
+    })
 
-    if (!currentUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    // Get job status (only if it belongs to the user)
-    const { data: job, error } = await supabase
-      .from('nipr_jobs')
-      .select('*')
-      .eq('id', jobId)
-      .eq('user_id', currentUser.id)
-      .single()
-
-    if (error || !job) {
-      return NextResponse.json({ error: 'Job not found' }, { status: 404 })
-    }
-
-    // Calculate queue position if pending
-    let position: number | null = null
-    if (job.status === 'pending') {
-      const { data: pendingJobs } = await supabase
-        .from('nipr_jobs')
-        .select('id')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: true })
-
-      if (pendingJobs) {
-        const idx = pendingJobs.findIndex(j => j.id === jobId)
-        position = idx >= 0 ? idx + 1 : null
+    if (!response.ok) {
+      if (response.status === 404) {
+        return NextResponse.json({ error: 'Job not found' }, { status: 404 })
       }
+      return NextResponse.json({ error: 'Failed to get job status' }, { status: response.status })
     }
+
+    const job = await response.json()
 
     return NextResponse.json({
-      id: job.id,
+      id: job.job_id,
       status: job.status,
-      position,
+      position: job.queue_position || null,
       progress: job.progress || 0,
       progressMessage: job.progress_message || (job.status === 'pending' ? 'Waiting in queue...' : ''),
       createdAt: job.created_at,

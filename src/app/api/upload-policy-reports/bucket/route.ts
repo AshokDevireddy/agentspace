@@ -1,44 +1,17 @@
 // API ROUTE: /api/upload-policy-reports
 // This endpoint handles uploading policy reports CSV files to Supabase storage
 // Files are organized by agency_id and carrier name in the bucket structure
+// NOTE: Auth and agency lookup use Django. File storage still uses Supabase Storage
+// for now - a full migration to S3 would require changes to file retrieval patterns.
 
-import { createServerClient, createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
+import { getSession } from '@/lib/session'
+import { getApiBaseUrl } from '@/lib/api-config'
 import { NextRequest, NextResponse } from 'next/server'
-
-/**
- * Retrieves the agency ID for the current user
- *
- * @param supabase - Supabase client instance
- * @param userId - The authenticated user's ID (auth_user_id)
- * @returns Promise<string> - The agency ID
- */
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
-
-async function getAgencyId(supabase: any, userId: string): Promise<string> {
-  try {
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('agency_id')
-      .eq('auth_user_id', userId)
-      .single()
-
-    if (error || !user) {
-      throw new Error('Failed to fetch user agency')
-    }
-
-    if (!user.agency_id) {
-      throw new Error('User is not associated with an agency')
-    }
-
-    return user.agency_id
-  } catch (error) {
-    console.error('Error fetching agency ID:', error)
-    throw error instanceof Error ? error : new Error('Failed to retrieve agency ID')
-  }
-}
 
 /**
  * Validates the uploaded file to ensure it meets requirements
@@ -105,7 +78,6 @@ function sanitizeCarrierName(carrierName: string): string {
 function generateStoragePath(agencyId: string, carrierName: string, fileName: string): string {
   const sanitizedCarrier = sanitizeCarrierName(carrierName)
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const fileExtension = fileName.split('.').pop()
   const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_')
 
   return `${agencyId}/${sanitizedCarrier}/${timestamp}_${sanitizedFileName}`
@@ -371,22 +343,39 @@ async function processFileUploads(
  */
 export async function POST(request: NextRequest) {
   try {
-    // Initialize Supabase clients
-    const supabase = createAdminClient()
-    const userClient = await createServerClient()
-
-    // Authenticate user
-    const { data: { user }, error: authError } = await userClient.auth.getUser()
-
-    if (authError || !user) {
+    // Authenticate via session and get agency from Django
+    const session = await getSession()
+    if (!session?.accessToken) {
       return NextResponse.json(
         { error: 'Unauthorized', detail: 'User authentication failed' },
         { status: 401 }
       )
     }
 
-    // Get agency ID
-    const agencyId = await getAgencyId(supabase, user.id)
+    const apiUrl = getApiBaseUrl()
+    const userResponse = await fetch(`${apiUrl}/api/user/me`, {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    })
+
+    if (!userResponse.ok) {
+      return NextResponse.json(
+        { error: 'Unauthorized', detail: 'User authentication failed' },
+        { status: 401 }
+      )
+    }
+
+    const userData = await userResponse.json()
+    const agencyId = userData.agency_id
+
+    if (!agencyId) {
+      return NextResponse.json(
+        { error: 'Unauthorized', detail: 'User is not associated with an agency' },
+        { status: 401 }
+      )
+    }
+
+    // Use Supabase admin client for storage operations
+    const supabase = createAdminClient()
 
     // Parse form data
     const formData = await request.formData()
@@ -456,20 +445,37 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createAdminClient()
-    const userClient = await createServerClient()
-
-    // Authenticate user
-    const { data: { user }, error: authError } = await userClient.auth.getUser()
-
-    if (authError || !user) {
+    // Authenticate via session and get agency from Django
+    const session = await getSession()
+    if (!session?.accessToken) {
       return NextResponse.json(
         { error: 'Unauthorized', detail: 'User authentication failed' },
         { status: 401 }
       )
     }
 
-    const agencyId = await getAgencyId(supabase, user.id)
+    const apiUrl = getApiBaseUrl()
+    const userResponse = await fetch(`${apiUrl}/api/user/me`, {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    })
+
+    if (!userResponse.ok) {
+      return NextResponse.json(
+        { error: 'Unauthorized', detail: 'User authentication failed' },
+        { status: 401 }
+      )
+    }
+
+    const userData = await userResponse.json()
+    const agencyId = userData.agency_id
+
+    if (!agencyId) {
+      return NextResponse.json(
+        { error: 'Unauthorized', detail: 'User is not associated with an agency' },
+        { status: 401 }
+      )
+    }
+
     const bucketName = process.env.SUPABASE_POLICY_REPORTS_BUCKET_NAME
 
     if (!bucketName) {
@@ -478,6 +484,9 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       )
     }
+
+    // Use Supabase admin client for storage operations
+    const supabase = createAdminClient()
 
     // List files in the agency's folder
     const { data: files, error } = await supabase.storage

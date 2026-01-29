@@ -2,7 +2,8 @@
 // This endpoint handles parsing CSV files and uploading them to the policy_report_staging table
 // Supports AMAM (American Amicable), RNA (Royal Neighbors), Combined, AHL (American Home Life), Aflac, Aetna, and LBL (Liberty Bankers Life) policy reports
 
-import { createServerClient, createAdminClient } from '@/lib/supabase/server'
+import { getSession } from '@/lib/session'
+import { getApiBaseUrl } from '@/lib/api-config'
 import { NextRequest, NextResponse } from 'next/server'
 import Papa from 'papaparse'  // For CSV parsing
 import * as XLSX from 'xlsx'  // For Excel parsing
@@ -292,29 +293,31 @@ interface LBLPolicyData {
 }
 
 /**
- * Retrieves the agency ID for the current user
+ * Retrieves the agency ID for the current user from Django
  *
- * @param supabase - Supabase client instance
- * @param userId - The authenticated user's ID (auth_user_id)
+ * @param accessToken - JWT access token for authentication
  * @returns Promise<string> - The agency ID
  */
-async function getAgencyId(supabase: any, userId: string): Promise<string> {
+async function getAgencyIdFromDjango(accessToken: string): Promise<string> {
   try {
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('agency_id')
-      .eq('auth_user_id', userId)
-      .single()
+    const apiUrl = getApiBaseUrl()
+    const response = await fetch(`${apiUrl}/api/user/profile`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
 
-    if (error || !user) {
-      throw new Error('Failed to fetch user agency')
+    if (!response.ok) {
+      throw new Error('Failed to fetch user profile')
     }
 
-    if (!user.agency_id) {
+    const data = await response.json()
+
+    if (!data.agencyId) {
       throw new Error('User is not associated with an agency')
     }
 
-    return user.agency_id
+    return data.agencyId
   } catch (error) {
     console.error('Error fetching agency ID:', error)
     throw error instanceof Error ? error : new Error('Failed to retrieve agency ID')
@@ -791,31 +794,39 @@ async function parseAMAMCSVToPolicyReports(
 }
 
 /**
- * Uploads policy reports to the staging table
+ * Uploads policy reports to the staging table via Django API
  *
- * @param supabase - Supabase client instance
+ * @param accessToken - JWT access token for authentication
  * @param policyReports - Array of policy reports to insert
  * @returns Promise<{success: boolean, insertedCount?: number, error?: string}>
  */
 async function uploadPolicyReportsToStaging(
-  supabase: any,
+  accessToken: string,
   policyReports: PolicyReportStaging[]
 ): Promise<{success: boolean, insertedCount?: number, error?: string}> {
   try {
-    // Insert policy reports into staging table
-    const { data, error } = await supabase
-      .from('policy_report_staging')
-      .insert(policyReports)
-      .select()
+    const apiUrl = getApiBaseUrl()
 
-    if (error) {
-      console.error('Database insert error:', error)
-      return { success: false, error: error.message }
+    // Call Django bulk insert endpoint
+    const response = await fetch(`${apiUrl}/api/ingest/staging/bulk`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ records: policyReports }),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      console.error('Database insert error:', data)
+      return { success: false, error: data.error || 'Insert failed' }
     }
 
     return {
       success: true,
-      insertedCount: data?.length || policyReports.length
+      insertedCount: data.insertedCount || policyReports.length
     }
   } catch (error) {
     console.error('Upload to staging error:', error)
@@ -2971,16 +2982,16 @@ async function parseLBLCSVToPolicyReports(
 }
 
 /**
- * Processes CSV files and uploads them to the staging table
+ * Processes CSV files and uploads them to the staging table via Django API
  * Supports AMAM (American Amicable), RNA (Royal Neighbors), Combined, AHL (American Home Life), Aflac, Aetna, and LBL (Liberty Bankers Life) policy reports
  *
- * @param supabase - Supabase client instance
+ * @param accessToken - JWT access token for authentication
  * @param agencyId - The agency ID
  * @param uploads - Array of carrier upload objects
  * @returns Promise<{success: boolean, results: any[], errors: string[]}>
  */
 async function processCSVUploads(
-  supabase: any,
+  accessToken: string,
   agencyId: string,
   uploads: Array<{carrier: string, file: File}>
 ): Promise<{success: boolean, results: any[], errors: string[]}> {
@@ -3091,7 +3102,7 @@ async function processCSVUploads(
       }
 
       // Upload to staging table
-      const uploadResult = await uploadPolicyReportsToStaging(supabase, policyReports)
+      const uploadResult = await uploadPolicyReportsToStaging(accessToken, policyReports)
 
       if (uploadResult.success) {
         results.push({
@@ -3122,22 +3133,19 @@ async function processCSVUploads(
  */
 export async function POST(request: NextRequest) {
   try {
-    // Initialize Supabase clients
-    const supabase = createAdminClient()
-    const userClient = await createServerClient()
-
-    // Authenticate user
-    const { data: { user }, error: authError } = await userClient.auth.getUser()
-
-    if (authError || !user) {
+    // Get authenticated session
+    const session = await getSession()
+    if (!session) {
       return NextResponse.json(
         { error: 'Unauthorized', detail: 'User authentication failed' },
         { status: 401 }
       )
     }
 
-    // Get agency ID
-    const agencyId = await getAgencyId(supabase, user.id)
+    const accessToken = session.accessToken
+
+    // Get agency ID from Django
+    const agencyId = await getAgencyIdFromDjango(accessToken)
 
     // Parse form data
     const formData = await request.formData()
@@ -3154,11 +3162,9 @@ export async function POST(request: NextRequest) {
             carrier: extractedCarrier,
             file: value
           })
-        } else {
         }
       }
     }
-
 
     // Check if any files were uploaded
     if (uploads.length === 0) {
@@ -3169,27 +3175,32 @@ export async function POST(request: NextRequest) {
     }
 
     // Process CSV uploads
-    const uploadResults = await processCSVUploads(supabase, agencyId, uploads)
+    const uploadResults = await processCSVUploads(accessToken, agencyId, uploads)
 
     // Calculate total records processed
     const totalRecordsProcessed = uploadResults.results.reduce((sum, result) => sum + result.recordsProcessed, 0)
     const totalRecordsInserted = uploadResults.results.reduce((sum, result) => sum + result.recordsInserted, 0)
 
-    // Trigger orchestrate_policy_report_ingest_with_agency_id RPC function AFTER staging is fully complete
+    // Trigger orchestrate via Django API AFTER staging is fully complete
     let orchestrationResult = null
     if (totalRecordsInserted > 0) {
       try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+        const orchestrateResponse = await fetch(`${apiUrl}/api/ingest/orchestrate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Cron-Secret': process.env.CRON_SECRET || '',
+          },
+        })
 
-        const { data: orchestrationData, error: orchestrationError } = await supabase
-          .rpc('orchestrate_policy_report_ingest_with_agency_id', {
-            p_agency_id: agencyId
-          })
+        const orchestrationData = await orchestrateResponse.json()
 
-        if (orchestrationError) {
-          console.error('Error calling orchestrate_policy_report_ingest_with_agency_id RPC:', orchestrationError)
+        if (!orchestrateResponse.ok) {
+          console.error('Error calling Django orchestrate API:', orchestrationData)
           orchestrationResult = {
             success: false,
-            error: orchestrationError.message
+            error: orchestrationData.error || 'Orchestration failed'
           }
         } else {
           orchestrationResult = {
@@ -3198,10 +3209,10 @@ export async function POST(request: NextRequest) {
           }
         }
       } catch (rpcError) {
-        console.error('Exception calling orchestrate_policy_report_ingest_with_agency_id RPC:', rpcError)
+        console.error('Exception calling Django orchestrate API:', rpcError)
         orchestrationResult = {
           success: false,
-          error: rpcError instanceof Error ? rpcError.message : 'Unknown RPC error'
+          error: rpcError instanceof Error ? rpcError.message : 'Unknown API error'
         }
       }
     } else {
@@ -3244,54 +3255,55 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createAdminClient()
-    const userClient = await createServerClient()
-
-    // Authenticate user
-    const { data: { user }, error: authError } = await userClient.auth.getUser()
-
-    if (authError || !user) {
+    // Get authenticated session
+    const session = await getSession()
+    if (!session) {
       return NextResponse.json(
         { error: 'Unauthorized', detail: 'User authentication failed' },
         { status: 401 }
       )
     }
 
-    const agencyId = await getAgencyId(supabase, user.id)
+    const accessToken = session.accessToken
+    const apiUrl = getApiBaseUrl()
 
     // Get query parameters
     const { searchParams } = new URL(request.url)
     const carrier = searchParams.get('carrier')
-    const limit = parseInt(searchParams.get('limit') || '100')
+    const limit = searchParams.get('limit') || '100'
 
-    // Build query
-    let query = supabase
-      .from('policy_report_staging')
-      .select('*')
-      .eq('agency_id', agencyId)
-      .order('created_at', { ascending: false })
-      .limit(limit)
+    // Build Django API URL with query params
+    const djangoParams = new URLSearchParams()
+    if (carrier) djangoParams.set('carrier', carrier)
+    djangoParams.set('limit', limit)
 
-    if (carrier) {
-      query = query.eq('carrier_name', carrier)
-    }
+    const djangoResponse = await fetch(
+      `${apiUrl}/api/ingest/staging?${djangoParams.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        cache: 'no-store',
+      }
+    )
 
-    const { data: records, error } = await query
-
-    if (error) {
-      console.error('Error fetching staging records:', error)
+    if (!djangoResponse.ok) {
+      const errorData = await djangoResponse.json().catch(() => ({}))
+      console.error('Error fetching staging records:', errorData)
       return NextResponse.json(
-        { error: 'Failed to fetch records', detail: error.message },
-        { status: 500 }
+        { error: 'Failed to fetch records', detail: errorData.error || 'Unknown error' },
+        { status: djangoResponse.status }
       )
     }
 
+    const data = await djangoResponse.json()
+
     return NextResponse.json({
-      success: true,
-      agencyId,
-      carrier: carrier || 'all',
-      records: records || [],
-      count: records?.length || 0
+      success: data.success,
+      agencyId: data.agencyId,
+      carrier: data.carrier,
+      records: data.records || [],
+      count: data.count || 0
     })
 
   } catch (error) {

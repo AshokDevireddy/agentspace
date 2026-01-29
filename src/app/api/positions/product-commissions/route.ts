@@ -1,93 +1,66 @@
 // API ROUTE: /api/positions/product-commissions
 // This endpoint manages position-product commission mappings
-// GET: Fetches all commission mappings for the user's agency
+// GET: Fetches all commission mappings for the user's agency (via Django)
 // POST: Creates or updates commission mappings (batch operation)
 
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { getApiBaseUrl } from "@/lib/api-config";
+import { getAccessToken } from "@/lib/session";
 
 export async function GET(request: Request) {
   try {
-    const supabase = createAdminClient();
-
-    // Get the authorization header
-    const authHeader = request.headers.get("authorization");
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    // Get the access token from the session
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
       return NextResponse.json({
         error: "Unauthorized",
-        detail: "No valid token provided",
+        detail: "No valid session",
       }, { status: 401 });
     }
-
-    const token = authHeader.replace("Bearer ", "");
-
-    // Verify the token and get user info
-    const { data: { user }, error: userError } = await supabase.auth.getUser(
-      token,
-    );
-
-    if (userError || !user) {
-      return NextResponse.json({
-        error: "Unauthorized",
-        detail: "Invalid token",
-      }, { status: 401 });
-    }
-
-    // Get the user's agency_id and id from the users table
-    const { data: userData, error: userDataError } = await supabase
-      .from("users")
-      .select("id, agency_id")
-      .eq("auth_user_id", user.id)
-      .single();
-
-    if (userDataError || !userData) {
-      return NextResponse.json({
-        error: "User not found",
-        detail: "Failed to fetch user information",
-      }, { status: 404 });
-    }
-
-    const { id: userId } = userData;
 
     // Get carrier_id from URL search params (optional filter)
     const { searchParams } = new URL(request.url);
     const carrierId = searchParams.get("carrier_id");
 
-    // Use RPC function to get commission mappings
-    const { data: commissions, error: fetchError } = await supabase
-      .rpc("get_position_product_commissions", {
-        p_user_id: userId,
-        p_carrier_id: carrierId || null,
-      });
-
-    if (fetchError) {
-      console.error("Commissions fetch error:", fetchError);
-      return NextResponse.json({
-        error: "Failed to fetch commissions",
-        detail: "Database query encountered an error",
-      }, { status: 500 });
+    // Build Django API URL
+    const djangoUrl = new URL(`${getApiBaseUrl()}/api/positions/all-commissions`);
+    if (carrierId) {
+      djangoUrl.searchParams.set("carrier_id", carrierId);
     }
 
-    console.log("[Commission Fetch] RPC function returned:", {
+    console.log("[Commission Fetch] Calling Django API:", djangoUrl.toString());
+
+    // Call Django API
+    const djangoResponse = await fetch(djangoUrl.toString(), {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+
+    if (!djangoResponse.ok) {
+      const errorData = await djangoResponse.json().catch(() => ({}));
+      console.error("[Commission Fetch] Django API error:", errorData);
+      return NextResponse.json({
+        error: errorData.error || "Failed to fetch commissions",
+        detail: errorData.detail || "Django API error",
+      }, { status: djangoResponse.status });
+    }
+
+    const commissions = await djangoResponse.json();
+
+    console.log("[Commission Fetch] Django API returned:", {
       count: commissions?.length || 0,
       sample: commissions?.[0]
         ? {
           commission_id: commissions[0].commission_id,
           position_id: commissions[0].position_id,
-          position_id_length: commissions[0].position_id?.length,
           product_id: commissions[0].product_id,
-          product_id_length: commissions[0].product_id?.length,
         }
         : null,
-      allPositionIds: commissions?.map((c: any) => ({
-        id: c.position_id,
-        length: c.position_id?.length,
-      })) || [],
-      allProductIds: commissions?.map((c: any) => ({
-        id: c.product_id,
-        length: c.product_id?.length,
-      })) || [],
     });
 
     return NextResponse.json(commissions || []);

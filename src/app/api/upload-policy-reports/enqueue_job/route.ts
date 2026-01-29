@@ -1,6 +1,5 @@
 // app/api/parse-jobs/route.ts
 import { NextResponse } from 'next/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getUserContext } from '@/lib/auth/get-user-context'
 
 type Job = { bucket: string; path: string }
@@ -35,12 +34,6 @@ export async function POST(req: Request) {
   const { carrier, jobs } = v.data
   // SECURITY: agencyId comes from authenticated user, not from body
 
-  // Service-role client for privileged operations
-  const admin = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY! // server-only
-  )
-
   // (Optional) path guard
   for (const j of jobs) {
     if (!j.path.startsWith(`${carrier}/`)) {
@@ -48,18 +41,34 @@ export async function POST(req: Request) {
     }
   }
 
-  // Enqueue via SECURITY DEFINER RPC
+  // Enqueue via Django API
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   const results: Array<{ path: string; msgId?: number; error?: string }> = []
   for (const j of jobs) {
-    const { data: msgId, error } = await admin.rpc('enqueue_policy_report_parse_job', {
-      p_bucket: j.bucket,
-      p_path: j.path,
-      p_carrier: carrier,
-      p_agency_id: agencyId,
-      p_priority: 0,
-      p_delay_sec: 0,
-    })
-    results.push({ path: j.path, msgId: msgId ?? undefined, error: error?.message })
+    try {
+      const response = await fetch(`${apiUrl}/api/ingest/enqueue-job`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Cron-Secret': process.env.CRON_SECRET || '',
+        },
+        body: JSON.stringify({
+          bucket: j.bucket,
+          path: j.path,
+          carrier,
+          priority: 0,
+          delay_sec: 0,
+        }),
+      })
+      const data = await response.json()
+      if (response.ok) {
+        results.push({ path: j.path, msgId: data.message_id ?? undefined })
+      } else {
+        results.push({ path: j.path, error: data.error || 'Failed to enqueue' })
+      }
+    } catch (err) {
+      results.push({ path: j.path, error: err instanceof Error ? err.message : 'Unknown error' })
+    }
   }
 
   const failures = results.filter(r => r.error)

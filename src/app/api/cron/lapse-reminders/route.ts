@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/server';
+import { getApiBaseUrl } from '@/lib/api-config';
 import {
   getConversationIfExists,
   logMessage,
@@ -12,6 +12,27 @@ import {
 import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
 import { verifyCronRequest } from '@/lib/cron-auth';
+
+/**
+ * Helper to update deal status via Django API
+ */
+async function updateDealStatus(dealId: string, statusStandardized: string): Promise<boolean> {
+  const apiUrl = getApiBaseUrl();
+  try {
+    const response = await fetch(`${apiUrl}/api/deals/${dealId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+      body: JSON.stringify({ status_standardized: statusStandardized }),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error(`Failed to update deal ${dealId} status:`, error);
+    return false;
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,16 +43,24 @@ export async function GET(request: NextRequest) {
       return authResult.response;
     }
 
-    const supabase = createAdminClient();
+    // Query deals using Django API
+    const apiUrl = getApiBaseUrl();
+    const response = await fetch(`${apiUrl}/api/messaging/lapse-reminders`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+    });
 
-    // Query deals using RPC function
-    const { data: deals, error: dealsError } = await supabase
-      .rpc('get_lapse_reminder_deals');
-
-    if (dealsError) {
-      console.error('❌ Error querying deals:', dealsError);
-      throw dealsError;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Error querying deals:', errorData);
+      throw new Error(errorData.error || 'Failed to fetch lapse reminder deals');
     }
+
+    const responseData = await response.json();
+    const deals = responseData.deals || [];
 
     if (!deals || deals.length === 0) {
       return NextResponse.json({
@@ -128,10 +157,11 @@ export async function GET(request: NextRequest) {
           ? 'lapse_sms_and_email_notified'
           : 'lapse_sms_notified';
 
-        await supabase
-          .from('deals')
-          .update({ status_standardized: newStatus })
-          .eq('id', deal.deal_id);
+        // Update via Django API
+        const updated = await updateDealStatus(deal.deal_id, newStatus);
+        if (!updated) {
+          console.warn(`Failed to update deal ${deal.deal_id} status to ${newStatus}`);
+        }
 
         successCount++;
 

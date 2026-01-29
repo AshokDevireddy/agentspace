@@ -1,6 +1,8 @@
 /**
  * Telnyx Webhook Handler
  * Receives inbound SMS messages from Telnyx and processes them
+ *
+ * Fully migrated to use Django API endpoints.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,8 +13,10 @@ import {
   logMessage,
   getAgencyDetails,
   findAgencyByPhoneNumber,
+  updateConversationOptStatus,
+  getAgentDetails,
+  type DealResult,
 } from '@/lib/sms-helpers';
-import { createAdminClient } from '@/lib/supabase/server';
 
 /**
  * Checks if message is an opt-out/help/opt-in keyword
@@ -27,18 +31,11 @@ function getComplianceKeyword(messageText: string): 'STOP' | 'HELP' | 'START' | 
 
 /**
  * Handles opt-out (STOP) response
+ * Uses Django API to update conversation status
  */
 async function handleOptOut(conversationId: string, agentId: string, clientPhone: string, toNumber: string) {
-  const supabase = createAdminClient();
-
-  // Update conversation status to opted_out
-  await supabase
-    .from('conversations')
-    .update({
-      sms_opt_in_status: 'opted_out',
-      opted_out_at: new Date().toISOString(),
-    })
-    .eq('id', conversationId);
+  // Update conversation status to opted_out via Django API
+  await updateConversationOptStatus(conversationId, 'opted_out');
 
   // Send unsubscribe confirmation
   const unsubscribeMessage = `AgentSpace: You have been unsubscribed and will receive no further messages. For assistance, contact ashok@useagentspace.com.`;
@@ -96,19 +93,11 @@ async function handleHelp(conversationId: string, agentId: string, clientPhone: 
 
 /**
  * Handles opt-in (START) response - re-subscribes client
+ * Uses Django API to update conversation status
  */
 async function handleOptIn(conversationId: string, agentId: string, agencyId: string, clientPhone: string, toNumber: string) {
-  const supabase = createAdminClient();
-
-  // Update conversation status to opted_in
-  await supabase
-    .from('conversations')
-    .update({
-      sms_opt_in_status: 'opted_in',
-      opted_in_at: new Date().toISOString(),
-      opted_out_at: null,
-    })
-    .eq('id', conversationId);
+  // Update conversation status to opted_in via Django API
+  await updateConversationOptStatus(conversationId, 'opted_in');
 
   // Get agency details for welcome message
   const agency = await getAgencyDetails(agencyId);
@@ -277,7 +266,7 @@ export async function POST(request: NextRequest) {
       try {
         // Import AI processing function
         const { processAIMessage } = await import('@/lib/ai-sms-agent');
-        const { getConversationIfExists } = await import('@/lib/sms-helpers');
+        const { getConversationIfExists, getAgentDetails } = await import('@/lib/sms-helpers');
 
         // Only process if conversation exists (conservative approach)
         const existingConversation = await getConversationIfExists(
@@ -288,15 +277,8 @@ export async function POST(request: NextRequest) {
         );
 
         if (existingConversation) {
-          // Fetch complete agent data for AI processing
-          const { createAdminClient } = await import('@/lib/supabase/server');
-          const supabase = createAdminClient();
-
-          const { data: fullAgent } = await supabase
-            .from('users')
-            .select('id, subscription_tier, agency_id, phone_number, first_name, last_name')
-            .eq('id', agent.id)
-            .single();
+          // Fetch complete agent data for AI processing via Django API
+          const fullAgent = await getAgentDetails(agent.id);
 
           if (fullAgent) {
             const result = await processAIMessage(

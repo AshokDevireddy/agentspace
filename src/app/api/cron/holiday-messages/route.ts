@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/server';
+import { getApiBaseUrl } from '@/lib/api-config';
 import {
   getConversationIfExists,
   logMessage,
@@ -108,16 +108,24 @@ export async function GET(request: NextRequest) {
 
     console.log(`🎊 Today is ${holiday.name}! Sending greetings...`);
 
-    const supabase = createAdminClient();
+    // Query deals using Django API
+    const apiUrl = getApiBaseUrl();
+    const response = await fetch(`${apiUrl}/api/messaging/holidays?holiday_name=${encodeURIComponent(holiday.name)}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+    });
 
-    // Query deals using RPC function
-    const { data: deals, error: dealsError } = await supabase
-      .rpc('get_holiday_message_deals', { p_holiday_name: holiday.name });
-
-    if (dealsError) {
-      console.error('❌ Error querying deals:', dealsError);
-      throw dealsError;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Error querying deals:', errorData);
+      throw new Error(errorData.error || 'Failed to fetch holiday deals');
     }
+
+    const responseData = await response.json();
+    const deals = responseData.deals || [];
 
     if (!deals || deals.length === 0) {
       return NextResponse.json({

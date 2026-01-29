@@ -5,8 +5,29 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/server';
+import { getApiBaseUrl } from '@/lib/api-config';
 import { verifyCronRequest } from '@/lib/cron-auth';
+
+/**
+ * Helper to update deal status via Django API
+ */
+async function updateDealStatus(dealId: string, statusStandardized: string): Promise<boolean> {
+  const apiUrl = getApiBaseUrl();
+  try {
+    const response = await fetch(`${apiUrl}/api/deals/${dealId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+      body: JSON.stringify({ status_standardized: statusStandardized }),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error(`Failed to update deal ${dealId} status:`, error);
+    return false;
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,17 +38,25 @@ export async function GET(request: NextRequest) {
       return authResult.response;
     }
 
-    const supabase = createAdminClient();
+    // Query deals using Django API
+    console.log('🔍 Querying deals using Django API...');
+    const apiUrl = getApiBaseUrl();
+    const response = await fetch(`${apiUrl}/api/messaging/needs-info`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+    });
 
-    // Query deals using RPC function
-    console.log('🔍 Querying deals using RPC function...');
-    const { data: deals, error: dealsError } = await supabase
-      .rpc('get_needs_more_info_deals');
-
-    if (dealsError) {
-      console.error('❌ Error querying deals:', dealsError);
-      throw dealsError;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Error querying deals:', errorData);
+      throw new Error(errorData.error || 'Failed to fetch needs info deals');
     }
+
+    const responseData = await response.json();
+    const deals = responseData.deals || [];
 
     if (!deals || deals.length === 0) {
       console.log('No deals eligible for needs more info notifications found');
@@ -68,14 +97,15 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // Update status for Pro/Expert agents with messaging enabled
-        await supabase
-          .from('deals')
-          .update({ status_standardized: 'needs_more_info_notified' })
-          .eq('id', deal.deal_id);
-
-        successCount++;
-        console.log(`  ✅ Updated deal ${deal.deal_id} to 'needs_more_info_notified'`);
+        // Update status for Pro/Expert agents with messaging enabled via Django API
+        const updated = await updateDealStatus(deal.deal_id, 'needs_more_info_notified');
+        if (updated) {
+          successCount++;
+          console.log(`  ✅ Updated deal ${deal.deal_id} to 'needs_more_info_notified'`);
+        } else {
+          console.error(`  ❌ Failed to update deal ${deal.deal_id}`);
+          errorCount++;
+        }
 
       } catch (error) {
         console.error(`  ❌ Failed to update deal ${deal.deal_id}:`, error);

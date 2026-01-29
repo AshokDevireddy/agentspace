@@ -419,17 +419,28 @@ export async function getPersistencyAnalytics(params: any, agencyId: string) {
   try {
     const supabase = await createServerClient();
 
-    // Call the SAME RPC function that the analytics dashboard page uses
+    // Call Django API for analytics data
     // This provides comprehensive analytics data including:
     // - Time series by month and carrier
     // - Breakdowns by status, state, age band
     // - Multiple time windows (3m, 6m, 9m, all_time)
     // - Persistency, submitted, and active policy counts
-    const { data, error } = await supabase.rpc('get_analytics_from_deals_with_agency_id', {
-      p_agency_id: agencyId
-    });
+    let data = null;
+    try {
+      const analyticsResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/analytics/deals?agency_id=${agencyId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-    if (error) {
+      if (!analyticsResponse.ok) {
+        console.error('Error fetching analytics from API');
+        throw new Error('Failed to fetch analytics data');
+      }
+
+      data = await analyticsResponse.json();
+    } catch (error) {
       console.error('Error fetching analytics:', error);
       throw new Error('Failed to fetch analytics data');
     }
@@ -682,12 +693,24 @@ export async function getAgentHierarchy(params: any, agencyId: string) {
       return { error: 'Agent not found' };
     }
 
-    // Get complete downline using RPC function
-    const { data: downline, error: downlineError } = await supabase.rpc('get_agent_downline', {
-      agent_id: agentId
-    });
+    // Get complete downline using Django API
+    let downline: { id: string }[] = [];
+    try {
+      const downlineResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/agents/${agentId}/downline`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-    if (downlineError) {
+      if (!downlineResponse.ok) {
+        console.error('Error fetching downline from API');
+        return { error: 'Failed to fetch agent hierarchy' };
+      }
+
+      const downlineData = await downlineResponse.json();
+      downline = downlineData.downlines || [];
+    } catch (downlineError) {
       console.error('Error fetching downline:', downlineError);
       return { error: 'Failed to fetch agent hierarchy' };
     }

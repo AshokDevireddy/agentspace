@@ -1,33 +1,60 @@
 /**
  * User-related query hooks for TanStack Query
  * Centralized user data fetching with proper caching
+ *
+ * Migrated to use Django API via Next.js API routes
  */
 
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from './queryKeys'
-import { supabaseRestFetch } from '@/lib/supabase/api'
-import { createClient } from '@/lib/supabase/client'
+
+// ============ API Helper ============
+
+/**
+ * Internal helper to call Next.js API routes with credentials.
+ * These routes handle auth via httpOnly cookies.
+ */
+async function apiCall<T>(endpoint: string): Promise<T> {
+  const response = await fetch(`/api${endpoint}`, {
+    credentials: 'include',
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.error || errorData.message || `API call failed: ${response.status}`)
+  }
+
+  return response.json()
+}
 
 // ============ User Profile Query ============
 
 interface UserProfileData {
   id: string
-  auth_user_id: string
+  authUserId?: string
   email: string
-  first_name: string | null
-  last_name: string | null
-  phone_number: string | null
+  firstName: string | null
+  lastName: string | null
+  phone: string | null
   role: string
   status: string
-  agency_id: string
-  position_level: number | null
-  upline_id: string | null
-  created_at: string
-  updated_at: string
+  agencyId: string
+  agencyName: string | null
+  positionId: string | null
+  positionName: string | null
+  positionLevel: number | null
+  isAdmin: boolean
+  permLevel: string | null
+  subscriptionTier: string | null
+  startDate: string | null
+  annualGoal: number | null
+  totalProd: number
+  totalPoliciesSold: number
+  createdAt: string
 }
 
 interface UseUserProfileOptions {
-  /** Access token for REST API calls (optional - will use Supabase client if not provided) */
+  /** Access token - kept for backward compatibility but not used (auth via httpOnly cookie) */
   accessToken?: string
   /** Whether to enable the query */
   enabled?: boolean
@@ -37,13 +64,13 @@ interface UseUserProfileOptions {
 
 /**
  * Fetch user profile data by auth_user_id
- * Can use either REST API (with access token) or Supabase client
+ * Uses Django API via /api/user/profile
  */
 export function useUserProfile(
   authUserId: string | undefined,
   options: UseUserProfileOptions = {}
 ) {
-  const { accessToken, enabled = true, staleTime = 5 * 60 * 1000 } = options
+  const { enabled = true, staleTime = 5 * 60 * 1000 } = options
 
   return useQuery({
     queryKey: queryKeys.userProfile(authUserId),
@@ -52,33 +79,8 @@ export function useUserProfile(
         throw new Error('User ID is required')
       }
 
-      // If access token provided, use REST API
-      if (accessToken) {
-        const { data, error } = await supabaseRestFetch<UserProfileData[]>(
-          `/rest/v1/users?auth_user_id=eq.${authUserId}&select=*`,
-          { accessToken }
-        )
-
-        if (error) {
-          throw new Error(error)
-        }
-
-        return data?.[0] || null
-      }
-
-      // Otherwise use Supabase client
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('auth_user_id', authUserId)
-        .maybeSingle()
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      return data as UserProfileData | null
+      const data = await apiCall<UserProfileData>('/user/profile')
+      return data
     },
     enabled: enabled && !!authUserId,
     staleTime,
@@ -90,15 +92,15 @@ export function useUserProfile(
 interface AgencyBrandingData {
   id: string
   name: string
-  display_name: string | null
-  logo_url: string | null
-  primary_color: string | null
-  theme_mode: string | null
-  whitelabel_domain: string | null
+  displayName: string | null
+  logoUrl: string | null
+  primaryColor: string | null
+  themeMode: string | null
+  whitelabelDomain: string | null
 }
 
 interface UseAgencyBrandingOptions {
-  /** Access token for REST API calls (optional) */
+  /** Access token - kept for backward compatibility */
   accessToken?: string
   /** Whether to enable the query */
   enabled?: boolean
@@ -108,12 +110,13 @@ interface UseAgencyBrandingOptions {
 
 /**
  * Fetch agency branding data by agency ID
+ * Uses Django API via /api/agencies/{id}/settings
  */
 export function useAgencyBranding(
   agencyId: string | null | undefined,
   options: UseAgencyBrandingOptions = {}
 ) {
-  const { accessToken, enabled = true, staleTime = 60 * 60 * 1000 } = options
+  const { enabled = true, staleTime = 60 * 60 * 1000 } = options
 
   return useQuery({
     queryKey: queryKeys.agencyBranding(agencyId ?? null),
@@ -122,33 +125,8 @@ export function useAgencyBranding(
         throw new Error('Agency ID is required')
       }
 
-      // If access token provided, use REST API
-      if (accessToken) {
-        const { data, error } = await supabaseRestFetch<AgencyBrandingData[]>(
-          `/rest/v1/agencies?id=eq.${agencyId}&select=id,name,display_name,logo_url,primary_color,theme_mode,whitelabel_domain`,
-          { accessToken }
-        )
-
-        if (error) {
-          throw new Error(error)
-        }
-
-        return data?.[0] || null
-      }
-
-      // Otherwise use Supabase client
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, theme_mode, whitelabel_domain')
-        .eq('id', agencyId)
-        .maybeSingle()
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      return data as AgencyBrandingData | null
+      const data = await apiCall<AgencyBrandingData>(`/agencies/${agencyId}/settings`)
+      return data
     },
     enabled: enabled && !!agencyId,
     staleTime,
@@ -167,6 +145,7 @@ interface UseAgencyBrandingByDomainOptions {
 /**
  * Fetch agency branding data by whitelabel domain
  * Used for domain-based white-label detection
+ * Uses Django API via /api/agencies/by-domain
  */
 export function useAgencyBrandingByDomain(
   domain: string | null,
@@ -179,16 +158,19 @@ export function useAgencyBrandingByDomain(
     queryFn: async () => {
       if (!domain) return null
 
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, theme_mode, whitelabel_domain')
-        .eq('whitelabel_domain', domain)
-        .eq('is_active', true)
-        .maybeSingle()
+      const response = await fetch(`/api/agencies/by-domain?domain=${encodeURIComponent(domain)}`, {
+        credentials: 'include',
+      })
 
-      if (error) throw new Error(error.message)
-      return data as AgencyBrandingData | null
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null
+        }
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to fetch agency by domain')
+      }
+
+      return response.json() as Promise<AgencyBrandingData | null>
     },
     enabled: enabled && !!domain,
     staleTime,
@@ -198,7 +180,7 @@ export function useAgencyBrandingByDomain(
 // ============ Agency Scoreboard Settings Query ============
 
 interface AgencyScoreboardSettings {
-  default_scoreboard_start_date: string | null
+  defaultScoreboardStartDate: string | null
 }
 
 interface UseAgencyScoreboardSettingsOptions {
@@ -211,6 +193,7 @@ interface UseAgencyScoreboardSettingsOptions {
 /**
  * Fetch agency scoreboard settings (default start date)
  * Used by the scoreboard page to determine default date range
+ * Uses Django API via /api/agencies/{id}/scoreboard-settings
  */
 export function useAgencyScoreboardSettings(
   agencyId: string | null | undefined,
@@ -225,18 +208,8 @@ export function useAgencyScoreboardSettings(
         throw new Error('Agency ID is required')
       }
 
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('agencies')
-        .select('default_scoreboard_start_date')
-        .eq('id', agencyId)
-        .maybeSingle()
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      return data as AgencyScoreboardSettings | null
+      const data = await apiCall<AgencyScoreboardSettings>(`/agencies/${agencyId}/scoreboard-settings`)
+      return data
     },
     enabled: enabled && !!agencyId,
     staleTime,
@@ -246,7 +219,7 @@ export function useAgencyScoreboardSettings(
 // ============ User by ID Query ============
 
 interface UseUserByIdOptions {
-  /** Access token for REST API calls (optional) */
+  /** Access token - kept for backward compatibility */
   accessToken?: string
   /** Whether to enable the query */
   enabled?: boolean
@@ -257,12 +230,13 @@ interface UseUserByIdOptions {
 /**
  * Fetch user data by user ID (not auth_user_id)
  * Useful for fetching other users' data
+ * Uses Django API via /api/user/{id}
  */
 export function useUserById(
   userId: string | undefined,
   options: UseUserByIdOptions = {}
 ) {
-  const { accessToken, enabled = true, staleTime = 5 * 60 * 1000 } = options
+  const { enabled = true, staleTime = 5 * 60 * 1000 } = options
 
   return useQuery({
     queryKey: queryKeys.userById(userId || ''),
@@ -271,33 +245,8 @@ export function useUserById(
         throw new Error('User ID is required')
       }
 
-      // If access token provided, use REST API
-      if (accessToken) {
-        const { data, error } = await supabaseRestFetch<UserProfileData[]>(
-          `/rest/v1/users?id=eq.${userId}&select=*`,
-          { accessToken }
-        )
-
-        if (error) {
-          throw new Error(error)
-        }
-
-        return data?.[0] || null
-      }
-
-      // Otherwise use Supabase client
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle()
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      return data as UserProfileData | null
+      const data = await apiCall<UserProfileData>(`/user/${userId}`)
+      return data
     },
     enabled: enabled && !!userId,
     staleTime,
@@ -307,7 +256,7 @@ export function useUserById(
 // ============ Admin Status Query ============
 
 interface AdminStatusData {
-  is_admin: boolean
+  isAdmin: boolean
 }
 
 interface UseAdminStatusOptions {
@@ -320,6 +269,7 @@ interface UseAdminStatusOptions {
 /**
  * Check if the current user has admin privileges
  * Used for admin-only pages and features
+ * Uses the user profile endpoint which includes isAdmin
  */
 export function useAdminStatus(
   authUserId: string | undefined,
@@ -334,19 +284,9 @@ export function useAdminStatus(
         throw new Error('User ID is required')
       }
 
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('users')
-        .select('is_admin')
-        .eq('auth_user_id', authUserId)
-        .maybeSingle()
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
+      const data = await apiCall<UserProfileData>('/user/profile')
       return {
-        is_admin: data?.is_admin || false
+        isAdmin: data.isAdmin || false
       } as AdminStatusData
     },
     enabled: enabled && !!authUserId,

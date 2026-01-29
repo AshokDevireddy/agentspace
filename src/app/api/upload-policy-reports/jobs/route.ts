@@ -1,141 +1,56 @@
 // API ROUTE: /api/upload-policy-reports/jobs
 // This endpoint fetches ingest jobs and their files for the user's agency
 // Used to display uploaded policy report files in the UI
-// Replaces the old bucket-based file listing
+// Calls Django backend endpoint
 
-import { createAdminClient, createServerClient } from '@/lib/supabase/server'
+import { getSession } from '@/lib/session'
+import { getApiBaseUrl } from '@/lib/api-config'
 import { NextResponse } from 'next/server'
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const supabase = await createServerClient()
-    const adminClient = createAdminClient()
-
-    // Authenticate user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized', detail: 'User authentication failed' },
-        { status: 401 }
-      )
+    // Get authenticated session
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get agency ID
-    const { data: userData, error: userError } = await adminClient
-      .from('users')
-      .select('agency_id')
-      .eq('auth_user_id', user.id)
-      .single()
+    const accessToken = session.accessToken
+    const apiUrl = getApiBaseUrl()
 
-    if (userError || !userData || !userData.agency_id) {
-      return NextResponse.json(
-        { error: 'User not found or not associated with an agency' },
-        { status: 404 }
-      )
-    }
+    // Call Django endpoint to get jobs and files
+    // Django handles: authentication, agency_id from token, filtering
+    const djangoResponse = await fetch(`${apiUrl}/api/ingest/jobs?days=30&limit=50`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      cache: 'no-store',
+    })
 
-    const agencyId = userData.agency_id
-
-    // Fetch recent ingest jobs for this agency (last 30 days, ordered by most recent)
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
-    const { data: jobs, error: jobsError } = await adminClient
-      .from('ingest_job')
-      .select(`
-        job_id,
-        expected_files,
-        parsed_files,
-        status,
-        created_at,
-        updated_at
-      `)
-      .eq('agency_id', agencyId)
-      .gte('created_at', thirtyDaysAgo.toISOString())
-      .order('created_at', { ascending: false })
-      .limit(50) // Limit to most recent 50 jobs
-
-    if (jobsError) {
-      console.error('Error fetching ingest jobs:', jobsError)
-      return NextResponse.json(
-        { error: 'Failed to fetch ingest jobs', detail: jobsError.message },
-        { status: 500 }
-      )
-    }
-
-    if (!jobs || jobs.length === 0) {
-      return NextResponse.json({ files: [] })
-    }
-
-    // Fetch all files for these jobs
-    const jobIds = jobs.map(job => job.job_id)
-
-    const { data: files, error: filesError } = await adminClient
-      .from('ingest_job_file')
-      .select(`
-        file_id,
-        job_id,
-        file_name,
-        status,
-        parsed_rows,
-        error_message,
-        created_at
-      `)
-      .in('job_id', jobIds)
-      .order('created_at', { ascending: false })
-
-    if (filesError) {
-      console.error('Error fetching ingest job files:', filesError)
-      return NextResponse.json(
-        { error: 'Failed to fetch job files', detail: filesError.message },
-        { status: 500 }
-      )
-    }
-
-    // Group files by job and format response
-    const filesByJob = new Map<string, typeof files>()
-    files?.forEach(file => {
-      if (!filesByJob.has(file.job_id)) {
-        filesByJob.set(file.job_id, [])
+    if (!djangoResponse.ok) {
+      if (djangoResponse.status === 401) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
-      filesByJob.get(file.job_id)!.push(file)
-    })
+      const errorData = await djangoResponse.json().catch(() => ({}))
+      console.error('[jobs] Django error:', djangoResponse.status, errorData)
+      return NextResponse.json(
+        { error: errorData.error || 'Failed to fetch ingest jobs' },
+        { status: djangoResponse.status }
+      )
+    }
 
-    // Format response to match expected structure
-    const formattedFiles = jobs.flatMap(job => {
-      const jobFiles = filesByJob.get(job.job_id) || []
-      return jobFiles.map(file => ({
-        id: file.file_id,
-        name: file.file_name,
-        job_id: file.job_id,
-        status: file.status,
-        parsed_rows: file.parsed_rows,
-        error_message: file.error_message,
-        created_at: file.created_at,
-        job_status: job.status,
-        job_expected_files: job.expected_files,
-        job_parsed_files: job.parsed_files,
-        job_created_at: job.created_at
-      }))
-    })
+    const data = await djangoResponse.json()
 
-    return NextResponse.json({ 
-      files: formattedFiles,
-      jobs: jobs.map(job => ({
-        job_id: job.job_id,
-        expected_files: job.expected_files,
-        parsed_files: job.parsed_files,
-        status: job.status,
-        created_at: job.created_at,
-        updated_at: job.updated_at
-      }))
+    // Response from Django already has files and jobs in expected format
+    return NextResponse.json({
+      files: data.files || [],
+      jobs: data.jobs || [],
     })
 
   } catch (error) {
     console.error('API Error in upload-policy-reports/jobs:', error)
     return NextResponse.json(
-      { 
+      {
         error: 'Internal Server Error',
         detail: error instanceof Error ? error.message : 'An unexpected error occurred'
       },
@@ -143,4 +58,3 @@ export async function GET(request: Request) {
     )
   }
 }
-

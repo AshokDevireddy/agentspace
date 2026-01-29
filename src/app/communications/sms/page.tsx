@@ -168,7 +168,7 @@ function SMSMessagingPageContent() {
   // Ref for selected conversation to avoid stale closures in subscriptions
   const selectedConversationRef = useRef<Conversation | null>(null)
 
-  // Check if user is admin - migrated to useQuery
+  // Check if user is admin - uses API route
   const { data: adminData, isSuccess: isAdminChecked } = useQuery({
     queryKey: queryKeys.userProfile(user?.id),
     queryFn: async () => {
@@ -176,21 +176,28 @@ function SMSMessagingPageContent() {
         throw new Error('No user ID found')
       }
 
-      const { data: userData, error } = await supabase
-        .from('users')
-        .select('id, is_admin, subscription_tier')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      if (error) {
-        console.error('❌ Error checking admin status:', error)
-        throw error
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No session')
       }
+
+      const response = await fetch('/api/user/profile', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch user profile')
+      }
+
+      const profileData = await response.json()
+      // Handle both wrapped and unwrapped response formats
+      const userData = profileData.data || profileData
 
       const isAdmin = userData?.is_admin || false
       const userTier = userData?.subscription_tier || 'free'
       const currentUserId = userData?.id || null
-
 
       return { isAdmin, userTier, currentUserId }
     },
@@ -498,11 +505,16 @@ function SMSMessagingPageContent() {
               messageReadTimeoutsRef.current.delete(messageId)
 
               try {
-                await supabase
-                  .from('messages')
-                  .update({ read_at: new Date().toISOString() })
-                  .eq('id', messageId)
-                  .is('read_at', null)
+                // Get access token for API call
+                const { data: { session } } = await supabase.auth.getSession()
+                if (session?.access_token) {
+                  await fetch(`/api/sms/messages/${messageId}/read`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${session.access_token}`
+                    }
+                  })
+                }
 
                 // Invalidate conversations to update unread count
                 // Get fresh filter values at the time of invalidation

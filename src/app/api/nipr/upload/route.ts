@@ -1,12 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient, createAdminClient } from '@/lib/supabase/server'
-import { updateUserNIPRData } from '@/lib/supabase-helpers'
+import { getSession } from '@/lib/session'
+import { getApiBaseUrl } from '@/lib/api-config'
 import { analyzePDFReport } from '@/lib/nipr/pdf-analyzer'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
 export const maxDuration = 300 // 5 minutes for AI analysis
+
+/**
+ * Helper to update user NIPR data via Django API
+ */
+async function updateUserNIPRDataViaDjango(
+  userId: string,
+  carriers: string[],
+  states: string[],
+  accessToken?: string
+): Promise<boolean> {
+  const apiUrl = getApiBaseUrl()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`
+  } else {
+    headers['X-Cron-Secret'] = process.env.CRON_SECRET || ''
+  }
+
+  try {
+    const response = await fetch(`${apiUrl}/api/user/${userId}/nipr-data`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
+        unique_carriers: carriers,
+        licensed_states: states,
+      }),
+    })
+    return response.ok
+  } catch (error) {
+    console.error(`Failed to update user ${userId} NIPR data:`, error)
+    return false
+  }
+}
 
 /**
  * Handle NIPR PDF document upload and analysis
@@ -16,16 +52,30 @@ export async function POST(request: NextRequest) {
   console.log('[API/NIPR/UPLOAD] Starting NIPR document upload and analysis...')
 
   try {
-    // Authenticate user
-    const supabase = await createServerClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
+    // Authenticate user via session
+    const session = await getSession()
+    if (!session?.accessToken) {
       return NextResponse.json({
         success: false,
         error: 'Authentication required'
       }, { status: 401 })
     }
+
+    // Get current user info from Django
+    const apiUrl = getApiBaseUrl()
+    const userResponse = await fetch(`${apiUrl}/api/user/me`, {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    })
+
+    if (!userResponse.ok) {
+      return NextResponse.json({
+        success: false,
+        error: 'Authentication required'
+      }, { status: 401 })
+    }
+
+    const userData = await userResponse.json()
+    const userId = userData.id
 
     // Parse multipart form data
     const formData = await request.formData()
@@ -59,7 +109,7 @@ export async function POST(request: NextRequest) {
 
     // Save file temporarily
     const tempDir = os.tmpdir()
-    const tempFileName = `nipr-upload-${user.id}-${Date.now()}.pdf`
+    const tempFileName = `nipr-upload-${userId}-${Date.now()}.pdf`
     const tempFilePath = path.join(tempDir, tempFileName)
 
     try {
@@ -98,13 +148,16 @@ export async function POST(request: NextRequest) {
       }, { status: 422 })
     }
 
-    // Save carriers and states to user profile
+    // Save carriers and states to user profile via Django API
     if (analysisResult.unique_carriers && analysisResult.unique_carriers.length > 0) {
       try {
         const states = analysisResult.licensed_states || []
-        const adminClient = createAdminClient()
-        await updateUserNIPRData(adminClient, user.id, analysisResult.unique_carriers, states)
-        console.log(`[API/NIPR/UPLOAD] Saved ${analysisResult.unique_carriers.length} carriers and ${states.length} states to user ${user.id}`)
+        const updated = await updateUserNIPRDataViaDjango(userId, analysisResult.unique_carriers, states, session.accessToken)
+        if (updated) {
+          console.log(`[API/NIPR/UPLOAD] Saved ${analysisResult.unique_carriers.length} carriers and ${states.length} states to user ${userId}`)
+        } else {
+          console.error('[API/NIPR/UPLOAD] Failed to save NIPR data via Django API')
+        }
       } catch (dbError) {
         console.error('[API/NIPR/UPLOAD] Failed to save NIPR data:', dbError)
         // Don't fail the request, just log the error

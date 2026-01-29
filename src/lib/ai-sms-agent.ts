@@ -5,7 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendSMS, normalizePhoneNumber } from '@/lib/telnyx';
-import { logMessage, getDealWithDetails } from '@/lib/sms-helpers';
+import { logMessage, getDealWithDetails, type ConversationResult } from '@/lib/sms-helpers';
 import { Anthropic } from '@anthropic-ai/sdk';
 
 // Types
@@ -181,15 +181,6 @@ function layer3DealEntityCheck(messageText: string, dealData: any): boolean {
   }
 
   return false; // No matching entity = ESCALATE
-}
-
-interface ConversationResult {
-  id: string;
-  agent_id: string;
-  deal_id: string;
-  agency_id: string;
-  sms_opt_in_status?: string;
-  client_phone?: string;
 }
 
 interface Agent {

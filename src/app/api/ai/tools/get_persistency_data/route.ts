@@ -1,6 +1,6 @@
-import { createServerClient } from '@/lib/supabase/server';
+import { proxyToBackend } from '@/lib/api-proxy';
 import { getUserContext } from '@/lib/auth/get-user-context';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,25 +11,32 @@ export async function POST(request: NextRequest) {
     }
     const { agencyId } = userContextResult.context;
 
-    const supabase = await createServerClient();
     const params = await request.json();
 
-    // Call the persistency RPC function
-    const { data, error } = await supabase.rpc('get_persistency_analytics', {
-      p_agency_id: agencyId
+    // Call Django API for persistency analytics
+    const response = await proxyToBackend(request, '/api/analytics/persistency', {
+      method: 'GET',
+      searchParams: {
+        agency_id: agencyId,
+        carrier: params.carrier || '',
+        time_range: params.time_range || '',
+      },
     });
 
-    if (error) {
-      console.error('Error fetching persistency data:', error);
+    // Get the response data
+    const data = await response.json();
+
+    if (response.status !== 200) {
+      console.error('Error fetching persistency data:', data);
       return Response.json({ error: 'Failed to fetch persistency data' }, { status: 500 });
     }
 
     // Filter by carrier if specified
     let filteredData = data;
-    if (params.carrier) {
+    if (params.carrier && filteredData?.carriers) {
       filteredData = {
         ...data,
-        carriers: data?.carriers?.filter((c: any) =>
+        carriers: data.carriers.filter((c: { carrier: string }) =>
           c.carrier.toLowerCase().includes(params.carrier.toLowerCase())
         )
       };
@@ -37,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     // Filter by time range if specified
     if (params.time_range && filteredData?.carriers) {
-      filteredData.carriers = filteredData.carriers.map((carrier: any) => ({
+      filteredData.carriers = filteredData.carriers.map((carrier: { timeRanges?: Record<string, unknown> }) => ({
         ...carrier,
         selectedTimeRange: params.time_range,
         timeRangeData: carrier.timeRanges?.[params.time_range]
@@ -47,12 +54,11 @@ export async function POST(request: NextRequest) {
     return Response.json({
       persistency_data: filteredData,
       carriers: filteredData?.carriers || [],
-      overall_analytics: filteredData?.overall_analytics || {},
-      carrier_comparison: filteredData?.carrier_comparison || {}
+      overall_analytics: filteredData?.overallAnalytics || {},
+      carrier_comparison: filteredData?.carrierComparison || {}
     });
   } catch (error) {
     console.error('Get persistency error:', error);
     return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-

@@ -8,7 +8,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
 import { getApiBaseUrl } from '@/lib/api-config'
-import { createAdminClient } from '@/lib/supabase/server'
 import { sendSMS } from '@/lib/telnyx'
 import {
   getDealWithDetails,
@@ -29,36 +28,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user details from Django session endpoint
     const accessToken = session.accessToken
-    const sessionResponse = await fetch(`${getApiBaseUrl()}/api/auth/session`, {
+    const apiUrl = getApiBaseUrl()
+
+    // Get user details and SMS usage from Django endpoint
+    const smsUsageResponse = await fetch(`${apiUrl}/api/user/sms-usage`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: 'no-store',
     })
 
-    if (!sessionResponse.ok) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const sessionData = await sessionResponse.json()
-    if (!sessionData.authenticated || !sessionData.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const adminSupabase = createAdminClient()
-
-    // Get user details including subscription info
-    const { data: userData, error: userError } = await adminSupabase
-      .from('users')
-      .select(
-        'id, agency_id, first_name, last_name, subscription_tier, messages_sent_count, messages_reset_date, stripe_subscription_id, billing_cycle_end'
-      )
-      .eq('id', sessionData.user.id)
-      .single()
-
-    if (userError || !userData) {
+    if (!smsUsageResponse.ok) {
+      if (smsUsageResponse.status === 401) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
+
+    const userData = await smsUsageResponse.json()
 
     // Check subscription message limits
     const subscriptionTier = userData.subscription_tier || 'free'
@@ -93,23 +79,25 @@ export async function POST(request: NextRequest) {
     ) {
       shouldResetCounter = true
       console.log(
-        `⚠️ User ${userData.id} is past billing cycle end (${billingCycleEnd.toISOString()}), counter will be reset`
+        `User ${userData.id} is past billing cycle end (${billingCycleEnd.toISOString()}), counter will be reset`
       )
     }
 
     // If counter needs reset, do it before checking limits
     let currentMessagesSent = messagesSent
     if (shouldResetCounter) {
-      await adminSupabase
-        .from('users')
-        .update({
-          messages_sent_count: 0,
-          messages_reset_date: now.toISOString(),
-        })
-        .eq('id', userData.id)
+      // Reset counter via Django API
+      await fetch(`${apiUrl}/api/user/sms-usage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ action: 'reset' }),
+      })
       currentMessagesSent = 0
       console.log(
-        `✅ Reset message counter for user ${userData.id} - new billing cycle started`
+        `Reset message counter for user ${userData.id} - new billing cycle started`
       )
     }
 
@@ -214,11 +202,15 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      // Increment messages_sent_count
-      await adminSupabase
-        .from('users')
-        .update({ messages_sent_count: currentMessagesSent + 1 })
-        .eq('id', userData.id)
+      // Increment messages_sent_count via Django API
+      await fetch(`${apiUrl}/api/user/sms-usage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ action: 'increment' }),
+      })
 
       // If user has exceeded their tier limit, report usage to Stripe for metered billing
       if (isOverLimit && userData.stripe_subscription_id) {
@@ -259,14 +251,18 @@ export async function POST(request: NextRequest) {
       const errorMessage =
         telnyxError instanceof Error ? telnyxError.message : ''
       if (errorMessage && errorMessage.includes('40300')) {
-        // Mark conversation as opted out
-        await adminSupabase
-          .from('conversations')
-          .update({
-            sms_opt_in_status: 'opted_out',
-            opted_out_at: new Date().toISOString(),
-          })
-          .eq('id', conversation.id)
+        // Mark conversation as opted out via Django API
+        await fetch(`${apiUrl}/api/sms/opt-out/`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            conversation_id: conversation.id,
+            status: 'opted_out',
+          }),
+        })
 
         // Log the failed message
         await logMessage({

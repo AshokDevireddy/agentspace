@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
-import { createAdminClient } from '@/lib/supabase/server'
+import { getApiBaseUrl } from '@/lib/api-config'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,8 +15,6 @@ export async function POST(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const supabase = createAdminClient()
 
     const body = await request.json()
     const { messageId, body: newBody } = body
@@ -35,37 +33,41 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Update draft message body
-    const { data, error: updateError } = await supabase
-      .from('messages')
-      .update({
-        body: newBody.trim(),
-      })
-      .eq('id', messageId)
-      .eq('status', 'draft')
-      .select()
-      .single()
+    // Call Django API to update draft message body
+    const apiUrl = getApiBaseUrl()
+    const response = await fetch(`${apiUrl}/api/sms/drafts/${messageId}/`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.accessToken}`,
+      },
+      body: JSON.stringify({ body: newBody.trim() }),
+    })
 
-    if (updateError) {
-      console.error('Error updating draft message:', updateError)
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error('Error updating draft message:', errorData)
+
+      if (response.status === 404) {
+        return NextResponse.json(
+          { error: 'Draft message not found' },
+          { status: 404 }
+        )
+      }
+
       return NextResponse.json(
-        { error: 'Failed to update draft message' },
-        { status: 500 }
+        { error: errorData.error || 'Failed to update draft message' },
+        { status: response.status }
       )
     }
 
-    if (!data) {
-      return NextResponse.json(
-        { error: 'Draft message not found' },
-        { status: 404 }
-      )
-    }
+    const data = await response.json()
 
     console.log(`✅ Draft message ${messageId} updated`)
 
     return NextResponse.json({
       success: true,
-      message: data,
+      message: data.message,
     })
   } catch (error) {
     console.error('Error in edit draft endpoint:', error)

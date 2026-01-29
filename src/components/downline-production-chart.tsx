@@ -2,7 +2,6 @@
 
 import React from "react"
 import { useQuery } from "@tanstack/react-query"
-import { createClient } from "@/lib/supabase/client"
 import { queryKeys } from "@/hooks/queryKeys"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -114,46 +113,61 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
     }
   }, [timeWindow])
 
-  // Fetch downline production data with TanStack Query
+  // Fetch downline production data with TanStack Query via Django API
   const { data = [], isLoading, error, refetch, isFetching } = useQuery<DownlineProductionData[], Error>({
     queryKey: queryKeys.downlineProduction(currentAgentId, timeWindow),
     queryFn: async () => {
-      const supabase = createClient()
       const { startDate, endDate } = getDateRange()
 
       console.log('[DownlineProductionChart] Fetching data with params:', {
-        p_agent_id: currentAgentId,
-        p_start_date: startDate,
-        p_end_date: endDate
+        agent_id: currentAgentId,
+        start_date: startDate,
+        end_date: endDate
       })
 
-      const { data: rpcData, error: rpcError } = await supabase.rpc(
-        'get_downline_production_distribution',
-        {
-          p_agent_id: currentAgentId,
-          p_start_date: startDate,
-          p_end_date: endDate
-        }
-      )
+      // Build query params
+      const params = new URLSearchParams({
+        agent_id: currentAgentId,
+      })
+      if (startDate) params.set('start_date', startDate)
+      if (endDate) params.set('end_date', endDate)
 
-      console.log('[DownlineProductionChart] RPC Response:', {
-        data: rpcData,
-        error: rpcError,
-        errorDetails: rpcError ? {
-          message: rpcError.message,
-          details: rpcError.details,
-          hint: rpcError.hint,
-          code: rpcError.code
-        } : null
+      const response = await fetch(`/api/analytics/downline-distribution?${params}`, {
+        credentials: 'include',
       })
 
-      if (rpcError) {
-        console.error('[DownlineProductionChart] RPC Error Full Details:', JSON.stringify(rpcError, null, 2))
-        throw new Error(`Failed to load downline production data: ${rpcError.message || 'Unknown error'}`)
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('[DownlineProductionChart] API Error:', errorData)
+        throw new Error(`Failed to load downline production data: ${errorData.error || 'Unknown error'}`)
       }
 
-      console.log('[DownlineProductionChart] Successfully fetched data:', rpcData)
-      return (rpcData || []) as DownlineProductionData[]
+      const apiData = await response.json()
+
+      console.log('[DownlineProductionChart] API Response:', apiData)
+
+      // Transform camelCase response to snake_case for component compatibility
+      const transformedData = (apiData.distribution || apiData || []).map((item: {
+        agentId?: string
+        agent_id?: string
+        agentName?: string
+        agent_name?: string
+        totalProduction?: number
+        total_production?: number
+        isClickable?: boolean
+        is_clickable?: boolean
+        hasDownlines?: boolean
+        has_downlines?: boolean
+      }) => ({
+        agent_id: item.agentId || item.agent_id,
+        agent_name: item.agentName || item.agent_name,
+        total_production: item.totalProduction || item.total_production,
+        is_clickable: item.isClickable ?? item.is_clickable,
+        has_downlines: item.hasDownlines ?? item.has_downlines,
+      }))
+
+      console.log('[DownlineProductionChart] Successfully fetched data:', transformedData)
+      return transformedData as DownlineProductionData[]
     },
     staleTime: 60000, // 1 minute - stale-while-revalidate pattern
   })

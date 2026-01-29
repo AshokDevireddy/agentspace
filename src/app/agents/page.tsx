@@ -445,23 +445,26 @@ export default function Agents() {
       const positions = await response.json()
 
       // Fetch current user's position level and admin status (for filtering assignment dropdown)
-      const { data: { user } } = await supabase.auth.getUser()
       let userPositionLevel = null
       let isAdmin = false
 
-      if (user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('position_id, position:positions(level), role')
-          .eq('auth_user_id', user.id)
-          .single()
+      // Get user profile from API
+      const profileResponse = await fetch('/api/user/profile', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        },
+        signal
+      })
 
-        if (userData?.position?.[0]?.level !== undefined) {
-          userPositionLevel = userData.position[0].level
+      if (profileResponse.ok) {
+        const profileData = await profileResponse.json()
+        if (profileData.data) {
+          userPositionLevel = profileData.data.position_level ?? null
+          isAdmin = profileData.data.is_admin || profileData.data.role === 'admin'
+        } else {
+          userPositionLevel = profileData.position_level ?? null
+          isAdmin = profileData.is_admin || profileData.role === 'admin'
         }
-
-        // Check if user is admin by role
-        isAdmin = userData?.role === 'admin'
       }
 
       return { positions, userPositionLevel, isAdmin }

@@ -1,29 +1,30 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase/server'
+import { getSession } from '@/lib/session'
+import { getApiBaseUrl } from '@/lib/api-config'
 
 export async function GET() {
   try {
-    // Use server client for auth (reads cookies properly)
-    const supabase = await createServerClient()
-    const { data: { user: authUser } } = await supabase.auth.getUser()
-
-    if (!authUser) {
+    const session = await getSession()
+    if (!session?.accessToken) {
       return NextResponse.json({ completed: false, carriers: [] })
     }
 
-    // Get user's unique_carriers directly from users table
-    const { data: userData } = await supabase
-      .from('users')
-      .select('unique_carriers')
-      .eq('auth_user_id', authUser.id)
-      .single()
+    // Use Django API to check NIPR completion status
+    const apiUrl = getApiBaseUrl()
+    const response = await fetch(`${apiUrl}/api/nipr/check-completed`, {
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+      },
+    })
 
-    // unique_carriers is now text[], not JSONB
-    const carriers: string[] = userData?.unique_carriers || []
+    if (!response.ok) {
+      return NextResponse.json({ completed: false, carriers: [] })
+    }
 
+    const data = await response.json()
     return NextResponse.json({
-      completed: carriers.length > 0,
-      carriers
+      completed: data.completed,
+      carriers: data.carriers || []
     })
   } catch (error) {
     console.error('[API/NIPR/STATUS] Error:', error)

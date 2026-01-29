@@ -1,301 +1,36 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient, createServerClient } from "@/lib/supabase/server";
+// API ROUTE: /api/deals/[id]
+// Proxies to Django backend for deal detail, update, and delete operations
+
+import { proxyGetWithParams, proxyPut, proxyPatch, proxyDelete } from '@/lib/api-proxy'
 
 export async function GET(
-  req: NextRequest,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const admin = createAdminClient();
-  const server = await createServerClient();
-
-  try {
-    const { id: dealId } = await params;
-
-    if (!dealId) {
-      return NextResponse.json({ error: "Deal ID is required" }, { status: 400 });
-    }
-
-    // Get current user
-    const {
-      data: { user },
-    } = await server.auth.getUser();
-
-    if (!user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Map auth user to `users` row
-    const { data: currentUser, error: currentUserError } = await admin
-      .from('users')
-      .select('id, agency_id, perm_level, role, is_admin')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (currentUserError || !currentUser) {
-      console.error('Error fetching current user:', currentUserError);
-      return NextResponse.json({ error: 'Failed to resolve current user' }, { status: 500 });
-    }
-
-    // Get view mode from query parameter
-    const { searchParams } = new URL(req.url);
-    const view = searchParams.get('view') || 'downlines';
-
-    // Fetch deal with related agent, carrier, product, and client information
-    const { data: deal, error } = await admin
-      .from("deals")
-      .select(`
-        *,
-        agent:users!deals_agent_id_fkey(id, first_name, last_name, email),
-        carrier:carriers(id, name),
-        product:products(id, name),
-        client:users!deals_client_id_fkey(id, email, status)
-      `)
-      .eq("id", dealId)
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    if (!deal) {
-      return NextResponse.json({ error: "Deal not found" }, { status: 404 });
-    }
-
-    // Fetch beneficiaries for this deal
-    const { data: beneficiaries } = await admin
-      .from("beneficiaries")
-      .select("id, first_name, last_name, relationship")
-      .eq("deal_id", dealId)
-      .order("created_at", { ascending: true });
-
-    // Fetch status_mapping separately
-    const { data: statusMapping } = await admin
-      .from("status_mapping")
-      .select("impact")
-      .eq("carrier_id", deal.carrier_id)
-      .eq("raw_status", deal.status)
-      .maybeSingle();
-
-    // Determine if phone should be hidden
-    const isAdmin = currentUser.perm_level === 'admin' || currentUser.role === 'admin' || currentUser.is_admin;
-    const isWritingAgent = deal.agent_id === currentUser.id;
-    const statusImpact = statusMapping?.impact;
-    const isActiveOrPending = statusImpact === 'positive' || statusImpact === 'neutral';
-    const shouldHidePhone = view === 'downlines' && !isAdmin && !isWritingAgent && isActiveOrPending;
-
-    // Mask phone if needed and add client email and status from client record
-    const dealWithMaskedPhone = {
-      ...deal,
-      client_phone: shouldHidePhone ? 'HIDDEN' : deal.client_phone,
-      phone_hidden: shouldHidePhone,
-      is_writing_agent: isWritingAgent,
-      client_email: deal.client?.email || null,
-      client_status: deal.client?.status || null,
-      beneficiaries: beneficiaries || []
-    };
-
-    return NextResponse.json({ deal: dealWithMaskedPhone }, { status: 200 });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err.message || "Failed to fetch deal" },
-      { status: 500 }
-    );
-  }
+  const { id } = await params
+  return proxyGetWithParams(request, `/api/deals/${id}/`)
 }
 
 export async function PUT(
-  req: NextRequest,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createAdminClient();
-  try {
-    const data = await req.json();
-    const { id: dealId } = await params;
+  const { id } = await params
+  return proxyPut(request, `/api/deals/${id}/`)
+}
 
-    if (!dealId) {
-      return NextResponse.json({ error: "Deal ID is required" }, { status: 400 });
-    }
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  return proxyPatch(request, `/api/deals/${id}/`)
+}
 
-    // Extract client_email if provided (it's not a deal field, it's a users field)
-    const { client_email, ...dealData } = data;
-
-    // If client_phone is being updated, check if it already exists for another deal in the same agency
-    if (dealData.client_phone !== undefined) {
-      // First get the current deal to access agency_id
-      const { data: currentDeal, error: fetchError } = await supabase
-        .from("deals")
-        .select("agency_id")
-        .eq("id", dealId)
-        .single();
-
-      if (fetchError) {
-        return NextResponse.json({ error: fetchError.message }, { status: 400 });
-      }
-
-      if (currentDeal?.agency_id && dealData.client_phone) {
-        const { normalizePhoneForStorage } = await import('@/lib/telnyx');
-        const normalizedPhone = normalizePhoneForStorage(dealData.client_phone);
-
-        // Check if another deal in the same agency already has this phone number
-        const { data: existingDeal, error: phoneCheckError } = await supabase
-          .from('deals')
-          .select('id, client_name, policy_number')
-          .eq('client_phone', normalizedPhone)
-          .eq('agency_id', currentDeal.agency_id)
-          .neq('id', dealId) // Exclude the current deal
-          .maybeSingle();
-
-        if (phoneCheckError && phoneCheckError.code !== 'PGRST116') {
-          console.error('[Deal Update] Error checking phone uniqueness:', phoneCheckError);
-          return NextResponse.json(
-            { error: `Failed to validate phone number: ${phoneCheckError.message}` },
-            { status: 400 }
-          );
-        }
-
-        if (existingDeal) {
-          return NextResponse.json(
-            {
-              error: `Phone number ${dealData.client_phone} already exists for another deal in your agency (${existingDeal.client_name}, Policy: ${existingDeal.policy_number || 'N/A'}). Each deal must have a unique phone number within the agency.`,
-              existing_deal_id: existingDeal.id,
-            },
-            { status: 409 } // 409 Conflict
-          );
-        }
-      }
-    }
-
-    // Check for status transition to lapse for notifications
-    const LAPSE_STATUSES = ['lapse_pending', 'lapse'];
-    let isTransitioningToLapse = false;
-    let dealForLapseNotification: {
-      id: string;
-      client_name: string;
-      monthly_premium: number | null;
-      annual_premium: number | null;
-      carrier_name: string;
-      policy_number: string | null;
-      policy_effective_date: string | null;
-      agent_id: string;
-      agency_id: string;
-    } | null = null;
-
-    if (dealData.status_standardized && LAPSE_STATUSES.includes(dealData.status_standardized)) {
-      const { data: currentDealForStatus } = await supabase
-        .from("deals")
-        .select(`
-          id,
-          status_standardized,
-          client_name,
-          monthly_premium,
-          annual_premium,
-          policy_number,
-          policy_effective_date,
-          agent_id,
-          agency_id,
-          carrier:carriers(name)
-        `)
-        .eq("id", dealId)
-        .single();
-
-      if (currentDealForStatus && !LAPSE_STATUSES.includes(currentDealForStatus.status_standardized || '')) {
-        isTransitioningToLapse = true;
-        dealForLapseNotification = {
-          id: dealId,
-          client_name: currentDealForStatus.client_name,
-          monthly_premium: currentDealForStatus.monthly_premium,
-          annual_premium: currentDealForStatus.annual_premium,
-          carrier_name: (currentDealForStatus.carrier as any)?.name || '',
-          policy_number: currentDealForStatus.policy_number,
-          policy_effective_date: currentDealForStatus.policy_effective_date,
-          agent_id: currentDealForStatus.agent_id,
-          agency_id: currentDealForStatus.agency_id,
-        };
-      }
-    }
-
-    // Add updated_at timestamp
-    dealData.updated_at = new Date().toISOString();
-
-    // Update the deal
-    const { data: deal, error } = await supabase
-      .from("deals")
-      .update(dealData)
-      .eq("id", dealId)
-      .select()
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    // If client_email was provided and deal has a client_id, update the client's email
-    if (client_email !== undefined && deal.client_id) {
-      const { error: clientError } = await supabase
-        .from("users")
-        .update({ email: client_email })
-        .eq("id", deal.client_id);
-
-      if (clientError) {
-        console.error('Error updating client email:', clientError);
-        // Don't fail the whole request if client email update fails
-      }
-    }
-
-    // If client_phone was updated, also update the conversation's client_phone field
-    // This ensures the conversation stays associated with the deal even when phone changes
-    if (dealData.client_phone !== undefined && deal.id) {
-      // Import normalizePhoneForStorage at the top if needed
-      const { normalizePhoneForStorage } = await import('@/lib/telnyx');
-      const normalizedPhone = dealData.client_phone ? normalizePhoneForStorage(dealData.client_phone) : null;
-
-      const { error: convError } = await supabase
-        .from("conversations")
-        .update({ client_phone: normalizedPhone })
-        .eq("deal_id", deal.id)
-        .eq("is_active", true);
-
-      if (convError) {
-        console.error('Error updating conversation phone number:', convError);
-        // Don't fail the whole request if conversation update fails
-      } else {
-        console.log(`📞 Updated conversation phone number for deal ${deal.id} to ${normalizedPhone}`);
-      }
-    }
-
-    // Send lapse notification emails if status transitioned to lapse
-    if (isTransitioningToLapse && dealForLapseNotification) {
-      try {
-        // Call Supabase edge function to send lapse notifications
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-lapse-notification`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-            },
-            body: JSON.stringify({
-              deal_id: dealForLapseNotification.id,
-              agency_id: dealForLapseNotification.agency_id,
-            }),
-          }
-        );
-
-        const result = await response.json();
-        console.log(`[Deals API] Lapse notifications: ${result.sent || 0} emails sent`,
-          result.errors ? `Errors: ${result.errors.join(', ')}` : '');
-      } catch (notificationError) {
-        // Don't fail the deal update if notifications fail
-        console.error('[Deals API] Failed to send lapse notifications:', notificationError);
-      }
-    }
-
-    return NextResponse.json({ deal, message: "Deal updated successfully" }, { status: 200 });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err.message || "Failed to update deal" },
-      { status: 500 }
-    );
-  }
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  return proxyDelete(request, `/api/deals/${id}/`)
 }

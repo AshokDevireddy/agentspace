@@ -1,425 +1,385 @@
 /**
  * SMS Helper Functions
  * Business logic for SMS conversations and message handling
+ *
+ * Fully migrated to use Django API endpoints.
+ * For server-side operations without access tokens, functions use CRON_SECRET
+ * for server-to-server authentication.
  */
 
-import { createAdminClient } from '@/lib/supabase/server';
-import { normalizePhoneForStorage, sendSMS } from '@/lib/telnyx';
+import { normalizePhoneForStorage } from '@/lib/telnyx';
 import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
+import { getApiBaseUrl } from './api-config';
 
-interface ConversationResult {
+// CRON_SECRET for server-to-server authentication
+const CRON_SECRET = process.env.CRON_SECRET || '';
+
+export interface ConversationResult {
   id: string;
   agent_id: string;
+  agentId?: string;
   deal_id: string;
+  dealId?: string;
   agency_id: string;
-  type: string;
-  last_message_at: string;
-  is_active: boolean;
-  created_at: string;
+  agencyId?: string;
+  type?: string;
+  last_message_at?: string;
+  lastMessageAt?: string;
+  is_active?: boolean;
+  isActive?: boolean;
+  created_at?: string;
+  createdAt?: string;
   client_phone?: string;
+  phoneNumber?: string;
   sms_opt_in_status?: string;
+  smsOptInStatus?: string;
   opted_in_at?: string;
   opted_out_at?: string;
 }
 
 interface MessageResult {
   id: string;
-  conversation_id: string;
-  sender_id: string;
-  receiver_id: string;
-  body: string;
+  conversation_id?: string;
+  conversationId?: string;
+  sender_id?: string;
+  senderId?: string;
+  receiver_id?: string;
+  receiverId?: string;
+  body?: string;
+  content?: string;
   direction: string;
-  message_type: string;
-  sent_at: string;
+  message_type?: string;
+  messageType?: string;
+  sent_at?: string;
+  sentAt?: string;
   status: string;
-  metadata: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface DealAgent {
+  id: string;
+  agency_id: string;
+  agencyId?: string;
+  phone_number?: string;
+  phoneNumber?: string;
+  first_name?: string;
+  firstName?: string;
+  last_name?: string;
+  lastName?: string;
+}
+
+export interface DealResult {
+  id: string;
+  client_name?: string;
+  clientName?: string;
+  client_phone?: string;
+  clientPhone?: string;
+  client_email?: string;
+  clientEmail?: string;
+  agent?: DealAgent;
+  agent_id?: string;
+  agentId?: string;
+}
+
+/**
+ * Internal helper to call Django API from server-side code
+ *
+ * If accessToken is provided, uses JWT authentication.
+ * Otherwise, uses CRON_SECRET for server-to-server authentication.
+ */
+async function djangoApi<T>(
+  endpoint: string,
+  options: {
+    method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
+    body?: unknown
+    accessToken?: string
+  } = {}
+): Promise<T> {
+  const { method = 'GET', body, accessToken } = options
+  const apiUrl = getApiBaseUrl()
+  const url = `${apiUrl}${endpoint}`
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`
+  } else if (CRON_SECRET) {
+    // Use CRON_SECRET for server-to-server authentication
+    headers['X-Cron-Secret'] = CRON_SECRET
+  }
+
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.error || errorData.message || `API call failed: ${response.status}`)
+  }
+
+  return response.json()
 }
 
 /**
  * Gets an existing conversation without creating one
  * Returns null if conversation doesn't exist
  * Used by cron jobs that should only send to existing conversations
+ *
+ * Uses Django API endpoint: GET /api/sms/conversations/find
  */
 export async function getConversationIfExists(
   agentId: string,
   dealId: string,
   agencyId: string,
-  clientPhone?: string
+  clientPhone?: string,
+  accessToken?: string
 ): Promise<ConversationResult | null> {
-  const supabase = createAdminClient();
-
-  // Normalize phone number for consistent lookups (remove +1 prefix)
-  const normalizedPhone = clientPhone ? normalizePhoneForStorage(clientPhone) : null;
-
-  // First, check if conversation exists for this specific agent-deal pair (matches unique constraint)
-  const { data: existingByDeal } = await supabase
-    .from('conversations')
-    .select('*')
-    .eq('agent_id', agentId)
-    .eq('deal_id', dealId)
-    .eq('type', 'sms')
-    .eq('is_active', true)
-    .maybeSingle();
-
-  if (existingByDeal) {
-    return existingByDeal as ConversationResult;
+  const params = new URLSearchParams()
+  params.append('agent_id', agentId)
+  params.append('deal_id', dealId)
+  if (clientPhone) {
+    params.append('phone', normalizePhoneForStorage(clientPhone))
   }
 
-  // If not found by deal, check if conversation exists for this phone number
-  // (to handle case where client has multiple deals but we want one conversation)
-  if (normalizedPhone) {
-    const { data: existingByPhone } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('agency_id', agencyId)
-      .eq('client_phone', normalizedPhone)
-      .eq('type', 'sms')
-      .eq('is_active', true)
-      .maybeSingle();
+  const result = await djangoApi<{
+    found: boolean
+    conversation: ConversationResult | null
+  }>(`/api/sms/conversations/find?${params.toString()}`, {
+    method: 'GET',
+    accessToken,
+  })
 
-    if (existingByPhone) {
-      return existingByPhone as ConversationResult;
+  if (result.found && result.conversation) {
+    const conv = result.conversation
+    return {
+      id: conv.id,
+      agent_id: (conv.agentId || conv.agent_id) as string,
+      deal_id: (conv.dealId || conv.deal_id) as string,
+      agency_id: (conv.agencyId || conv.agency_id) as string,
+      type: 'sms',
+      last_message_at: conv.lastMessageAt || conv.last_message_at,
+      is_active: true,
+      created_at: conv.createdAt || conv.created_at,
+      client_phone: conv.phoneNumber || conv.client_phone,
+      sms_opt_in_status: conv.smsOptInStatus || conv.sms_opt_in_status,
+      opted_in_at: conv.opted_in_at,
+      opted_out_at: conv.opted_out_at,
     }
   }
-
-  // Return null instead of creating a new conversation
-  return null;
+  return null
 }
 
 /**
  * Gets or creates a conversation for an agent-client pair
- * Uses client phone number to prevent duplicate conversations
- * Updates the phone number if it has changed on the deal
+ * Uses Django API endpoint: POST /api/sms/conversations/get-or-create
  */
 export async function getOrCreateConversation(
   agentId: string,
   dealId: string,
   agencyId: string,
-  clientPhone?: string
+  clientPhone?: string,
+  accessToken?: string
 ): Promise<ConversationResult> {
-  const supabase = createAdminClient();
-
-  // Normalize phone number for consistent lookups (remove +1 prefix)
-  const normalizedPhone = clientPhone ? normalizePhoneForStorage(clientPhone) : null;
-
-  // First, check if conversation exists for this specific agent-deal pair (matches unique constraint)
-  const { data: existingByDeal } = await supabase
-    .from('conversations')
-    .select('*')
-    .eq('agent_id', agentId)
-    .eq('deal_id', dealId)
-    .eq('type', 'sms')
-    .eq('is_active', true)
-    .maybeSingle();
-
-  if (existingByDeal) {
-    // If conversation exists but phone number has changed, update it
-    if (normalizedPhone && existingByDeal.client_phone !== normalizedPhone) {
-      const { data: updated, error: updateError } = await supabase
-        .from('conversations')
-        .update({ client_phone: normalizedPhone })
-        .eq('id', existingByDeal.id)
-        .select()
-        .single();
-
-      if (updateError) {
-        console.error('Failed to update conversation phone number:', updateError);
-        // Return existing conversation even if update failed
-        return existingByDeal as ConversationResult;
-      }
-
-      return updated as ConversationResult;
-    }
-
-    return existingByDeal as ConversationResult;
-  }
-
-  // NOTE: We do NOT reuse conversations by phone number
-  // Each deal gets its own conversation, even if the phone number matches another deal
-  // Phone number uniqueness is enforced at the deal level in the API
-
-  // Create new conversation with normalized phone
-  // Auto-opt-in for informational messages (billing, birthday reminders, etc.)
-  const { data: newConversation, error } = await supabase
-    .from('conversations')
-    .insert({
+  const result = await djangoApi<{
+    success: boolean
+    conversation: ConversationResult
+    created: boolean
+  }>('/api/sms/conversations/get-or-create', {
+    method: 'POST',
+    body: {
       agent_id: agentId,
       deal_id: dealId,
-      agency_id: agencyId,
-      type: 'sms',
-      is_active: true,
-      client_phone: normalizedPhone,
-      sms_opt_in_status: 'opted_in', // Auto-opt-in for informational messages
-      opted_in_at: new Date().toISOString(), // Set opt-in timestamp
-    })
-    .select()
-    .single();
+      phone_number: clientPhone,
+    },
+    accessToken,
+  })
 
-  if (error) {
-    throw new Error(`Failed to create conversation: ${error.message}`);
+  if (!result.success || !result.conversation) {
+    throw new Error('Failed to get or create conversation')
   }
 
-  // Send welcome message when conversation is created
-  if (normalizedPhone) {
-    try {
-      await sendWelcomeMessage(
-        normalizedPhone,
-        agencyId,
-        agentId,
-        newConversation.id
-      );
-    } catch (error) {
-      console.error('Failed to send welcome message:', error);
-      // Don't throw - conversation was created successfully
-    }
+  // Normalize response to match expected interface
+  const conv = result.conversation
+  return {
+    id: conv.id,
+    agent_id: (conv.agentId || conv.agent_id) as string,
+    deal_id: (conv.dealId || conv.deal_id) as string,
+    agency_id: (conv.agencyId || conv.agency_id) as string,
+    type: 'sms',
+    last_message_at: conv.lastMessageAt || conv.last_message_at,
+    is_active: true,
+    created_at: conv.createdAt || conv.created_at,
+    client_phone: conv.phoneNumber || conv.client_phone,
+    sms_opt_in_status: conv.smsOptInStatus || conv.sms_opt_in_status,
   }
-
-  return newConversation as ConversationResult;
 }
 
 /**
  * Logs a message in the database
+ * Uses Django API endpoint: POST /api/sms/messages/log
  */
-export async function logMessage(params: {
-  conversationId: string;
-  senderId: string;
-  receiverId: string;
-  body: string;
-  direction: 'inbound' | 'outbound';
-  status?: string;
-  metadata?: Record<string, unknown>;
-}): Promise<MessageResult> {
-  const supabase = createAdminClient();
-
-  const now = new Date().toISOString();
-  const isDraft = params.status === 'draft';
-
-  const { data, error } = await supabase
-    .from('messages')
-    .insert({
+export async function logMessage(
+  params: {
+    conversationId: string;
+    senderId: string;
+    receiverId: string;
+    body: string;
+    direction: 'inbound' | 'outbound';
+    status?: string;
+    metadata?: Record<string, unknown>;
+  },
+  accessToken?: string
+): Promise<MessageResult> {
+  const result = await djangoApi<{
+    success: boolean
+    message_id: string
+    error?: string
+  }>('/api/sms/messages/log', {
+    method: 'POST',
+    body: {
       conversation_id: params.conversationId,
-      sender_id: params.senderId,
-      receiver_id: params.receiverId,
-      body: params.body,
+      content: params.body,
       direction: params.direction,
-      message_type: 'sms',
       status: params.status || 'delivered',
-      metadata: params.metadata || {},
-      // Draft messages should have null sent_at until approved
-      sent_at: isDraft ? null : now,
-      // Automatically mark outbound messages as read (agent already knows what they sent)
-      // But don't mark drafts as read yet
-      read_at: params.direction === 'outbound' && !isDraft ? now : null,
-    })
-    .select()
-    .single();
+      metadata: params.metadata,
+    },
+    accessToken,
+  })
 
-  if (error) {
-    throw new Error(`Failed to log message: ${error.message}`);
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to log message')
   }
 
-  // Update last_message_at in conversation (only for non-draft messages)
-  if (!isDraft) {
-    await supabase
-      .from('conversations')
-      .update({ last_message_at: now })
-      .eq('id', params.conversationId);
+  return {
+    id: result.message_id,
+    conversation_id: params.conversationId,
+    content: params.body,
+    direction: params.direction,
+    status: params.status || 'delivered',
+    metadata: params.metadata,
   }
-
-  return data as MessageResult;
 }
 
 /**
  * Gets deal information including agent and client details
+ * Uses Django API endpoint: GET /api/deals/{id}
  */
-export async function getDealWithDetails(dealId: string) {
-  const supabase = createAdminClient();
+export async function getDealWithDetails(dealId: string, accessToken?: string): Promise<DealResult> {
+  const result = await djangoApi<DealResult>(
+    `/api/deals/${dealId}`,
+    {
+      method: 'GET',
+      accessToken,
+    }
+  )
 
-  const { data: deal, error } = await supabase
-    .from('deals')
-    .select(`
-      *,
-      agent:agent_id (
-        id,
-        first_name,
-        last_name,
-        phone_number,
-        agency_id
-      )
-    `)
-    .eq('id', dealId)
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to fetch deal: ${error.message}`);
-  }
-
-  return deal;
+  return result
 }
 
 /**
  * Finds a deal by client phone number within a specific agency
- * Uses database-level filtering to handle large datasets efficiently
+ * Uses Django API endpoint: GET /api/deals/by-phone
  */
-export async function findDealByClientPhone(clientPhone: string, agencyId: string) {
-  const supabase = createAdminClient();
+export async function findDealByClientPhone(
+  clientPhone: string,
+  agencyId: string,
+  accessToken?: string
+): Promise<DealResult | null> {
+  const params = new URLSearchParams()
+  params.append('phone', clientPhone)
+  params.append('agency_id', agencyId)
 
-  // Normalize phone number for comparison (remove all non-digits)
-  const normalizedSearch = clientPhone.replace(/\D/g, '');
+  const result = await djangoApi<{
+    found: boolean
+    deal: DealResult | null
+  }>(`/api/deals/by-phone?${params.toString()}`, {
+    method: 'GET',
+    accessToken,
+  })
 
-  // Try multiple phone format variations to match against database
-  const phoneVariations = [
-    normalizedSearch,                    // e.g., "6692456363"
-    `+1${normalizedSearch}`,             // e.g., "+16692456363"
-    `1${normalizedSearch}`,              // e.g., "16692456363"
-    `(${normalizedSearch.slice(0, 3)}) ${normalizedSearch.slice(3, 6)}-${normalizedSearch.slice(6)}`, // e.g., "(669) 245-6363"
-    `${normalizedSearch.slice(0, 3)}-${normalizedSearch.slice(3, 6)}-${normalizedSearch.slice(6)}`, // e.g., "669-245-6363"
-  ];
-
-  // Try to find deal with exact match on any variation within the agency
-  for (const variation of phoneVariations) {
-    const { data: deal, error } = await supabase
-      .from('deals')
-      .select(`
-        *,
-        agent:agent_id!inner (
-          id,
-          first_name,
-          last_name,
-          phone_number,
-          agency_id
-        )
-      `)
-      .eq('client_phone', variation)
-      .eq('agent.agency_id', agencyId)
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      console.error(`Error searching with variation ${variation}:`, error);
-      continue;
-    }
-
-    if (deal) {
-      return deal;
-    }
+  if (result.found && result.deal) {
+    return result.deal
   }
-
-  // If no exact match found, try pattern matching using ilike
-  // This searches for the phone number anywhere in the client_phone field
-
-  const { data: deals, error: patternError } = await supabase
-    .from('deals')
-    .select(`
-      *,
-      agent:agent_id!inner (
-        id,
-        first_name,
-        last_name,
-        phone_number,
-        agency_id
-      )
-    `)
-    .ilike('client_phone', `%${normalizedSearch}%`)
-    .eq('agent.agency_id', agencyId)
-    .limit(10); // Get up to 10 potential matches
-
-  if (patternError) {
-    console.error('Pattern matching error:', patternError);
-    throw new Error(`Failed to search deals: ${patternError.message}`);
-  }
-
-  if (deals && deals.length > 0) {
-    // Find the best match by normalizing and comparing
-    const matchingDeal = deals.find(deal => {
-      const dealPhone = (deal.client_phone || '').replace(/\D/g, '');
-      return dealPhone === normalizedSearch;
-    });
-
-    if (matchingDeal) {
-      return matchingDeal;
-    }
-  }
-
-  return null;
+  return null
 }
 
 /**
  * Gets agency phone number
+ * Uses Django API endpoint: GET /api/agencies/{id}/phone
  */
-export async function getAgencyPhoneNumber(agencyId: string): Promise<string | null> {
-  const supabase = createAdminClient();
+export async function getAgencyPhoneNumber(
+  agencyId: string,
+  accessToken?: string
+): Promise<string | null> {
+  const result = await djangoApi<{
+    phone_number: string | null
+  }>(`/api/agencies/${agencyId}/phone`, {
+    method: 'GET',
+    accessToken,
+  })
 
-  const { data, error } = await supabase
-    .from('agencies')
-    .select('phone_number')
-    .eq('id', agencyId)
-    .single();
-
-  if (error || !data?.phone_number) {
-    return null;
-  }
-
-  return data.phone_number;
+  return result.phone_number
 }
 
 /**
  * Finds agency by phone number
+ * Uses Django API endpoint: GET /api/agencies/by-phone
  */
-export async function findAgencyByPhoneNumber(phoneNumber: string): Promise<{ id: string; name: string; phone_number: string } | null> {
-  const supabase = createAdminClient();
+export async function findAgencyByPhoneNumber(
+  phoneNumber: string,
+  accessToken?: string
+): Promise<{ id: string; name: string; phone_number: string } | null> {
+  const params = new URLSearchParams()
+  params.append('phone', phoneNumber)
 
-  // Normalize phone number for comparison
-  const normalizedPhone = normalizePhoneForStorage(phoneNumber);
+  const result = await djangoApi<{
+    found: boolean
+    agency: { id: string; name: string; phone_number: string } | null
+  }>(`/api/agencies/by-phone?${params.toString()}`, {
+    method: 'GET',
+    accessToken,
+  })
 
-  // Try multiple variations
-  const phoneVariations = [
-    phoneNumber,           // Original format
-    normalizedPhone,       // Without +1
-    `+1${normalizedPhone}`, // With +1
-  ];
-
-  for (const variation of phoneVariations) {
-    const { data, error } = await supabase
-      .from('agencies')
-      .select('id, name, phone_number')
-      .eq('phone_number', variation)
-      .maybeSingle();
-
-    if (error) {
-      console.error(`Error searching agency with phone ${variation}:`, error);
-      continue;
-    }
-
-    if (data) {
-      return data;
-    }
+  if (result.found && result.agency) {
+    return result.agency
   }
-
-  return null;
+  return null
 }
 
 /**
  * Gets agency details (name and phone number)
+ * Uses Django API endpoint: GET /api/agencies/{id}
  */
-export async function getAgencyDetails(agencyId: string): Promise<{ name: string; phone_number: string } | null> {
-  const supabase = createAdminClient();
+export async function getAgencyDetails(
+  agencyId: string,
+  accessToken?: string
+): Promise<{ name: string; phone_number: string } | null> {
+  const result = await djangoApi<{
+    id: string
+    name: string
+    display_name: string
+    phone_number: string | null
+  }>(`/api/agencies/${agencyId}`, {
+    method: 'GET',
+    accessToken,
+  })
 
-  const { data, error } = await supabase
-    .from('agencies')
-    .select('name, phone_number')
-    .eq('id', agencyId)
-    .single();
-
-  if (error || !data?.phone_number || !data?.name) {
-    return null;
+  if (result.name && result.phone_number) {
+    return {
+      name: result.display_name || result.name,
+      phone_number: result.phone_number,
+    }
   }
-
-  return data;
+  return null
 }
 
 /**
  * Sends the initial welcome message to a client
+ * Uses Django API endpoints for all data
  */
 export async function sendWelcomeMessage(
   clientPhone: string,
@@ -428,93 +388,171 @@ export async function sendWelcomeMessage(
   conversationId: string,
   clientName?: string,
   clientEmail?: string,
-  agentName?: string
+  agentName?: string,
+  dealId?: string,
+  accessToken?: string
 ): Promise<void> {
-  const supabase = createAdminClient();
-  const agency = await getAgencyDetails(agencyId);
+  const agency = await getAgencyDetails(agencyId, accessToken);
 
   if (!agency) {
     throw new Error('Agency not found or missing phone number');
   }
 
-  // If client name or agent name not provided, try to fetch from database
+  // If client name or agent name not provided, try to fetch from deal
   let finalClientName = clientName;
   let finalClientEmail = clientEmail;
   let finalAgentName = agentName;
 
-  if (!finalClientName || !finalClientEmail || !finalAgentName) {
-    // Try to get conversation to find deal
-    const { data: conversation } = await supabase
-      .from('conversations')
-      .select('deal_id')
-      .eq('id', conversationId)
-      .single();
-
-    if (conversation?.deal_id) {
-      // Fetch deal and agent details
-      const { data: deal } = await supabase
-        .from('deals')
-        .select('client_name, client_email')
-        .eq('id', conversation.deal_id)
-        .single();
+  if (dealId && (!finalClientName || !finalClientEmail || !finalAgentName)) {
+    try {
+      const deal = await getDealWithDetails(dealId, accessToken) as {
+        clientName?: string;
+        client_name?: string;
+        clientEmail?: string;
+        client_email?: string;
+        agent?: {
+          firstName?: string;
+          first_name?: string;
+          lastName?: string;
+          last_name?: string;
+        };
+      };
 
       if (deal) {
-        finalClientName = finalClientName || deal.client_name;
-        finalClientEmail = finalClientEmail || deal.client_email;
-      }
-    }
+        finalClientName = finalClientName || deal.clientName || deal.client_name;
+        finalClientEmail = finalClientEmail || deal.clientEmail || deal.client_email;
 
-    if (!finalAgentName) {
-      const { data: agent } = await supabase
-        .from('users')
-        .select('first_name, last_name')
-        .eq('id', agentId)
-        .single();
-
-      if (agent) {
-        finalAgentName = `${agent.first_name} ${agent.last_name}`;
+        if (deal.agent && !finalAgentName) {
+          const firstName = deal.agent.firstName || deal.agent.first_name || '';
+          const lastName = deal.agent.lastName || deal.agent.last_name || '';
+          finalAgentName = `${firstName} ${lastName}`.trim();
+        }
       }
+    } catch (error) {
+      console.error('Failed to fetch deal details for welcome message:', error);
     }
   }
 
-  // Fetch agency SMS template settings
-  const { data: agencySettings } = await supabase
-    .from('agencies')
-    .select('sms_welcome_enabled, sms_welcome_template')
-    .eq('id', agencyId)
-    .single();
+  // Fetch agency settings to check if welcome SMS is enabled
+  try {
+    const agencySettings = await djangoApi<{
+      sms_welcome_enabled?: boolean;
+      sms_welcome_template?: string;
+    }>(`/api/agencies/${agencyId}/settings`, {
+      method: 'GET',
+      accessToken,
+    });
 
-  // Check if welcome SMS is enabled for this agency
-  if (agencySettings?.sms_welcome_enabled === false) {
-    return;
+    // Check if welcome SMS is enabled for this agency
+    if (agencySettings?.sms_welcome_enabled === false) {
+      return;
+    }
+
+    const clientFirstName = finalClientName?.split(' ')[0] || 'there';
+    const displayEmail = finalClientEmail || 'your email';
+    const displayAgentName = finalAgentName || 'your agent';
+
+    // Use agency template or default
+    const template = agencySettings?.sms_welcome_template || DEFAULT_SMS_TEMPLATES.welcome;
+    const welcomeMessage = replaceSmsPlaceholders(template, {
+      client_first_name: clientFirstName,
+      agency_name: agency.name,
+      agent_name: displayAgentName,
+      client_email: displayEmail,
+    });
+
+    // Create draft message (don't send via Telnyx yet)
+    await logMessage(
+      {
+        conversationId,
+        senderId: agentId,
+        receiverId: agentId, // Placeholder
+        body: welcomeMessage,
+        direction: 'outbound',
+        status: 'draft', // Create as draft instead of sending
+        metadata: {
+          automated: true,
+          type: 'welcome_message',
+          client_phone: normalizePhoneForStorage(clientPhone),
+        },
+      },
+      accessToken
+    );
+  } catch (error) {
+    console.error('Failed to send welcome message:', error);
+    throw error;
   }
-
-  const clientFirstName = finalClientName?.split(' ')[0] || 'there';
-  const displayEmail = finalClientEmail || 'your email';
-  const displayAgentName = finalAgentName || 'your agent';
-
-  // Use agency template or default
-  const template = agencySettings?.sms_welcome_template || DEFAULT_SMS_TEMPLATES.welcome;
-  const welcomeMessage = replaceSmsPlaceholders(template, {
-    client_first_name: clientFirstName,
-    agency_name: agency.name,
-    agent_name: displayAgentName,
-    client_email: displayEmail,
-  });
-
-  // Create draft message (don't send via Telnyx yet)
-  await logMessage({
-    conversationId,
-    senderId: agentId,
-    receiverId: agentId, // Placeholder
-    body: welcomeMessage,
-    direction: 'outbound',
-    status: 'draft', // Create as draft instead of sending
-    metadata: {
-      automated: true,
-      type: 'welcome_message',
-      client_phone: normalizePhoneForStorage(clientPhone),
-    },
-  });
 }
 
+/**
+ * Updates conversation opt status (opted_in, opted_out)
+ * Uses Django API endpoint: PUT /api/sms/opt-out
+ */
+export async function updateConversationOptStatus(
+  conversationId: string,
+  status: 'opted_in' | 'opted_out',
+  accessToken?: string
+): Promise<{ success: boolean }> {
+  const result = await djangoApi<{
+    id: string
+    sms_opt_in_status: string
+    opted_in_at?: string
+    opted_out_at?: string
+  }>('/api/sms/opt-out', {
+    method: 'PUT',
+    body: {
+      conversation_id: conversationId,
+      status: status,
+    },
+    accessToken,
+  })
+
+  return { success: !!result.id }
+}
+
+/**
+ * Gets agent details by ID
+ * Uses Django API endpoint: GET /api/agents/{id}
+ */
+export async function getAgentDetails(
+  agentId: string,
+  accessToken?: string
+): Promise<{
+  id: string
+  first_name: string
+  last_name: string
+  phone_number?: string
+  agency_id: string
+  subscription_tier?: string
+} | null> {
+  try {
+    const result = await djangoApi<{
+      id: string
+      firstName?: string
+      first_name?: string
+      lastName?: string
+      last_name?: string
+      phoneNumber?: string
+      phone_number?: string
+      agencyId?: string
+      agency_id?: string
+      subscriptionTier?: string
+      subscription_tier?: string
+    }>(`/api/agents/${agentId}`, {
+      method: 'GET',
+      accessToken,
+    })
+
+    return {
+      id: result.id,
+      first_name: result.firstName || result.first_name || '',
+      last_name: result.lastName || result.last_name || '',
+      phone_number: result.phoneNumber || result.phone_number,
+      agency_id: result.agencyId || result.agency_id || '',
+      subscription_tier: result.subscriptionTier || result.subscription_tier,
+    }
+  } catch (error) {
+    console.error('Failed to get agent details:', error)
+    return null
+  }
+}

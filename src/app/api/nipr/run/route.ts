@@ -1,47 +1,94 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import type { NIPRInput } from '@/lib/nipr'
-import { updateUserNIPRData } from '@/lib/supabase-helpers'
-import { createAdminClient, createServerClient } from '@/lib/supabase/server'
+import { getSession } from '@/lib/session'
+import { getApiBaseUrl } from '@/lib/api-config'
 import { executeNIPRAutomation, type NIPRJobData } from '@/lib/nipr/automation'
 
 export const maxDuration = 300 // 5 minutes timeout for long-running automation
 
+/**
+ * Helper to call Django NIPR API
+ */
+async function callNiprApi(endpoint: string, method: string = 'POST', body?: unknown, accessToken?: string) {
+  const apiUrl = getApiBaseUrl()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`
+  } else {
+    headers['X-Cron-Secret'] = process.env.CRON_SECRET || ''
+  }
+
+  const response = await fetch(`${apiUrl}/api/nipr/${endpoint}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  return response
+}
+
+/**
+ * Helper to update user NIPR data via Django API
+ */
+async function updateUserNIPRDataViaDjango(
+  userId: string,
+  carriers: string[],
+  states: string[]
+): Promise<boolean> {
+  const apiUrl = getApiBaseUrl()
+  try {
+    const response = await fetch(`${apiUrl}/api/user/${userId}/nipr-data`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+      body: JSON.stringify({
+        unique_carriers: carriers,
+        licensed_states: states,
+      }),
+    })
+    return response.ok
+  } catch (error) {
+    console.error(`Failed to update user ${userId} NIPR data:`, error)
+    return false
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    // Get authenticated user from server-side session
-    const supabase = await createServerClient()
-    const { data: { user: authUser } } = await supabase.auth.getUser()
+    // Get authenticated user from session
+    const session = await getSession()
+    const accessToken = session?.accessToken
 
-    // Get user record from database if authenticated
+    // Get current user info from Django
     let currentUser: { id: string; is_admin?: boolean } | null = null
-    if (authUser) {
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id, is_admin')
-        .eq('auth_user_id', authUser.id)
-        .single()
-      currentUser = userData
+    if (accessToken) {
+      const apiUrl = getApiBaseUrl()
+      const userResponse = await fetch(`${apiUrl}/api/user/me`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (userResponse.ok) {
+        const userData = await userResponse.json()
+        currentUser = { id: userData.id, is_admin: userData.is_admin }
+      }
     }
-
-    const supabaseAdmin = createAdminClient()
 
     // Check if NIPR has already been completed for this user (has carriers)
     if (currentUser?.id) {
-      const { data: userData } = await supabaseAdmin
-        .from('users')
-        .select('unique_carriers')
-        .eq('id', currentUser.id)
-        .single()
-
-      // Check if unique_carriers exists and has data
-      const carriers = userData?.unique_carriers as string[] | null
-      if (carriers && carriers.length > 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'NIPR verification has already been completed for your account',
-          alreadyCompleted: true
-        }, { status: 400 })
+      const checkResponse = await callNiprApi('check-completed', 'GET', undefined, accessToken || undefined)
+      if (checkResponse.ok) {
+        const checkData = await checkResponse.json()
+        if (checkData.completed) {
+          return NextResponse.json({
+            success: false,
+            error: 'NIPR verification has already been completed for your account',
+            alreadyCompleted: true
+          }, { status: 400 })
+        }
       }
     }
 
@@ -93,37 +140,37 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if nipr_jobs table exists
-    const useQueue = await checkQueueTableExists(supabaseAdmin)
+    // Always use queue mode if user is authenticated
+    if (currentUser?.id) {
+      // Create job as PENDING via Django API
+      const createJobResponse = await callNiprApi('jobs', 'POST', {
+        user_id: currentUser.id,
+        last_name: lastName,
+        npn: npn,
+        ssn_last4: ssn,
+        dob: dob,
+      })
 
-    if (useQueue && currentUser?.id) {
-      // Create job as PENDING - database is source of truth for concurrency
-      const { data: newJob, error: insertError } = await supabaseAdmin
-        .from('nipr_jobs')
-        .insert({
-          user_id: currentUser.id,
-          last_name: lastName,
-          npn: npn,
-          ssn_last4: ssn,
-          dob: dob,
-          status: 'pending'
-        })
-        .select('id')
-        .single()
-
-      if (insertError) {
-        console.error('[API/NIPR] Failed to create job:', insertError)
+      if (!createJobResponse.ok) {
+        const errorData = await createJobResponse.json().catch(() => ({}))
+        console.error('[API/NIPR] Failed to create job:', errorData)
         return NextResponse.json({
           success: false,
-          error: 'Failed to start NIPR verification. Please try again.'
+          error: errorData.error || 'Failed to start NIPR verification. Please try again.'
         }, { status: 500 })
       }
 
-      console.log('[API/NIPR] Created pending job:', newJob.id)
+      const createJobData = await createJobResponse.json()
+      const newJobId = createJobData.job_id
 
-      // Try to acquire a job atomically - this prevents concurrent processing
+      console.log('[API/NIPR] Created pending job:', newJobId)
+
+      // Try to acquire a job atomically via Django - this prevents concurrent processing
       // If another job is already processing, this returns empty
-      const { data: acquiredJobs, error: acquireError } = await supabaseAdmin.rpc('acquire_nipr_job')
+      const acquireResponse = await callNiprApi('acquire-job', 'POST')
+      const acquireData = await acquireResponse.json()
+      const acquiredJobs = acquireData.acquired ? [acquireData.job] : []
+      const acquireError = acquireResponse.ok ? null : new Error(acquireData.error || 'Failed to acquire job')
 
       if (acquireError) {
         console.error('[API/NIPR] Failed to acquire job:', acquireError)
@@ -131,7 +178,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           processing: true,
-          jobId: newJob.id,
+          jobId: newJobId,
           message: 'NIPR verification queued. You can track progress below.'
         })
       }
@@ -153,23 +200,25 @@ export async function POST(request: NextRequest) {
 
         // Run automation in background with waitUntil to keep function alive
         const automationPromise = executeNIPRAutomation(jobData).then(async (result) => {
-          const adminClient = createAdminClient()
-
-          // Update job with results
-          await adminClient.rpc('complete_nipr_job', {
-            p_job_id: job.job_id,
-            p_success: result.success,
-            p_files: result.files || [],
-            p_carriers: result.analysis?.unique_carriers || [],
-            p_error: result.error || null
+          // Update job with results via Django
+          await callNiprApi('complete-job', 'POST', {
+            job_id: job.job_id,
+            success: result.success,
+            files: result.files || [],
+            carriers: result.analysis?.unique_carriers || [],
+            error: result.error || null,
           })
 
-          // Save carriers and states to user if successful
+          // Save carriers and states to user if successful via Django API
           if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0) {
             try {
               const states = result.analysis.licensed_states || []
-              await updateUserNIPRData(adminClient, job.job_user_id, result.analysis.unique_carriers, states)
-              console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers and ${states.length} states to user ${job.job_user_id}`)
+              const updated = await updateUserNIPRDataViaDjango(job.job_user_id, result.analysis.unique_carriers, states)
+              if (updated) {
+                console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers and ${states.length} states to user ${job.job_user_id}`)
+              } else {
+                console.error('[API/NIPR] Failed to save NIPR data via Django API')
+              }
             } catch (dbError) {
               console.error('[API/NIPR] Database persistence failed:', dbError)
             }
@@ -179,15 +228,14 @@ export async function POST(request: NextRequest) {
           await triggerNextJobProcessing()
         }).catch(async (err) => {
           console.error('[API/NIPR] Background automation failed:', err)
-          // Mark job as failed
+          // Mark job as failed via Django
           try {
-            const adminClient = createAdminClient()
-            await adminClient.rpc('complete_nipr_job', {
-              p_job_id: job.job_id,
-              p_success: false,
-              p_files: [],
-              p_carriers: [],
-              p_error: err instanceof Error ? err.message : String(err)
+            await callNiprApi('complete-job', 'POST', {
+              job_id: job.job_id,
+              success: false,
+              files: [],
+              carriers: [],
+              error: err instanceof Error ? err.message : String(err),
             })
             // Still try to process next job
             await triggerNextJobProcessing()
@@ -200,24 +248,24 @@ export async function POST(request: NextRequest) {
         waitUntil(automationPromise)
       } else {
         // No job acquired - another job is already processing
-        console.log('[API/NIPR] Job queued, another job is processing:', newJob.id)
+        console.log('[API/NIPR] Job queued, another job is processing:', newJobId)
       }
 
       // Return immediately with job ID so frontend can poll for progress
       return NextResponse.json({
         success: true,
         processing: true,
-        jobId: newJob.id,
+        jobId: newJobId,
         message: 'NIPR verification queued. You can track progress below.'
       })
 
     } else {
-      // Queue table doesn't exist or no user - run directly (legacy mode)
-      console.log('[API/NIPR] Running in legacy mode (no queue)')
+      // No user authenticated - run directly (legacy mode)
+      console.log('[API/NIPR] Running in legacy mode (no user)')
 
       const jobData: NIPRJobData = {
         job_id: `legacy-${Date.now()}`,
-        job_user_id: currentUser?.id || '',
+        job_user_id: '',
         job_last_name: lastName,
         job_npn: npn,
         job_ssn_last4: ssn,
@@ -225,22 +273,6 @@ export async function POST(request: NextRequest) {
       }
 
       const result = await executeNIPRAutomation(jobData)
-
-      // Save carriers and states if successful and user is authenticated
-      if (result.success && result.analysis?.unique_carriers && result.analysis.unique_carriers.length > 0 && currentUser?.id) {
-        try {
-          const states = result.analysis.licensed_states || []
-          await updateUserNIPRData(supabaseAdmin, currentUser.id, result.analysis.unique_carriers, states)
-          console.log(`[API/NIPR] Saved ${result.analysis.unique_carriers.length} carriers and ${states.length} states to user ${currentUser.id}`)
-          result.analysis.savedToDatabase = true
-          result.analysis.userId = currentUser.id
-        } catch (dbError) {
-          console.error('[API/NIPR] Database persistence failed:', dbError)
-          if (result.analysis) {
-            result.analysis.savedToDatabase = false
-          }
-        }
-      }
 
       return NextResponse.json(result, { status: result.success ? 200 : 500 })
     }
@@ -304,18 +336,3 @@ async function triggerNextJobProcessing(): Promise<void> {
   }
 }
 
-/**
- * Check if the nipr_jobs table exists
- */
-async function checkQueueTableExists(supabase: ReturnType<typeof createAdminClient>): Promise<boolean> {
-  try {
-    const { error } = await supabase
-      .from('nipr_jobs')
-      .select('id')
-      .limit(0)
-
-    return !error
-  } catch {
-    return false
-  }
-}

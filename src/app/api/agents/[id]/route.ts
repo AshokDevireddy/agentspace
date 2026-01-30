@@ -233,19 +233,48 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if user is admin (check all admin indicators)
+    // Get current user info
     const { data: currentUser } = await supabaseAdmin
       .from("users")
-      .select("is_admin, perm_level, role")
+      .select("id, is_admin, perm_level, role")
       .eq("auth_user_id", user.id)
       .single();
 
-    const isAdmin = currentUser?.is_admin ||
-      currentUser?.perm_level === "admin" ||
-      currentUser?.role === "admin";
+    if (!currentUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
 
-    if (!currentUser || !isAdmin) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    // Check if user is admin (check all admin indicators)
+    const isAdmin = currentUser.is_admin ||
+      currentUser.perm_level === "admin" ||
+      currentUser.role === "admin";
+
+    // If not admin, check if the agent being edited is in the current user's downline tree
+    if (!isAdmin) {
+      // Get all downlines for the current user (includes direct and indirect)
+      const { data: downlines, error: downlineError } = await supabaseAdmin
+        .rpc("get_agent_downline", {
+          agent_id: currentUser.id,
+        });
+
+      if (downlineError) {
+        console.error("Downline fetch error:", downlineError);
+        return NextResponse.json({
+          error: "Failed to verify permissions",
+          detail: "Could not check downline relationships",
+        }, { status: 500 });
+      }
+
+      // Check if the agent being edited is in the downline tree
+      const downlineIds = (downlines as any[])?.map((d: any) => d.id) || [];
+      const isInDownline = downlineIds.includes(agentId);
+
+      if (!isInDownline) {
+        return NextResponse.json({
+          error: "Forbidden",
+          detail: "You can only edit agents in your downline tree",
+        }, { status: 403 });
+      }
     }
 
     const body = await request.json();

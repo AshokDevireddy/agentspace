@@ -197,6 +197,54 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
+  // Check if current user can edit this agent (admin or agent is in their downline)
+  const { data: canEditAgent = false } = useQuery({
+    queryKey: ['can-edit-agent', agentId],
+    queryFn: async () => {
+      // If no agentId, can't edit
+      if (!agentId) return false
+
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) return false
+
+      // Get current user's info (including admin status and ID)
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id, is_admin, perm_level, role')
+        .eq('auth_user_id', user.id)
+        .single()
+
+      if (!userData?.id) return false
+
+      // Check if user is admin
+      const userIsAdmin = userData.is_admin ||
+        userData.perm_level === 'admin' ||
+        userData.role === 'admin'
+
+      // If admin, can always edit
+      if (userIsAdmin) return true
+
+      // Get all downlines for the current user
+      const { data: downlines, error } = await supabase
+        .rpc('get_agent_downline', {
+          agent_id: userData.id,
+        })
+
+      if (error) {
+        console.error('Error fetching downlines for edit check:', error)
+        return false
+      }
+
+      // Check if the agent being viewed is in the downline tree
+      const downlineIds = (downlines as any[])?.map((d: any) => d.id) || []
+      return downlineIds.includes(agentId)
+    },
+    enabled: open && !!agentId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+
   // Fetch agent details
   const { data: agent, isLoading: loading, error: agentError, refetch: refetchAgent } = useQuery({
     queryKey: [...queryKeys.agentDetail(agentId), startMonth, endMonth],
@@ -412,7 +460,7 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
               </div>
             </div>
 
-            {isAdmin && (
+            {canEditAgent && (
               isEditing ? (
                 <div className="flex items-center gap-2 mr-8">
                   <Button

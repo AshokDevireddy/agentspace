@@ -90,6 +90,12 @@ export function SimpleSearchableSelect({
     }
   }, [open])
 
+  console.log('[SimpleSearchableSelect] About to call options.find()')
+  console.log('[SimpleSearchableSelect] options:', options)
+  console.log('[SimpleSearchableSelect] options type:', typeof options)
+  console.log('[SimpleSearchableSelect] options is array?', Array.isArray(options))
+  console.log('[SimpleSearchableSelect] value:', value)
+  
   const selectedOption = options.find(option => option.value === value)
 
   // Update dropdown position when portal mode and open

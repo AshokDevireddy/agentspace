@@ -276,7 +276,9 @@ async function upsertDealBeneficiaries(
 }
 
 export async function POST(req: NextRequest) {
-  console.log("[Deals API] ========== POST /api/deals REQUEST RECEIVED ==========");
+  console.log(
+    "[Deals API] ========== POST /api/deals REQUEST RECEIVED ==========",
+  );
   const supabase = createAdminClient();
   try {
     console.log("[Deals API] Parsing request body...");
@@ -358,8 +360,11 @@ export async function POST(req: NextRequest) {
         client_address: client_address || existingDeal.client_address,
         application_number: application_number ||
           existingDeal.application_number,
-        ssn_benefit: ssn_benefit !== undefined ? ssn_benefit : existingDeal.ssn_benefit,
-        billing_day_of_month: billing_day_of_month || existingDeal.billing_day_of_month,
+        ssn_benefit: ssn_benefit !== undefined
+          ? ssn_benefit
+          : existingDeal.ssn_benefit,
+        billing_day_of_month: billing_day_of_month ||
+          existingDeal.billing_day_of_month,
         billing_weekday: billing_weekday || existingDeal.billing_weekday,
         billing_cycle: billing_cycle || existingDeal.billing_cycle,
         lead_source: lead_source || existingDeal.lead_source,
@@ -430,26 +435,31 @@ export async function POST(req: NextRequest) {
       // STEP 1: Check subscription limits for free users
       if (agent_id) {
         const { data: agentData, error: agentError } = await supabase
-          .from('users')
-          .select('subscription_tier, deals_created_count')
-          .eq('id', agent_id)
+          .from("users")
+          .select("subscription_tier, deals_created_count")
+          .eq("id", agent_id)
           .single();
 
         if (agentError) {
-          console.error('[Deals API] Error fetching agent subscription data:', agentError);
+          console.error(
+            "[Deals API] Error fetching agent subscription data:",
+            agentError,
+          );
         } else if (agentData) {
-          const subscriptionTier = agentData.subscription_tier || 'free';
+          const subscriptionTier = agentData.subscription_tier || "free";
           const dealsCreated = agentData.deals_created_count || 0;
 
           // If user is on free plan and has reached the limit of 10 deals
-          if (subscriptionTier === 'free' && dealsCreated >= 10) {
+          if (subscriptionTier === "free" && dealsCreated >= 10) {
             return NextResponse.json(
               {
-                error: 'You have reached the maximum of 10 deals on the Free plan. Please upgrade your subscription to create more deals.',
-                message: 'You have reached the maximum of 10 deals on the Free plan. Please upgrade your subscription to create more deals.',
-                limit_reached: true
+                error:
+                  "You have reached the maximum of 10 deals on the Free plan. Please upgrade your subscription to create more deals.",
+                message:
+                  "You have reached the maximum of 10 deals on the Free plan. Please upgrade your subscription to create more deals.",
+                limit_reached: true,
               },
-              { status: 403 }
+              { status: 403 },
             );
           }
         }
@@ -457,37 +467,49 @@ export async function POST(req: NextRequest) {
 
       // STEP 2: Check if phone number already exists for another deal in the same agency
       if (client_phone && agency_id) {
-        console.log('[Deals API] Checking phone uniqueness for:', client_phone);
-        const { normalizePhoneForStorage } = await import('@/lib/telnyx');
+        console.log("[Deals API] Checking phone uniqueness for:", client_phone);
+        const { normalizePhoneForStorage } = await import("@/lib/telnyx");
         const normalizedPhone = normalizePhoneForStorage(client_phone);
-        console.log('[Deals API] Normalized phone:', normalizedPhone);
+        console.log("[Deals API] Normalized phone:", normalizedPhone);
 
         const { data: existingDeal, error: phoneCheckError } = await supabase
-          .from('deals')
-          .select('id, client_name, policy_number')
-          .eq('client_phone', normalizedPhone)
-          .eq('agency_id', agency_id)
+          .from("deals")
+          .select("id, client_name, policy_number")
+          .eq("client_phone", normalizedPhone)
+          .eq("agency_id", agency_id)
           .maybeSingle();
 
-        if (phoneCheckError && phoneCheckError.code !== 'PGRST116') {
-          console.error('[Deals API] Error checking phone uniqueness:', phoneCheckError);
+        if (phoneCheckError && phoneCheckError.code !== "PGRST116") {
+          console.error(
+            "[Deals API] Error checking phone uniqueness:",
+            phoneCheckError,
+          );
           return NextResponse.json(
-            { error: `Failed to validate phone number: ${phoneCheckError.message}` },
-            { status: 400 }
+            {
+              error:
+                `Failed to validate phone number: ${phoneCheckError.message}`,
+            },
+            { status: 400 },
           );
         }
 
         if (existingDeal) {
-          console.log('[Deals API] Phone number already exists for deal:', existingDeal.id);
+          console.log(
+            "[Deals API] Phone number already exists for deal:",
+            existingDeal.id,
+          );
           return NextResponse.json(
             {
-              error: `Phone number ${client_phone} already exists for another deal in your agency (${existingDeal.client_name}, Policy: ${existingDeal.policy_number || 'N/A'}). Each deal must have a unique phone number within the agency.`,
+              error:
+                `Phone number ${client_phone} already exists for another deal in your agency (${existingDeal.client_name}, Policy: ${
+                  existingDeal.policy_number || "N/A"
+                }). Each deal must have a unique phone number within the agency.`,
               existing_deal_id: existingDeal.id,
             },
-            { status: 409 } // 409 Conflict
+            { status: 409 }, // 409 Conflict
           );
         }
-        console.log('[Deals API] Phone number is unique');
+        console.log("[Deals API] Phone number is unique");
       }
 
       // STEP 3: PREPARE hierarchy snapshot data BEFORE creating the deal
@@ -551,7 +573,7 @@ export async function POST(req: NextRequest) {
         billing_weekday,
         billing_cycle,
         lead_source,
-        status: status || "pending", // Changed from 'draft' to 'pending' to match book of business
+        status: status || "Active", // Default status is 'active' for newly posted deals
         notes,
         submission_date,
       };
@@ -591,16 +613,18 @@ export async function POST(req: NextRequest) {
       // Increment deals_created_count for the agent
       if (agent_id) {
         const { data: currentAgent } = await supabase
-          .from('users')
-          .select('deals_created_count')
-          .eq('id', agent_id)
+          .from("users")
+          .select("deals_created_count")
+          .eq("id", agent_id)
           .single();
 
         if (currentAgent) {
           await supabase
-            .from('users')
-            .update({ deals_created_count: (currentAgent.deals_created_count || 0) + 1 })
-            .eq('id', agent_id);
+            .from("users")
+            .update({
+              deals_created_count: (currentAgent.deals_created_count || 0) + 1,
+            })
+            .eq("id", agent_id);
         }
       }
 
@@ -710,7 +734,10 @@ export async function POST(req: NextRequest) {
           }
         } catch (smsError) {
           // Don't fail the deal creation if SMS draft creation fails
-          console.error("[Deals API] Failed to create welcome SMS draft:", smsError);
+          console.error(
+            "[Deals API] Failed to create welcome SMS draft:",
+            smsError,
+          );
         }
       }
 
@@ -742,7 +769,7 @@ export async function PUT(req: NextRequest) {
     }
 
     // Fetch current deal to detect status transition for lapse notifications
-    const LAPSE_STATUSES = ['lapse_pending', 'lapse'];
+    const LAPSE_STATUSES = ["lapse_pending", "lapse"];
     let isTransitioningToLapse = false;
     let currentDealForNotification: {
       client_name: string;
@@ -755,7 +782,10 @@ export async function PUT(req: NextRequest) {
       agency_id: string;
     } | null = null;
 
-    if (updateData.status_standardized && LAPSE_STATUSES.includes(updateData.status_standardized)) {
+    if (
+      updateData.status_standardized &&
+      LAPSE_STATUSES.includes(updateData.status_standardized)
+    ) {
       const { data: currentDeal } = await supabase
         .from("deals")
         .select(`
@@ -773,13 +803,16 @@ export async function PUT(req: NextRequest) {
         .eq("id", id)
         .single();
 
-      if (currentDeal && !LAPSE_STATUSES.includes(currentDeal.status_standardized || '')) {
+      if (
+        currentDeal &&
+        !LAPSE_STATUSES.includes(currentDeal.status_standardized || "")
+      ) {
         isTransitioningToLapse = true;
         currentDealForNotification = {
           client_name: currentDeal.client_name,
           monthly_premium: currentDeal.monthly_premium,
           annual_premium: currentDeal.annual_premium,
-          carrier_name: (currentDeal.carrier as any)?.name || '',
+          carrier_name: (currentDeal.carrier as any)?.name || "",
           policy_number: currentDeal.policy_number,
           policy_effective_date: currentDeal.policy_effective_date,
           agent_id: currentDeal.agent_id,
@@ -805,8 +838,10 @@ export async function PUT(req: NextRequest) {
     // If client_phone was updated, also update the conversation's client_phone field
     // This ensures the conversation stays associated with the deal even when phone changes
     if (updateData.client_phone !== undefined && deal.id) {
-      const { normalizePhoneForStorage } = await import('@/lib/telnyx');
-      const normalizedPhone = updateData.client_phone ? normalizePhoneForStorage(updateData.client_phone) : null;
+      const { normalizePhoneForStorage } = await import("@/lib/telnyx");
+      const normalizedPhone = updateData.client_phone
+        ? normalizePhoneForStorage(updateData.client_phone)
+        : null;
 
       const { error: convError } = await supabase
         .from("conversations")
@@ -815,10 +850,12 @@ export async function PUT(req: NextRequest) {
         .eq("is_active", true);
 
       if (convError) {
-        console.error('Error updating conversation phone number:', convError);
+        console.error("Error updating conversation phone number:", convError);
         // Don't fail the whole request if conversation update fails
       } else {
-        console.log(`📞 Updated conversation phone number for deal ${deal.id} to ${normalizedPhone}`);
+        console.log(
+          `📞 Updated conversation phone number for deal ${deal.id} to ${normalizedPhone}`,
+        );
       }
     }
 
@@ -829,24 +866,30 @@ export async function PUT(req: NextRequest) {
         const response = await fetch(
           `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-lapse-notification`,
           {
-            method: 'POST',
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+              "Content-Type": "application/json",
+              "Authorization":
+                `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
             },
             body: JSON.stringify({
               deal_id: deal.id,
               agency_id: currentDealForNotification.agency_id,
             }),
-          }
+          },
         );
 
         const result = await response.json();
-        console.log(`[Deals API] Lapse notifications: ${result.sent || 0} emails sent`,
-          result.errors ? `Errors: ${result.errors.join(', ')}` : '');
+        console.log(
+          `[Deals API] Lapse notifications: ${result.sent || 0} emails sent`,
+          result.errors ? `Errors: ${result.errors.join(", ")}` : "",
+        );
       } catch (notificationError) {
         // Don't fail the deal update if notifications fail
-        console.error('[Deals API] Failed to send lapse notifications:', notificationError);
+        console.error(
+          "[Deals API] Failed to send lapse notifications:",
+          notificationError,
+        );
       }
     }
 

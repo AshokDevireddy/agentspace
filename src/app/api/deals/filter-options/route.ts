@@ -27,6 +27,16 @@ export async function GET(req: NextRequest) {
       p_user_id: currentUser.id
     });
 
+    console.log('[FILTER-OPTIONS API] RPC raw response:', JSON.stringify(options, null, 2));
+    console.log('[FILTER-OPTIONS API] RPC response type:', typeof options);
+    console.log('[FILTER-OPTIONS API] Is array?', Array.isArray(options));
+    if (options && typeof options === 'object') {
+      console.log('[FILTER-OPTIONS API] Has statuses?', 'statuses' in options);
+      console.log('[FILTER-OPTIONS API] statuses value:', options.statuses);
+      console.log('[FILTER-OPTIONS API] statuses type:', typeof options.statuses);
+      console.log('[FILTER-OPTIONS API] statuses is array?', Array.isArray(options.statuses));
+    }
+
     if (rpcError) {
       console.error('get_static_filter_options RPC error:', rpcError);
       return NextResponse.json({ error: rpcError.message }, { status: 500 });

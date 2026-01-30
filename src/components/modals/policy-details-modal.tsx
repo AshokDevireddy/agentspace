@@ -153,33 +153,66 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
       }
 
       const data = await response.json()
+      console.log('[POLICY MODAL queryFn] Raw API data:', JSON.stringify(data, null, 2))
+      console.log('[POLICY MODAL queryFn] data.statuses:', data.statuses)
+      console.log('[POLICY MODAL queryFn] data.statuses type:', typeof data.statuses)
+      console.log('[POLICY MODAL queryFn] data.statuses is array?', Array.isArray(data.statuses))
+      
       if (data.statuses && data.statuses.length > 0) {
         // Remove the "all" option and just use the actual statuses
         const actualStatuses = data.statuses.filter((s: StatusOption) => s.value !== 'all')
+        console.log('[POLICY MODAL queryFn] actualStatuses after filter:', actualStatuses)
+        console.log('[POLICY MODAL queryFn] actualStatuses is array?', Array.isArray(actualStatuses))
         if (actualStatuses.length > 0) {
+          console.log('[POLICY MODAL queryFn] Returning actualStatuses:', actualStatuses)
           return actualStatuses
         }
       }
       // Return default options if none found
-      return [
+      const defaultOptions = [
         { value: "draft", label: "Draft" },
         { value: "pending", label: "Pending Approval" },
         { value: "verified", label: "Verified" },
         { value: "active", label: "Active" },
         { value: "terminated", label: "Terminated" }
       ]
+      console.log('[POLICY MODAL queryFn] Returning default options:', defaultOptions)
+      return defaultOptions
     },
     enabled: open, // Only fetch when modal is open
     staleTime: 5 * 60 * 1000, // 5 minutes - status options don't change often
   })
 
-  const statusOptions = statusOptionsData || [
-    { value: "draft", label: "Draft" },
-    { value: "pending", label: "Pending Approval" },
-    { value: "verified", label: "Verified" },
-    { value: "active", label: "Active" },
-    { value: "terminated", label: "Terminated" }
-  ]
+  // Ensure statusOptions is always an array
+  // Handle case where statusOptionsData might be the full API response object (from cache)
+  // or the processed array (from fresh query)
+  const statusOptions = (() => {
+    // If it's already an array, use it
+    if (Array.isArray(statusOptionsData)) {
+      return statusOptionsData
+    }
+    
+    // If it's an object with a statuses property, extract and filter it
+    if (statusOptionsData && typeof statusOptionsData === 'object' && 'statuses' in statusOptionsData) {
+      const statuses = statusOptionsData.statuses
+      if (Array.isArray(statuses) && statuses.length > 0) {
+        // Remove the "all" option and return the filtered array
+        const filtered = statuses.filter((s: StatusOption) => s.value !== 'all')
+        if (filtered.length > 0) {
+          return filtered
+        }
+      }
+    }
+    
+    // Fallback to default options
+    return [
+      { value: "draft", label: "Draft" },
+      { value: "pending", label: "Pending Approval" },
+      { value: "verified", label: "Verified" },
+      { value: "active", label: "Active" },
+      { value: "terminated", label: "Terminated" }
+    ]
+  })()
 
   // Beneficiaries section state
   const [beneficiariesExpanded, setBeneficiariesExpanded] = useState(false)
@@ -361,6 +394,13 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
 
   const handleEdit = () => {
     if (!deal) return
+    console.log('[POLICY MODAL handleEdit] Called!')
+    console.log('[POLICY MODAL handleEdit] statusOptions at edit time:', statusOptions)
+    console.log('[POLICY MODAL handleEdit] statusOptions type:', typeof statusOptions)
+    console.log('[POLICY MODAL handleEdit] statusOptions is array?', Array.isArray(statusOptions))
+    console.log('[POLICY MODAL handleEdit] statusOptionsData:', statusOptionsData)
+    console.log('[POLICY MODAL handleEdit] statusOptionsData type:', typeof statusOptionsData)
+    console.log('[POLICY MODAL handleEdit] statusOptionsData is array?', Array.isArray(statusOptionsData))
     setEditedData({
       client_name: deal.client_name,
       client_email: deal.client_email,
@@ -713,14 +753,23 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         Status
                       </label>
                       {isEditing ? (
-                        <SimpleSearchableSelect
-                          options={statusOptions}
-                          value={editedData?.status || ''}
-                          onValueChange={(value) => setEditedData({ ...editedData, status: value })}
-                          placeholder="Select Status"
-                          searchPlaceholder="Search status..."
-                          portal={true}
-                        />
+                        (() => {
+                          console.log('[POLICY MODAL render] About to render SimpleSearchableSelect')
+                          console.log('[POLICY MODAL render] statusOptions being passed:', statusOptions)
+                          console.log('[POLICY MODAL render] statusOptions type:', typeof statusOptions)
+                          console.log('[POLICY MODAL render] statusOptions is array?', Array.isArray(statusOptions))
+                          console.log('[POLICY MODAL render] isEditing:', isEditing)
+                          return (
+                            <SimpleSearchableSelect
+                              options={statusOptions}
+                              value={editedData?.status || ''}
+                              onValueChange={(value) => setEditedData({ ...editedData, status: value })}
+                              placeholder="Select Status"
+                              searchPlaceholder="Search status..."
+                              portal={true}
+                            />
+                          )
+                        })()
                       ) : (
                         <div>
                           <Badge className={`${getStatusColor(deal.status)} border capitalize`} variant="outline">

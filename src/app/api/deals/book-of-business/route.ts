@@ -96,7 +96,17 @@ export async function GET(req: NextRequest) {
     const isAdmin = currentUser.perm_level === "admin" ||
       currentUser.role === "admin";
 
-    const transformedDeals = (deals || []).map((deal: any) => {
+    // Sort deals by created_at timestamp (descending - newest first)
+    // NOTE: This client-side sort ensures data is ordered by created_at.
+    // For optimal performance, the database function should also ORDER BY created_at
+    // to match the cursor pagination which uses created_at.
+    const sortedDeals = [...(deals || [])].sort((a: any, b: any) => {
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return dateB - dateA; // Descending order (newest first)
+    });
+
+    const transformedDeals = sortedDeals.map((deal: any) => {
       // Determine if phone should be hidden
       // Hide if: view is 'downlines' AND user is not admin AND user is not the writing agent AND deal is active/pending
       const isWritingAgent = deal.agent_id === currentUser.id;
@@ -180,7 +190,8 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    const last = (deals || [])[deals.length - 1];
+    // Calculate cursor from the sorted deals (last item after sorting by created_at)
+    const last = sortedDeals[sortedDeals.length - 1];
     const nextCursor = last
       ? { cursor_created_at: last.created_at, cursor_id: last.id }
       : null;

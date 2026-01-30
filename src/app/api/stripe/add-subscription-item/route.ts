@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { getApiBaseUrl } from '@/lib/api-config';
+import { getAccessToken } from '@/lib/session';
 import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -8,32 +9,32 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient();
-    const adminSupabase = createAdminClient();
-
-    // Get current user
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Authenticate user via Django backend
+    const accessToken = await getAccessToken()
+    if (!accessToken) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user details including current subscription
-    const { data: userData, error: userError } = await adminSupabase
-      .from('users')
-      .select('id, subscription_tier, stripe_subscription_id, is_admin')
-      .eq('auth_user_id', user.id)
-      .single();
+    // Get user Stripe profile from Django
+    const apiUrl = getApiBaseUrl()
+    const profileResponse = await fetch(`${apiUrl}/api/user/stripe-profile/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      cache: 'no-store',
+    })
 
-    if (userError || !userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    if (!profileResponse.ok) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
+
+    const userData = await profileResponse.json()
 
     // Check if user has an active subscription
-    if (!userData.stripe_subscription_id) {
+    const stripeSubscriptionId = userData.stripe_subscription_id || userData.stripeSubscriptionId
+    if (!stripeSubscriptionId) {
       return NextResponse.json(
         { error: 'No active subscription found. Please subscribe to a plan first.' },
         { status: 400 }
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify the subscription exists and is active
-    const subscription = await stripe.subscriptions.retrieve(userData.stripe_subscription_id);
+    const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
 
     if (!subscription || subscription.status !== 'active') {
       return NextResponse.json(
@@ -70,11 +71,11 @@ export async function POST(request: NextRequest) {
 
     // Add the new subscription item
     await stripe.subscriptionItems.create({
-      subscription: userData.stripe_subscription_id,
+      subscription: stripeSubscriptionId,
       price: priceId,
     });
 
-    console.log(`[add-subscription-item] Added price ${priceId} to subscription ${userData.stripe_subscription_id} for user ${userData.id}`);
+    console.log(`[add-subscription-item] Added price ${priceId} to subscription ${stripeSubscriptionId} for user ${userData.id}`);
 
     return NextResponse.json({
       success: true,

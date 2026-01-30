@@ -1,10 +1,11 @@
 // API ROUTE: /api/validate-agent/[agentId]
 // This endpoint validates if a specific agent ID exists and is active
 // Used during form validation to ensure selected upline agents are valid
-// THIS ENDPOINT IS NOT CURRENTLY IN USE - COULD BE USED AT SOME POINT IN THE FUTURE OR REMOVED
+// Proxies to Django backend endpoint GET /api/agents/{id}/
 
-import { createAdminClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { getApiBaseUrl } from '@/lib/api-config'
+import { getAccessToken } from '@/lib/session'
 
 export async function GET(
   request: Request,
@@ -22,35 +23,34 @@ export async function GET(
       }, { status: 400 })
     }
 
-    // Create admin Supabase client
-    // Security: Middleware protects this route from non-admin access
-    const supabase = createAdminClient()
-
-    // Check if agent exists and is active
-    const { data: agent, error: fetchError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('id', agentId)
-      .eq('status', 'active')
-      .single()
-
-    if (fetchError) {
-      // If error is "PGRST116" it means no rows returned (agent doesn't exist)
-      if (fetchError.code === 'PGRST116') {
-        return NextResponse.json({ exists: false })
-      }
-
-      console.error('Agent validation error:', fetchError)
-      return NextResponse.json({
-        exists: false,
-        error: 'Database query failed'
-      }, { status: 500 })
+    const accessToken = await getAccessToken()
+    if (!accessToken) {
+      return NextResponse.json({ exists: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Return validation result
+    const apiUrl = getApiBaseUrl()
+    const response = await fetch(`${apiUrl}/api/agents/${agentId}/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      // Agent doesn't exist or not accessible
+      return NextResponse.json({ exists: false })
+    }
+
+    const agent = await response.json()
+
+    // Check if agent is active
+    const isActive = agent.status === 'active' || agent.isActive === true
+
     return NextResponse.json({
-      exists: !!agent,
-      agentId: agent?.id
+      exists: isActive,
+      agentId: isActive ? agent.id : undefined
     })
 
   } catch (error) {

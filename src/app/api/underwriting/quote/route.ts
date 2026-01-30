@@ -1,38 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase/server'
+import { getApiBaseUrl } from '@/lib/api-config'
+import { getAccessToken } from '@/lib/session'
 
 // Compulife API endpoint
 const COMPULIFE_API_URL = 'https://www.compulifeapi.com/api/request/'
 
 export async function POST(request: NextRequest) {
   try {
-    // Authenticate user
-    const supabase = await createServerClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+    // Authenticate user via Django backend
+    const accessToken = await getAccessToken()
+    if (!accessToken) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check user's subscription tier
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('subscription_tier, id')
-      .eq('auth_user_id', user.id)
-      .single()
+    // Get user profile from Django to check subscription tier
+    const apiUrl = getApiBaseUrl()
+    const profileResponse = await fetch(`${apiUrl}/api/user/profile/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      cache: 'no-store',
+    })
 
-    if (userError || !userData) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      )
+    if (!profileResponse.ok) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
+
+    const userData = await profileResponse.json()
 
     // Check if user has Pro or Expert tier
-    const tier = userData.subscription_tier || 'free'
+    const tier = userData.subscription_tier || userData.subscriptionTier || 'free'
     if (tier !== 'pro' && tier !== 'expert') {
       return NextResponse.json(
         {

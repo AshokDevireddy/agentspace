@@ -4,12 +4,13 @@
  * SECURITY: This is the single source of truth for user context in API routes.
  * Always use this instead of getting agency_id from headers or request body.
  *
- * The agency_id is derived from the authenticated user's JWT/session,
+ * The agency_id is derived from the authenticated user's session via the Django backend,
  * preventing cross-tenant attacks where a malicious user could spoof
  * the x-agency-id header to access another tenant's data.
  */
 
-import { createServerClient } from '@/lib/supabase/server'
+import { getApiBaseUrl } from '@/lib/api-config'
+import { getAccessToken } from '@/lib/session'
 
 export interface UserContext {
   userId: string           // users.id (public.users primary key)
@@ -37,7 +38,7 @@ export type GetUserContextResult =
  * Get authenticated user context from the current session.
  *
  * SECURITY: This function derives all user data (including agency_id)
- * from the authenticated Supabase session. NEVER trust agency_id from
+ * from the authenticated Django backend session. NEVER trust agency_id from
  * request headers or body.
  *
  * @returns UserContext if authenticated, error otherwise
@@ -58,12 +59,9 @@ export type GetUserContextResult =
  */
 export async function getUserContext(): Promise<GetUserContextResult> {
   try {
-    const supabase = await createServerClient()
+    const accessToken = await getAccessToken()
 
-    // Get authenticated user from session
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
+    if (!accessToken) {
       return {
         success: false,
         error: 'Unauthorized',
@@ -71,24 +69,45 @@ export async function getUserContext(): Promise<GetUserContextResult> {
       }
     }
 
-    // Fetch user profile from database
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('id, email, agency_id, role, is_admin, status, subscription_tier')
-      .eq('auth_user_id', user.id)
-      .single()
+    // Fetch user profile from Django backend
+    const apiUrl = getApiBaseUrl()
+    const response = await fetch(`${apiUrl}/api/user/profile/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      cache: 'no-store',
+    })
 
-    if (userError || !userData) {
-      console.error('[getUserContext] User not found in database:', userError)
+    if (!response.ok) {
+      if (response.status === 401) {
+        return {
+          success: false,
+          error: 'Unauthorized',
+          status: 401
+        }
+      }
+      if (response.status === 404) {
+        console.error('[getUserContext] User not found in database')
+        return {
+          success: false,
+          error: 'User not found',
+          status: 404
+        }
+      }
       return {
         success: false,
-        error: 'User not found',
-        status: 404
+        error: 'Failed to get user context',
+        status: 500
       }
     }
 
+    const userData = await response.json()
+
     // Check user status
-    if (userData.status === 'inactive') {
+    const status = userData.status || 'active'
+    if (status === 'inactive') {
       return {
         success: false,
         error: 'Account is deactivated',
@@ -100,13 +119,13 @@ export async function getUserContext(): Promise<GetUserContextResult> {
       success: true,
       context: {
         userId: userData.id,
-        authUserId: user.id,
-        email: userData.email || user.email || '',
-        agencyId: userData.agency_id,
+        authUserId: userData.auth_user_id || userData.authUserId || userData.id,
+        email: userData.email || '',
+        agencyId: userData.agency_id || userData.agencyId,
         role: userData.role || 'agent',
-        isAdmin: userData.is_admin || userData.role === 'admin',
-        status: userData.status || 'active',
-        subscriptionTier: userData.subscription_tier,
+        isAdmin: userData.is_admin || userData.isAdmin || userData.role === 'admin',
+        status: status,
+        subscriptionTier: userData.subscription_tier || userData.subscriptionTier || null,
       }
     }
 

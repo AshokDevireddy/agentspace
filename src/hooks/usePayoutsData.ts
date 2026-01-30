@@ -84,8 +84,8 @@ export function useExpectedPayouts(
 
       const url = new URL(getPayoutEndpoint('expectedPayouts'))
       if (filters.agent) url.searchParams.set('agent_id', filters.agent)
-      if (filters.carrier) url.searchParams.set('carrier', filters.carrier)
-      if (filters.product) url.searchParams.set('product', filters.product)
+      if (filters.carrier) url.searchParams.set('carrier_id', filters.carrier)
+      // Note: product filter is not supported by backend - removed
       if (filters.startDate) url.searchParams.set('start_date', filters.startDate)
       if (filters.endDate) url.searchParams.set('end_date', filters.endDate)
 

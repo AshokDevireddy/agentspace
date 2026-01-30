@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { getBackendUrl } from '@/lib/api-config';
 import { stripe } from '@/lib/stripe';
 
 export async function POST(request: NextRequest) {
@@ -7,23 +8,34 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerClient();
 
     // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-    if (authError || !user) {
+    if (sessionError || !session?.access_token) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    // Get user data from database
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('stripe_customer_id')
-      .eq('auth_user_id', user.id)
-      .single();
+    // Get user Stripe data from Django
+    const djangoUrl = `${getBackendUrl()}/api/user/stripe-profile`;
+    const userResponse = await fetch(djangoUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+    });
 
-    if (userError || !userData || !userData.stripe_customer_id) {
+    if (!userResponse.ok) {
+      return NextResponse.json(
+        { error: 'Failed to get user data' },
+        { status: userResponse.status }
+      );
+    }
+
+    const userData = await userResponse.json();
+
+    if (!userData.stripe_customer_id) {
       return NextResponse.json(
         { error: 'No subscription found' },
         { status: 404 }

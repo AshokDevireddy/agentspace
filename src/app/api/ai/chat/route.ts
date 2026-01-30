@@ -463,15 +463,18 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createServerClient();
 
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Get current session (includes access_token for Django API calls)
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
 
-    if (authError || !user) {
+    if (authError || !session?.user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
+
+    const user = session.user;
+    const accessToken = session.access_token;
 
     // AI Mode requires BOTH Expert tier AND admin status
     const { data: userData, error: userError } = await supabase
@@ -857,7 +860,8 @@ Remember: Keep it clean, structured, and easy to scan. Only provide what was ask
                   const toolResult = await executeToolCall(
                     currentToolUse.name,
                     toolInput,
-                    userData.agency_id
+                    userData.agency_id,
+                    accessToken
                   );
 
                   const sanitizedToolResult = sanitizeToolResult(currentToolUse.name, toolResult);

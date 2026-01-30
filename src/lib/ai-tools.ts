@@ -1,70 +1,95 @@
-import { createServerClient } from '@/lib/supabase/server';
+import { getBackendUrl } from '@/lib/api-config';
+
+// Helper to call Django API with authentication
+async function fetchDjangoApi<T>(
+  endpoint: string,
+  accessToken: string,
+  options: { method?: string; body?: any; params?: Record<string, any> } = {}
+): Promise<T> {
+  const { method = 'GET', body, params } = options;
+
+  let url = `${getBackendUrl()}${endpoint}`;
+  if (params) {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.append(key, String(value));
+      }
+    }
+    const queryString = searchParams.toString();
+    if (queryString) {
+      url += `?${queryString}`;
+    }
+  }
+
+  const response = await fetch(url, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Django API error: ${response.status}`);
+  }
+
+  return response.json();
+}
 
 // Get deals/policies data
-export async function getDeals(params: any, agencyId: string) {
+export async function getDeals(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
 
-    let query = supabase
-      .from('deals')
-      .select(`
-        *,
-        agent:users!deals_agent_id_fkey(id, first_name, last_name, email),
-        carrier:carriers(id, name, display_name),
-        product:products(id, name, product_code)
-      `)
-      .eq('agency_id', agencyId);
+    // Build query params for Django API
+    const queryParams: Record<string, any> = {
+      limit: params.limit || 100,
+    };
 
-    // Apply filters
     if (params.status && params.status !== 'all') {
-      query = query.eq('status_standardized', params.status);
+      queryParams.status = params.status;
     }
-
     if (params.agent_id) {
-      query = query.eq('agent_id', params.agent_id);
+      queryParams.agent_id = params.agent_id;
     }
-
     if (params.carrier_id) {
-      query = query.eq('carrier_id', params.carrier_id);
+      queryParams.carrier_id = params.carrier_id;
     }
-
     if (params.start_date) {
-      query = query.gte('created_at', params.start_date);
+      queryParams.start_date = params.start_date;
     }
-
     if (params.end_date) {
-      query = query.lte('created_at', params.end_date);
+      queryParams.end_date = params.end_date;
     }
 
-    query = query.limit(params.limit || 100);
-    query = query.order('created_at', { ascending: false });
+    const data = await fetchDjangoApi<any>('/api/deals/', accessToken, { params: queryParams });
 
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('Error fetching deals:', error);
-      throw new Error('Failed to fetch deals');
-    }
+    // Handle both paginated response and direct array
+    const deals = Array.isArray(data) ? data : (data.deals || data.results || []);
 
     // Calculate aggregates
-    const totalPremium = data?.reduce((sum, deal) => sum + (Number(deal.annual_premium) || 0), 0) || 0;
-    const avgPremium = data && data.length > 0 ? totalPremium / data.length : 0;
-    const statusCounts = data?.reduce((acc: any, deal) => {
+    const totalPremium = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annual_premium) || 0), 0);
+    const avgPremium = deals.length > 0 ? totalPremium / deals.length : 0;
+    const statusCounts = deals.reduce((acc: any, deal: any) => {
       const status = deal.status_standardized || deal.status || 'unknown';
       acc[status] = (acc[status] || 0) + 1;
       return acc;
-    }, {}) || {};
+    }, {});
 
     // Limit data to prevent token overflow - only return first 20 deals for context
     return {
-      deals: data?.slice(0, 20) || [],
-      count: data?.length || 0,
+      deals: deals.slice(0, 20),
+      count: deals.length,
       summary: {
         total_annual_premium: totalPremium,
         average_premium: avgPremium,
         status_breakdown: statusCounts
       },
-      note: data && data.length > 20 ? `Showing 20 of ${data.length} deals. Summary statistics include all deals.` : undefined
+      note: deals.length > 20 ? `Showing 20 of ${deals.length} deals. Summary statistics include all deals.` : undefined
     };
   } catch (error) {
     console.error('Get deals error:', error);
@@ -73,83 +98,63 @@ export async function getDeals(params: any, agencyId: string) {
 }
 
 // Get agents data
-export async function getAgents(params: any, agencyId: string) {
+export async function getAgents(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
 
-    let query = supabase
-      .from('users')
-      .select(`
-        id,
-        first_name,
-        last_name,
-        email,
-        role,
-        total_prod,
-        total_policies_sold,
-        annual_goal,
-        start_date,
-        status,
-        is_active,
-        upline_id
-      `)
-      .eq('agency_id', agencyId)
-      .neq('role', 'client');
+    // Build query params for Django API
+    const queryParams: Record<string, any> = {
+      limit: params.top_performers ? (params.limit || 10) : (params.limit || 100),
+    };
 
     if (params.agent_id) {
-      query = query.eq('id', params.agent_id);
+      queryParams.agent_id = params.agent_id;
     }
 
-    if (params.top_performers) {
-      query = query
-        .order('total_prod', { ascending: false })
-        .limit(params.limit || 10);
-    } else {
-      query = query
-        .order('total_prod', { ascending: false })
-        .limit(params.limit || 100);
-    }
+    const data = await fetchDjangoApi<any>('/api/agents/', accessToken, { params: queryParams });
 
-    const { data: agents, error } = await query;
-
-    if (error) {
-      console.error('Error fetching agents:', error);
-      throw new Error('Failed to fetch agents');
-    }
+    // Handle response structure
+    const agents = Array.isArray(data) ? data : (data.agents || data.results || []);
 
     // Get downlines if requested
     let agentsWithDownlines = agents;
     if (params.include_downlines && params.agent_id) {
-      const { data: downlines } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, email, total_prod, total_policies_sold')
-        .eq('upline_id', params.agent_id)
-        .eq('agency_id', agencyId);
+      try {
+        const downlineData = await fetchDjangoApi<any>(
+          `/api/agents/${params.agent_id}/downline`,
+          accessToken
+        );
+        const downlines = downlineData.downlines || [];
 
-      agentsWithDownlines = agents?.map(agent => ({
-        ...agent,
-        downlines: agent.id === params.agent_id ? downlines : []
-      }));
+        agentsWithDownlines = agents.map((agent: any) => ({
+          ...agent,
+          downlines: agent.id === params.agent_id ? downlines : []
+        }));
+      } catch {
+        // If downline fetch fails, continue without downlines
+      }
     }
 
     // Calculate summary
-    const totalProduction = agents?.reduce((sum, agent) => sum + (Number(agent.total_prod) || 0), 0) || 0;
-    const totalPolicies = agents?.reduce((sum, agent) => sum + (Number(agent.total_policies_sold) || 0), 0) || 0;
-    const avgProduction = agents && agents.length > 0 ? totalProduction / agents.length : 0;
+    const totalProduction = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_prod) || 0), 0);
+    const totalPolicies = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_policies_sold) || 0), 0);
+    const avgProduction = agents.length > 0 ? totalProduction / agents.length : 0;
 
     // Limit data to prevent token overflow - only return top 25 agents for context
-    const limitedAgents = agentsWithDownlines?.slice(0, 25) || [];
+    const limitedAgents = agentsWithDownlines.slice(0, 25);
 
     return {
       agents: limitedAgents,
-      count: agents?.length || 0,
+      count: agents.length,
       summary: {
         total_production: totalProduction,
         total_policies: totalPolicies,
         average_production: avgProduction,
-        active_agents: agents?.filter(a => a.is_active).length || 0
+        active_agents: agents.filter((a: any) => a.is_active).length
       },
-      note: agents && agents.length > 25 ? `Showing top 25 of ${agents.length} agents. Summary statistics include all agents.` : undefined
+      note: agents.length > 25 ? `Showing top 25 of ${agents.length} agents. Summary statistics include all agents.` : undefined
     };
   } catch (error) {
     console.error('Get agents error:', error);
@@ -158,63 +163,60 @@ export async function getAgents(params: any, agencyId: string) {
 }
 
 // Get conversations data
-export async function getConversationsData(params: any, agencyId: string) {
+export async function getConversationsData(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
 
     const dateRangeDays = params.date_range_days || 30;
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - dateRangeDays);
+    const limit = params.limit || 100;
 
-    let conversationsQuery = supabase
-      .from('conversations')
-      .select(`
-        id,
-        type,
-        last_message_at,
-        is_active,
-        client_phone,
-        sms_opt_in_status,
-        agent:users!conversations_agent_id_fkey(id, first_name, last_name),
-        deal:deals!conversations_deal_id_fkey(id, client_name, policy_number)
-      `)
-      .eq('agency_id', agencyId)
-      .gte('last_message_at', startDate.toISOString());
+    // Call Django API for conversations
+    const queryParams: Record<string, any> = {
+      limit,
+      view_mode: 'all', // Get all conversations for agency
+    };
 
-    if (params.agent_id) {
-      conversationsQuery = conversationsQuery.eq('agent_id', params.agent_id);
+    if (params.search) {
+      queryParams.search = params.search;
     }
 
-    const { data: conversations, error: convError } = await conversationsQuery;
+    const data = await fetchDjangoApi<any>('/api/sms/conversations/', accessToken, { params: queryParams });
 
-    if (convError) {
-      console.error('Error fetching conversations:', convError);
-      throw new Error('Failed to fetch conversations');
-    }
+    // Handle response structure
+    const conversations = data.conversations || data.results || [];
 
-    // Get message counts
+    // Get messages if requested
     let messagesData = null;
-    if (params.include_messages && conversations && conversations.length > 0) {
-      const conversationIds = conversations.map(c => c.id);
+    if (params.include_messages && conversations.length > 0) {
+      // Get messages for first few conversations only to limit token usage
+      const conversationIds = conversations.slice(0, 5).map((c: any) => c.id);
+      const allMessages: any[] = [];
 
-      const { data: messages } = await supabase
-        .from('messages')
-        .select('id, conversation_id, direction, sent_at, body')
-        .in('conversation_id', conversationIds)
-        .gte('sent_at', startDate.toISOString())
-        .order('sent_at', { ascending: false })
-        .limit(100);
-
-      messagesData = messages;
+      for (const convId of conversationIds) {
+        try {
+          const messagesResponse = await fetchDjangoApi<any>(
+            '/api/sms/messages/',
+            accessToken,
+            { params: { conversation_id: convId, limit: 20 } }
+          );
+          const messages = messagesResponse.messages || messagesResponse.results || [];
+          allMessages.push(...messages.slice(0, 10));
+        } catch {
+          // Continue if message fetch fails
+        }
+      }
+      messagesData = allMessages;
     }
 
     // Calculate summary
-    const totalConversations = conversations?.length || 0;
-    const activeConversations = conversations?.filter(c => c.is_active).length || 0;
-    const optedInCount = conversations?.filter(c => c.sms_opt_in_status === 'opted_in').length || 0;
+    const totalConversations = data.total || conversations.length;
+    const activeConversations = conversations.filter((c: any) => c.is_active).length;
+    const optedInCount = conversations.filter((c: any) => c.sms_opt_in_status === 'opted_in').length;
 
     // Limit data to prevent token overflow
-    const limitedConversations = conversations?.slice(0, 15) || [];
+    const limitedConversations = conversations.slice(0, 15);
 
     return {
       conversations: limitedConversations,
@@ -225,7 +227,7 @@ export async function getConversationsData(params: any, agencyId: string) {
         opted_in_clients: optedInCount,
         date_range_days: dateRangeDays
       },
-      note: conversations && conversations.length > 15 ? `Showing 15 of ${conversations.length} conversations.` : undefined
+      note: totalConversations > 15 ? `Showing 15 of ${totalConversations} conversations.` : undefined
     };
   } catch (error) {
     console.error('Get conversations error:', error);
@@ -234,74 +236,61 @@ export async function getConversationsData(params: any, agencyId: string) {
 }
 
 // Get carriers and products
-export async function getCarriersAndProducts(params: any, agencyId: string) {
+export async function getCarriersAndProducts(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
 
-    // Get carriers
-    let carriersQuery = supabase
-      .from('carriers')
-      .select('id, name, display_name, is_active');
+    // Get carriers with products from Django API
+    const data = await fetchDjangoApi<any>('/api/carriers/with-products', accessToken);
 
+    // Handle response - Django returns array of carriers with products
+    const carriersWithProducts = Array.isArray(data) ? data : (data.carriers || []);
+
+    // Filter by carrier_id if specified
+    let filteredCarriers = carriersWithProducts;
     if (params.carrier_id) {
-      carriersQuery = carriersQuery.eq('id', params.carrier_id);
+      filteredCarriers = carriersWithProducts.filter((c: any) => c.id === params.carrier_id);
     }
 
+    // Filter by active_only if specified
     if (params.active_only !== false) {
-      carriersQuery = carriersQuery.eq('is_active', true);
+      filteredCarriers = filteredCarriers.filter((c: any) => c.is_active);
     }
 
-    const { data: carriers, error: carriersError } = await carriersQuery;
+    // Extract carriers (without products for cleaner data)
+    const carriers = filteredCarriers.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      display_name: c.display_name,
+      is_active: c.is_active
+    }));
 
-    if (carriersError) {
-      console.error('Error fetching carriers:', carriersError);
-      throw new Error('Failed to fetch carriers');
-    }
+    // Flatten products from all carriers
+    const products: any[] = [];
+    const productsByCarrier: Record<string, any[]> = {};
 
-    // Get products for the agency
-    let productsQuery = supabase
-      .from('products')
-      .select(`
-        id,
-        name,
-        product_code,
-        is_active,
-        carrier:carriers(id, name, display_name)
-      `)
-      .or(`agency_id.eq.${agencyId},agency_id.is.null`);
+    for (const carrier of filteredCarriers) {
+      const carrierProducts = carrier.products || [];
+      productsByCarrier[carrier.id] = carrierProducts;
 
-    if (params.carrier_id) {
-      productsQuery = productsQuery.eq('carrier_id', params.carrier_id);
-    }
-
-    if (params.active_only !== false) {
-      productsQuery = productsQuery.eq('is_active', true);
-    }
-
-    const { data: products, error: productsError } = await productsQuery;
-
-    if (productsError) {
-      console.error('Error fetching products:', productsError);
-      throw new Error('Failed to fetch products');
-    }
-
-    // Group products by carrier
-    const productsByCarrier = products?.reduce((acc: any, product: any) => {
-      const carrierId = product.carrier?.id;
-      if (!acc[carrierId]) {
-        acc[carrierId] = [];
+      for (const product of carrierProducts) {
+        if (params.active_only !== false && !product.is_active) continue;
+        products.push({
+          ...product,
+          carrier: { id: carrier.id, name: carrier.name, display_name: carrier.display_name }
+        });
       }
-      acc[carrierId].push(product);
-      return acc;
-    }, {}) || {};
+    }
 
     return {
       carriers: carriers,
       products: products,
       products_by_carrier: productsByCarrier,
       summary: {
-        total_carriers: carriers?.length || 0,
-        total_products: products?.length || 0
+        total_carriers: carriers.length,
+        total_products: products.length
       }
     };
   } catch (error) {
@@ -311,97 +300,93 @@ export async function getCarriersAndProducts(params: any, agencyId: string) {
 }
 
 // Get agency summary
-export async function getAgencySummary(params: any, agencyId: string) {
+export async function getAgencySummary(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
 
     // Get date range based on time period
-    let startDate: Date | null = null;
+    let startDate: string | null = null;
     const now = new Date();
 
     switch (params.time_period) {
       case 'current_month':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
         break;
       case 'last_month':
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
         break;
       case 'ytd':
-        startDate = new Date(now.getFullYear(), 0, 1);
+        startDate = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
         break;
       default:
         startDate = null;
     }
 
-    // Get agency info
-    const { data: agency } = await supabase
-      .from('agencies')
-      .select('*')
-      .eq('id', agencyId)
-      .single();
+    // Fetch data from Django APIs in parallel
+    const [agencyData, dashboardData, agentsData, dealsData] = await Promise.all([
+      // Get agency settings
+      fetchDjangoApi<any>(`/api/agencies/${agencyId}/settings`, accessToken).catch(() => null),
 
-    // Get agent count
-    const { count: agentCount } = await supabase
-      .from('users')
-      .select('*', { count: 'exact', head: true })
-      .eq('agency_id', agencyId)
-      .neq('role', 'client')
-      .eq('is_active', true);
+      // Get dashboard summary for production metrics
+      fetchDjangoApi<any>('/api/dashboard/summary/', accessToken).catch(() => null),
 
-    // Get deals with date filter if applicable
-    let dealsQuery = supabase
-      .from('deals')
-      .select('annual_premium, status_standardized, created_at')
-      .eq('agency_id', agencyId);
+      // Get top agents
+      fetchDjangoApi<any>('/api/agents/', accessToken, {
+        params: { limit: 100 }
+      }).catch(() => ({ agents: [] })),
 
-    if (startDate) {
-      dealsQuery = dealsQuery.gte('created_at', startDate.toISOString());
-    }
+      // Get recent deals
+      fetchDjangoApi<any>('/api/deals/', accessToken, {
+        params: {
+          limit: 100,
+          ...(startDate ? { start_date: startDate } : {})
+        }
+      }).catch(() => ({ deals: [] }))
+    ]);
 
-    const { data: deals } = await dealsQuery;
+    // Extract agents
+    const agents = Array.isArray(agentsData) ? agentsData : (agentsData.agents || agentsData.results || []);
+    const activeAgents = agents.filter((a: any) => a.is_active && a.role !== 'client');
+
+    // Extract deals
+    const deals = Array.isArray(dealsData) ? dealsData : (dealsData.deals || dealsData.results || []);
 
     // Calculate metrics
-    const totalProduction = deals?.reduce((sum, deal) => sum + (Number(deal.annual_premium) || 0), 0) || 0;
-    const totalPolicies = deals?.length || 0;
-    const activePolicies = deals?.filter(d => d.status_standardized === 'active').length || 0;
+    const totalProduction = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annual_premium) || 0), 0);
+    const totalPolicies = deals.length;
+    const activePolicies = deals.filter((d: any) => d.status_standardized === 'active').length;
 
-    // Get top agents
-    const { data: topAgents } = await supabase
-      .from('users')
-      .select('id, first_name, last_name, total_prod, total_policies_sold')
-      .eq('agency_id', agencyId)
-      .neq('role', 'client')
-      .eq('is_active', true)
-      .order('total_prod', { ascending: false })
-      .limit(5);
+    // Get top agents by production
+    const topAgents = activeAgents
+      .sort((a: any, b: any) => (Number(b.total_prod) || 0) - (Number(a.total_prod) || 0))
+      .slice(0, 5)
+      .map((a: any) => ({
+        id: a.id,
+        first_name: a.first_name,
+        last_name: a.last_name,
+        total_prod: a.total_prod,
+        total_policies_sold: a.total_policies_sold
+      }));
 
-    // Get recent activity (limit to 5 to reduce token usage)
-    const { data: recentDeals } = await supabase
-      .from('deals')
-      .select(`
-        id,
-        client_name,
-        annual_premium,
-        created_at,
-        status_standardized,
-        agent:users!deals_agent_id_fkey(first_name, last_name)
-      `)
-      .eq('agency_id', agencyId)
-      .order('created_at', { ascending: false })
-      .limit(5);
+    // Get recent deals
+    const recentDeals = deals
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 5);
 
     return {
       agency: {
-        name: agency?.name,
-        display_name: agency?.display_name,
-        code: agency?.code,
-        is_active: agency?.is_active
+        name: agencyData?.name,
+        display_name: agencyData?.display_name,
+        code: agencyData?.code,
+        is_active: agencyData?.is_active
       },
       metrics: {
         total_production: totalProduction,
         total_policies: totalPolicies,
         active_policies: activePolicies,
-        agent_count: agentCount || 0,
+        agent_count: activeAgents.length,
         time_period: params.time_period || 'all'
       },
       top_agents: topAgents,
@@ -415,9 +400,11 @@ export async function getAgencySummary(params: any, agencyId: string) {
 }
 
 // Get comprehensive analytics using the same RPC as the analytics dashboard page
-export async function getPersistencyAnalytics(params: any, agencyId: string) {
+export async function getPersistencyAnalytics(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
 
     // Call Django API for analytics data
     // This provides comprehensive analytics data including:
@@ -425,25 +412,9 @@ export async function getPersistencyAnalytics(params: any, agencyId: string) {
     // - Breakdowns by status, state, age band
     // - Multiple time windows (3m, 6m, 9m, all_time)
     // - Persistency, submitted, and active policy counts
-    let data = null;
-    try {
-      const analyticsResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/analytics/deals?agency_id=${agencyId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!analyticsResponse.ok) {
-        console.error('Error fetching analytics from API');
-        throw new Error('Failed to fetch analytics data');
-      }
-
-      data = await analyticsResponse.json();
-    } catch (error) {
-      console.error('Error fetching analytics:', error);
-      throw new Error('Failed to fetch analytics data');
-    }
+    const data = await fetchDjangoApi<any>('/api/analytics/deals', accessToken, {
+      params: { agency_id: agencyId }
+    });
 
     if (!data || !data.meta || !data.series || data.series.length === 0) {
       return {
@@ -466,9 +437,12 @@ export async function getPersistencyAnalytics(params: any, agencyId: string) {
 }
 
 // Fuzzy search for agents
-export async function searchAgents(params: any, agencyId: string) {
+export async function searchAgents(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
+
     const query = params.query || '';
     const limit = params.limit || 20;
 
@@ -476,63 +450,21 @@ export async function searchAgents(params: any, agencyId: string) {
       return { error: 'Search query must be at least 2 characters long' };
     }
 
-    // Sanitize search query
-    const sanitizedQuery = query.trim().replace(/[%_]/g, '\\$&');
-    const searchWords = sanitizedQuery.split(/\s+/).filter((word: string) => word.length > 0);
-
-    // Build OR conditions
-    const orConditions = [];
-    orConditions.push(`first_name.ilike.%${sanitizedQuery}%`);
-    orConditions.push(`last_name.ilike.%${sanitizedQuery}%`);
-    orConditions.push(`email.ilike.%${sanitizedQuery}%`);
-
-    if (searchWords.length > 1) {
-      for (const word of searchWords) {
-        const sanitizedWord = word.replace(/[%_]/g, '\\$&');
-        orConditions.push(`first_name.ilike.%${sanitizedWord}%`);
-        orConditions.push(`last_name.ilike.%${sanitizedWord}%`);
-        orConditions.push(`email.ilike.%${sanitizedWord}%`);
+    // Call Django fuzzy search API
+    const data = await fetchDjangoApi<any>('/api/search-agents/fuzzy', accessToken, {
+      params: {
+        q: query.trim(),
+        limit,
+        threshold: params.threshold || 0.3
       }
-    }
+    });
 
-    let searchQuery = supabase
-      .from('users')
-      .select('id, first_name, last_name, email, status, total_prod, total_policies_sold')
-      .eq('agency_id', agencyId)
-      .neq('role', 'client')
-      .or(orConditions.join(','))
-      .order('last_name', { ascending: true })
-      .limit(limit);
-
-    const { data: agents, error } = await searchQuery;
-
-    if (error) {
-      console.error('Error searching agents:', error);
-      throw new Error('Failed to search agents');
-    }
-
-    // Filter multi-word searches client-side
-    let filteredAgents = agents || [];
-    if (searchWords.length > 1) {
-      filteredAgents = filteredAgents.filter(agent => {
-        const fullName = `${agent.first_name} ${agent.last_name}`.toLowerCase();
-        const email = agent.email ? agent.email.toLowerCase() : '';
-        const queryLower = sanitizedQuery.toLowerCase();
-
-        if (fullName.includes(queryLower) || email.includes(queryLower)) {
-          return true;
-        }
-
-        return searchWords.every((word: string) => {
-          const wordLower = word.toLowerCase();
-          return fullName.includes(wordLower) || email.includes(wordLower);
-        });
-      });
-    }
+    // Handle response - Django returns array directly or wrapped
+    const agents = Array.isArray(data) ? data : (data.agents || data.results || []);
 
     return {
-      agents: filteredAgents.slice(0, limit),
-      count: filteredAgents.length,
+      agents: agents.slice(0, limit),
+      count: agents.length,
       query: query
     };
   } catch (error) {
@@ -542,9 +474,12 @@ export async function searchAgents(params: any, agencyId: string) {
 }
 
 // Fuzzy search for clients
-export async function searchClients(params: any, agencyId: string) {
+export async function searchClients(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
+
     const query = params.query || '';
     const limit = params.limit || 20;
 
@@ -552,66 +487,21 @@ export async function searchClients(params: any, agencyId: string) {
       return { error: 'Search query must be at least 2 characters long' };
     }
 
-    // Sanitize search query
-    const sanitizedQuery = query.trim().replace(/[%_]/g, '\\$&');
-    const searchWords = sanitizedQuery.split(/\s+/).filter((word: string) => word.length > 0);
-
-    // Build OR conditions
-    const orConditions = [];
-    orConditions.push(`first_name.ilike.%${sanitizedQuery}%`);
-    orConditions.push(`last_name.ilike.%${sanitizedQuery}%`);
-    orConditions.push(`email.ilike.%${sanitizedQuery}%`);
-    orConditions.push(`phone_number.ilike.%${sanitizedQuery}%`);
-
-    if (searchWords.length > 1) {
-      for (const word of searchWords) {
-        const sanitizedWord = word.replace(/[%_]/g, '\\$&');
-        orConditions.push(`first_name.ilike.%${sanitizedWord}%`);
-        orConditions.push(`last_name.ilike.%${sanitizedWord}%`);
-        orConditions.push(`email.ilike.%${sanitizedWord}%`);
-        orConditions.push(`phone_number.ilike.%${sanitizedWord}%`);
+    // Call Django fuzzy search API
+    const data = await fetchDjangoApi<any>('/api/search-clients/fuzzy', accessToken, {
+      params: {
+        q: query.trim(),
+        limit,
+        threshold: params.threshold || 0.3
       }
-    }
+    });
 
-    let searchQuery = supabase
-      .from('users')
-      .select('id, first_name, last_name, email, phone_number, status')
-      .eq('agency_id', agencyId)
-      .eq('role', 'client')
-      .or(orConditions.join(','))
-      .order('last_name', { ascending: true })
-      .limit(limit);
-
-    const { data: clients, error } = await searchQuery;
-
-    if (error) {
-      console.error('Error searching clients:', error);
-      throw new Error('Failed to search clients');
-    }
-
-    // Filter multi-word searches client-side
-    let filteredClients = clients || [];
-    if (searchWords.length > 1) {
-      filteredClients = filteredClients.filter(client => {
-        const fullName = `${client.first_name} ${client.last_name}`.toLowerCase();
-        const email = client.email ? client.email.toLowerCase() : '';
-        const phone = client.phone_number ? client.phone_number.toLowerCase() : '';
-        const queryLower = sanitizedQuery.toLowerCase();
-
-        if (fullName.includes(queryLower) || email.includes(queryLower) || phone.includes(queryLower)) {
-          return true;
-        }
-
-        return searchWords.every((word: string) => {
-          const wordLower = word.toLowerCase();
-          return fullName.includes(wordLower) || email.includes(wordLower) || phone.includes(wordLower);
-        });
-      });
-    }
+    // Handle response
+    const clients = Array.isArray(data) ? data : (data.clients || data.results || []);
 
     return {
-      clients: filteredClients.slice(0, limit),
-      count: filteredClients.length,
+      clients: clients.slice(0, limit),
+      count: clients.length,
       query: query
     };
   } catch (error) {
@@ -621,9 +511,12 @@ export async function searchClients(params: any, agencyId: string) {
 }
 
 // Fuzzy search for policies/deals
-export async function searchPolicies(params: any, agencyId: string) {
+export async function searchPolicies(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
+
     const query = params.query || '';
     const limit = params.limit || 20;
 
@@ -631,38 +524,21 @@ export async function searchPolicies(params: any, agencyId: string) {
       return { error: 'Search query must be at least 2 characters long' };
     }
 
-    // Sanitize search query
-    const sanitizedQuery = query.trim().replace(/[%_]/g, '\\$&');
+    // Call Django fuzzy search API
+    const data = await fetchDjangoApi<any>('/api/search-policies', accessToken, {
+      params: {
+        q: query.trim(),
+        limit,
+        threshold: params.threshold || 0.3
+      }
+    });
 
-    let searchQuery = supabase
-      .from('deals')
-      .select(`
-        id,
-        policy_number,
-        application_number,
-        client_name,
-        client_phone,
-        annual_premium,
-        status,
-        agent:users!deals_agent_id_fkey(id, first_name, last_name),
-        carrier:carriers(id, display_name),
-        product:products(id, name)
-      `)
-      .eq('agency_id', agencyId)
-      .or(`policy_number.ilike.%${sanitizedQuery}%,application_number.ilike.%${sanitizedQuery}%,client_name.ilike.%${sanitizedQuery}%`)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    const { data: deals, error } = await searchQuery;
-
-    if (error) {
-      console.error('Error searching policies:', error);
-      throw new Error('Failed to search policies');
-    }
+    // Handle response
+    const policies = Array.isArray(data) ? data : (data.policies || data.results || []);
 
     return {
-      policies: deals || [],
-      count: deals?.length || 0,
+      policies: policies.slice(0, limit),
+      count: policies.length,
       query: query
     };
   } catch (error) {
@@ -672,89 +548,66 @@ export async function searchPolicies(params: any, agencyId: string) {
 }
 
 // Get agent hierarchy with production metrics
-export async function getAgentHierarchy(params: any, agencyId: string) {
+export async function getAgentHierarchy(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
+
     const agentId = params.agent_id;
 
     if (!agentId) {
       return { error: 'Agent ID is required' };
     }
 
-    // Get the root agent
-    const { data: rootAgent, error: rootError } = await supabase
-      .from('users')
-      .select('id, first_name, last_name, email, total_prod, total_policies_sold, upline_id, status')
-      .eq('id', agentId)
-      .eq('agency_id', agencyId)
-      .single();
+    // Get root agent and downline from Django API
+    const [agentData, downlineData] = await Promise.all([
+      fetchDjangoApi<any>(`/api/agents/${agentId}`, accessToken).catch(() => null),
+      fetchDjangoApi<any>(`/api/agents/${agentId}/downline`, accessToken).catch(() => ({ downlines: [] }))
+    ]);
 
-    if (rootError || !rootAgent) {
+    if (!agentData) {
       return { error: 'Agent not found' };
     }
 
-    // Get complete downline using Django API
-    let downline: { id: string }[] = [];
-    try {
-      const downlineResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/agents/${agentId}/downline`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+    const rootAgent = {
+      id: agentData.id,
+      first_name: agentData.first_name,
+      last_name: agentData.last_name,
+      email: agentData.email,
+      total_prod: agentData.total_prod,
+      total_policies_sold: agentData.total_policies_sold,
+      upline_id: agentData.upline_id,
+      status: agentData.status
+    };
 
-      if (!downlineResponse.ok) {
-        console.error('Error fetching downline from API');
-        return { error: 'Failed to fetch agent hierarchy' };
-      }
+    const downlines = downlineData.downlines || [];
 
-      const downlineData = await downlineResponse.json();
-      downline = downlineData.downlines || [];
-    } catch (downlineError) {
-      console.error('Error fetching downline:', downlineError);
-      return { error: 'Failed to fetch agent hierarchy' };
-    }
-
-    // Get detailed info for all agents in hierarchy
-    const allAgentIds = [agentId, ...((downline as any[])?.map((u: any) => u.id) || [])];
-
-    const { data: allAgents, error: agentsError } = await supabase
-      .from('users')
-      .select('id, first_name, last_name, email, total_prod, total_policies_sold, upline_id, status')
-      .in('id', allAgentIds)
-      .eq('agency_id', agencyId);
-
-    if (agentsError) {
-      console.error('Error fetching agent details:', agentsError);
-      return { error: 'Failed to fetch agent details' };
-    }
+    // Combine root agent with downlines
+    const allAgents = [rootAgent, ...downlines.map((d: any) => ({
+      id: d.id,
+      first_name: d.first_name,
+      last_name: d.last_name,
+      email: d.email,
+      total_prod: d.total_prod || 0,
+      total_policies_sold: d.total_policies_sold || 0,
+      upline_id: d.upline_id,
+      status: d.status
+    }))];
 
     // Calculate aggregate metrics
-    const totalProduction = allAgents?.reduce((sum, agent) => sum + (Number(agent.total_prod) || 0), 0) || 0;
-    const totalPolicies = allAgents?.reduce((sum, agent) => sum + (Number(agent.total_policies_sold) || 0), 0) || 0;
-    const activeAgents = allAgents?.filter(a => a.status === 'active').length || 0;
-
-    // Build hierarchy structure
-    const agentsById = new Map(allAgents?.map(a => [a.id, a]) || []);
-    const childrenMap = new Map<string, any[]>();
-
-    allAgents?.forEach(agent => {
-      if (agent.upline_id && agentsById.has(agent.upline_id)) {
-        if (!childrenMap.has(agent.upline_id)) {
-          childrenMap.set(agent.upline_id, []);
-        }
-        childrenMap.get(agent.upline_id)!.push(agent);
-      }
-    });
+    const totalProduction = allAgents.reduce((sum, agent) => sum + (Number(agent.total_prod) || 0), 0);
+    const totalPolicies = allAgents.reduce((sum, agent) => sum + (Number(agent.total_policies_sold) || 0), 0);
+    const activeAgents = allAgents.filter(a => a.status === 'active').length;
 
     return {
       root_agent: rootAgent,
       hierarchy: {
-        total_agents: allAgents?.length || 0,
+        total_agents: allAgents.length,
         total_production: totalProduction,
         total_policies: totalPolicies,
         active_agents: activeAgents,
-        average_production: allAgents && allAgents.length > 0 ? totalProduction / allAgents.length : 0
+        average_production: allAgents.length > 0 ? totalProduction / allAgents.length : 0
       },
       agents: allAgents,
       note: 'Use compare_hierarchies tool to compare multiple hierarchies'
@@ -766,9 +619,12 @@ export async function getAgentHierarchy(params: any, agencyId: string) {
 }
 
 // Compare multiple agent hierarchies
-export async function compareHierarchies(params: any, agencyId: string) {
+export async function compareHierarchies(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
+
     const agentIds = params.agent_ids || [];
 
     if (!agentIds || agentIds.length === 0) {
@@ -777,7 +633,7 @@ export async function compareHierarchies(params: any, agencyId: string) {
 
     const comparisons = await Promise.all(
       agentIds.map(async (agentId: string) => {
-        const hierarchy = await getAgentHierarchy({ agent_id: agentId }, agencyId);
+        const hierarchy = await getAgentHierarchy({ agent_id: agentId }, agencyId, accessToken);
         if (hierarchy.error) {
           return { agent_id: agentId, error: hierarchy.error };
         }
@@ -822,80 +678,63 @@ export async function compareHierarchies(params: any, agencyId: string) {
 }
 
 // Get deals with cursor pagination
-export async function getDealsPaginated(params: any, agencyId: string, cursor?: { cursor_created_at: string; cursor_id: string }) {
+export async function getDealsPaginated(params: any, agencyId: string, cursor?: { cursor_created_at: string; cursor_id: string }, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
+
     const limit = Math.min(params.limit || 50, 200);
 
-    let query = supabase
-      .from('deals')
-      .select(`
-        id,
-        created_at,
-        policy_number,
-        application_number,
-        client_name,
-        client_phone,
-        policy_effective_date,
-        annual_premium,
-        lead_source,
-        billing_cycle,
-        status,
-        status_standardized,
-        agent:users!deals_agent_id_fkey(id, first_name, last_name, email),
-        carrier:carriers(id, name, display_name),
-        product:products(id, name, product_code)
-      `)
-      .eq('agency_id', agencyId)
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false });
+    // Build query params for Django API
+    const queryParams: Record<string, any> = {
+      limit,
+    };
 
     // Apply filters
     if (params.status && params.status !== 'all') {
-      query = query.eq('status_standardized', params.status);
+      queryParams.status = params.status;
     }
     if (params.agent_id) {
-      query = query.eq('agent_id', params.agent_id);
+      queryParams.agent_id = params.agent_id;
     }
     if (params.carrier_id) {
-      query = query.eq('carrier_id', params.carrier_id);
+      queryParams.carrier_id = params.carrier_id;
     }
     if (params.start_date) {
-      query = query.gte('created_at', params.start_date);
+      queryParams.start_date = params.start_date;
     }
     if (params.end_date) {
-      query = query.lte('created_at', params.end_date);
+      queryParams.end_date = params.end_date;
     }
 
     // Apply cursor pagination
     if (cursor?.cursor_created_at && cursor?.cursor_id) {
-      const iso = new Date(cursor.cursor_created_at).toISOString();
-      query = query.or(`created_at.lt.${iso},and(created_at.eq.${iso},id.lt.${cursor.cursor_id})`);
+      queryParams.cursor_created_at = cursor.cursor_created_at;
+      queryParams.cursor_id = cursor.cursor_id;
     }
 
-    const { data: deals, error } = await query.limit(limit);
+    const data = await fetchDjangoApi<any>('/api/deals/', accessToken, { params: queryParams });
 
-    if (error) {
-      console.error('Error fetching paginated deals:', error);
-      throw new Error('Failed to fetch deals');
-    }
+    // Handle response structure
+    const deals = Array.isArray(data) ? data : (data.deals || data.results || []);
 
     // Calculate aggregates for this page
-    const totalPremium = deals?.reduce((sum, deal) => sum + (Number(deal.annual_premium) || 0), 0) || 0;
-    const statusCounts = deals?.reduce((acc: any, deal) => {
+    const totalPremium = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annual_premium) || 0), 0);
+    const statusCounts = deals.reduce((acc: any, deal: any) => {
       const status = deal.status_standardized || deal.status || 'unknown';
       acc[status] = (acc[status] || 0) + 1;
       return acc;
-    }, {}) || {};
+    }, {});
 
     // Provide next cursor
-    const last = deals && deals.length > 0 ? deals[deals.length - 1] : null;
+    const last = deals.length > 0 ? deals[deals.length - 1] : null;
     const nextCursor = last ? { cursor_created_at: last.created_at, cursor_id: last.id } : null;
 
     return {
-      deals: deals || [],
-      count: deals?.length || 0,
-      has_more: nextCursor !== null,
+      deals: deals,
+      count: deals.length,
+      has_more: deals.length === limit,
       next_cursor: nextCursor,
       page_summary: {
         total_premium: totalPremium,
@@ -909,74 +748,56 @@ export async function getDealsPaginated(params: any, agencyId: string, cursor?: 
 }
 
 // Get agents with cursor pagination
-export async function getAgentsPaginated(params: any, agencyId: string, cursor?: { cursor_id: string }) {
+export async function getAgentsPaginated(params: any, agencyId: string, cursor?: { cursor_id: string }, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
+
     const limit = Math.min(params.limit || 50, 200);
 
-    let query = supabase
-      .from('users')
-      .select(`
-        id,
-        first_name,
-        last_name,
-        email,
-        role,
-        total_prod,
-        total_policies_sold,
-        annual_goal,
-        start_date,
-        status,
-        is_active,
-        upline_id
-      `)
-      .eq('agency_id', agencyId)
-      .neq('role', 'client')
-      .order('total_prod', { ascending: false })
-      .order('id', { ascending: false });
+    // Build query params for Django API
+    const queryParams: Record<string, any> = {
+      limit,
+    };
 
     // Apply filters
     if (params.agent_id) {
-      query = query.eq('id', params.agent_id);
+      queryParams.agent_id = params.agent_id;
     }
     if (params.status) {
-      query = query.eq('status', params.status);
-    }
-    if (params.top_performers) {
-      // For top performers, we don't need cursor
+      queryParams.status = params.status;
     }
 
     // Apply cursor pagination
     if (cursor?.cursor_id) {
-      query = query.lt('id', cursor.cursor_id);
+      queryParams.cursor_id = cursor.cursor_id;
     }
 
-    const { data: agents, error } = await query.limit(limit);
+    const data = await fetchDjangoApi<any>('/api/agents/', accessToken, { params: queryParams });
 
-    if (error) {
-      console.error('Error fetching paginated agents:', error);
-      throw new Error('Failed to fetch agents');
-    }
+    // Handle response structure
+    const agents = Array.isArray(data) ? data : (data.agents || data.results || []);
 
     // Calculate aggregates for this page
-    const totalProduction = agents?.reduce((sum, agent) => sum + (Number(agent.total_prod) || 0), 0) || 0;
-    const totalPolicies = agents?.reduce((sum, agent) => sum + (Number(agent.total_policies_sold) || 0), 0) || 0;
-    const activeAgents = agents?.filter(a => a.is_active).length || 0;
+    const totalProduction = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_prod) || 0), 0);
+    const totalPolicies = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_policies_sold) || 0), 0);
+    const activeAgents = agents.filter((a: any) => a.is_active).length;
 
     // Provide next cursor
-    const last = agents && agents.length > 0 ? agents[agents.length - 1] : null;
+    const last = agents.length > 0 ? agents[agents.length - 1] : null;
     const nextCursor = last ? { cursor_id: last.id } : null;
 
     return {
-      agents: agents || [],
-      count: agents?.length || 0,
-      has_more: nextCursor !== null,
+      agents: agents,
+      count: agents.length,
+      has_more: agents.length === limit,
       next_cursor: nextCursor,
       page_summary: {
         total_production: totalProduction,
         total_policies: totalPolicies,
         active_agents: activeAgents,
-        average_production: agents && agents.length > 0 ? totalProduction / agents.length : 0
+        average_production: agents.length > 0 ? totalProduction / agents.length : 0
       }
     };
   } catch (error) {
@@ -986,99 +807,62 @@ export async function getAgentsPaginated(params: any, agencyId: string, cursor?:
 }
 
 // Smart data summarization based on query intent
-export async function getDataSummary(params: any, agencyId: string) {
+export async function getDataSummary(params: any, agencyId: string, accessToken?: string) {
   try {
-    const supabase = await createServerClient();
+    if (!accessToken) {
+      return { error: 'Authentication required' };
+    }
+
     const dataType = params.data_type || 'deals'; // 'deals', 'agents', 'clients'
-    const summaryType = params.summary_type || 'counts'; // 'counts', 'aggregates', 'breakdown'
 
     if (dataType === 'deals') {
-      let query = supabase
-        .from('deals')
-        .select('annual_premium, status_standardized, created_at, agent_id, carrier_id')
-        .eq('agency_id', agencyId);
+      // Build query params for Django API
+      const queryParams: Record<string, any> = {
+        limit: 1000, // Get sample for summary
+      };
 
-      // Apply filters
       if (params.status && params.status !== 'all') {
-        query = query.eq('status_standardized', params.status);
+        queryParams.status = params.status;
       }
       if (params.agent_id) {
-        query = query.eq('agent_id', params.agent_id);
+        queryParams.agent_id = params.agent_id;
       }
       if (params.carrier_id) {
-        query = query.eq('carrier_id', params.carrier_id);
+        queryParams.carrier_id = params.carrier_id;
       }
       if (params.start_date) {
-        query = query.gte('created_at', params.start_date);
+        queryParams.start_date = params.start_date;
       }
       if (params.end_date) {
-        query = query.lte('created_at', params.end_date);
+        queryParams.end_date = params.end_date;
       }
 
-      // Get count first to check if we need pagination
-      let countQuery = supabase
-        .from('deals')
-        .select('id', { count: 'exact', head: true })
-        .eq('agency_id', agencyId);
+      const data = await fetchDjangoApi<any>('/api/deals/', accessToken, { params: queryParams });
 
-      // Apply same filters to count query
-      if (params.status && params.status !== 'all') {
-        countQuery = countQuery.eq('status_standardized', params.status);
-      }
-      if (params.agent_id) {
-        countQuery = countQuery.eq('agent_id', params.agent_id);
-      }
-      if (params.carrier_id) {
-        countQuery = countQuery.eq('carrier_id', params.carrier_id);
-      }
-      if (params.start_date) {
-        countQuery = countQuery.gte('created_at', params.start_date);
-      }
-      if (params.end_date) {
-        countQuery = countQuery.lte('created_at', params.end_date);
-      }
+      const deals = Array.isArray(data) ? data : (data.deals || data.results || []);
+      const totalCount = data.total || deals.length;
 
-      const { count, error: countError } = await countQuery;
+      const totalPremium = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annual_premium) || 0), 0);
+      const statusCounts = deals.reduce((acc: any, deal: any) => {
+        const status = deal.status_standardized || 'unknown';
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {});
 
-      if (countError) {
-        throw new Error('Failed to get deal count');
-      }
-
-      const totalCount = count || 0;
-
-      // If count is large, return summary only
-      if (totalCount > 1000) {
-        // Get sample for calculations (first 1000)
-        const { data: sampleDeals } = await query.limit(1000);
-
-        const totalPremium = sampleDeals?.reduce((sum, deal) => sum + (Number(deal.annual_premium) || 0), 0) || 0;
-        const statusCounts = sampleDeals?.reduce((acc: any, deal) => {
-          const status = deal.status_standardized || 'unknown';
-          acc[status] = (acc[status] || 0) + 1;
-          return acc;
-        }, {}) || {};
-
+      // If we got a sample, estimate totals
+      if (totalCount > deals.length) {
         return {
           data_type: 'deals',
           total_count: totalCount,
           summary_only: true,
-          note: `Dataset exceeds 1000 entries. Showing summary based on sample. Use get_deals_paginated for detailed data.`,
+          note: `Dataset exceeds ${deals.length} entries. Showing summary based on sample. Use get_deals_paginated for detailed data.`,
           summary: {
-            estimated_total_premium: totalPremium * (totalCount / Math.min(totalCount, 1000)),
+            estimated_total_premium: totalPremium * (totalCount / deals.length),
             status_breakdown: statusCounts,
-            sample_size: Math.min(totalCount, 1000)
+            sample_size: deals.length
           }
         };
       }
-
-      // Get full data for smaller datasets
-      const { data: deals } = await query;
-      const totalPremium = deals?.reduce((sum, deal) => sum + (Number(deal.annual_premium) || 0), 0) || 0;
-      const statusCounts = deals?.reduce((acc: any, deal) => {
-        const status = deal.status_standardized || 'unknown';
-        acc[status] = (acc[status] || 0) + 1;
-        return acc;
-      }, {}) || {};
 
       return {
         data_type: 'deals',
@@ -1091,66 +875,41 @@ export async function getDataSummary(params: any, agencyId: string) {
         }
       };
     } else if (dataType === 'agents') {
-      let query = supabase
-        .from('users')
-        .select('total_prod, total_policies_sold, status, is_active')
-        .eq('agency_id', agencyId)
-        .neq('role', 'client');
+      const queryParams: Record<string, any> = {
+        limit: 1000,
+      };
 
       if (params.agent_id) {
-        query = query.eq('id', params.agent_id);
+        queryParams.agent_id = params.agent_id;
       }
       if (params.status) {
-        query = query.eq('status', params.status);
+        queryParams.status = params.status;
       }
 
-      // Get count first
-      let countQuery = supabase
-        .from('users')
-        .select('id', { count: 'exact', head: true })
-        .eq('agency_id', agencyId)
-        .neq('role', 'client');
+      const data = await fetchDjangoApi<any>('/api/agents/', accessToken, { params: queryParams });
 
-      if (params.agent_id) {
-        countQuery = countQuery.eq('id', params.agent_id);
-      }
-      if (params.status) {
-        countQuery = countQuery.eq('status', params.status);
-      }
+      const agents = Array.isArray(data) ? data : (data.agents || data.results || []);
+      const totalCount = data.total || agents.length;
 
-      const { count, error: countError } = await countQuery;
+      const totalProduction = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_prod) || 0), 0);
+      const totalPolicies = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_policies_sold) || 0), 0);
+      const activeAgents = agents.filter((a: any) => a.is_active).length;
 
-      if (countError) {
-        throw new Error('Failed to get agent count');
-      }
-
-      const totalCount = count || 0;
-
-      if (totalCount > 1000) {
-        const { data: sampleAgents } = await query.limit(1000);
-
-        const totalProduction = sampleAgents?.reduce((sum, agent) => sum + (Number(agent.total_prod) || 0), 0) || 0;
-        const totalPolicies = sampleAgents?.reduce((sum, agent) => sum + (Number(agent.total_policies_sold) || 0), 0) || 0;
-        const activeAgents = sampleAgents?.filter(a => a.is_active).length || 0;
-
+      // If we got a sample, estimate totals
+      if (totalCount > agents.length) {
         return {
           data_type: 'agents',
           total_count: totalCount,
           summary_only: true,
-          note: `Dataset exceeds 1000 entries. Showing summary based on sample. Use get_agents_paginated for detailed data.`,
+          note: `Dataset exceeds ${agents.length} entries. Showing summary based on sample. Use get_agents_paginated for detailed data.`,
           summary: {
-            estimated_total_production: totalProduction * (totalCount / Math.min(totalCount, 1000)),
-            estimated_total_policies: totalPolicies * (totalCount / Math.min(totalCount, 1000)),
+            estimated_total_production: totalProduction * (totalCount / agents.length),
+            estimated_total_policies: totalPolicies * (totalCount / agents.length),
             active_agents: activeAgents,
-            sample_size: Math.min(totalCount, 1000)
+            sample_size: agents.length
           }
         };
       }
-
-      const { data: agents } = await query;
-      const totalProduction = agents?.reduce((sum, agent) => sum + (Number(agent.total_prod) || 0), 0) || 0;
-      const totalPolicies = agents?.reduce((sum, agent) => sum + (Number(agent.total_policies_sold) || 0), 0) || 0;
-      const activeAgents = agents?.filter(a => a.is_active).length || 0;
 
       return {
         data_type: 'agents',
@@ -1173,36 +932,36 @@ export async function getDataSummary(params: any, agencyId: string) {
 }
 
 // Main executor function
-export async function executeToolCall(toolName: string, input: any, agencyId: string) {
+export async function executeToolCall(toolName: string, input: any, agencyId: string, accessToken?: string) {
   switch (toolName) {
     case 'get_deals':
-      return await getDeals(input, agencyId);
+      return await getDeals(input, agencyId, accessToken);
     case 'get_agents':
-      return await getAgents(input, agencyId);
+      return await getAgents(input, agencyId, accessToken);
     case 'get_persistency_analytics':
-      return await getPersistencyAnalytics(input, agencyId);
+      return await getPersistencyAnalytics(input, agencyId, accessToken);
     case 'get_conversations_data':
-      return await getConversationsData(input, agencyId);
+      return await getConversationsData(input, agencyId, accessToken);
     case 'get_carriers_and_products':
-      return await getCarriersAndProducts(input, agencyId);
+      return await getCarriersAndProducts(input, agencyId, accessToken);
     case 'get_agency_summary':
-      return await getAgencySummary(input, agencyId);
+      return await getAgencySummary(input, agencyId, accessToken);
     case 'search_agents':
-      return await searchAgents(input, agencyId);
+      return await searchAgents(input, agencyId, accessToken);
     case 'search_clients':
-      return await searchClients(input, agencyId);
+      return await searchClients(input, agencyId, accessToken);
     case 'search_policies':
-      return await searchPolicies(input, agencyId);
+      return await searchPolicies(input, agencyId, accessToken);
     case 'get_agent_hierarchy':
-      return await getAgentHierarchy(input, agencyId);
+      return await getAgentHierarchy(input, agencyId, accessToken);
     case 'compare_hierarchies':
-      return await compareHierarchies(input, agencyId);
+      return await compareHierarchies(input, agencyId, accessToken);
     case 'get_deals_paginated':
-      return await getDealsPaginated(input, agencyId, input.cursor);
+      return await getDealsPaginated(input, agencyId, input.cursor, accessToken);
     case 'get_agents_paginated':
-      return await getAgentsPaginated(input, agencyId, input.cursor);
+      return await getAgentsPaginated(input, agencyId, input.cursor, accessToken);
     case 'get_data_summary':
-      return await getDataSummary(input, agencyId);
+      return await getDataSummary(input, agencyId, accessToken);
     case 'create_visualization':
       // Return a marker that tells the frontend to create a visualization
       return {

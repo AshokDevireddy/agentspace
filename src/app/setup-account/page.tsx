@@ -10,9 +10,9 @@ import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 import { useTheme } from "next-themes"
 import { useNotification } from '@/contexts/notification-context'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
-import { supabaseRestFetch } from '@/lib/supabase/api'
 import { AUTH_TIMEOUT_MS, getInviteTokens, clearInviteTokens, withTimeout } from '@/lib/auth/constants'
 import { authApi, AuthApiError } from '@/lib/api/auth'
+import { fetchApi } from '@/lib/api-client'
 
 interface UserData {
   id: string
@@ -169,19 +169,23 @@ export default function SetupAccount() {
 
       console.log(`[setup-account] AUTH SUCCESS: Got authUserId at +${Date.now() - startTime}ms`)
 
-      // Fetch user data
+      // Fetch user data via Django API
       console.log(`[setup-account] FETCH USER: Starting at +${Date.now() - startTime}ms`)
       let userRecord: UserData | null = null
 
       if (accessToken) {
-        console.log(`[setup-account] FETCH USER: Using REST API with token`)
-        const { data } = await supabaseRestFetch<UserData[]>(
-          `/rest/v1/users?auth_user_id=eq.${authUserId}&status=eq.onboarding&select=*`,
-          { accessToken }
-        )
-        userRecord = data?.[0] || null
+        console.log(`[setup-account] FETCH USER: Using Django API with token`)
+        try {
+          userRecord = await fetchApi<UserData>(
+            `/api/users/by-auth-id/${authUserId}/onboarding`,
+            accessToken,
+            'Failed to load user data'
+          )
+        } catch {
+          userRecord = null
+        }
       } else {
-        console.log(`[setup-account] FETCH USER: Using Supabase client`)
+        console.log(`[setup-account] FETCH USER: Using Supabase client (fallback)`)
         const { data } = await supabase
           .from('users')
           .select('*')
@@ -210,16 +214,21 @@ export default function SetupAccount() {
         confirmPassword: ""
       })
 
-      // Fetch agency data
+      // Fetch agency data via Django API
       if (userRecord.agency_id) {
         let agencyData: AgencyData | null = null
 
         if (accessToken) {
-          const { data } = await supabaseRestFetch<AgencyData[]>(
-            `/rest/v1/agencies?id=eq.${userRecord.agency_id}&select=display_name,name`,
-            { accessToken }
-          )
-          agencyData = data?.[0] || null
+          try {
+            const data = await fetchApi<{ display_name: string | null; name: string }>(
+              `/api/agencies/${userRecord.agency_id}`,
+              accessToken,
+              'Failed to load agency data'
+            )
+            agencyData = data
+          } catch {
+            agencyData = null
+          }
         } else {
           const { data } = await supabase
             .from('agencies')
@@ -330,14 +339,15 @@ export default function SetupAccount() {
         phone_number: formData.phoneNumber || undefined,
       })
 
-      // Update user status - only clients skip the onboarding wizard
+      // Update user status via Django API - only clients skip the onboarding wizard
       if (userData?.role === 'client') {
-        await supabaseRestFetch(
-          `/rest/v1/users?id=eq.${userData?.id}`,
+        await fetchApi(
+          `/api/user/profile`,
+          accessToken,
+          'Failed to update status',
           {
-            accessToken,
-            method: 'PATCH',
-            body: { status: 'active', updated_at: new Date().toISOString() }
+            method: 'PUT',
+            body: { status: 'active' }
           }
         )
       }

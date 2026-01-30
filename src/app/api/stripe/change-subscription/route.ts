@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createServerClient } from '@/lib/supabase/server';
+import { getBackendUrl } from '@/lib/api-config';
 import { TIER_PRICE_IDS } from '@/lib/subscription-tiers';
 import { stripe } from '@/lib/stripe';
 import Stripe from 'stripe';
@@ -15,28 +16,34 @@ const TIER_HIERARCHY = {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createServerClient();
-    const adminSupabase = createAdminClient();
 
-    // Get current user
+    // Get current user session
     const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
 
-    if (authError || !user) {
+    if (sessionError || !session?.access_token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user details including current subscription
-    const { data: userData, error: userError } = await adminSupabase
-      .from('users')
-      .select('id, subscription_tier, stripe_subscription_id, billing_cycle_end')
-      .eq('auth_user_id', user.id)
-      .single();
+    // Get user details from Django
+    const djangoUrl = `${getBackendUrl()}/api/user/stripe-profile`;
+    const userResponse = await fetch(djangoUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+    });
 
-    if (userError || !userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    if (!userResponse.ok) {
+      if (userResponse.status === 404) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+      return NextResponse.json({ error: 'Failed to get user data' }, { status: userResponse.status });
     }
+
+    const userData = await userResponse.json();
 
     const { newTier, couponCode } = await request.json();
 
@@ -62,14 +69,18 @@ export async function POST(request: NextRequest) {
         cancel_at_period_end: true,
       });
 
-      // Store scheduled tier change
-      await adminSupabase
-        .from('users')
-        .update({
+      // Store scheduled tier change via Django
+      await fetch(`${getBackendUrl()}/api/user/subscription-tier`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
           scheduled_tier_change: 'free',
           scheduled_tier_change_date: userData.billing_cycle_end,
-        })
-        .eq('id', userData.id);
+        }),
+      });
 
       return NextResponse.json({
         success: true,
@@ -90,16 +101,12 @@ export async function POST(request: NextRequest) {
 
     // Handle upgrade from free tier (create new subscription)
     if (currentTier === 'free') {
-      // Get user's Stripe customer ID
-      const { data: userWithStripe } = await adminSupabase
-        .from('users')
-        .select('stripe_customer_id')
-        .eq('id', userData.id)
-        .single();
+      // User's Stripe customer ID is already in userData from stripe-profile
+      const stripeCustomerId = userData.stripe_customer_id;
 
       // Validate and check coupon if provided
       let validatedCoupon = null;
-      if (couponCode && userWithStripe?.stripe_customer_id) {
+      if (couponCode && stripeCustomerId) {
         try {
           const coupon = await stripe.coupons.retrieve(couponCode);
 
@@ -108,20 +115,20 @@ export async function POST(request: NextRequest) {
           }
 
           // Check if customer has already used ANY coupon (one per lifetime)
-          const customer = await stripe.customers.retrieve(userWithStripe.stripe_customer_id);
+          const customer = await stripe.customers.retrieve(stripeCustomerId);
           if (!customer.deleted && customer.metadata?.has_used_coupon === 'true') {
             return NextResponse.json({ error: 'You have already used your one-time promotional discount' }, { status: 400 });
           }
 
           validatedCoupon = couponCode;
-        } catch (error: any) {
+        } catch {
           return NextResponse.json({ error: 'Invalid coupon code' }, { status: 400 });
         }
       }
 
       // Create checkout session for new subscription
-      const sessionConfig: any = {
-        customer: userWithStripe?.stripe_customer_id || undefined,
+      const checkoutConfig: any = {
+        customer: stripeCustomerId || undefined,
         line_items: [
           {
             price: newPriceId,
@@ -140,15 +147,15 @@ export async function POST(request: NextRequest) {
 
       // Apply coupon if validated
       if (validatedCoupon) {
-        sessionConfig.discounts = [{ coupon: validatedCoupon }];
-        sessionConfig.metadata.applied_coupon = validatedCoupon;
+        checkoutConfig.discounts = [{ coupon: validatedCoupon }];
+        checkoutConfig.metadata.applied_coupon = validatedCoupon;
       }
 
-      const session = await stripe.checkout.sessions.create(sessionConfig);
+      const checkoutSession = await stripe.checkout.sessions.create(checkoutConfig);
 
       return NextResponse.json({
         success: true,
-        checkoutUrl: session.url,
+        checkoutUrl: checkoutSession.url,
       });
     }
 
@@ -253,14 +260,8 @@ export async function POST(request: NextRequest) {
       } else if (newTier === 'expert') {
         meteredPrices.push(process.env.STRIPE_EXPERT_METERED_MESSAGES_PRICE_ID!);
 
-        // Check if user is admin - only admins get AI metered price
-        const { data: userDetails } = await adminSupabase
-          .from('users')
-          .select('is_admin')
-          .eq('id', userData.id)
-          .single();
-
-        if (userDetails?.is_admin) {
+        // Check if user is admin - only admins get AI metered price (already have is_admin from userData)
+        if (userData.is_admin) {
           meteredPrices.push(process.env.STRIPE_EXPERT_METERED_AI_PRICE_ID!);
           console.log(`User ${userData.id} is admin - adding AI metered price`);
         } else {
@@ -283,15 +284,19 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Update user tier immediately
-      await adminSupabase
-        .from('users')
-        .update({
+      // Update user tier immediately via Django
+      await fetch(`${getBackendUrl()}/api/user/subscription-tier`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
           subscription_tier: newTier,
           scheduled_tier_change: null,
           scheduled_tier_change_date: null,
-        })
-        .eq('id', userData.id);
+        }),
+      });
 
       return NextResponse.json({
         success: true,
@@ -324,15 +329,19 @@ export async function POST(request: NextRequest) {
       console.log(`Will take effect on: ${effectiveDate} (timestamp: ${periodEnd})`);
       console.log(`⚠️  NOT updating Stripe subscription yet - will update on renewal webhook`);
 
-      // Store scheduled tier change in database ONLY
+      // Store scheduled tier change in database ONLY via Django
       // Do NOT touch Stripe subscription yet
-      await adminSupabase
-        .from('users')
-        .update({
+      await fetch(`${getBackendUrl()}/api/user/subscription-tier`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
           scheduled_tier_change: newTier,
           scheduled_tier_change_date: effectiveDate,
-        })
-        .eq('id', userData.id);
+        }),
+      });
 
       return NextResponse.json({
         success: true,

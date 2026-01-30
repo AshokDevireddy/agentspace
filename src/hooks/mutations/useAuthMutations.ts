@@ -237,20 +237,21 @@ export function useSignIn(options?: {
         throw new Error('Failed to establish session')
       }
 
-      // Fetch agency data for whitelabel validation
-      const agencyPromise = Promise.resolve(
-        supabase
-          .from('agencies')
-          .select('whitelabel_domain')
-          .eq('id', data.user.agency_id)
-          .single()
+      // Fetch agency whitelabel data via Django API
+      const agencyResponse = await withAuthTimeout(
+        fetch(`/api/agencies/${data.user.agency_id}/whitelabel`, {
+          headers: {
+            'Authorization': `Bearer ${data.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        })
       )
 
-      const { data: agencyData, error: agencyError } = await withAuthTimeout(agencyPromise)
-
-      if (agencyError || !agencyData) {
+      if (!agencyResponse.ok) {
         throw new Error('Agency not found')
       }
+
+      const agencyData = await agencyResponse.json()
 
       return {
         user: {

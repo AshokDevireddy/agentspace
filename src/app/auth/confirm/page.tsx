@@ -4,8 +4,8 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
-import { supabaseRestFetch } from '@/lib/supabase/api'
 import { REDIRECT_DELAY_MS, storeInviteTokens, captureHashTokens, withTimeout, type HashTokens } from '@/lib/auth/constants'
+import { fetchApi } from '@/lib/api-client'
 
 interface UserRecord {
   id: string
@@ -137,11 +137,15 @@ export default function ConfirmSession() {
 
   const fetchUserRecord = async (authUserId: string, accessToken?: string): Promise<UserRecord | null> => {
     if (accessToken) {
-      const { data } = await supabaseRestFetch<UserRecord[]>(
-        `/rest/v1/users?auth_user_id=eq.${authUserId}&select=id,role,status`,
-        { accessToken }
-      )
-      return data?.[0] || null
+      try {
+        return await fetchApi<UserRecord>(
+          `/api/users/by-auth-id/${authUserId}`,
+          accessToken,
+          'Failed to fetch user'
+        )
+      } catch {
+        return null
+      }
     }
 
     const { data } = await supabase
@@ -154,16 +158,21 @@ export default function ConfirmSession() {
   }
 
   const handleInvitedUser = async (user: UserRecord, accessToken?: string) => {
-    // Update status to onboarding
+    // Update status to onboarding via Django API
     if (accessToken) {
-      await supabaseRestFetch(
-        `/rest/v1/users?id=eq.${user.id}`,
-        {
+      try {
+        await fetchApi(
+          `/api/user/profile`,
           accessToken,
-          method: 'PATCH',
-          body: { status: 'onboarding', updated_at: new Date().toISOString() }
-        }
-      )
+          'Failed to update status',
+          {
+            method: 'PUT',
+            body: { status: 'onboarding' }
+          }
+        )
+      } catch (err) {
+        console.error('Failed to update user status:', err)
+      }
     } else {
       await supabase
         .from('users')

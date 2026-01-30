@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { getBackendUrl } from '@/lib/api-config';
 import { stripe } from '@/lib/stripe';
 import { getTierFromPriceId } from '@/lib/subscription-tiers';
 
@@ -7,10 +8,10 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createServerClient();
 
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Get authenticated user session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-    if (authError || !user) {
+    if (sessionError || !session?.access_token) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -30,23 +31,33 @@ export async function POST(request: NextRequest) {
     // Get tier from price ID
     const tier = getTierFromPriceId(priceId);
 
-    // Check if user is trying to purchase Expert tier
-    if (tier === 'expert') {
-      // Verify user is admin
-      const { data: userCheckData, error: userCheckError } = await supabase
-        .from('users')
-        .select('is_admin, role')
-        .eq('auth_user_id', user.id)
-        .single();
+    // Get user Stripe data from Django
+    const djangoUrl = `${getBackendUrl()}/api/user/stripe-profile`;
+    const userResponse = await fetch(djangoUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+    });
 
-      if (userCheckError || !userCheckData) {
+    if (!userResponse.ok) {
+      if (userResponse.status === 404) {
         return NextResponse.json(
-          { error: 'Failed to verify user permissions' },
-          { status: 500 }
+          { error: 'User not found' },
+          { status: 404 }
         );
       }
+      return NextResponse.json(
+        { error: 'Failed to get user data' },
+        { status: userResponse.status }
+      );
+    }
 
-      const isAdmin = userCheckData.role === 'admin';
+    const userData = await userResponse.json();
+
+    // Check if user is trying to purchase Expert tier
+    if (tier === 'expert') {
+      const isAdmin = userData.role === 'admin';
 
       if (!isAdmin) {
         return NextResponse.json(
@@ -54,20 +65,6 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         );
       }
-    }
-
-    // Get user data from database
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('id, email, first_name, last_name, stripe_customer_id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (userError || !userData) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
     }
 
     let customerId = userData.stripe_customer_id;
@@ -79,17 +76,25 @@ export async function POST(request: NextRequest) {
         name: `${userData.first_name} ${userData.last_name}`,
         metadata: {
           supabase_user_id: userData.id,
-          auth_user_id: user.id,
+          auth_user_id: session.user.id,
         },
       });
 
       customerId = customer.id;
 
-      // Save customer ID to database
-      await supabase
-        .from('users')
-        .update({ stripe_customer_id: customerId })
-        .eq('id', userData.id);
+      // Save customer ID to Django
+      const updateResponse = await fetch(`${getBackendUrl()}/api/user/stripe-customer-id`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ stripe_customer_id: customerId }),
+      });
+
+      if (!updateResponse.ok) {
+        console.error('Failed to save Stripe customer ID');
+      }
     }
 
     // Validate and check coupon if provided
@@ -115,7 +120,7 @@ export async function POST(request: NextRequest) {
         }
 
         validatedCoupon = couponCode;
-      } catch (error: any) {
+      } catch {
         return NextResponse.json(
           { error: 'Invalid coupon code' },
           { status: 400 }
@@ -157,9 +162,9 @@ export async function POST(request: NextRequest) {
       sessionConfig.metadata.applied_coupon = validatedCoupon;
     }
 
-    const session = await stripe.checkout.sessions.create(sessionConfig);
+    const stripeSession = await stripe.checkout.sessions.create(sessionConfig);
 
-    return NextResponse.json({ sessionId: session.id, url: session.url });
+    return NextResponse.json({ sessionId: stripeSession.id, url: stripeSession.url });
   } catch (error: unknown) {
     console.error('Error creating checkout session:', error);
     return NextResponse.json(

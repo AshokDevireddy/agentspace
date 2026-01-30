@@ -283,6 +283,7 @@ export async function POST(req: NextRequest) {
       billing_weekday,
       billing_cycle,
       lead_source,
+      team,
       status,
       notes,
       submission_date,
@@ -332,7 +333,8 @@ export async function POST(req: NextRequest) {
         billing_weekday: billing_weekday || existingDeal.billing_weekday,
         billing_cycle: billing_cycle || existingDeal.billing_cycle,
         lead_source: lead_source || existingDeal.lead_source,
-        notes: notes || existingDeal.notes,
+        team: team !== undefined ? team : existingDeal.team,
+        notes: notes !== undefined ? notes : existingDeal.notes,
         // Update timestamp
         updated_at: new Date().toISOString(),
       } as any;
@@ -640,6 +642,7 @@ export async function POST(req: NextRequest) {
         billing_weekday,
         billing_cycle,
         lead_source,
+        team: team || null,
         status: status || "Active", // Default status is 'active' for newly posted deals
         notes,
         submission_date,

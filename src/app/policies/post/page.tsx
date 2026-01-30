@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { LeadSourceInput } from "@/components/ui/lead-source-input"
 import { useAuth } from "@/providers/AuthProvider"
@@ -28,6 +29,8 @@ const initialFormData = {
   monthlyPremium: "",
   billingCycle: "",
   leadSource: "",
+  team: "",
+  notes: "",
   clientName: "",
   clientEmail: "",
   clientPhone: "",
@@ -193,10 +196,10 @@ export default function PostDeal() {
       const agencyIdVal = currentUser.agency_id as string
       const isAdminUser = Boolean(currentUser.is_admin || currentUser.role === 'admin')
 
-      // Load agency's lead sources and deactivated_post_a_deal flag
+      // Load agency's lead sources, teams, and deactivated_post_a_deal flag
       const { data: agencyData } = await supabase
         .from('agencies')
-        .select('lead_sources, deactivated_post_a_deal')
+        .select('lead_sources, teams, deactivated_post_a_deal')
         .eq('id', agencyIdVal)
         .single()
 
@@ -204,6 +207,13 @@ export default function PostDeal() {
         ? agencyData.lead_sources.map((source: string) => ({
             value: source,
             label: source
+          }))
+        : []
+
+      const teamsOptions = agencyData?.teams && Array.isArray(agencyData.teams) && agencyData.teams.length > 0
+        ? agencyData.teams.map((team: string) => ({
+            value: team,
+            label: team
           }))
         : []
 
@@ -265,6 +275,7 @@ export default function PostDeal() {
         agencyId: agencyIdVal,
         isAdminUser,
         leadSourceOptions,
+        teamsOptions,
         carriersOptions,
         userFirstName: currentUser.first_name,
         userLastName: currentUser.last_name,
@@ -289,6 +300,7 @@ export default function PostDeal() {
   const agencyId = agencyData?.agencyId ?? null
   const isAdminUser = agencyData?.isAdminUser ?? false
   const leadSourceOptions = agencyData?.leadSourceOptions ?? []
+  const teamsOptions = agencyData?.teamsOptions ?? []
   const carriersOptions = agencyData?.carriersOptions ?? []
   const userFirstName = agencyData?.userFirstName ?? ''
   const userLastName = agencyData?.userLastName ?? ''
@@ -583,6 +595,8 @@ export default function PostDeal() {
         billing_weekday: formData.ssnBenefit === "yes" ? formData.billingWeekday : null,
         billing_cycle: formData.billingCycle || null,
         lead_source: formData.leadSource || null,
+        team: formData.team || null,
+        notes: formData.notes || null,
         submission_date: new Date().toISOString().split('T')[0],
         beneficiaries: normalizedBeneficiaries,
       }
@@ -1328,6 +1342,37 @@ export default function PostDeal() {
                       Type a new lead source to create it automatically
                     </p>
                   </div>
+
+                  {/* Team - Only show if teams exist */}
+                  {teamsOptions.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-foreground">
+                        Team
+                      </label>
+                      <SimpleSearchableSelect
+                        options={teamsOptions}
+                        value={formData.team}
+                        onValueChange={(value) => handleInputChange("team", value)}
+                        placeholder="Select team..."
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Notes */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-foreground">
+                    Notes
+                  </label>
+                  <Textarea
+                    value={formData.notes}
+                    onChange={(e) => handleInputChange("notes", e.target.value)}
+                    placeholder="Enter any additional notes about this policy..."
+                    className="min-h-[100px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Optional: Add any additional information or notes about this policy
+                  </p>
                 </div>
               </div>
             )}
@@ -1571,6 +1616,16 @@ export default function PostDeal() {
                     <div>
                       <span className="text-muted-foreground">Lead Source:</span>
                       <p className="font-medium text-foreground mt-1">{formData.leadSource || 'N/A'}</p>
+                    </div>
+                    {teamsOptions.length > 0 && (
+                      <div>
+                        <span className="text-muted-foreground">Team:</span>
+                        <p className="font-medium text-foreground mt-1">{formData.team || 'N/A'}</p>
+                      </div>
+                    )}
+                    <div className="md:col-span-2">
+                      <span className="text-muted-foreground">Notes:</span>
+                      <p className="font-medium text-foreground mt-1 whitespace-pre-wrap">{formData.notes || 'N/A'}</p>
                     </div>
                   </div>
                 </div>

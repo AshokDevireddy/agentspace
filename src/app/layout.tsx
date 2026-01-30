@@ -11,7 +11,6 @@ import { TourProvider } from "@/contexts/onboarding-tour-context";
 import ClientLayout from "./client-layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { headers } from "next/headers";
-import { createServerClient } from "@/lib/supabase/server";
 import { isWhiteLabelDomain } from "@/lib/whitelabel";
 import { getApiBaseUrl, authEndpoints } from "@/lib/api-config";
 import { getSession } from "@/lib/session";
@@ -39,20 +38,24 @@ export async function generateMetadata(): Promise<Metadata> {
   let title = "AgentSpace - Insurance Agency Management";
   let description = "Manage your insurance agency commissions and payouts";
 
-  // If white-label, try to fetch agency branding
-  // Note: This still uses Supabase for metadata since it's before auth
+  // If white-label, try to fetch agency branding from Django (public endpoint)
   if (isWhiteLabel) {
     try {
-      const supabase = await createServerClient();
-      const { data: agency } = await supabase
-        .from("agencies")
-        .select("display_name")
-        .eq("whitelabel_domain", hostname)
-        .single();
+      const apiUrl = getApiBaseUrl();
+      const response = await fetch(
+        `${apiUrl}/api/agencies/by-domain?domain=${encodeURIComponent(hostname)}`,
+        {
+          cache: 'force-cache',
+          next: { revalidate: 3600 }, // Cache for 1 hour
+        }
+      );
 
-      if (agency?.display_name) {
-        title = `${agency.display_name} - Insurance Agency Management`;
-        description = `Manage your ${agency.display_name} insurance agency policies and agents`;
+      if (response.ok) {
+        const agency = await response.json();
+        if (agency?.display_name) {
+          title = `${agency.display_name} - Insurance Agency Management`;
+          description = `Manage your ${agency.display_name} insurance agency policies and agents`;
+        }
       }
     } catch (error) {
       console.error("Error fetching agency branding for metadata:", error);

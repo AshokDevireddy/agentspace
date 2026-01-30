@@ -23,7 +23,7 @@ import {
   DollarSign,
   ClipboardCheck
 } from "lucide-react"
-import { createClient } from '@/lib/supabase/client'
+import { createClient } from '@/lib/supabase/client'  // Keep for realtime subscriptions only
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useUpdateAgencyColor } from '@/hooks/mutations/useAgencyMutations'
@@ -86,20 +86,30 @@ export default function Navigation() {
   const subscriptionTier = user?.subscription_tier || 'free'
   const agencyId = user?.agency_id || null
 
-  // Fetch agency branding with TanStack Query
+  // Fetch agency branding with TanStack Query via Django API
   const { data: agencyData, isLoading: isLoadingAgency } = useQuery({
     queryKey: queryKeys.agencyBranding(agencyId),
     queryFn: async () => {
       if (!agencyId) return null
 
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('agencies')
-        .select('display_name, name, logo_url, primary_color, deactivated_post_a_deal')
-        .eq('id', agencyId)
-        .maybeSingle()
+      const response = await fetch(`/api/agencies/${agencyId}/settings`, {
+        credentials: 'include',
+      })
 
-      return data
+      if (!response.ok) {
+        console.error('Error fetching agency branding:', response.status)
+        return null
+      }
+
+      const data = await response.json()
+      // Map snake_case from Django to expected format
+      return {
+        display_name: data.display_name,
+        name: data.name,
+        logo_url: data.logo_url,
+        primary_color: data.primary_color,
+        deactivated_post_a_deal: data.deactivated_post_a_deal,
+      }
     },
     enabled: !!agencyId,
     staleTime: 1000 * 60 * 5, // 5 minutes

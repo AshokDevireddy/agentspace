@@ -1,9 +1,10 @@
-import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest } from 'next/server';
 import { executeToolCall } from '@/lib/ai-tools';
 import { getTierLimits } from '@/lib/subscription-tiers';
 import { reportAIUsage, getMeteredSubscriptionItems } from '@/lib/stripe-usage';
+import { getAccessToken } from '@/lib/session';
+import { getApiBaseUrl } from '@/lib/api-config';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -461,39 +462,46 @@ function sanitizeToolResult(toolName: string, result: any) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient();
+    // Get access token from session
+    const accessToken = await getAccessToken();
 
-    // Get current session (includes access_token for Django API calls)
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
+    if (!accessToken) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    const user = session.user;
-    const accessToken = session.access_token;
+    // Fetch user data from Django AI usage endpoint
+    const apiUrl = getApiBaseUrl();
+    const usageResponse = await fetch(`${apiUrl}/api/ai/usage`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      cache: 'no-store',
+    });
 
-    // AI Mode requires BOTH Expert tier AND admin status
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('id, is_admin, role, agency_id, subscription_tier, ai_requests_count, ai_requests_reset_date, stripe_subscription_id, billing_cycle_end')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (userError || !userData) {
+    if (!usageResponse.ok) {
+      if (usageResponse.status === 401) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
       return new Response(JSON.stringify({ error: 'User not found' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // Check if user is admin
+    const userData = await usageResponse.json();
+
+    // Check if user is admin (Django returns snake_case)
     const isAdmin = userData.role === 'admin' || userData.is_admin === true;
 
-    // Check if user has Expert tier
+    // Check if user has Expert tier (Django returns snake_case)
     const hasExpertTier = userData.subscription_tier === 'expert';
 
     // AI Mode requires BOTH conditions
@@ -535,13 +543,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (shouldReset) {
-      await supabase
-        .from('users')
-        .update({
-          ai_requests_count: 0,
-          ai_requests_reset_date: now.toISOString()
-        })
-        .eq('id', userData.id);
+      // Reset counter via Django endpoint
+      await fetch(`${apiUrl}/api/ai/usage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ action: 'reset' }),
+      });
       aiRequestsCount = 0;
       console.log(`✅ Reset AI request counter for user ${userData.id} - new billing cycle started`);
     }
@@ -759,14 +769,15 @@ WHEN TO USE EACH TOOL:
 
 Remember: Keep it clean, structured, and easy to scan. Only provide what was asked for - no extra visualizations or tables.`;
 
-    // Increment AI request count
-    await supabase
-      .from('users')
-      .update({
-        ai_requests_count: aiRequestsCount + 1,
-        ai_requests_reset_date: userData.ai_requests_reset_date || new Date().toISOString()
-      })
-      .eq('id', userData.id);
+    // Increment AI request count via Django endpoint
+    await fetch(`${apiUrl}/api/ai/usage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ action: 'increment' }),
+    });
 
     // If user has exceeded their tier limit, report usage to Stripe for metered billing
     if (isOverLimit && userData.stripe_subscription_id) {

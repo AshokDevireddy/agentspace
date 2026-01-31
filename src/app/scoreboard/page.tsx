@@ -106,21 +106,36 @@ export default function Scoreboard() {
     switch (selectedTimeframe) {
       case 'this_week': {
         // Monday to Sunday week
-        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
-        const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek
+        // Calculate days from today to Monday (0=Sunday, 1=Monday, ..., 6=Saturday)
+        // If today is Sunday (0), go back 6 days to get Monday
+        // Otherwise, go back (dayOfWeek - 1) days to get Monday
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
         startDate = new Date(today)
-        startDate.setDate(today.getDate() - daysToMonday)
+        startDate.setDate(today.getDate() - daysFromMonday)
+        startDate.setHours(0, 0, 0, 0)
+        // Calculate days from today to Sunday
+        // If today is Sunday (0), it's 0 days away
+        // Otherwise, Sunday is (7 - dayOfWeek) days away
+        const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek
         endDate = new Date(today)
         endDate.setDate(today.getDate() + daysToSunday)
+        endDate.setHours(23, 59, 59, 999)
         break
       }
       case 'last_week': {
         // Last Monday to Sunday week
-        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
-        endDate = new Date(today)
-        endDate.setDate(today.getDate() - daysToMonday - 1) // Previous Sunday
-        startDate = new Date(endDate)
-        startDate.setDate(endDate.getDate() - 6) // Previous Monday
+        // Calculate this week's Monday first
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+        const thisWeekMonday = new Date(today)
+        thisWeekMonday.setDate(today.getDate() - daysFromMonday)
+        // Last week's Monday is 7 days before this week's Monday
+        startDate = new Date(thisWeekMonday)
+        startDate.setDate(thisWeekMonday.getDate() - 7)
+        startDate.setHours(0, 0, 0, 0)
+        // Last week's Sunday is 6 days after last week's Monday
+        endDate = new Date(startDate)
+        endDate.setDate(startDate.getDate() + 6)
+        endDate.setHours(23, 59, 59, 999)
         break
       }
       case 'past_7_days':
@@ -165,24 +180,34 @@ export default function Scoreboard() {
         }
       default: {
         // Monday to Sunday week
-        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
         const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek
         startDate = new Date(today)
-        startDate.setDate(today.getDate() - daysToMonday)
+        startDate.setDate(today.getDate() - daysFromMonday)
+        startDate.setHours(0, 0, 0, 0)
         endDate = new Date(today)
         endDate.setDate(today.getDate() + daysToSunday)
+        endDate.setHours(23, 59, 59, 999)
         break
       }
+    }
+
+    // Format dates in local timezone to avoid UTC conversion issues
+    const formatLocalDate = (date: Date): string => {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
     }
 
     // Use agency default start date if available and not null, but only when submitted filter is true
     const finalStartDate = (submittedFilter === 'submitted' && defaultScoreboardStartDate) 
       ? defaultScoreboardStartDate 
-      : startDate.toISOString().split('T')[0]
+      : formatLocalDate(startDate)
 
     return {
       startDate: finalStartDate,
-      endDate: endDate.toISOString().split('T')[0]
+      endDate: formatLocalDate(endDate)
     }
   }, [clientDate, customStartDate, customEndDate, defaultScoreboardStartDate, submittedFilter])
 

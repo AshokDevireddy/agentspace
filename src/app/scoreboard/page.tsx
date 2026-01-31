@@ -105,17 +105,22 @@ export default function Scoreboard() {
 
     switch (selectedTimeframe) {
       case 'this_week': {
+        // Monday to Sunday week
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+        const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek
         startDate = new Date(today)
-        startDate.setDate(today.getDate() - dayOfWeek)
+        startDate.setDate(today.getDate() - daysToMonday)
         endDate = new Date(today)
-        endDate.setDate(today.getDate() + (6 - dayOfWeek))
+        endDate.setDate(today.getDate() + daysToSunday)
         break
       }
       case 'last_week': {
+        // Last Monday to Sunday week
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
         endDate = new Date(today)
-        endDate.setDate(today.getDate() - dayOfWeek - 1)
+        endDate.setDate(today.getDate() - daysToMonday - 1) // Previous Sunday
         startDate = new Date(endDate)
-        startDate.setDate(endDate.getDate() - 6)
+        startDate.setDate(endDate.getDate() - 6) // Previous Monday
         break
       }
       case 'past_7_days':
@@ -159,10 +164,13 @@ export default function Scoreboard() {
           endDate: customEndDate || clientDate.isoDate
         }
       default: {
+        // Monday to Sunday week
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+        const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek
         startDate = new Date(today)
-        startDate.setDate(today.getDate() - dayOfWeek)
+        startDate.setDate(today.getDate() - daysToMonday)
         endDate = new Date(today)
-        endDate.setDate(today.getDate() + (6 - dayOfWeek))
+        endDate.setDate(today.getDate() + daysToSunday)
         break
       }
     }

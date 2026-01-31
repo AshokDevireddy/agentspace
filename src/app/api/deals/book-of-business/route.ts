@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
       const parseAndFormatDate = (
         dateValue: string | null | undefined,
       ): string => {
-        if (!dateValue) return "N/A";
+        if (!dateValue) return "Unknown";
 
         // Fix timezone shift for YYYY-MM-DD dates by adding "T00:00:00"
         const safeDateString = dateValue.length === 10
@@ -127,10 +127,10 @@ export async function GET(req: NextRequest) {
           : dateValue;
 
         const date = new Date(safeDateString);
-        if (isNaN(date.getTime())) return "N/A";
+        if (isNaN(date.getTime())) return "Unknown";
 
         const year = date.getFullYear();
-        if (year < 2000) return "N/A";
+        if (year < 2000) return "Unknown";
 
         // Return in MM/DD/YYYY format
         return date.toLocaleDateString("en-US", {
@@ -161,6 +161,7 @@ export async function GET(req: NextRequest) {
         id: deal.id,
         carrierId: deal.carrier_id || "",
         date: parseAndFormatDate(dateToUse),
+        submissionDate: parseAndFormatDate(deal.submission_date),
         agent: deal.agent_last_name && deal.agent_first_name
           ? `${deal.agent_first_name.trim()} ${deal.agent_last_name.trim()}`
           : deal.agent_first_name

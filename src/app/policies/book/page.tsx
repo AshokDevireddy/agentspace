@@ -28,6 +28,7 @@ interface Deal {
   id: string
   carrierId: string
   date: string
+  submissionDate: string
   agent: string
   carrier: string
   product: string
@@ -871,7 +872,8 @@ export default function BookOfBusiness() {
           <table className="jira-table min-w-full">
             <thead>
               <tr>
-                <th>Date</th>
+                <th>Submission Date</th>
+                <th>Effective Date</th>
                 <th>Agent</th>
                 <th>Carrier / Product</th>
                 <th>Policy / App #</th>
@@ -886,6 +888,7 @@ export default function BookOfBusiness() {
                 // Skeleton loaders for table rows
                 Array.from({ length: 10 }).map((_, index) => (
                   <tr key={index} className="animate-pulse">
+                    <td><div className="h-4 w-20 bg-muted rounded" /></td>
                     <td><div className="h-4 w-20 bg-muted rounded" /></td>
                     <td><div className="h-4 w-24 bg-muted rounded" /></td>
                     <td>
@@ -919,13 +922,13 @@ export default function BookOfBusiness() {
                 ))
               ) : error ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-destructive">
+                  <td colSpan={9} className="py-8 text-center text-destructive">
                     Error: {error}
                   </td>
                 </tr>
               ) : deals.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={9} className="py-8 text-center text-muted-foreground">
                     No deals found matching your criteria
                   </td>
                 </tr>
@@ -936,7 +939,8 @@ export default function BookOfBusiness() {
                       className="cursor-pointer hover:bg-accent/50 transition-colors"
                       onClick={() => handleRowClick(deal)}
                     >
-                        <td className="whitespace-nowrap">{deal.date}</td>
+                        <td className="whitespace-nowrap">{deal.submissionDate}</td>
+                        <td className="whitespace-nowrap">{deal.effectiveDate}</td>
                         <td className="whitespace-nowrap">{deal.agent}</td>
                         <td>
                           <div className="flex flex-col gap-0.5">

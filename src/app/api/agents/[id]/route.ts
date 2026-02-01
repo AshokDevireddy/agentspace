@@ -159,7 +159,7 @@ export async function GET(
 
     const formattedAgent = {
       id: agent.id,
-      name: `${agent.last_name}, ${agent.first_name}`,
+      name: [agent.last_name, agent.first_name].filter(Boolean).join(', '),
       email: agent.email || null,
       phone_number: agent.phone_number || null,
       role: agent.role || null,

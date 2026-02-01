@@ -207,10 +207,10 @@ export default function PostDeal() {
       const agencyIdVal = currentUser.agency_id as string
       const isAdminUser = Boolean(currentUser.is_admin || currentUser.role === 'admin')
 
-      // Load agency's lead sources, teams, and deactivated_post_a_deal flag
+      // Load agency's lead sources, teams, deactivated_post_a_deal, and beneficiaries_required flags
       const { data: agencyData } = await supabase
         .from('agencies')
-        .select('lead_sources, teams, deactivated_post_a_deal')
+        .select('lead_sources, teams, deactivated_post_a_deal, beneficiaries_required')
         .eq('id', agencyIdVal)
         .single()
 
@@ -290,7 +290,8 @@ export default function PostDeal() {
         carriersOptions,
         userFirstName: currentUser.first_name,
         userLastName: currentUser.last_name,
-        deactivatedPostADeal: agencyData?.deactivated_post_a_deal || false
+        deactivatedPostADeal: agencyData?.deactivated_post_a_deal || false,
+        beneficiariesRequired: agencyData?.beneficiaries_required || false
       }
 
       console.log('[PostDeal AgencyQuery] Query complete, returning:', {
@@ -316,6 +317,7 @@ export default function PostDeal() {
   const userFirstName = agencyData?.userFirstName ?? ''
   const userLastName = agencyData?.userLastName ?? ''
   const deactivatedPostADeal = agencyData?.deactivatedPostADeal ?? false
+  const beneficiariesRequired = agencyData?.beneficiariesRequired ?? false
 
   // Query: Load products when carrier changes
   const { data: productsOptions = [], isFetching: isProductsFetching } = useQuery({
@@ -987,22 +989,40 @@ export default function PostDeal() {
         return false
       }
 
-      // Beneficiary validation - at least one beneficiary is required
-      if (beneficiaries.length === 0) {
-        setError("Please add at least one beneficiary.")
-        return false
-      }
-
-      // Validate that all beneficiaries have both name and relationship
-      for (let i = 0; i < beneficiaries.length; i++) {
-        const b = beneficiaries[i]
-        if (!b.name.trim()) {
-          setError(`Please enter a name for Beneficiary ${i + 1}.`)
+      // Beneficiary validation - only required if agency has beneficiaries_required set to true
+      if (beneficiariesRequired) {
+        if (beneficiaries.length === 0) {
+          setError("Please add at least one beneficiary.")
           return false
         }
-        if (!b.relationship.trim()) {
-          setError(`Please enter a relationship for Beneficiary ${i + 1}.`)
-          return false
+
+        // Validate that all beneficiaries have both name and relationship
+        for (let i = 0; i < beneficiaries.length; i++) {
+          const b = beneficiaries[i]
+          if (!b.name.trim()) {
+            setError(`Please enter a name for Beneficiary ${i + 1}.`)
+            return false
+          }
+          if (!b.relationship.trim()) {
+            setError(`Please enter a relationship for Beneficiary ${i + 1}.`)
+            return false
+          }
+        }
+      } else {
+        // If beneficiaries are not required but some are added, validate they have both fields
+        for (let i = 0; i < beneficiaries.length; i++) {
+          const b = beneficiaries[i]
+          // Only validate if at least one field is filled
+          if (b.name.trim() || b.relationship.trim()) {
+            if (!b.name.trim()) {
+              setError(`Please enter a name for Beneficiary ${i + 1}.`)
+              return false
+            }
+            if (!b.relationship.trim()) {
+              setError(`Please enter a relationship for Beneficiary ${i + 1}.`)
+              return false
+            }
+          }
         }
       }
     }
@@ -1538,10 +1558,12 @@ export default function PostDeal() {
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div>
                       <h3 className="text-lg font-semibold text-foreground">
-                        Beneficiaries <span className="text-destructive">*</span>
+                        Beneficiaries {beneficiariesRequired && <span className="text-destructive">*</span>}
                       </h3>
                       <p className="text-sm text-muted-foreground">
-                        Add at least one beneficiary for this policy. Both name and relationship are required.
+                        {beneficiariesRequired
+                          ? 'Add at least one beneficiary for this policy. Both name and relationship are required.'
+                          : 'Add beneficiaries for this policy (optional). If added, both name and relationship are required.'}
                       </p>
                     </div>
                     <Button
@@ -1555,9 +1577,14 @@ export default function PostDeal() {
                     </Button>
                   </div>
 
-                  {beneficiaries.length === 0 && (
+                  {beneficiaries.length === 0 && beneficiariesRequired && (
                     <div className="text-sm text-muted-foreground border border-destructive/50 rounded-lg p-4 bg-destructive/5">
                       <span className="text-destructive font-medium">Required:</span> Please add at least one beneficiary using the button above.
+                    </div>
+                  )}
+                  {beneficiaries.length === 0 && !beneficiariesRequired && (
+                    <div className="text-sm text-muted-foreground border border-border rounded-lg p-4 bg-card/40">
+                      No beneficiaries added yet.
                     </div>
                   )}
 
@@ -1582,7 +1609,7 @@ export default function PostDeal() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <label className="text-sm text-foreground font-medium">
-                              Full Name <span className="text-destructive">*</span>
+                              Full Name {beneficiariesRequired && <span className="text-destructive">*</span>}
                             </label>
                             <Input
                               type="text"
@@ -1594,7 +1621,7 @@ export default function PostDeal() {
                           </div>
                           <div className="space-y-2">
                             <label className="text-sm text-foreground font-medium">
-                              Relationship <span className="text-destructive">*</span>
+                              Relationship {beneficiariesRequired && <span className="text-destructive">*</span>}
                             </label>
                             <Input
                               type="text"

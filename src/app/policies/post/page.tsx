@@ -23,6 +23,7 @@ const initialFormData = {
   carrierId: "",
   productId: "",
   policyEffectiveDate: "",
+  rateClass: "",
   ssnBenefit: "",
   billingDayOfMonth: "",
   billingWeekday: "",
@@ -49,7 +50,7 @@ type Beneficiary = {
 type FormField = keyof typeof initialFormData;
 
 const requiredFields: FormField[] = [
-  "carrierId", "productId", "policyEffectiveDate", "ssnBenefit", "monthlyPremium",
+  "carrierId", "productId", "policyEffectiveDate", "rateClass", "ssnBenefit", "monthlyPremium",
   "billingCycle", "leadSource",
   "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
   "clientAddress", "policyNumber"
@@ -112,6 +113,16 @@ export default function PostDeal() {
   const ssnBenefitOptions = [
     { value: "yes", label: "Yes" },
     { value: "no", label: "No" },
+  ]
+
+  // Rate class options
+  const rateClassOptions = [
+    { value: "preferred", label: "Preferred" },
+    { value: "standard", label: "Standard" },
+    { value: "sub-standard", label: "Sub-Standard" },
+    { value: "graded", label: "Graded" },
+    { value: "modified", label: "Modified" },
+    { value: "guaranteed issue", label: "Guaranteed Issue" },
   ]
 
   useEffect(() => {
@@ -590,6 +601,7 @@ export default function PostDeal() {
         monthly_premium: monthlyPremium,
         annual_premium: monthlyPremium * 12,
         policy_effective_date: formData.policyEffectiveDate,
+        rate_class: formData.rateClass || null,
         ssn_benefit: formData.ssnBenefit === "yes",
         billing_day_of_month: formData.ssnBenefit === "yes" ? formData.billingDayOfMonth : null,
         billing_weekday: formData.ssnBenefit === "yes" ? formData.billingWeekday : null,
@@ -895,6 +907,10 @@ export default function PostDeal() {
         setError("Please select a product.")
         return false
       }
+      if (!formData.rateClass) {
+        setError("Please select a rate class.")
+        return false
+      }
       if (!formData.policyEffectiveDate) {
         setError("Please select a policy effective date.")
         return false
@@ -969,6 +985,25 @@ export default function PostDeal() {
       if (!formData.clientAddress) {
         setError("Please enter the client's address.")
         return false
+      }
+
+      // Beneficiary validation - at least one beneficiary is required
+      if (beneficiaries.length === 0) {
+        setError("Please add at least one beneficiary.")
+        return false
+      }
+
+      // Validate that all beneficiaries have both name and relationship
+      for (let i = 0; i < beneficiaries.length; i++) {
+        const b = beneficiaries[i]
+        if (!b.name.trim()) {
+          setError(`Please enter a name for Beneficiary ${i + 1}.`)
+          return false
+        }
+        if (!b.relationship.trim()) {
+          setError(`Please enter a relationship for Beneficiary ${i + 1}.`)
+          return false
+        }
       }
     }
 
@@ -1191,6 +1226,21 @@ export default function PostDeal() {
                       value={formData.productId}
                       onValueChange={(value) => handleInputChange("productId", value)}
                       disabled={isProductsFetching}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Rate Class */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Rate Class <span className="text-destructive">*</span>
+                    </label>
+                    <SimpleSearchableSelect
+                      options={rateClassOptions}
+                      value={formData.rateClass}
+                      onValueChange={(value) => handleInputChange("rateClass", value)}
+                      placeholder="Select rate class"
                     />
                   </div>
                 </div>
@@ -1487,9 +1537,11 @@ export default function PostDeal() {
                 <div className="space-y-4 border border-dashed border-border rounded-lg p-4">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div>
-                      <h3 className="text-lg font-semibold text-foreground">Beneficiaries (Optional)</h3>
+                      <h3 className="text-lg font-semibold text-foreground">
+                        Beneficiaries <span className="text-destructive">*</span>
+                      </h3>
                       <p className="text-sm text-muted-foreground">
-                        Add one or more beneficiaries for this policy. Leave blank if not applicable.
+                        Add at least one beneficiary for this policy. Both name and relationship are required.
                       </p>
                     </div>
                     <Button
@@ -1504,8 +1556,8 @@ export default function PostDeal() {
                   </div>
 
                   {beneficiaries.length === 0 && (
-                    <div className="text-sm text-muted-foreground border border-border rounded-lg p-4 bg-card/40">
-                      No beneficiaries added yet.
+                    <div className="text-sm text-muted-foreground border border-destructive/50 rounded-lg p-4 bg-destructive/5">
+                      <span className="text-destructive font-medium">Required:</span> Please add at least one beneficiary using the button above.
                     </div>
                   )}
 
@@ -1529,7 +1581,9 @@ export default function PostDeal() {
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <label className="text-sm text-foreground font-medium">Full Name</label>
+                            <label className="text-sm text-foreground font-medium">
+                              Full Name <span className="text-destructive">*</span>
+                            </label>
                             <Input
                               type="text"
                               value={beneficiary.name}
@@ -1539,7 +1593,9 @@ export default function PostDeal() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-sm text-foreground font-medium">Relationship</label>
+                            <label className="text-sm text-foreground font-medium">
+                              Relationship <span className="text-destructive">*</span>
+                            </label>
                             <Input
                               type="text"
                               value={beneficiary.relationship}
@@ -1578,6 +1634,14 @@ export default function PostDeal() {
                     <div>
                       <span className="text-muted-foreground">Product:</span>
                       <p className="font-medium text-foreground mt-1">{getProductName(formData.productId)}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Rate Class:</span>
+                      <p className="font-medium text-foreground mt-1">
+                        {formData.rateClass
+                          ? rateClassOptions.find(opt => opt.value === formData.rateClass)?.label
+                          : 'N/A'}
+                      </p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Effective Date:</span>

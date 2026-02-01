@@ -314,6 +314,7 @@ export async function POST(req: NextRequest) {
       monthly_premium,
       annual_premium,
       policy_effective_date,
+      rate_class,
       ssn_benefit,
       billing_day_of_month,
       billing_weekday,
@@ -361,6 +362,7 @@ export async function POST(req: NextRequest) {
         client_address: client_address || existingDeal.client_address,
         application_number: application_number ||
           existingDeal.application_number,
+        rate_class: rate_class || existingDeal.rate_class,
         ssn_benefit: ssn_benefit !== undefined
           ? ssn_benefit
           : existingDeal.ssn_benefit,
@@ -570,6 +572,7 @@ export async function POST(req: NextRequest) {
         monthly_premium,
         annual_premium,
         policy_effective_date,
+        rate_class,
         ssn_benefit,
         billing_day_of_month,
         billing_weekday,

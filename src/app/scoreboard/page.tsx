@@ -94,8 +94,18 @@ export default function Scoreboard() {
   }, [isHydrated, clientDate.month, clientDate.year])
 
   // Fetch agency default scoreboard start date using TanStack Query
-  const { data: agencySettings } = useAgencyScoreboardSettings(userData?.agency_id)
+  const { data: agencySettings, isLoading: isAgencySettingsLoading } = useAgencyScoreboardSettings(userData?.agency_id, {
+    staleTime: 0 // Disable cache to always fetch fresh data for issue_paid_status
+  })
   const defaultScoreboardStartDate = agencySettings?.default_scoreboard_start_date ?? null
+  const issuePaidStatusEnabled = agencySettings?.issue_paid_status ?? true
+
+  // Force filter to 'submitted' when issue_paid_status is disabled
+  useEffect(() => {
+    if (!issuePaidStatusEnabled && submittedFilter === 'issue_paid') {
+      setSubmittedFilter('submitted')
+    }
+  }, [issuePaidStatusEnabled, submittedFilter])
 
   // Calculate date range based on timeframe - SSR-safe using clientDate
   const getDateRange = useCallback((selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
@@ -411,212 +421,226 @@ export default function Scoreboard() {
             <RefreshingIndicator isRefreshing={isRefreshing} />
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min="1"
-                max="10"
-                step="1"
-                value={assumedMonthsInput}
-                onChange={(e) => {
-                  const inputValue = e.target.value
-                  // Update the input display value
-                  setAssumedMonthsInput(inputValue)
+            {isAgencySettingsLoading ? (
+              <>
+                {/* Loading skeleton for filters */}
+                <div className="h-9 w-[60px] bg-muted animate-pulse rounded-md" />
+                <div className="h-9 w-[160px] bg-muted animate-pulse rounded-md" />
+                <div className="h-10 w-[280px] bg-muted animate-pulse rounded-md" />
+                <div className="h-10 w-[200px] bg-muted animate-pulse rounded-md" />
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value={assumedMonthsInput}
+                    onChange={(e) => {
+                      const inputValue = e.target.value
+                      // Update the input display value
+                      setAssumedMonthsInput(inputValue)
 
-                  // Parse and validate
-                  if (inputValue === '') {
-                    return // Allow empty while typing
-                  }
-
-                  const value = parseInt(inputValue, 10)
-                  // Only update the actual state if it's a valid whole number between 1-10
-                  if (!isNaN(value) && value >= 1 && value <= 10 && Number.isInteger(value)) {
-                    setAssumedMonthsTillLapse(value)
-                  }
-                }}
-                onBlur={(e) => {
-                  const inputValue = e.target.value.trim()
-                  if (inputValue === '') {
-                    // If empty on blur, reset to default
-                    setAssumedMonthsTillLapse(5)
-                    setAssumedMonthsInput('5')
-                    return
-                  }
-
-                  const value = parseInt(inputValue, 10)
-                  // Reset to default if invalid
-                  if (isNaN(value) || value < 1 || value > 10 || !Number.isInteger(value)) {
-                    setAssumedMonthsTillLapse(5)
-                    setAssumedMonthsInput('5')
-                  } else {
-                    // Ensure input display matches the validated value
-                    setAssumedMonthsInput(value.toString())
-                  }
-                }}
-                className="w-[60px] rounded-md h-9 text-sm"
-                placeholder="5"
-              />
-              <div className="relative">
-                <Info
-                  className="h-3 w-3 text-muted-foreground cursor-help"
-                  onMouseEnter={() => setShowAssumedMonthsTooltip(true)}
-                  onMouseLeave={() => setShowAssumedMonthsTooltip(false)}
-                />
-                {showAssumedMonthsTooltip && (
-                  <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 w-64 p-2 bg-popover border border-border rounded-md shadow-lg text-xs text-popover-foreground z-50 pointer-events-none whitespace-normal">
-                    Assumed Months Till Lapse: The assumed time how long policies remained active before lapsing (1-10 months)
-                  </div>
-                )}
-              </div>
-            </div>
-            <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeOption)}>
-              <SelectTrigger className="w-[160px] rounded-md h-9 text-sm">
-                <SelectValue placeholder="Select timeframe" />
-              </SelectTrigger>
-              <SelectContent className="rounded-md max-h-[300px]">
-                {timeframeOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="w-[280px] justify-start text-left font-normal">
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {customStartDate && customEndDate ? (
-                    <span>
-                      {formatDisplayDate(customStartDate)} - {formatDisplayDate(customEndDate)}
-                    </span>
-                  ) : customStartDate ? (
-                    <span>{formatDisplayDate(customStartDate)} - Select end date</span>
-                  ) : (
-                    <span className="text-muted-foreground">Pick a date range</span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
-                <div className="p-4">
-                  {/* Calendar Header */}
-                  <div className="flex items-center justify-between mb-4">
-                    <button
-                      onClick={() => {
-                        if (calendarMonth === 0) {
-                          setCalendarMonth(11)
-                          setCalendarYear(calendarYear - 1)
-                        } else {
-                          setCalendarMonth(calendarMonth - 1)
-                        }
-                      }}
-                      className="p-2 hover:bg-accent rounded"
-                    >
-                      ←
-                    </button>
-                    <div className="font-semibold">
-                      {monthNames[calendarMonth]} {calendarYear}
-                    </div>
-                    <button
-                      onClick={() => {
-                        if (calendarMonth === 11) {
-                          setCalendarMonth(0)
-                          setCalendarYear(calendarYear + 1)
-                        } else {
-                          setCalendarMonth(calendarMonth + 1)
-                        }
-                      }}
-                      className="p-2 hover:bg-accent rounded"
-                    >
-                      →
-                    </button>
-                  </div>
-
-                  {/* Calendar Grid */}
-                  <div className="grid grid-cols-7 gap-1">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                      <div key={day} className="text-center text-xs font-medium text-muted-foreground p-2">
-                        {day}
-                      </div>
-                    ))}
-                    {calendarDays.map((day, index) => {
-                      if (day === null) {
-                        return <div key={`empty-${index}`} />
+                      // Parse and validate
+                      if (inputValue === '') {
+                        return // Allow empty while typing
                       }
 
-                      const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                      const isInRange = isDateInRange(day)
-                      const isStart = isDateStart(day)
-                      const isEnd = isDateEnd(day)
+                      const value = parseInt(inputValue, 10)
+                      // Only update the actual state if it's a valid whole number between 1-10
+                      if (!isNaN(value) && value >= 1 && value <= 10 && Number.isInteger(value)) {
+                        setAssumedMonthsTillLapse(value)
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const inputValue = e.target.value.trim()
+                      if (inputValue === '') {
+                        // If empty on blur, reset to default
+                        setAssumedMonthsTillLapse(5)
+                        setAssumedMonthsInput('5')
+                        return
+                      }
 
-                      return (
-                        <button
-                          key={day}
-                          onClick={() => handleDateClick(day)}
-                          onMouseEnter={() => setHoveredDate(dateStr)}
-                          onMouseLeave={() => setHoveredDate(null)}
-                          className={`
-                            p-2 text-sm rounded-md transition-colors
-                            ${isStart || isEnd ? 'bg-primary text-primary-foreground font-semibold' : ''}
-                            ${isInRange && !isStart && !isEnd ? 'bg-primary/20' : ''}
-                            ${!isInRange && !isStart && !isEnd ? 'hover:bg-accent' : ''}
-                          `}
-                        >
-                          {day}
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {/* Action buttons */}
-                  <div className="flex justify-between mt-4 pt-4 border-t">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setCustomStartDate('')
-                        setCustomEndDate('')
-                        setSelectingStartDate(true)
-                      }}
-                    >
-                      Clear
-                    </Button>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => {
-                        setIsCalendarOpen(false)
-                        if (customStartDate && customEndDate) {
-                          setTimeframe('custom')
-                        }
-                      }}
-                      disabled={!customStartDate || !customEndDate}
-                    >
-                      Apply
-                    </Button>
+                      const value = parseInt(inputValue, 10)
+                      // Reset to default if invalid
+                      if (isNaN(value) || value < 1 || value > 10 || !Number.isInteger(value)) {
+                        setAssumedMonthsTillLapse(5)
+                        setAssumedMonthsInput('5')
+                      } else {
+                        // Ensure input display matches the validated value
+                        setAssumedMonthsInput(value.toString())
+                      }
+                    }}
+                    className="w-[60px] rounded-md h-9 text-sm"
+                    placeholder="5"
+                  />
+                  <div className="relative">
+                    <Info
+                      className="h-3 w-3 text-muted-foreground cursor-help"
+                      onMouseEnter={() => setShowAssumedMonthsTooltip(true)}
+                      onMouseLeave={() => setShowAssumedMonthsTooltip(false)}
+                    />
+                    {showAssumedMonthsTooltip && (
+                      <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 w-64 p-2 bg-popover border border-border rounded-md shadow-lg text-xs text-popover-foreground z-50 pointer-events-none whitespace-normal">
+                        Assumed Months Till Lapse: The assumed time how long policies remained active before lapsing (1-10 months)
+                      </div>
+                    )}
                   </div>
                 </div>
-              </PopoverContent>
-            </Popover>
+                <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeOption)}>
+                  <SelectTrigger className="w-[160px] rounded-md h-9 text-sm">
+                    <SelectValue placeholder="Select timeframe" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-md max-h-[300px]">
+                    {timeframeOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-            <div className="flex items-center gap-1 border rounded-md p-1">
-              <Button
-                variant={submittedFilter === 'submitted' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setSubmittedFilter('submitted')}
-                className="h-9 px-3 text-sm"
-              >
-                Submitted
-              </Button>
-              <Button
-                variant={submittedFilter === 'issue_paid' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setSubmittedFilter('issue_paid')}
-                className="h-9 px-3 text-sm"
-              >
-                Issue Paid
-              </Button>
-            </div>
+                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-[280px] justify-start text-left font-normal">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {customStartDate && customEndDate ? (
+                        <span>
+                          {formatDisplayDate(customStartDate)} - {formatDisplayDate(customEndDate)}
+                        </span>
+                      ) : customStartDate ? (
+                        <span>{formatDisplayDate(customStartDate)} - Select end date</span>
+                      ) : (
+                        <span className="text-muted-foreground">Pick a date range</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <div className="p-4">
+                      {/* Calendar Header */}
+                      <div className="flex items-center justify-between mb-4">
+                        <button
+                          onClick={() => {
+                            if (calendarMonth === 0) {
+                              setCalendarMonth(11)
+                              setCalendarYear(calendarYear - 1)
+                            } else {
+                              setCalendarMonth(calendarMonth - 1)
+                            }
+                          }}
+                          className="p-2 hover:bg-accent rounded"
+                        >
+                          ←
+                        </button>
+                        <div className="font-semibold">
+                          {monthNames[calendarMonth]} {calendarYear}
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (calendarMonth === 11) {
+                              setCalendarMonth(0)
+                              setCalendarYear(calendarYear + 1)
+                            } else {
+                              setCalendarMonth(calendarMonth + 1)
+                            }
+                          }}
+                          className="p-2 hover:bg-accent rounded"
+                        >
+                          →
+                        </button>
+                      </div>
+
+                      {/* Calendar Grid */}
+                      <div className="grid grid-cols-7 gap-1">
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                          <div key={day} className="text-center text-xs font-medium text-muted-foreground p-2">
+                            {day}
+                          </div>
+                        ))}
+                        {calendarDays.map((day, index) => {
+                          if (day === null) {
+                            return <div key={`empty-${index}`} />
+                          }
+
+                          const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                          const isInRange = isDateInRange(day)
+                          const isStart = isDateStart(day)
+                          const isEnd = isDateEnd(day)
+
+                          return (
+                            <button
+                              key={day}
+                              onClick={() => handleDateClick(day)}
+                              onMouseEnter={() => setHoveredDate(dateStr)}
+                              onMouseLeave={() => setHoveredDate(null)}
+                              className={`
+                                p-2 text-sm rounded-md transition-colors
+                                ${isStart || isEnd ? 'bg-primary text-primary-foreground font-semibold' : ''}
+                                ${isInRange && !isStart && !isEnd ? 'bg-primary/20' : ''}
+                                ${!isInRange && !isStart && !isEnd ? 'hover:bg-accent' : ''}
+                              `}
+                            >
+                              {day}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex justify-between mt-4 pt-4 border-t">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setCustomStartDate('')
+                            setCustomEndDate('')
+                            setSelectingStartDate(true)
+                          }}
+                        >
+                          Clear
+                        </Button>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => {
+                            setIsCalendarOpen(false)
+                            if (customStartDate && customEndDate) {
+                              setTimeframe('custom')
+                            }
+                          }}
+                          disabled={!customStartDate || !customEndDate}
+                        >
+                          Apply
+                        </Button>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                {issuePaidStatusEnabled && (
+                  <div className="flex items-center gap-1 border rounded-md p-1">
+                    <Button
+                      variant={submittedFilter === 'submitted' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setSubmittedFilter('submitted')}
+                      className="h-9 px-3 text-sm"
+                    >
+                      Submitted
+                    </Button>
+                    <Button
+                      variant={submittedFilter === 'issue_paid' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setSubmittedFilter('issue_paid')}
+                      className="h-9 px-3 text-sm"
+                    >
+                      Issue Paid
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
         <div className="flex items-center space-x-2 text-sm text-muted-foreground mt-1">

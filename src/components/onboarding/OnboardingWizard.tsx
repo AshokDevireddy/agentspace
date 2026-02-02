@@ -8,11 +8,11 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { useOnboardingProgress } from '@/hooks/useOnboardingProgress'
+import { fetchWithCredentials } from '@/lib/api-client'
 import { NiprVerificationStep } from './steps/NiprVerificationStep'
 import { TeamInvitationStep } from './steps/TeamInvitationStep'
 import type { UserData } from './types'
@@ -23,7 +23,6 @@ interface OnboardingWizardProps {
 }
 
 export default function OnboardingWizard({ userData, onComplete }: OnboardingWizardProps) {
-  const supabase = createClient()
   const router = useRouter()
   const onboardingProgress = useOnboardingProgress(userData.id)
 
@@ -78,7 +77,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
     }
   }, [niprStatusData, currentStep])
 
-  // Store carriers in database
+  // Store carriers in database via Django API
   const storeCarriersInDatabase = useCallback(
     async (carriers: string[]) => {
       if (!userData.id || !Array.isArray(carriers) || carriers.length === 0) return
@@ -90,19 +89,19 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       if (validCarriers.length === 0) return
 
       try {
-        const { error } = await supabase
-          .from('users')
-          .update({ unique_carriers: validCarriers })
-          .eq('id', userData.id)
-
-        if (error) {
-          console.error('[OnboardingWizard] Failed to store carriers:', error)
-        }
+        await fetchWithCredentials(
+          `/api/user/${userData.id}/carriers`,
+          'Failed to store carriers',
+          {
+            method: 'PATCH',
+            body: { unique_carriers: validCarriers },
+          }
+        )
       } catch (error) {
-        console.error('[OnboardingWizard] Database error:', error)
+        console.error('[OnboardingWizard] Failed to store carriers:', error)
       }
     },
-    [supabase, userData.id]
+    [userData.id]
   )
 
   // Handle NIPR completion
@@ -157,20 +156,8 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   // Handle completion
   const handleComplete = useCallback(async () => {
     try {
-      // Update user status to active via Supabase
-      const { error } = await supabase
-        .from('users')
-        .update({
-          status: 'active',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userData.id)
-
-      if (error) {
-        console.error('[OnboardingWizard] Error updating user status:', error)
-      }
-
-      // Mark onboarding as complete in server state
+      // Mark onboarding as complete via Django API
+      // This also sets user status to 'active'
       if (onboardingProgress) {
         await onboardingProgress.completeOnboarding()
       }
@@ -181,7 +168,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       console.error('[OnboardingWizard] Completion error:', error)
       setErrors(['Failed to complete onboarding. Please try again.'])
     }
-  }, [supabase, userData.id, onboardingProgress, onComplete])
+  }, [onboardingProgress, onComplete])
 
   return (
     <div className="min-h-screen bg-background py-8 px-4 sm:px-6 lg:px-8">

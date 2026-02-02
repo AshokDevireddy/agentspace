@@ -1,13 +1,11 @@
 // API ROUTE: /api/positions/product-commissions
 // This endpoint manages position-product commission mappings
 // GET: Fetches all commission mappings for the user's agency (via Django)
-// POST: Creates or updates commission mappings (batch operation)
+// POST: Creates or updates commission mappings (batch operation via Django)
 
-import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { getApiBaseUrl } from "@/lib/api-config";
 import { getAccessToken } from "@/lib/session";
-import { getUserContext } from "@/lib/auth/get-user-context";
 
 export async function GET(request: Request) {
   try {
@@ -76,9 +74,16 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = createAdminClient();
-    const body = await request.json();
+    // Get the access token from the session
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      return NextResponse.json({
+        error: "Unauthorized",
+        detail: "No valid session",
+      }, { status: 401 });
+    }
 
+    const body = await request.json();
     const { commissions } = body;
 
     // Validate required fields
@@ -89,7 +94,7 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Validate each commission entry
+    // Validate each commission entry (basic validation, Django will do full validation)
     for (const commission of commissions) {
       const { position_id, product_id, commission_percentage } = commission;
 
@@ -113,31 +118,12 @@ export async function POST(request: Request) {
       }
     }
 
-    // Verify authentication using Django session
-    const userResult = await getUserContext();
-    if (!userResult.success) {
-      return NextResponse.json({
-        error: "Unauthorized",
-        detail: "No valid session",
-      }, { status: 401 });
-    }
-
-    const agencyId = userResult.context.agencyId;
-
-    if (!agencyId) {
-      return NextResponse.json({
-        error: "User not associated with an agency",
-        detail: "User must be associated with an agency to create commissions",
-      }, { status: 403 });
-    }
-
     // Log incoming data for debugging
     const positionIds = [
-      ...new Set(commissions.map((c: any) => c.position_id)),
+      ...new Set(commissions.map((c: { position_id: string }) => c.position_id)),
     ];
-    const productIds = [...new Set(commissions.map((c: any) => c.product_id))];
+    const productIds = [...new Set(commissions.map((c: { product_id: string }) => c.product_id))];
 
-    console.log("[Commission Save] Agency ID:", agencyId);
     console.log(
       "[Commission Save] Incoming commissions:",
       JSON.stringify(commissions, null, 2),
@@ -151,30 +137,29 @@ export async function POST(request: Request) {
       productIds,
     );
 
-    // Use upsert to create or update commission mappings
-    const commissionsToInsert = commissions.map((c: any) => ({
-      position_id: c.position_id,
-      product_id: c.product_id,
-      commission_percentage: c.commission_percentage,
-    }));
+    // Proxy to Django
+    const djangoUrl = `${getApiBaseUrl()}/api/positions/product-commissions`;
 
-    const { data: result, error } = await supabase
-      .from("position_product_commissions")
-      .upsert(commissionsToInsert, {
-        onConflict: "position_id,product_id",
-        ignoreDuplicates: false,
-      })
-      .select();
+    const djangoResponse = await fetch(djangoUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ commissions }),
+    });
 
-    if (error) {
-      console.error("Commission creation error:", error);
+    const data = await djangoResponse.json();
+
+    if (!djangoResponse.ok) {
+      console.error("[Commission Save] Django API error:", data);
       return NextResponse.json({
-        error: "Failed to create/update commissions",
-        detail: "Database insert encountered an error",
-      }, { status: 500 });
+        error: data.error || "Failed to create/update commissions",
+        detail: data.detail || "Database insert encountered an error",
+      }, { status: djangoResponse.status });
     }
 
-    return NextResponse.json({ commissions: result }, { status: 201 });
+    return NextResponse.json(data, { status: 201 });
   } catch (error) {
     console.error("API Error in commission creation:", error);
     return NextResponse.json({

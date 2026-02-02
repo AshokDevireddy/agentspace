@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import { useAuth } from "@/providers/AuthProvider";
-import { createClient } from "@/lib/supabase/client";
 import { PricingTierCard } from "@/components/pricing-tier-card";
 import { SubscriptionManager } from "@/components/subscription-manager";
 import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";

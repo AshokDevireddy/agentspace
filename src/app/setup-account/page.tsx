@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
@@ -10,7 +9,7 @@ import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 import { useTheme } from "next-themes"
 import { useNotification } from '@/contexts/notification-context'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
-import { AUTH_TIMEOUT_MS, getInviteTokens, clearInviteTokens } from '@/lib/auth/constants'
+import { getInviteTokens, clearInviteTokens } from '@/lib/auth/constants'
 import { authApi, AuthApiError } from '@/lib/api/auth'
 import { fetchApi } from '@/lib/api-client'
 import { getClientAccessToken } from '@/lib/auth/client'
@@ -34,7 +33,6 @@ interface AgencyData {
 }
 
 export default function SetupAccount() {
-  const supabase = createClient()
   const { showSuccess } = useNotification()
   const router = useRouter()
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
@@ -162,26 +160,22 @@ export default function SetupAccount() {
       console.log(`[setup-account] FETCH USER: Starting at +${Date.now() - startTime}ms`)
       let userRecord: UserData | null = null
 
-      if (accessToken) {
-        console.log(`[setup-account] FETCH USER: Using Django API with token`)
-        try {
-          userRecord = await fetchApi<UserData>(
-            `/api/users/by-auth-id/${authUserId}/onboarding`,
-            accessToken,
-            'Failed to load user data'
-          )
-        } catch {
-          userRecord = null
-        }
-      } else {
-        console.log(`[setup-account] FETCH USER: Using Supabase client (fallback)`)
-        const { data } = await supabase
-          .from('users')
-          .select('*')
-          .eq('auth_user_id', authUserId)
-          .eq('status', 'onboarding')
-          .single()
-        userRecord = data
+      if (!accessToken) {
+        console.log(`[setup-account] FETCH USER: No access token, cannot fetch user data`)
+        setErrors(['Session not available. Please use your invitation link again.'])
+        setLoading(false)
+        return
+      }
+
+      console.log(`[setup-account] FETCH USER: Using Django API with token`)
+      try {
+        userRecord = await fetchApi<UserData>(
+          `/api/users/by-auth-id/${authUserId}/onboarding`,
+          accessToken,
+          'Failed to load user data'
+        )
+      } catch {
+        userRecord = null
       }
 
       console.log(`[setup-account] FETCH USER: Completed at +${Date.now() - startTime}ms, hasUser=${!!userRecord}`)
@@ -204,31 +198,18 @@ export default function SetupAccount() {
       })
 
       // Fetch agency data via Django API
-      if (userRecord.agency_id) {
-        let agencyData: AgencyData | null = null
-
-        if (accessToken) {
-          try {
-            const data = await fetchApi<{ display_name: string | null; name: string }>(
-              `/api/agencies/${userRecord.agency_id}`,
-              accessToken,
-              'Failed to load agency data'
-            )
-            agencyData = data
-          } catch {
-            agencyData = null
+      if (userRecord.agency_id && accessToken) {
+        try {
+          const agencyData = await fetchApi<{ display_name: string | null; name: string }>(
+            `/api/agencies/${userRecord.agency_id}`,
+            accessToken,
+            'Failed to load agency data'
+          )
+          if (agencyData) {
+            setAgencyName(agencyData.display_name || agencyData.name || "AgentSpace")
           }
-        } else {
-          const { data } = await supabase
-            .from('agencies')
-            .select('display_name, name')
-            .eq('id', userRecord.agency_id)
-            .maybeSingle()
-          agencyData = data
-        }
-
-        if (agencyData) {
-          setAgencyName(agencyData.display_name || agencyData.name || "AgentSpace")
+        } catch {
+          // Agency fetch failed, keep default name
         }
       }
     } catch (err) {

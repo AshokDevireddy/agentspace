@@ -12,7 +12,6 @@ import { MonthRangePicker } from "@/components/ui/month-range-picker"
 import AddUserModal from "@/components/modals/add-user-modal"
 import { AgentDetailsModal } from "@/components/modals/agent-details-modal"
 import { Plus, Users, List, GitMerge, Filter, X, ChevronDown, ChevronRight, UserCog, Mail, Send } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { useAgentsList, useAgentsWithoutPositions, type Agent, type TreeNode, type PendingAgent } from "@/hooks/useAgentsData"
 import {

@@ -1,67 +1,49 @@
 /**
  * Resolve Notification API Route
- * Handles resolving notified statuses (lapse_notified, needs_more_info_notified)
+ * Proxies to Django to handle resolving notified statuses (lapse_notified, needs_more_info_notified)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/server';
-import { getUserContext } from '@/lib/auth/get-user-context';
+import { getAccessToken } from '@/lib/session';
+import { getApiBaseUrl } from '@/lib/api-config';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Verify authentication using Django session
-    const userResult = await getUserContext();
-    if (!userResult.success) {
+    // Get the access token from the session
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    const supabase = createAdminClient();
-
     const { id: dealId } = await params;
 
-    // Get the deal to check current status
-    const { data: deal, error: dealError } = await supabase
-      .from('deals')
-      .select('id, status_standardized')
-      .eq('id', dealId)
-      .single();
+    // Proxy to Django
+    const djangoUrl = `${getApiBaseUrl()}/api/deals/${dealId}/resolve-notification`;
 
-    if (dealError || !deal) {
-      return NextResponse.json(
-        { error: 'Deal not found' },
-        { status: 404 }
-      );
-    }
-
-    // Only allow resolving notified statuses
-    if (deal.status_standardized !== 'lapse_notified' &&
-        deal.status_standardized !== 'needs_more_info_notified') {
-      return NextResponse.json(
-        { error: 'Deal does not have a notified status to resolve' },
-        { status: 400 }
-      );
-    }
-
-    // Update status_standardized to NULL to resolve the notification
-    const { error: updateError } = await supabase
-      .from('deals')
-      .update({ status_standardized: null })
-      .eq('id', dealId);
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Notification resolved successfully',
+    const djangoResponse = await fetch(djangoUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
     });
+
+    const data = await djangoResponse.json();
+
+    if (!djangoResponse.ok) {
+      return NextResponse.json(
+        { error: data.error || 'Failed to resolve notification' },
+        { status: djangoResponse.status }
+      );
+    }
+
+    return NextResponse.json(data);
 
   } catch (error) {
     console.error('Resolve notification error:', error);
@@ -73,4 +55,3 @@ export async function POST(
     );
   }
 }
-

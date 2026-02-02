@@ -11,7 +11,6 @@ import { Users, Plus, X, Loader2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { SimpleSearchableSelect } from '@/components/ui/simple-searchable-select'
-import { createClient } from '@/lib/supabase/client'
 import { useInviteAgent } from '@/hooks/mutations'
 import { useOnboardingProgress } from '@/hooks/useOnboardingProgress'
 import type { UserData, InvitedAgent, SearchOption } from '../types'
@@ -28,7 +27,6 @@ const PERMISSION_LEVELS = [
 ]
 
 export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitationStepProps) {
-  const supabase = createClient()
   const onboardingProgress = useOnboardingProgress(userData.id)
 
   // Local invitation state
@@ -232,34 +230,27 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
   // Handle pre-invite user selection
   const handlePreInviteUserSelect = async (userId: string, option: SearchOption) => {
     try {
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single()
+      // Fetch user details via Django API
+      const response = await fetch(`/api/agents/${userId}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      })
 
-      if (error || !user) {
+      if (!response.ok) {
         setErrors(['Failed to load user data'])
         return
       }
 
-      // Type assertion for user data from Supabase
-      const userData = user as {
-        first_name?: string
-        last_name?: string
-        email?: string
-        phone_number?: string
-        perm_level?: string
-        upline_id?: string
-      }
+      const user = await response.json()
 
       setCurrentAgentForm({
-        firstName: userData.first_name || '',
-        lastName: userData.last_name || '',
-        email: userData.email || '',
-        phoneNumber: userData.phone_number || '',
-        permissionLevel: userData.perm_level || '',
-        uplineAgentId: userData.upline_id || '',
+        firstName: user.first_name || '',
+        lastName: user.last_name || '',
+        email: user.email || '',
+        phoneNumber: user.phone_number || '',
+        permissionLevel: user.perm_level || '',
+        uplineAgentId: user.upline_id || '',
       })
 
       setSelectedPreInviteUserId(userId)

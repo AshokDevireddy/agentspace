@@ -150,7 +150,7 @@ export function AuthProvider({
 
     setUser({
       id: data.user.id,
-      auth_user_id: data.user.id,
+      auth_user_id: data.user.auth_user_id,
       email: data.user.email,
       role: data.user.role,
       status: data.user.status,

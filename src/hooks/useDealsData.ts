@@ -1,10 +1,12 @@
 /**
  * Deals Data Hook
+ *
+ * Migrated to use cookie-based auth via fetchWithCredentials.
+ * BFF routes handle auth via httpOnly cookies - no need for manual token passing.
  */
 import { useQuery } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
 import { getDealEndpoint } from '@/lib/api-config'
-import { fetchApi } from '@/lib/api-client'
+import { fetchWithCredentials } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
@@ -87,20 +89,13 @@ export function useBookOfBusiness(
   filters: DealsFilters,
   options?: { enabled?: boolean }
 ) {
-  const supabase = createClient()
-
   return useQuery<BookOfBusinessResponse, Error>({
     queryKey: queryKeys.dealsBookOfBusiness(filters),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getDealEndpoint('bookOfBusiness'))
       buildDealsFilterParams(filters, url.searchParams)
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch deals')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch deals')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.fast,
@@ -111,18 +106,11 @@ export function useBookOfBusiness(
 }
 
 export function useDealsFilterOptions(options?: { enabled?: boolean }) {
-  const supabase = createClient()
-
   return useQuery<FilterOptionsResponse, Error>({
     queryKey: queryKeys.dealsFilterOptions(),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getDealEndpoint('filterOptions'))
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch filter options')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch filter options')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.static,

@@ -1,10 +1,12 @@
 /**
  * Analytics Data Hook
+ *
+ * Migrated to use cookie-based auth via fetchWithCredentials.
+ * BFF routes handle auth via httpOnly cookies - no need for manual token passing.
  */
 import { useQuery } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
 import { getAnalyticsEndpoint } from '@/lib/api-config'
-import { fetchApi } from '@/lib/api-client'
+import { fetchWithCredentials } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
@@ -107,20 +109,13 @@ export function useAnalyticsSplit(
   filters: AnalyticsFilters,
   options?: { enabled?: boolean }
 ) {
-  const supabase = createClient()
-
   return useQuery<AnalyticsSplitResponse, Error>({
     queryKey: queryKeys.analyticsData({ ...filters, type: 'split' }),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getAnalyticsEndpoint('split'))
       buildAnalyticsFilterParams(filters, url.searchParams)
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch analytics split')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch analytics split')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.slow,
@@ -134,20 +129,13 @@ export function useDownlineDistribution(
   filters: AnalyticsFilters,
   options?: { enabled?: boolean }
 ) {
-  const supabase = createClient()
-
   return useQuery<DownlineDistributionResponse, Error>({
     queryKey: queryKeys.analyticsData({ ...filters, type: 'downline' }),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getAnalyticsEndpoint('downlineDistribution'))
       buildAnalyticsFilterParams(filters, url.searchParams)
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch downline distribution')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch downline distribution')
     },
     enabled: !!filters.agentId && (options?.enabled !== false),
     staleTime: STALE_TIMES.slow,
@@ -161,20 +149,13 @@ export function useDealsAnalytics(
   filters: AnalyticsFilters,
   options?: { enabled?: boolean }
 ) {
-  const supabase = createClient()
-
   return useQuery<DealsAnalyticsResponse, Error>({
     queryKey: queryKeys.analyticsData({ ...filters, type: 'deals' }),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getAnalyticsEndpoint('deals'))
       buildAnalyticsFilterParams(filters, url.searchParams)
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch deals analytics')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch deals analytics')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.slow,
@@ -188,20 +169,13 @@ export function usePersistencyAnalytics(
   filters: AnalyticsFilters,
   options?: { enabled?: boolean }
 ) {
-  const supabase = createClient()
-
   return useQuery<PersistencyResponse, Error>({
     queryKey: queryKeys.analyticsData({ ...filters, type: 'persistency' }),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getAnalyticsEndpoint('persistency'))
       buildAnalyticsFilterParams(filters, url.searchParams)
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch persistency data')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch persistency data')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.slow,

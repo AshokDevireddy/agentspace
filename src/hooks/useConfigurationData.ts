@@ -1,14 +1,16 @@
 /**
  * Configuration Data Hook
+ *
+ * Migrated to use cookie-based auth via fetchWithCredentials.
+ * BFF routes handle auth via httpOnly cookies - no need for manual token passing.
  */
 import { useQuery } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
 import {
   getCarrierEndpoint,
   getProductEndpoint,
   getPositionEndpoint,
 } from '@/lib/api-config'
-import { fetchApi } from '@/lib/api-client'
+import { fetchWithCredentials } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
@@ -70,18 +72,11 @@ export interface CommissionsResponse {
 // ============ Hooks ============
 
 export function useCarriersList(options?: { enabled?: boolean; filter?: string }) {
-  const supabase = createClient()
-
   return useQuery<CarriersResponse, Error>({
     queryKey: queryKeys.carriersList(options?.filter),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getCarrierEndpoint('list'))
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch carriers')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch carriers')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.slow,
@@ -91,18 +86,11 @@ export function useCarriersList(options?: { enabled?: boolean; filter?: string }
 }
 
 export function useProductsList(options?: { enabled?: boolean }) {
-  const supabase = createClient()
-
   return useQuery<ProductsResponse, Error>({
     queryKey: queryKeys.configurationProducts(),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getProductEndpoint('list'))
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch products')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch products')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.slow,
@@ -112,18 +100,11 @@ export function useProductsList(options?: { enabled?: boolean }) {
 }
 
 export function usePositionsList(options?: { enabled?: boolean }) {
-  const supabase = createClient()
-
   return useQuery<PositionsResponse, Error>({
     queryKey: queryKeys.positionsList(),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getPositionEndpoint('list'))
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch positions')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch positions')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.slow,
@@ -136,22 +117,15 @@ export function useProductCommissions(
   carrierId?: string,
   options?: { enabled?: boolean }
 ) {
-  const supabase = createClient()
-
   return useQuery<CommissionsResponse, Error>({
     queryKey: queryKeys.configurationCommissions(carrierId),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getPositionEndpoint('productCommissions'))
       if (carrierId) {
         url.searchParams.set('carrier_id', carrierId)
       }
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch commissions')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch commissions')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.slow,

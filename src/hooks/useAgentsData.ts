@@ -1,10 +1,12 @@
 /**
  * Agents Data Hook
+ *
+ * Migrated to use cookie-based auth via fetchWithCredentials.
+ * BFF routes handle auth via httpOnly cookies - no need for manual token passing.
  */
 import { useQuery } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
 import { getAgentEndpoint } from '@/lib/api-config'
-import { fetchApi } from '@/lib/api-client'
+import { fetchWithCredentials } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
@@ -153,16 +155,9 @@ export function useAgentsList(
   filters: AgentsFilters,
   options?: { enabled?: boolean }
 ) {
-  const supabase = createClient()
-
   return useQuery<AgentsListResponse, Error>({
     queryKey: queryKeys.agentsList(page, view, filters),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getAgentEndpoint('list'))
       if (view === 'tree') {
         url.searchParams.set('view', 'tree')
@@ -172,7 +167,7 @@ export function useAgentsList(
       }
       buildAgentFilterParams(filters, url.searchParams)
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch agents')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch agents')
     },
     enabled: (view === 'table' || view === 'tree') && (options?.enabled !== false),
     staleTime: STALE_TIMES.fast,
@@ -186,20 +181,13 @@ export function useAgentDownlines(
   agentId: string | null,
   options?: { enabled?: boolean }
 ) {
-  const supabase = createClient()
-
   return useQuery<AgentDownlinesResponse, Error>({
     queryKey: queryKeys.agentDownlines(agentId || ''),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getAgentEndpoint('downlines'))
       url.searchParams.set('agentId', agentId!)
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch agent downlines')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch agent downlines')
     },
     enabled: !!agentId && (options?.enabled !== false),
     staleTime: STALE_TIMES.standard,
@@ -209,20 +197,13 @@ export function useAgentDownlines(
 }
 
 export function useAgentsWithoutPositions(options?: { enabled?: boolean }) {
-  const supabase = createClient()
-
   return useQuery<PendingPositionsResponse, Error>({
     queryKey: queryKeys.agentsPendingPositions(),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getAgentEndpoint('withoutPositions'))
       url.searchParams.set('all', 'true')
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch agents without positions')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch agents without positions')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.fast,

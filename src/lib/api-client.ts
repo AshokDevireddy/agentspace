@@ -34,12 +34,27 @@ export async function fetchApi<T>(
   return response.json()
 }
 
+export interface FetchWithCredentialsOptions {
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
+  body?: unknown
+  headers?: Record<string, string>
+}
+
 export async function fetchWithCredentials<T>(
   url: string,
-  errorMessage: string
+  errorMessage: string,
+  options: FetchWithCredentialsOptions = {}
 ): Promise<T> {
+  const { method = 'GET', body, headers = {} } = options
+
   const response = await fetch(url, {
+    method,
     credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers,
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
   })
 
   if (!response.ok) {

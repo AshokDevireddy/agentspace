@@ -1,10 +1,12 @@
 /**
  * Payouts Data Hook
+ *
+ * Migrated to use cookie-based auth via fetchWithCredentials.
+ * BFF routes handle auth via httpOnly cookies - no need for manual token passing.
  */
 import { useQuery } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
 import { getPayoutEndpoint } from '@/lib/api-config'
-import { fetchApi } from '@/lib/api-client'
+import { fetchWithCredentials } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
@@ -72,16 +74,9 @@ export function useExpectedPayouts(
   filters: PayoutsFilters,
   options?: { enabled?: boolean }
 ) {
-  const supabase = createClient()
-
   return useQuery<ExpectedPayoutsResponse, Error>({
     queryKey: queryKeys.expectedPayoutsData(filters),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getPayoutEndpoint('expectedPayouts'))
       if (filters.agent) url.searchParams.set('agent_id', filters.agent)
       if (filters.carrier) url.searchParams.set('carrier_id', filters.carrier)
@@ -89,7 +84,7 @@ export function useExpectedPayouts(
       if (filters.startDate) url.searchParams.set('start_date', filters.startDate)
       if (filters.endDate) url.searchParams.set('end_date', filters.endDate)
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch expected payouts')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch expected payouts')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.medium,
@@ -103,20 +98,13 @@ export function useAgentDebt(
   agentId: string | undefined,
   options?: { enabled?: boolean }
 ) {
-  const supabase = createClient()
-
   return useQuery<DebtResponse, Error>({
     queryKey: queryKeys.expectedPayoutsDebt(agentId || ''),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No session')
-      }
-
       const url = new URL(getPayoutEndpoint('debt'))
       url.searchParams.set('agent_id', agentId!)
 
-      return fetchApi(url.toString(), session.access_token, 'Failed to fetch debt data')
+      return fetchWithCredentials(url.toString(), 'Failed to fetch debt data')
     },
     enabled: !!agentId && (options?.enabled !== false),
     staleTime: STALE_TIMES.medium,

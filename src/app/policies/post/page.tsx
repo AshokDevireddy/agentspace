@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -48,13 +48,6 @@ type Beneficiary = {
 };
 
 type FormField = keyof typeof initialFormData;
-
-const requiredFields: FormField[] = [
-  "carrierId", "productId", "policyEffectiveDate", "rateClass", "ssnBenefit", "monthlyPremium",
-  "billingCycle", "leadSource",
-  "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
-  "clientAddress", "policyNumber"
-];
 
 const STEPS = [
   { id: 1, name: 'Policy Information', icon: FileText },
@@ -291,7 +284,8 @@ export default function PostDeal() {
         userFirstName: currentUser.first_name,
         userLastName: currentUser.last_name,
         deactivatedPostADeal: agencyData?.deactivated_post_a_deal || false,
-        beneficiariesRequired: agencyData?.beneficiaries_required || false
+        beneficiariesRequired: agencyData?.beneficiaries_required || false,
+        hasTeams: agencyData?.teams !== null && agencyData?.teams !== undefined
       }
 
       console.log('[PostDeal AgencyQuery] Query complete, returning:', {
@@ -318,6 +312,21 @@ export default function PostDeal() {
   const userLastName = agencyData?.userLastName ?? ''
   const deactivatedPostADeal = agencyData?.deactivatedPostADeal ?? false
   const beneficiariesRequired = agencyData?.beneficiariesRequired ?? false
+  const hasTeams = agencyData?.hasTeams ?? false
+
+  // Dynamic required fields - include "team" if agency has teams array (not null)
+  const requiredFields = useMemo<FormField[]>(() => {
+    const baseFields: FormField[] = [
+      "carrierId", "productId", "policyEffectiveDate", "rateClass", "ssnBenefit", "monthlyPremium",
+      "billingCycle", "leadSource",
+      "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
+      "clientAddress", "policyNumber"
+    ]
+    if (hasTeams) {
+      return [...baseFields, "team"]
+    }
+    return baseFields
+  }, [hasTeams])
 
   // Query: Load products when carrier changes
   const { data: productsOptions = [], isFetching: isProductsFetching } = useQuery({
@@ -954,6 +963,10 @@ export default function PostDeal() {
         setError("Please select a lead source.")
         return false
       }
+      if (hasTeams && !formData.team) {
+        setError("Please select a team.")
+        return false
+      }
     } else if (step === 2) {
       // Client Information validation
       if (!formData.clientName) {
@@ -1417,7 +1430,7 @@ export default function PostDeal() {
                   {teamsOptions.length > 0 && (
                     <div className="space-y-2">
                       <label className="block text-sm font-semibold text-foreground">
-                        Team
+                        Team <span className="text-destructive">*</span>
                       </label>
                       <SimpleSearchableSelect
                         options={teamsOptions}

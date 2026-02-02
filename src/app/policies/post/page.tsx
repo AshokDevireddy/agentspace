@@ -1450,11 +1450,19 @@ export default function PostDeal() {
                   <Textarea
                     value={formData.notes}
                     onChange={(e) => handleInputChange("notes", e.target.value)}
-                    placeholder="Enter any additional notes about this policy..."
+                    placeholder={
+                      agencyId === "b731a3a7-a357-468e-ad6a-50a426b3735c"
+                        ? "Enter any notes about the sale you made - this will appear in discord"
+                        : "Enter any notes about the sale you made"
+                    }
                     className="min-h-[100px]"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Optional: Add any additional information or notes about this policy
+                    {agencyId === "b731a3a7-a357-468e-ad6a-50a426b3735c" ? (
+                      "This note will appear in Discord"
+                    ) : (
+                      "Optional: Add any additional information or notes about this policy"
+                    )}
                   </p>
                 </div>
               </div>

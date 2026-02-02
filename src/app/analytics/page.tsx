@@ -3,7 +3,7 @@
 import React from "react"
 import UploadPolicyReportsModal from "@/components/modals/upload-policy-reports-modal"
 import DownlineProductionChart, { DownlineProductionChartHandle } from "@/components/downline-production-chart"
-import { createClient } from "@/lib/supabase/client"
+import { useAuth } from "@/providers/AuthProvider"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -545,24 +545,18 @@ export default function AnalyticsTestPage() {
 	}, [viewMode])
 
 	const queryClient = useQueryClient()
+	const { user } = useAuth()
 
-	// 1. Main analytics fetch - Get user data and analytics
+	// Get user data from AuthProvider (already loaded on app mount)
+	const originalUserId = user?.id || null
+	const subscriptionTier = user?.subscription_tier || 'free'
+	const userRole = user?.role || null
+
+	// 1. Main analytics fetch - Get analytics data only (user data comes from AuthProvider)
 	const { data: mainAnalyticsData, isPending: isMainAnalyticsLoading, isFetching: isMainAnalyticsFetching, error: mainAnalyticsError } = useQuery({
 		queryKey: queryKeys.analyticsData({ view: 'initial' }),
 		queryFn: async () => {
-			const supabase = createClient()
-			const { data: auth } = await supabase.auth.getUser()
-			const userId = auth?.user?.id
-			if (!userId) throw new Error('No authenticated user')
-
-			const { data: userRow, error: userError } = await supabase
-				.from("users")
-				.select("id, agency_id, subscription_tier, role")
-				.eq("auth_user_id", userId)
-				.single()
-			if (userError || !userRow?.id) throw userError || new Error('User not found')
-
-			console.log("Current User Agency ID:", userRow.agency_id)
+			if (!user?.id) throw new Error('No authenticated user')
 
 			// Call the API route instead of direct Supabase RPC
 			const analyticsResponse = await fetch('/api/analytics/split-view', {
@@ -577,19 +571,14 @@ export default function AnalyticsTestPage() {
 
 			return {
 				analyticsFullData: rpcData as {yourDeals: AnalyticsTestValue | null, downlineProduction: AnalyticsTestValue | null},
-				userId: userRow.id,
-				subscriptionTier: userRow.subscription_tier || 'free',
-				userRole: userRow.role || null,
 			}
 		},
+		enabled: !!user?.id,
 		staleTime: 5 * 60 * 1000, // 5 minutes
 		gcTime: 10 * 60 * 1000, // 10 minutes
 	})
 
-	// Derive state directly from query data (no useState/useEffect sync needed)
-	const originalUserId = mainAnalyticsData?.userId || null
-	const subscriptionTier = mainAnalyticsData?.subscriptionTier || 'free'
-	const userRole = mainAnalyticsData?.userRole || null
+	// Derive userId for analytics (selected agent or current user)
 	const userId = selectedAgentId || originalUserId
 
 	// 2. Fetch all agents for the search dropdown

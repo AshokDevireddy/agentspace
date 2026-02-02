@@ -288,11 +288,9 @@ export function useAuthenticatedMutation<TData = unknown, TVariables = unknown, 
   return useMutation<TData, Error, TVariables, TContext>({
     mutationFn: async (variables) => {
       // Dynamic import to avoid circular dependencies
-      const { createClient } = await import('@/lib/supabase/client')
+      const { getClientAccessToken } = await import('@/lib/auth/client')
       const { AuthError } = await import('@/lib/error-utils')
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+      const accessToken = await getClientAccessToken()
 
       if (!accessToken) {
         throw new AuthError('Authentication required. Please log in.')

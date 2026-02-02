@@ -18,7 +18,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
-import { createClient } from "@/lib/supabase/client"
+import { useAuth } from "@/providers/AuthProvider"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -177,25 +177,9 @@ export default function BookOfBusiness() {
     nextCursorRef.current = nextCursor
   }, [nextCursor])
 
-  // Fetch user subscription tier using TanStack Query
-  const { data: userTier = 'free' } = useQuery({
-    queryKey: queryKeys.userProfile(),
-    queryFn: async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('subscription_tier')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        return userData?.subscription_tier || 'free'
-      }
-      return 'free'
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  })
+  // Get user subscription tier from AuthProvider (already loaded on app mount)
+  const { user: authUser } = useAuth()
+  const userTier = authUser?.subscription_tier || 'free'
 
   // Fetch filter options using parallel queries
   const { data: filterOptionsData } = useApiFetch<{

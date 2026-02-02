@@ -423,9 +423,8 @@ export default function Agents() {
   const { data: positionsData, isPending: positionsLoading } = useQuery({
     queryKey: queryKeys.positionsWithUserLevel(),
     queryFn: async ({ signal }) => {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+      const { getClientAccessToken } = await import('@/lib/auth/client')
+      const accessToken = await getClientAccessToken()
 
       if (!accessToken) {
         return { positions: [], userPositionLevel: null, isAdmin: false }

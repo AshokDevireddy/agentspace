@@ -1,4 +1,4 @@
-import { createServerClient } from '@/lib/supabase/server'
+import { getAccessToken } from '@/lib/session'
 import { getBackendUrl } from '@/lib/api-config'
 import { NextResponse } from 'next/server'
 
@@ -11,11 +11,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Client ID is required' }, { status: 400 })
     }
 
-    // Get the authenticated user's session for the auth token
-    const supabase = await createServerClient()
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    // Get access token from Django session
+    const accessToken = await getAccessToken()
 
-    if (sessionError || !session?.access_token) {
+    if (!accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -25,7 +24,7 @@ export async function POST(request: Request) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
+        'Authorization': `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ clientId }),
     })

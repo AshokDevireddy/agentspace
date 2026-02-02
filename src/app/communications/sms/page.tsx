@@ -176,14 +176,15 @@ function SMSMessagingPageContent() {
         throw new Error('No user ID found')
       }
 
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
+      const { getClientAccessToken } = await import('@/lib/auth/client')
+      const accessToken = await getClientAccessToken()
+      if (!accessToken) {
         throw new Error('No session')
       }
 
       const response = await fetch('/api/user/profile', {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${accessToken}`
         }
       })
 
@@ -506,12 +507,13 @@ function SMSMessagingPageContent() {
 
               try {
                 // Get access token for API call
-                const { data: { session } } = await supabase.auth.getSession()
-                if (session?.access_token) {
+                const { getClientAccessToken } = await import('@/lib/auth/client')
+                const accessToken = await getClientAccessToken()
+                if (accessToken) {
                   await fetch(`/api/sms/messages/${messageId}/read`, {
                     method: 'POST',
                     headers: {
-                      'Authorization': `Bearer ${session.access_token}`
+                      'Authorization': `Bearer ${accessToken}`
                     }
                   })
                 }

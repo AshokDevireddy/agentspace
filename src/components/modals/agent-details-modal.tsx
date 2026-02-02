@@ -11,7 +11,7 @@ import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select
 import { AsyncSearchableSelect } from "@/components/ui/async-searchable-select"
 import { Loader2, User, Calendar, DollarSign, Users, Building2, Mail, Phone, CheckCircle2, UserCog, TrendingUp, Circle, X, Edit, Save } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
+import { useAuth } from "@/providers/AuthProvider"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
@@ -129,9 +129,8 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
   const { data: positionColorMap = new Map<number, string>() } = useQuery({
     queryKey: queryKeys.positionsList(),
     queryFn: async () => {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+      const { getClientAccessToken } = await import('@/lib/auth/client')
+      const accessToken = await getClientAccessToken()
 
       if (!accessToken) return new Map<number, string>()
 
@@ -169,29 +168,9 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
-  // Check admin status
-  const { data: isAdmin = false } = useQuery({
-    queryKey: queryKeys.userAdminStatus(),
-    queryFn: async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (!user) return false
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('is_admin, perm_level, role')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      // Check all three admin indicators: is_admin, perm_level, and role
-      return userData?.is_admin ||
-             userData?.perm_level === 'admin' ||
-             userData?.role === 'admin'
-    },
-    enabled: open,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  })
+  // Get admin status from AuthProvider
+  const { user: authUser } = useAuth()
+  const isAdmin = authUser?.is_admin || authUser?.role === 'admin'
 
   // Fetch agent details
   const { data: agent, isLoading: loading, error: agentError, refetch: refetchAgent } = useQuery({

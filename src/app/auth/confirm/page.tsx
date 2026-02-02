@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
-import { REDIRECT_DELAY_MS, storeInviteTokens, captureHashTokens, withTimeout, type HashTokens } from '@/lib/auth/constants'
+import { REDIRECT_DELAY_MS, storeInviteTokens, captureHashTokens, type HashTokens } from '@/lib/auth/constants'
 import { fetchApi } from '@/lib/api-client'
+import { getClientAccessToken } from '@/lib/auth/client'
 
 interface UserRecord {
   id: string
@@ -13,11 +13,10 @@ interface UserRecord {
   status: string
 }
 
-// 35s master timeout: 3 retries at 5+8+12 = 25s of waiting, plus ~10s for JWT/API processing
+// 35s master timeout
 const MASTER_TIMEOUT_MS = 35000
 
 export default function ConfirmSession() {
-  const supabase = createClient()
   const router = useRouter()
   const [message, setMessage] = useState('Confirming your session...')
   const [initialHashTokens] = useState<HashTokens | null>(captureHashTokens)
@@ -47,7 +46,7 @@ export default function ConfirmSession() {
 
   const confirmSession = async () => {
     try {
-      // Try hash tokens first (from Supabase implicit flow)
+      // Try hash tokens first (from email invite links)
       if (initialHashTokens) {
         const payload = decodeAndValidateJwt(initialHashTokens.accessToken)
 
@@ -62,25 +61,30 @@ export default function ConfirmSession() {
         return
       }
 
-      // Fallback: check for existing session with timeout
+      // Fallback: check for existing Django session
       try {
-        const { data: { user: existingUser } } = await withTimeout(supabase.auth.getUser())
-        if (existingUser) {
-          await routeUser(existingUser.id)
-          return
+        const accessToken = await getClientAccessToken()
+        if (accessToken) {
+          // We have a session, try to get user info
+          const response = await fetch('/api/auth/session', { credentials: 'include' })
+          if (response.ok) {
+            const data = await response.json()
+            if (data.authenticated && data.user) {
+              await routeUserByData(data.user)
+              return
+            }
+          }
         }
       } catch (err) {
         console.error('Error checking existing session:', err)
       }
 
-      // Try PKCE flow (code in query params)
+      // Try PKCE flow (code in query params) - redirect to callback route
       const code = new URLSearchParams(window.location.search).get('code')
       if (code) {
-        const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(window.location.href)
-        if (!error && session?.user) {
-          await routeUser(session.user.id)
-          return
-        }
+        // Redirect to callback route which handles code exchange
+        router.push(`/auth/callback?code=${code}`)
+        return
       }
 
       completedRef.current = true
@@ -135,6 +139,34 @@ export default function ConfirmSession() {
     }
   }
 
+  const routeUserByData = async (userData: { id: string; role: string; status: string }) => {
+    if (userData.status === 'invited') {
+      // For invited users coming from existing session, redirect to setup
+      completedRef.current = true
+      setMessage('Continue setting up your account...')
+      router.push('/setup-account')
+      return
+    }
+
+    if (userData.status === 'onboarding') {
+      completedRef.current = true
+      setMessage('Continue setting up your account...')
+      router.push('/setup-account')
+      return
+    }
+
+    if (userData.status === 'active') {
+      completedRef.current = true
+      setMessage('Welcome back! Redirecting...')
+      router.push(userData.role === 'client' ? '/client/dashboard' : '/')
+      return
+    }
+
+    completedRef.current = true
+    setMessage('Account is not accessible. Please contact support.')
+    setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
+  }
+
   const fetchUserRecord = async (authUserId: string, accessToken?: string): Promise<UserRecord | null> => {
     if (accessToken) {
       try {
@@ -147,14 +179,7 @@ export default function ConfirmSession() {
         return null
       }
     }
-
-    const { data } = await supabase
-      .from('users')
-      .select('id, role, status')
-      .eq('auth_user_id', authUserId)
-      .maybeSingle()
-
-    return data
+    return null
   }
 
   const handleInvitedUser = async (user: UserRecord, accessToken?: string) => {
@@ -173,30 +198,12 @@ export default function ConfirmSession() {
       } catch (err) {
         console.error('Failed to update user status:', err)
       }
-    } else {
-      await supabase
-        .from('users')
-        .update({ status: 'onboarding', updated_at: new Date().toISOString() })
-        .eq('id', user.id)
     }
 
-    // Store tokens and navigate immediately - don't wait for setSession()
-    // The setup-account page will use stored tokens directly (fast path)
-    // setSession() can complete in the background
+    // Store tokens for setup-account page to use
     if (accessToken && initialHashTokens?.refreshToken) {
       console.log(`[ConfirmSession] Storing tokens to localStorage`)
       storeInviteTokens(accessToken, initialHashTokens.refreshToken)
-
-      // Fire and forget - setSession will complete in background
-      // This avoids the 25s wait when setSession hangs
-      supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: initialHashTokens.refreshToken
-      }).then(() => {
-        console.log(`[ConfirmSession] setSession completed in background`)
-      }).catch((err) => {
-        console.log(`[ConfirmSession] setSession failed in background:`, err)
-      })
     }
 
     console.log(`[ConfirmSession] Navigating to /setup-account`)

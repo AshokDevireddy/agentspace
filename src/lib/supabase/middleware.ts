@@ -1,5 +1,9 @@
-import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
+import { jwtVerify } from 'jose'
+import type { Database } from './database.types'
+
+const SECRET = new TextEncoder().encode(process.env.SESSION_SECRET!)
 
 export type UserProfile = {
   role: 'admin' | 'agent' | 'client' | null
@@ -11,60 +15,69 @@ export type UserProfile = {
 export type UpdateSessionResult = {
   response: NextResponse
   user: { id: string; email?: string } | null
-  supabase: ReturnType<typeof createServerClient>
+  supabase: ReturnType<typeof createClient<Database>>
+}
+
+interface SessionPayload {
+  userId: string
+  accessToken: string
+  refreshToken: string
+  expiresAt: number
 }
 
 /**
- * Updates the user session and handles cookie management for middleware.
+ * Validates the Django session cookie and returns user info.
  *
- * CRITICAL: Uses getUser() instead of getSession() for security.
- * getUser() validates the JWT against Supabase Auth server.
- * getSession() only reads from cookies and can be spoofed.
+ * SECURITY: Uses httpOnly session cookie containing JWT-signed tokens.
+ * The session is validated by verifying the JWT signature.
  */
 export async function updateSession(request: NextRequest): Promise<UpdateSessionResult> {
-  let supabaseResponse = NextResponse.next({ request })
+  const response = NextResponse.next({ request })
 
-  const supabase = createServerClient(
+  // Create a Supabase client for database queries (not auth)
+  const supabase = createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          // Update cookies on the request for downstream processing
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-
-          // Create new response with updated request
-          supabaseResponse = NextResponse.next({ request })
-
-          // Set cookies on response for the browser
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  // CRITICAL: Use getUser() NOT getSession()
-  // getUser() validates JWT against Supabase Auth server (secure)
-  // getSession() only reads from cookies (can be spoofed)
-  const { data: { user }, error } = await supabase.auth.getUser()
-
-  if (error || !user) {
+  // Get session cookie
+  const sessionCookie = request.cookies.get('session')?.value
+  if (!sessionCookie) {
     return {
-      response: supabaseResponse,
+      response,
       user: null,
       supabase,
     }
   }
 
-  return {
-    response: supabaseResponse,
-    user: { id: user.id, email: user.email },
-    supabase,
+  try {
+    // Verify JWT signature
+    const { payload } = await jwtVerify(sessionCookie, SECRET)
+    const session = payload as unknown as SessionPayload
+
+    // Check if session is expired
+    if (session.expiresAt && Date.now() > session.expiresAt) {
+      return {
+        response,
+        user: null,
+        supabase,
+      }
+    }
+
+    // Session is valid - return user ID from session
+    // Note: The userId in session is the users.id (not auth_user_id)
+    return {
+      response,
+      user: { id: session.userId },
+      supabase,
+    }
+  } catch {
+    // Invalid session cookie
+    return {
+      response,
+      user: null,
+      supabase,
+    }
   }
 }
 
@@ -84,6 +97,8 @@ export const PUBLIC_API_PREFIXES = [
   '/api/register',
   '/api/reset-password',
   '/api/favicon',
+  '/api/auth/login',
+  '/api/auth/token',
 ] as const
 
 export const ADMIN_ROUTES = [

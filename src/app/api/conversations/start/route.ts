@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { getAccessToken } from "@/lib/session";
 import { getBackendUrl } from "@/lib/api-config";
 
 export async function POST(req: NextRequest) {
@@ -10,11 +10,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Deal ID is required" }, { status: 400 });
     }
 
-    // Get the authenticated user's session for the auth token
-    const supabase = await createServerClient();
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    // Get access token from Django session
+    const accessToken = await getAccessToken();
 
-    if (sessionError || !session?.access_token) {
+    if (!accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -24,7 +23,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
+        'Authorization': `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ dealId }),
     });

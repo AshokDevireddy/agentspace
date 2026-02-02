@@ -5,7 +5,6 @@
 
 import { useMutation } from '@tanstack/react-query'
 import { useInvalidation } from '../useInvalidation'
-import { getAuthEndpoint } from '@/lib/api-config'
 import { authApi, AuthApiError } from '@/lib/api/auth'
 
 // ============ Register Mutation ============
@@ -190,6 +189,7 @@ interface SignInApiResponse {
 
 /**
  * Sign in user via backend API
+ * Note: Session is managed via httpOnly cookies, no Supabase session needed
  */
 export function useSignIn(options?: {
   onSuccess?: (data: SignInResponse) => void
@@ -197,25 +197,14 @@ export function useSignIn(options?: {
 }) {
   return useMutation<SignInResponse, Error, SignInInput>({
     mutationFn: async ({ email, password }) => {
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
-
-      // Clear any existing session to prevent conflicts
-      try {
-        await Promise.race([
-          supabase.auth.signOut({ scope: 'local' }),
-          new Promise(resolve => setTimeout(resolve, 3000))
-        ])
-      } catch {
-        // Ignore sign-out errors - continue with sign-in
-      }
-
+      // Login via Next.js API route which creates httpOnly session cookie
       const response = await withAuthTimeout(
-        fetch(getAuthEndpoint('login'), {
+        fetch('/api/auth/login', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
+          credentials: 'include',
           body: JSON.stringify({ email, password }),
         })
       )
@@ -225,25 +214,12 @@ export function useSignIn(options?: {
         throw new Error(errorData.message || 'Invalid login credentials')
       }
 
-      const data: SignInApiResponse = await response.json()
-
-      // Set the Supabase session with the tokens from the API
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-      })
-
-      if (sessionError) {
-        throw new Error('Failed to establish session')
-      }
+      const data = await response.json()
 
       // Fetch agency whitelabel data via Django API
       const agencyResponse = await withAuthTimeout(
         fetch(`/api/agencies/${data.user.agency_id}/whitelabel`, {
-          headers: {
-            'Authorization': `Bearer ${data.access_token}`,
-            'Content-Type': 'application/json',
-          },
+          credentials: 'include',
         })
       )
 

@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { getApiBaseUrl } from "@/lib/api-config";
 import { getAccessToken } from "@/lib/session";
+import { getUserContext } from "@/lib/auth/get-user-context";
 
 export async function GET(request: Request) {
   try {
@@ -112,45 +113,16 @@ export async function POST(request: Request) {
       }
     }
 
-    // Get the authorization header
-    const authHeader = request.headers.get("authorization");
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    // Verify authentication using Django session
+    const userResult = await getUserContext();
+    if (!userResult.success) {
       return NextResponse.json({
         error: "Unauthorized",
-        detail: "No valid token provided",
+        detail: "No valid session",
       }, { status: 401 });
     }
 
-    const token = authHeader.replace("Bearer ", "");
-
-    // Verify the token and get user info
-    const { data: { user }, error: userError } = await supabase.auth.getUser(
-      token,
-    );
-
-    if (userError || !user) {
-      return NextResponse.json({
-        error: "Unauthorized",
-        detail: "Invalid token",
-      }, { status: 401 });
-    }
-
-    // Get the user's agency_id from the users table
-    const { data: userData, error: userDataError } = await supabase
-      .from("users")
-      .select("agency_id")
-      .eq("auth_user_id", user.id)
-      .single();
-
-    if (userDataError || !userData) {
-      return NextResponse.json({
-        error: "User not found",
-        detail: "Failed to fetch user information",
-      }, { status: 404 });
-    }
-
-    const agencyId = userData.agency_id;
+    const agencyId = userResult.context.agencyId;
 
     if (!agencyId) {
       return NextResponse.json({

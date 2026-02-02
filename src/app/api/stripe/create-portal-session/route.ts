@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { getAccessToken } from '@/lib/session';
 import { getBackendUrl } from '@/lib/api-config';
 import { stripe } from '@/lib/stripe';
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient();
+    // Get access token from Django session
+    const accessToken = await getAccessToken();
 
-    // Get authenticated user
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-    if (sessionError || !session?.access_token) {
+    if (!accessToken) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -22,7 +20,7 @@ export async function POST(request: NextRequest) {
     const userResponse = await fetch(djangoUrl, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${session.access_token}`,
+        'Authorization': `Bearer ${accessToken}`,
       },
     });
 

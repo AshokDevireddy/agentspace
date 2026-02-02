@@ -26,10 +26,8 @@ export function useAssignPosition(options?: {
 
   return useMutation<unknown, Error, AssignPositionInput>({
     mutationFn: async ({ agentId, positionId }) => {
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+      const { getClientAccessToken } = await import('@/lib/auth/client')
+      const accessToken = await getClientAccessToken()
 
       if (!accessToken) {
         throw new Error('Authentication required. Please log in.')

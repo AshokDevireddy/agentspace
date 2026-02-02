@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { createClient } from '@/lib/supabase/client'
+import { useAuth } from "@/providers/AuthProvider"
+import { getClientAccessToken } from "@/lib/auth/client"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
@@ -141,35 +142,18 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     searchError: uplineSearchError
   } = useAgentSearch(pauseUplineSearch)
 
+  // Get user data from AuthProvider
+  const { user: authUser } = useAuth()
+  const isCurrentUserAdmin = authUser?.is_admin || false
+
   // Query: Fetch positions when modal opens
   const { data: positionsData, isLoading: positionsLoading } = useQuery({
     queryKey: queryKeys.positionsList(),
     queryFn: async () => {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const accessToken = session?.access_token
+      const accessToken = await getClientAccessToken()
 
       if (!accessToken) {
         throw new Error('No access token available')
-      }
-
-      // Fetch current user's position level and admin status
-      let userPositionLevel: number | null = null
-      let isAdmin = false
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('position_id, position:positions(level), role')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        if (userData?.position?.[0]?.level !== undefined) {
-          userPositionLevel = userData.position[0].level
-        }
-
-        // Check if user is admin by role
-        isAdmin = userData?.role === 'admin'
       }
 
       const response = await fetch('/api/positions', {
@@ -191,20 +175,13 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         level: number
       }
 
-      // Filter positions: admins can assign any position, agents can assign positions at their level or below
-      const filteredData = isAdmin
-        ? data
-        : userPositionLevel !== null
-          ? data.filter((pos: PositionData) => pos.level <= userPositionLevel)
-          : data
-
+      // Note: Position-level filtering now handled by API based on user context
       return {
-        positions: filteredData.map((pos: PositionData) => ({
+        positions: data.map((pos: PositionData) => ({
           value: pos.position_id,
           label: `${pos.name} (Level ${pos.level})`,
           level: pos.level
         })) as SearchOption[],
-        currentUserPositionLevel: userPositionLevel
       }
     },
     enabled: isOpen,
@@ -212,38 +189,6 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   })
 
   const positions = positionsData?.positions || []
-  const currentUserPositionLevel = positionsData?.currentUserPositionLevel || null
-
-  // Query: Fetch current user's admin status when modal opens
-  const { data: adminStatusData } = useQuery({
-    queryKey: queryKeys.userAdminStatus(),
-    queryFn: async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (!user) {
-        throw new Error('No user found')
-      }
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('is_admin, perm_level')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      if (!userData) {
-        throw new Error('User data not found')
-      }
-
-      return {
-        isAdmin: userData.is_admin || userData.perm_level === 'admin'
-      }
-    },
-    enabled: isOpen,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const isCurrentUserAdmin = adminStatusData?.isAdmin || false
 
   // Effect to auto-set permission level for non-admin users
   useEffect(() => {
@@ -252,47 +197,35 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
     }
   }, [isOpen, isCurrentUserAdmin, formData.permissionLevel])
 
-  // Query: Fetch current user as default upline when no upline is provided
-  const { data: defaultUplineData } = useQuery({
-    queryKey: queryKeys.userDefaultUpline(),
-    queryFn: async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (!user) {
-        throw new Error('No user found')
-      }
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, email, is_admin, perm_level')
-        .eq('auth_user_id', user.id)
-        .single()
-
-      if (!userData) {
-        throw new Error('User data not found')
-      }
-
-      return {
-        userId: userData.id,
-        userLabel: `${userData.first_name} ${userData.last_name} - ${userData.email}`,
-        isAdmin: userData.is_admin || userData.perm_level === 'admin'
-      }
-    },
-    enabled: !upline && isOpen && !hasSetDefaultUpline,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  // Effect to apply default upline when fetched
+  // Effect to apply current user as default upline when no upline is provided
   useEffect(() => {
-    if (defaultUplineData && !hasSetDefaultUpline) {
-      applyUplineSelection({
-        value: defaultUplineData.userId,
-        label: defaultUplineData.userLabel
-      })
-      setHasSetDefaultUpline(true)
+    if (authUser && !upline && isOpen && !hasSetDefaultUpline) {
+      // Fetch user's full name via API to set as default upline
+      const fetchUserDetails = async () => {
+        try {
+          const accessToken = await getClientAccessToken()
+          if (!accessToken) return
+
+          const response = await fetch('/api/user/profile', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+          })
+          if (!response.ok) return
+
+          const data = await response.json()
+          const userData = data.data || data
+
+          applyUplineSelection({
+            value: authUser.id,
+            label: `${userData.first_name || ''} ${userData.last_name || ''} - ${authUser.email}`
+          })
+          setHasSetDefaultUpline(true)
+        } catch {
+          // Ignore errors - just don't set default upline
+        }
+      }
+      fetchUserDetails()
     }
-  }, [defaultUplineData, hasSetDefaultUpline])
+  }, [authUser, upline, isOpen, hasSetDefaultUpline])
 
   // Mutation: Submit form to invite agent - using centralized hook
   const inviteAgentMutation = useSendInvite({

@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { FileText, User, Mail, Phone, MapPin, Calendar, DollarSign, CreditCard, Hash, Building2 } from 'lucide-react'
@@ -67,21 +66,21 @@ interface DealsResponse {
 
 export default function ClientDashboard() {
   const router = useRouter()
-  const supabase = createClient()
   const { user: authUser, loading: authLoading, signOut } = useAuth()
 
   // Query for dashboard data (user profile + agency branding)
   const { data: dashboardData, isLoading: dashboardLoading, error: dashboardError } = useQuery({
     queryKey: queryKeys.clientUser(),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
+      const { getClientAccessToken } = await import('@/lib/auth/client')
+      const accessToken = await getClientAccessToken()
+      if (!accessToken) {
         throw new Error('Not authenticated')
       }
 
       const response = await fetchApi<DashboardResponse>(
         '/api/client/dashboard',
-        session.access_token,
+        accessToken,
         'Failed to fetch dashboard'
       )
 
@@ -103,12 +102,13 @@ export default function ClientDashboard() {
   const { data: deals = [], isLoading: dealsLoading, error: dealsError } = useQuery({
     queryKey: queryKeys.clientDeals(userData?.id || ''),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token || !userData?.id) return []
+      const { getClientAccessToken } = await import('@/lib/auth/client')
+      const accessToken = await getClientAccessToken()
+      if (!accessToken || !userData?.id) return []
 
       const response = await fetchApi<DealsResponse>(
         '/api/client/deals',
-        session.access_token,
+        accessToken,
         'Failed to fetch deals'
       )
 

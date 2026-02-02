@@ -10,9 +10,10 @@ import { useAgencyBranding } from "@/contexts/AgencyBrandingContext"
 import { useTheme } from "next-themes"
 import { useNotification } from '@/contexts/notification-context'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
-import { AUTH_TIMEOUT_MS, getInviteTokens, clearInviteTokens, withTimeout } from '@/lib/auth/constants'
+import { AUTH_TIMEOUT_MS, getInviteTokens, clearInviteTokens } from '@/lib/auth/constants'
 import { authApi, AuthApiError } from '@/lib/api/auth'
 import { fetchApi } from '@/lib/api-client'
+import { getClientAccessToken } from '@/lib/auth/client'
 
 interface UserData {
   id: string
@@ -127,37 +128,25 @@ export default function SetupAccount() {
         }
       }
 
-      // PRIORITY 2: Try getSession() if no stored tokens (e.g., page refresh after setup)
+      // PRIORITY 2: Try Django session if no stored tokens (e.g., page refresh after setup)
       if (!authUserId) {
-        console.log(`[setup-account] PRIORITY 2: Starting getSession() at +${Date.now() - startTime}ms`)
+        console.log(`[setup-account] PRIORITY 2: Checking Django session at +${Date.now() - startTime}ms`)
         try {
-          const { data: { session } } = await withTimeout(supabase.auth.getSession())
-          console.log(`[setup-account] PRIORITY 2: getSession() completed at +${Date.now() - startTime}ms, hasSession=${!!session?.user}`)
-          if (session?.user) {
-            authUserId = session.user.id
-            accessToken = session.access_token
-            console.log(`[setup-account] PRIORITY 2: Got authUserId from session`)
+          const sessionToken = await getClientAccessToken()
+          if (sessionToken) {
+            // Get user info from Django session
+            const sessionResponse = await fetch('/api/auth/session', { credentials: 'include' })
+            if (sessionResponse.ok) {
+              const sessionData = await sessionResponse.json()
+              if (sessionData.authenticated && sessionData.user?.auth_user_id) {
+                authUserId = sessionData.user.auth_user_id
+                accessToken = sessionToken
+                console.log(`[setup-account] PRIORITY 2: Got authUserId from Django session`)
+              }
+            }
           }
         } catch (sessionError) {
-          console.error(`[setup-account] PRIORITY 2: getSession() FAILED at +${Date.now() - startTime}ms:`, sessionError)
-        }
-      }
-
-      // PRIORITY 3: Try getUser() with timeout as last resort
-      if (!authUserId) {
-        console.log(`[setup-account] PRIORITY 3: Trying getUser() at +${Date.now() - startTime}ms`)
-        try {
-          const getUserPromise = supabase.auth.getUser()
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('timeout')), AUTH_TIMEOUT_MS)
-          )
-          const result = await Promise.race([getUserPromise, timeoutPromise])
-          if (result?.data?.user) {
-            authUserId = result.data.user.id
-            console.log(`[setup-account] PRIORITY 3: Got authUserId from getUser()`)
-          }
-        } catch (err) {
-          console.log(`[setup-account] PRIORITY 3: getUser() failed at +${Date.now() - startTime}ms:`, err)
+          console.error(`[setup-account] PRIORITY 2: Django session check FAILED at +${Date.now() - startTime}ms:`, sessionError)
         }
       }
 
@@ -300,14 +289,11 @@ export default function SetupAccount() {
       // Try to get a fresh session first
       let accessToken: string | null = null
 
-      // First, try to get session from Supabase (most reliable)
+      // First, try to get token from Django session (most reliable)
       try {
-        const { data: { session } } = await withTimeout(supabase.auth.getSession())
-        if (session?.access_token) {
-          accessToken = session.access_token
-        }
+        accessToken = await getClientAccessToken()
       } catch {
-        // Timeout, continue to fallback
+        // Continue to fallback
       }
 
       // Fallback to stored invite tokens

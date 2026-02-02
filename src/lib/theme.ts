@@ -1,12 +1,11 @@
-import { createClient } from '@/lib/supabase/client'
+import { getClientAccessToken } from '@/lib/auth/client'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
 export async function updateUserTheme(theme: ThemeMode): Promise<{ success: boolean; error?: string }> {
-  const supabase = createClient()
-  const { data: { session } } = await supabase.auth.getSession()
+  const accessToken = await getClientAccessToken()
 
-  if (!session) {
+  if (!accessToken) {
     return { success: false, error: 'No authenticated session' }
   }
 
@@ -14,7 +13,7 @@ export async function updateUserTheme(theme: ThemeMode): Promise<{ success: bool
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session.access_token}`
+      'Authorization': `Bearer ${accessToken}`
     },
     body: JSON.stringify({ theme })
   })

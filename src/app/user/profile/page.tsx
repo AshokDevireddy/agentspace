@@ -110,9 +110,8 @@ export default function ProfilePage() {
     queryKey: queryKeys.positionsList(),
     queryFn: async () => {
       try {
-        const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
-        const accessToken = session?.access_token;
+        const { getClientAccessToken } = await import('@/lib/auth/client');
+        const accessToken = await getClientAccessToken();
 
         if (!accessToken) {
           console.warn('[Profile] No access token for positions fetch');
@@ -146,9 +145,8 @@ export default function ProfilePage() {
   // Handle position update with mutation
   const updatePositionMutation = useMutation({
     mutationFn: async (positionId: string) => {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const accessToken = session?.access_token;
+      const { getClientAccessToken } = await import('@/lib/auth/client');
+      const accessToken = await getClientAccessToken();
 
       if (!accessToken) {
         throw new Error('Not authenticated');

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
+import { getUserContext } from '@/lib/auth/get-user-context';
 import Stripe from 'stripe';
 import { getTierFromPriceId, TIER_PRICE_IDS } from '@/lib/subscription-tiers';
 
@@ -36,24 +37,19 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const supabase = await createServerClient();
-    const adminSupabase = createAdminClient();
-
-    // Get current user
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // Verify authentication using Django session
+    const userResult = await getUserContext();
+    if (!userResult.success) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const adminSupabase = createAdminClient();
 
     // Get user details
     const { data: userData, error: userError } = await adminSupabase
       .from('users')
       .select('id, stripe_subscription_id, subscription_tier, scheduled_tier_change, billing_cycle_start, billing_cycle_end')
-      .eq('auth_user_id', user.id)
+      .eq('auth_user_id', userResult.context.authUserId)
       .single();
 
     if (userError || !userData) {

@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { getAccessToken } from '@/lib/session';
 import { getBackendUrl } from '@/lib/api-config';
 import { stripe } from '@/lib/stripe';
 import { getTierFromPriceId } from '@/lib/subscription-tiers';
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient();
+    // Get access token from Django session
+    const accessToken = await getAccessToken();
 
-    // Get authenticated user session
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-    if (sessionError || !session?.access_token) {
+    if (!accessToken) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -36,7 +34,7 @@ export async function POST(request: NextRequest) {
     const userResponse = await fetch(djangoUrl, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${session.access_token}`,
+        'Authorization': `Bearer ${accessToken}`,
       },
     });
 
@@ -76,7 +74,7 @@ export async function POST(request: NextRequest) {
         name: `${userData.first_name} ${userData.last_name}`,
         metadata: {
           supabase_user_id: userData.id,
-          auth_user_id: session.user.id,
+          auth_user_id: userData.auth_user_id,
         },
       });
 
@@ -87,7 +85,7 @@ export async function POST(request: NextRequest) {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ stripe_customer_id: customerId }),
       });

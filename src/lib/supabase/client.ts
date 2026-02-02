@@ -1,13 +1,14 @@
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import type { Database } from './database.types.ts'
 
-// Singleton instance to ensure consistent auth state across components
-let browserClient: ReturnType<typeof createBrowserClient<Database>> | null = null
+// Singleton instance for database queries and realtime
+// Note: Auth is handled via Django session cookies, not Supabase auth
+let browserClient: ReturnType<typeof createSupabaseClient<Database>> | null = null
 
 export const createClient = () => {
   if (browserClient) return browserClient
 
-  browserClient = createBrowserClient<Database>(
+  browserClient = createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -15,11 +16,6 @@ export const createClient = () => {
         params: {
           eventsPerSecond: 10,
         },
-      },
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: false, // Disabled - we handle tokens manually in pages
       },
       global: {
         headers: {

@@ -850,18 +850,21 @@ export default function Agents() {
     setSelectedAgentIdForModal(null)
   }
 
-  // Generate agent options for dropdowns - deduplicate by name
-  const uniqueAgentNames = Array.from(new Set(allAgents.map(agent => agent.name))).sort()
+  // Generate agent options for dropdowns - keep unique IDs, allow duplicate names
   const agentOptions = [
     { value: "all", label: "All Agents" },
-    ...uniqueAgentNames.map(name => ({ value: name, label: name }))
+    ...allAgents
+      .map(agent => ({ value: agent.id, label: agent.name }))
+      .sort((a, b) => a.label.localeCompare(b.label))
   ]
 
-  // Generate direct upline options with "Not Set" option - deduplicate by name
+  // Generate direct upline options with "Not Set" option - keep unique IDs, allow duplicate names
   const directUplineOptions = [
     { value: "all", label: "All Agents" },
     { value: "not_set", label: "Not Set" },
-    ...uniqueAgentNames.map(name => ({ value: name, label: name }))
+    ...allAgents
+      .map(agent => ({ value: agent.id, label: agent.name }))
+      .sort((a, b) => a.label.localeCompare(b.label))
   ]
 
   // Generate position options with "Not Set" option

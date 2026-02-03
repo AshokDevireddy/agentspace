@@ -5,7 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server';
 import { normalizePhoneForStorage, sendSMS } from '@/lib/telnyx';
-import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
+import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries, formatAgentName } from '@/lib/sms-template-helpers';
 
 interface ConversationResult {
   id: string;
@@ -455,44 +455,91 @@ export async function sendWelcomeMessage(
     throw new Error('Agency not found or missing phone number');
   }
 
-  // If client name or agent name not provided, try to fetch from database
-  let finalClientName = clientName;
-  let finalClientEmail = clientEmail;
-  let finalAgentName = agentName;
+  // Get conversation to find deal
+  const { data: conversation } = await supabase
+    .from('conversations')
+    .select('deal_id')
+    .eq('id', conversationId)
+    .single();
 
-  if (!finalClientName || !finalClientEmail || !finalAgentName) {
-    // Try to get conversation to find deal
-    const { data: conversation } = await supabase
-      .from('conversations')
-      .select('deal_id')
-      .eq('id', conversationId)
+  // Fetch deal data for template variables
+  let dealData: {
+    client_name?: string;
+    client_email?: string;
+    insured?: string;
+    policy_number?: string;
+    face_amount?: string;
+    monthly_premium?: string;
+    initial_draft?: string;
+    carrier_name?: string;
+    beneficiaries?: string;
+  } = {};
+
+  if (conversation?.deal_id) {
+    const { data: deal } = await supabase
+      .from('deals')
+      .select('client_name, client_email, monthly_premium, policy_effective_date, face_value, policy_number, carrier_id, agent_id')
+      .eq('id', conversation.deal_id)
       .single();
 
-    if (conversation?.deal_id) {
-      // Fetch deal and agent details
-      const { data: deal } = await supabase
-        .from('deals')
-        .select('client_name, client_email')
-        .eq('id', conversation.deal_id)
-        .single();
+    if (deal) {
+      dealData.client_name = deal.client_name;
+      dealData.client_email = deal.client_email;
+      dealData.insured = deal.client_name || '';
+      dealData.policy_number = deal.policy_number || '';
+      dealData.face_amount = deal.face_value ? `$${deal.face_value.toLocaleString()}` : '';
+      dealData.monthly_premium = deal.monthly_premium ? `$${deal.monthly_premium.toFixed(2)}` : '';
+      dealData.initial_draft = deal.policy_effective_date || '';
 
-      if (deal) {
-        finalClientName = finalClientName || deal.client_name;
-        finalClientEmail = finalClientEmail || deal.client_email;
+      // Fetch carrier name
+      if (deal.carrier_id) {
+        const { data: carrier } = await supabase
+          .from('carriers')
+          .select('name')
+          .eq('id', deal.carrier_id)
+          .single();
+        dealData.carrier_name = carrier?.name || '';
       }
-    }
 
-    if (!finalAgentName) {
-      const { data: agent } = await supabase
-        .from('users')
+      // Fetch beneficiaries
+      const { data: beneficiaries } = await supabase
+        .from('beneficiaries')
         .select('first_name, last_name')
-        .eq('id', agentId)
-        .single();
-
-      if (agent) {
-        finalAgentName = `${agent.first_name} ${agent.last_name}`;
-      }
+        .eq('deal_id', conversation.deal_id);
+      dealData.beneficiaries = formatBeneficiaries(beneficiaries);
     }
+  }
+
+  // If client name or agent name not provided, use deal data
+  let finalClientName = clientName || dealData.client_name;
+  let finalClientEmail = clientEmail || dealData.client_email;
+  let finalAgentName = agentName;
+
+  let finalAgentPhone = '';
+  if (!finalAgentName) {
+    const { data: agent } = await supabase
+      .from('users')
+      .select('first_name, last_name, phone_number')
+      .eq('id', agentId)
+      .single();
+
+    if (agent) {
+      finalAgentName = formatAgentName(agent.first_name, agent.last_name);
+      finalAgentPhone = agent.phone_number || '';
+    }
+  } else {
+    // Format agent name if it was provided
+    const nameParts = finalAgentName.split(' ');
+    if (nameParts.length >= 2) {
+      finalAgentName = formatAgentName(nameParts[0], nameParts.slice(1).join(' '));
+    }
+    // Still need to fetch phone number
+    const { data: agent } = await supabase
+      .from('users')
+      .select('phone_number')
+      .eq('id', agentId)
+      .single();
+    finalAgentPhone = agent?.phone_number || '';
   }
 
   // Fetch agency SMS template settings
@@ -518,7 +565,15 @@ export async function sendWelcomeMessage(
     client_first_name: clientFirstName,
     agency_name: agency.name,
     agent_name: displayAgentName,
+    agent_phone: finalAgentPhone || '',
     client_email: displayEmail,
+    insured: dealData.insured || '',
+    policy_number: dealData.policy_number || '',
+    face_amount: dealData.face_amount || '',
+    monthly_premium: dealData.monthly_premium || '',
+    initial_draft: dealData.initial_draft || '',
+    carrier_name: dealData.carrier_name || '',
+    beneficiaries: dealData.beneficiaries || '',
   });
 
   // Create draft message (don't send via Telnyx yet)

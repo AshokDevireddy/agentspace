@@ -29,14 +29,56 @@ export const DEFAULT_SMS_TEMPLATES = {
 };
 
 /**
+ * Helper function to capitalize first letter of each word
+ */
+function capitalizeName(name: string | null | undefined): string {
+  if (!name || typeof name !== 'string') return '';
+  const trimmed = name.trim();
+  if (!trimmed) return '';
+  return trimmed
+    .split(/\s+/)
+    .map(word => {
+      if (!word) return '';
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .filter(word => word.length > 0)
+    .join(' ');
+}
+
+/**
+ * Helper function to format beneficiaries list
+ */
+export function formatBeneficiaries(beneficiaries: Array<{ first_name: string | null; last_name: string | null }> | null | undefined): string {
+  if (!beneficiaries || beneficiaries.length === 0) return '';
+  
+  return beneficiaries
+    .map(b => {
+      const firstName = capitalizeName(b.first_name);
+      const lastName = capitalizeName(b.last_name);
+      return `${firstName} ${lastName}`.trim();
+    })
+    .filter(name => name.length > 0)
+    .join(', ');
+}
+
+/**
+ * Helper function to format agent name with proper capitalization
+ */
+export function formatAgentName(firstName: string | null | undefined, lastName: string | null | undefined): string {
+  const first = capitalizeName(firstName);
+  const last = capitalizeName(lastName);
+  return `${first} ${last}`.trim();
+}
+
+/**
  * Placeholder definitions for each template type
  */
 export const SMS_TEMPLATE_PLACEHOLDERS = {
-  welcome: ['client_first_name', 'agency_name', 'agent_name', 'client_email'],
-  billing_reminder: ['client_first_name'],
-  lapse_reminder: ['client_first_name', 'agent_name', 'agent_phone'],
-  birthday: ['client_first_name', 'agency_name'],
-  holiday: ['client_first_name', 'agent_name', 'holiday_greeting'],
-  quarterly: ['client_first_name', 'agent_name', 'agent_phone'],
-  policy_packet: ['client_first_name'],
+  welcome: ['client_first_name', 'agency_name', 'agent_name', 'agent_phone', 'client_email', 'insured', 'policy_number', 'face_amount', 'monthly_premium', 'initial_draft', 'carrier_name', 'beneficiaries'],
+  billing_reminder: ['client_first_name', 'agent_phone', 'insured', 'policy_number', 'face_amount', 'monthly_premium', 'initial_draft', 'carrier_name', 'beneficiaries'],
+  lapse_reminder: ['client_first_name', 'agent_name', 'agent_phone', 'insured', 'policy_number', 'face_amount', 'monthly_premium', 'initial_draft', 'carrier_name', 'beneficiaries'],
+  birthday: ['client_first_name', 'agency_name', 'agent_phone', 'insured', 'policy_number', 'face_amount', 'monthly_premium', 'initial_draft', 'carrier_name', 'beneficiaries'],
+  holiday: ['client_first_name', 'agent_name', 'agent_phone', 'holiday_greeting', 'insured', 'policy_number', 'face_amount', 'monthly_premium', 'initial_draft', 'carrier_name', 'beneficiaries'],
+  quarterly: ['client_first_name', 'agent_name', 'agent_phone', 'insured', 'policy_number', 'face_amount', 'monthly_premium', 'initial_draft', 'carrier_name', 'beneficiaries'],
+  policy_packet: ['client_first_name', 'agent_phone', 'insured', 'policy_number', 'face_amount', 'monthly_premium', 'initial_draft', 'carrier_name', 'beneficiaries'],
 };

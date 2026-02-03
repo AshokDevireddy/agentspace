@@ -9,7 +9,7 @@ import {
   getConversationIfExists,
   logMessage,
 } from '@/lib/sms-helpers';
-import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
+import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries, formatAgentName } from '@/lib/sms-template-helpers';
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
 
 // US Federal Bank Holidays configuration
@@ -203,12 +203,59 @@ export async function GET(request: NextRequest) {
         // Get template and replace placeholders
         const template = agencySettings?.sms_holiday_template || DEFAULT_SMS_TEMPLATES.holiday;
         const clientFirstName = deal.client_name?.split(' ')[0] || deal.client_name || 'there';
-        const agentName = `${deal.agent_first_name} ${deal.agent_last_name}`;
+        const agentName = formatAgentName(deal.agent_first_name, deal.agent_last_name);
+
+        // Fetch additional deal data for template variables
+        const { data: dealDetails } = await supabase
+          .from('deals')
+          .select('monthly_premium, policy_effective_date, face_value, policy_number, carrier_id')
+          .eq('id', deal.deal_id)
+          .single();
+
+        const insured = deal.client_name || '';
+        const policyNumber = dealDetails?.policy_number || '';
+        const faceAmount = dealDetails?.face_value ? `$${dealDetails.face_value.toLocaleString()}` : '';
+        const monthlyPremium = dealDetails?.monthly_premium ? `$${dealDetails.monthly_premium.toFixed(2)}` : '';
+        const initialDraft = dealDetails?.policy_effective_date || '';
+
+        // Fetch carrier name
+        let carrierName = '';
+        if (dealDetails?.carrier_id) {
+          const { data: carrier } = await supabase
+            .from('carriers')
+            .select('name')
+            .eq('id', dealDetails.carrier_id)
+            .single();
+          carrierName = carrier?.name || '';
+        }
+
+        // Fetch beneficiaries
+        const { data: beneficiaries } = await supabase
+          .from('beneficiaries')
+          .select('first_name, last_name')
+          .eq('deal_id', deal.deal_id);
+        const beneficiariesList = formatBeneficiaries(beneficiaries);
+
+        // Fetch agent phone number
+        const { data: agent } = await supabase
+          .from('users')
+          .select('phone_number')
+          .eq('id', deal.agent_id)
+          .single();
+        const agentPhone = agent?.phone_number || '';
 
         const messageBody = replaceSmsPlaceholders(template, {
           client_first_name: clientFirstName,
           agent_name: agentName,
+          agent_phone: agentPhone,
           holiday_greeting: holiday.greeting,
+          insured,
+          policy_number: policyNumber,
+          face_amount: faceAmount,
+          monthly_premium: monthlyPremium,
+          initial_draft: initialDraft,
+          carrier_name: carrierName,
+          beneficiaries: beneficiariesList,
         });
 
         console.log(`  📝 Message: ${messageBody.substring(0, 50)}...`);

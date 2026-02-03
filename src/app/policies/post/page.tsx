@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -48,13 +48,6 @@ type Beneficiary = {
 };
 
 type FormField = keyof typeof initialFormData;
-
-const requiredFields: FormField[] = [
-  "carrierId", "productId", "policyEffectiveDate", "rateClass", "ssnBenefit", "monthlyPremium",
-  "billingCycle", "leadSource",
-  "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
-  "clientAddress", "policyNumber"
-];
 
 const STEPS = [
   { id: 1, name: 'Policy Information', icon: FileText },
@@ -291,7 +284,8 @@ export default function PostDeal() {
         userFirstName: currentUser.first_name,
         userLastName: currentUser.last_name,
         deactivatedPostADeal: agencyData?.deactivated_post_a_deal || false,
-        beneficiariesRequired: agencyData?.beneficiaries_required || false
+        beneficiariesRequired: agencyData?.beneficiaries_required || false,
+        hasTeams: agencyData?.teams !== null && agencyData?.teams !== undefined
       }
 
       console.log('[PostDeal AgencyQuery] Query complete, returning:', {
@@ -318,6 +312,21 @@ export default function PostDeal() {
   const userLastName = agencyData?.userLastName ?? ''
   const deactivatedPostADeal = agencyData?.deactivatedPostADeal ?? false
   const beneficiariesRequired = agencyData?.beneficiariesRequired ?? false
+  const hasTeams = agencyData?.hasTeams ?? false
+
+  // Dynamic required fields - include "team" if agency has teams array (not null)
+  const requiredFields = useMemo<FormField[]>(() => {
+    const baseFields: FormField[] = [
+      "carrierId", "productId", "policyEffectiveDate", "rateClass", "ssnBenefit", "monthlyPremium",
+      "billingCycle", "leadSource",
+      "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
+      "clientAddress", "policyNumber"
+    ]
+    if (hasTeams) {
+      return [...baseFields, "team"]
+    }
+    return baseFields
+  }, [hasTeams])
 
   // Query: Load products when carrier changes
   const { data: productsOptions = [], isFetching: isProductsFetching } = useQuery({
@@ -954,6 +963,10 @@ export default function PostDeal() {
         setError("Please select a lead source.")
         return false
       }
+      if (hasTeams && !formData.team) {
+        setError("Please select a team.")
+        return false
+      }
     } else if (step === 2) {
       // Client Information validation
       if (!formData.clientName) {
@@ -1417,7 +1430,7 @@ export default function PostDeal() {
                   {teamsOptions.length > 0 && (
                     <div className="space-y-2">
                       <label className="block text-sm font-semibold text-foreground">
-                        Team
+                        Team <span className="text-destructive">*</span>
                       </label>
                       <SimpleSearchableSelect
                         options={teamsOptions}
@@ -1437,11 +1450,19 @@ export default function PostDeal() {
                   <Textarea
                     value={formData.notes}
                     onChange={(e) => handleInputChange("notes", e.target.value)}
-                    placeholder="Enter any additional notes about this policy..."
+                    placeholder={
+                      agencyId === "b731a3a7-a357-468e-ad6a-50a426b3735c"
+                        ? "Enter any notes about the sale you made - this will appear in discord"
+                        : "Enter any notes about the sale you made"
+                    }
                     className="min-h-[100px]"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Optional: Add any additional information or notes about this policy
+                    {agencyId === "b731a3a7-a357-468e-ad6a-50a426b3735c" ? (
+                      "This note will appear in Discord"
+                    ) : (
+                      "Optional: Add any additional information or notes about this policy"
+                    )}
                   </p>
                 </div>
               </div>

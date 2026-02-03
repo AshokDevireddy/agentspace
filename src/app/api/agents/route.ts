@@ -184,7 +184,7 @@ export async function GET(request: Request) {
     // - null (not in URL, frontend defaulted to "all") → "all" (default to "all")
     // - "all" → "all" (pass "all" string to RPC - no filter applied)
     // - "not_set" → null (pass null to RPC - filter for null upline_id)
-    // - agent name → pass the name (filter by that upline)
+    // - agent ID (UUID) → pass the ID (filter by that upline)
     let directUplineFilter: string | null = "all"; // Default to "all" when not specified (matches frontend default)
     if (directUpline) {
       if (directUpline === "all") {
@@ -192,20 +192,20 @@ export async function GET(request: Request) {
       } else if (directUpline === "not_set") {
         directUplineFilter = null; // Pass null for "not_set" - RPC should filter for null upline_id
       } else {
-        directUplineFilter = directUpline; // Pass agent name
+        directUplineFilter = directUpline; // Pass agent ID (UUID)
       }
     }
 
     // Handle direct_downline filter:
     // - null (not in URL, frontend defaulted to "all") → "all" (default to "all")
     // - "all" → "all" (pass "all" string to RPC - no filter applied)
-    // - agent name → pass the name (filter by that downline)
+    // - agent ID (UUID) → pass the ID (filter by that downline)
     let directDownlineFilter: string | null = null;
     if (directDownline) {
       if (directDownline === "all") {
         directDownlineFilter = "all"; // Pass "all" string to RPC
       } else {
-        directDownlineFilter = directDownline; // Pass agent name
+        directDownlineFilter = directDownline; // Pass agent ID (UUID)
       }
     }
 
@@ -226,11 +226,13 @@ export async function GET(request: Request) {
     }
 
     const filters = {
-      in_upline: inUpline && inUpline !== "all" ? inUpline : null,
-      direct_upline: directUplineFilter,
-      in_downline: inDownline && inDownline !== "all" ? inDownline : null,
-      direct_downline: directDownlineFilter,
-      agent_name: agentName && agentName !== "all" ? agentName : null,
+      // NEW: All relationship filters now pass agent IDs (UUIDs) instead of names
+      in_upline_id: inUpline && inUpline !== "all" ? inUpline : null,
+      direct_upline_id: directUplineFilter,
+      in_downline_id: inDownline && inDownline !== "all" ? inDownline : null,
+      direct_downline_id: directDownlineFilter,
+      // NEW: Pass agent_id (UUID) instead of agent_name to prevent deduplication issues
+      agent_id: agentName && agentName !== "all" ? agentName : null,
       status: status && status !== "all" ? status : null,
       position_id: positionIdFilter,
     };

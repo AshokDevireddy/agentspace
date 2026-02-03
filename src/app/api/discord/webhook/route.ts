@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
 import { getUserContext } from '@/lib/auth/get-user-context'
+import { getApiBaseUrl } from '@/lib/api-config'
+import { getAccessToken } from '@/lib/session'
 import { replaceDiscordPlaceholders, DEFAULT_DISCORD_TEMPLATE } from '@/lib/discord-template-helpers'
 
 export async function POST(request: NextRequest) {
@@ -11,8 +12,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const supabase = createAdminClient()
-
     // Get request body
     const body = await request.json()
     const { agencyId, placeholders } = body
@@ -21,17 +20,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Get the agency's Discord webhook URL, template, and bot username
-    const { data: agency, error: agencyError } = await supabase
-      .from('agencies')
-      .select('discord_webhook_url, discord_notification_enabled, discord_notification_template, discord_bot_username')
-      .eq('id', agencyId)
-      .single()
+    // Get the agency's Discord webhook settings from Django backend
+    const accessToken = await getAccessToken()
+    const apiUrl = getApiBaseUrl()
 
-    if (agencyError || !agency) {
-      console.error('[Discord Webhook API] Agency not found:', agencyError)
+    const settingsResponse = await fetch(`${apiUrl}/api/agencies/${agencyId}/settings`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      cache: 'no-store',
+    })
+
+    if (!settingsResponse.ok) {
+      console.error('[Discord Webhook API] Failed to fetch agency settings:', settingsResponse.status)
       return NextResponse.json({ error: 'Agency not found' }, { status: 404 })
     }
+
+    const agency = await settingsResponse.json()
 
     const webhookUrl = agency.discord_webhook_url
     const useCustomTemplate = agency.discord_notification_enabled ?? false
@@ -86,4 +93,3 @@ export async function POST(request: NextRequest) {
     }, { status: 500 })
   }
 }
-

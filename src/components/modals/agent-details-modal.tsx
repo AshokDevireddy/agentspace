@@ -11,6 +11,7 @@ import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select
 import { AsyncSearchableSelect } from "@/components/ui/async-searchable-select"
 import { Loader2, User, Calendar, DollarSign, Users, Building2, Mail, Phone, CheckCircle2, UserCog, TrendingUp, Circle, X, Edit, Save } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { badgeColors, statusColors } from "@/lib/badge-colors"
 import { useAuth } from "@/providers/AuthProvider"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery } from '@tanstack/react-query'
@@ -24,23 +25,6 @@ interface AgentDetailsModalProps {
   onUpdate?: () => void
   startMonth?: string
   endMonth?: string
-}
-
-const badgeColors: { [key: string]: string } = {
-  "Legacy Junior Partner": "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  "Karma Director 2": "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  "Karma Director 1": "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  "Legacy MGA": "bg-green-500/20 text-green-400 border-green-500/30",
-  "Legacy GA": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-  "Legacy SA": "bg-red-500/20 text-red-400 border-red-500/30",
-}
-
-const statusColors: { [key: string]: string } = {
-  "pre-invite": "bg-gray-500/20 text-gray-400 border-gray-500/30",
-  "invited": "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  "onboarding": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-  "active": "bg-green-500/20 text-green-400 border-green-500/30",
-  "inactive": "bg-red-500/20 text-red-400 border-red-500/30",
 }
 
 // Position colors based on hierarchy level (top 10 positions get distinct colors, rest are gray)

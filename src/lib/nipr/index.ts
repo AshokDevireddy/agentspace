@@ -4,5 +4,5 @@
  */
 
 export * from './types'
-export { runNIPRAutomation } from './automation'
+export { executeNIPRAutomation } from './automation'
 export { analyzePDFReport } from './pdf-analyzer'

@@ -675,19 +675,3 @@ export async function executeNIPRAutomationHyperAgent(job: NIPRJobData): Promise
 export async function executeNIPRAutomation(job: NIPRJobData): Promise<NIPRResult> {
   return executeNIPRAutomationHyperAgent(job)
 }
-
-/**
- * Legacy function for backwards compatibility
- * Now just executes directly (queue is handled at the API level)
- */
-export async function runNIPRAutomation(input: NIPRInput): Promise<NIPRResult> {
-  const jobData: NIPRJobData = {
-    job_id: `legacy-${generateRequestId()}`,
-    job_user_id: '',
-    job_last_name: input.lastName,
-    job_npn: input.npn,
-    job_ssn_last4: input.ssn,
-    job_dob: input.dob
-  }
-  return executeNIPRAutomation(jobData)
-}

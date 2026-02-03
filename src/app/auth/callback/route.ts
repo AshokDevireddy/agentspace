@@ -15,11 +15,18 @@ export async function GET(request: NextRequest) {
   const next = requestUrl.searchParams.get('next') // Custom redirect after auth
   const agencyId = requestUrl.searchParams.get('agency_id') // For white-label redirect
 
-  console.log('=== Auth Callback Debug ===')
-  console.log('Full URL:', requestUrl.href)
-  console.log('Search params:', requestUrl.searchParams.toString())
-  console.log('Parsed params:', { token: !!token, tokenHash: !!tokenHash, type, code: !!code, error, next, agencyId })
-  console.log('========================')
+  // SECURITY FIX: Reduced logging to prevent token exposure in logs
+  // Only log non-sensitive information for debugging
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Auth callback received:', {
+      hasToken: !!token,
+      hasTokenHash: !!tokenHash,
+      type,
+      hasCode: !!code,
+      error: error || null,
+      next: next || null,
+    })
+  }
 
   // Handle error from auth provider
   if (error) {

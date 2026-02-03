@@ -5,6 +5,7 @@
  * Fully migrated to use Django API endpoints.
  */
 
+import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { sendSMS, containsUrgentKeywords, normalizePhoneNumber, normalizePhoneForStorage } from '@/lib/telnyx';
 import {
@@ -17,6 +18,57 @@ import {
   getAgentDetails,
   type DealResult,
 } from '@/lib/sms-helpers';
+
+/**
+ * Verifies Telnyx webhook signature to ensure requests are authentic.
+ * Telnyx uses HMAC-SHA256 signatures.
+ *
+ * @see https://developers.telnyx.com/docs/v2/development/api-guide/webhooks
+ */
+function verifyTelnyxSignature(
+  payload: string,
+  signature: string | null,
+  timestamp: string | null
+): boolean {
+  const telnyxPublicKey = process.env.TELNYX_PUBLIC_KEY;
+
+  // If no public key configured, log warning and skip verification in development
+  if (!telnyxPublicKey) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('TELNYX_PUBLIC_KEY not configured - rejecting webhook');
+      return false;
+    }
+    console.warn('TELNYX_PUBLIC_KEY not configured - skipping signature verification (DEV ONLY)');
+    return true;
+  }
+
+  if (!signature || !timestamp) {
+    console.error('Missing Telnyx signature or timestamp headers');
+    return false;
+  }
+
+  try {
+    // Telnyx signature verification
+    // The signature is computed as: HMAC-SHA256(timestamp + "." + payload, signing_secret)
+    const signedPayload = `${timestamp}.${payload}`;
+    const expectedSignature = createHmac('sha256', telnyxPublicKey)
+      .update(signedPayload)
+      .digest('hex');
+
+    // Use timing-safe comparison
+    const signatureBuffer = Buffer.from(signature, 'hex');
+    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+
+    if (signatureBuffer.length !== expectedBuffer.length) {
+      return false;
+    }
+
+    return timingSafeEqual(signatureBuffer, expectedBuffer);
+  } catch (error) {
+    console.error('Error verifying Telnyx signature:', error);
+    return false;
+  }
+}
 
 /**
  * Checks if message is an opt-out/help/opt-in keyword
@@ -129,7 +181,22 @@ async function handleOptIn(conversationId: string, agentId: string, agencyId: st
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Get the raw body for signature verification
+    const rawBody = await request.text();
+
+    // Verify webhook signature before processing
+    const telnyxSignature = request.headers.get('telnyx-signature-ed25519');
+    const telnyxTimestamp = request.headers.get('telnyx-timestamp');
+
+    if (!verifyTelnyxSignature(rawBody, telnyxSignature, telnyxTimestamp)) {
+      console.error('Telnyx webhook signature verification failed');
+      return NextResponse.json(
+        { success: false, error: 'Invalid webhook signature' },
+        { status: 401 }
+      );
+    }
+
+    const body = JSON.parse(rawBody);
 
     // Telnyx sends a test webhook on setup
     if (body.data?.event_type === 'message.received') {

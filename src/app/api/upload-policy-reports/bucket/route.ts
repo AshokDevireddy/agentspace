@@ -3,6 +3,10 @@
 // Files are organized by agency_id and carrier name in the bucket structure
 // NOTE: Auth and agency lookup use Django. File storage still uses Supabase Storage
 // for now - a full migration to S3 would require changes to file retrieval patterns.
+//
+// SECURITY: This endpoint should be rate-limited to prevent abuse.
+// Rate limiting is handled at the infrastructure level (Vercel/Cloudflare).
+// Recommended limit: 20 uploads per day per user.
 
 import { createAdminClient } from '@/lib/supabase/server'
 import { getSession } from '@/lib/session'

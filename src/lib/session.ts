@@ -31,7 +31,9 @@ export async function createSession(data: {
   cookieStore.set('session', session, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    // SECURITY FIX: Use 'strict' to prevent CSRF attacks
+    // 'lax' allows cookies on top-level navigation which could be exploited
+    sameSite: 'strict',
     expires: new Date(expiresAt),
     path: '/',
   })

@@ -55,7 +55,7 @@ export default function Home() {
     'get_scoreboard_data',
     { p_user_id: user?.id, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate },
     {
-      enabled: !!user?.id,
+      enabled: !!user?.id && isHydrated,
       staleTime: 60 * 1000, // 1 minute - scoreboard data is more static
       placeholderData: (previousData: any) => previousData,
     }

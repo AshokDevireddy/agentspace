@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -23,10 +23,10 @@ import {
   DollarSign,
   ClipboardCheck
 } from "lucide-react"
-import { createClient } from '@/lib/supabase/client'  // Keep for realtime subscriptions only
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useUpdateAgencyColor } from '@/hooks/mutations/useAgencyMutations'
+import { useUnreadCountSSE } from '@/hooks/use-sse'
 
 const navigationItems = [
   { name: "Dashboard", href: "/", icon: Home },
@@ -73,10 +73,6 @@ export default function Navigation() {
   const queryClient = useQueryClient()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const previousResolvedThemeRef = useRef<string | null>(null)
-
-  // Create stable supabase client instance for realtime subscriptions
-  const supabaseRef = useRef(createClient())
-  const supabase = supabaseRef.current
 
   // Mutation for updating agency color (used when theme changes)
   const updateAgencyColorMutation = useUpdateAgencyColor()
@@ -203,52 +199,19 @@ export default function Navigation() {
 
   const unreadCount = unreadCountData?.unreadCount || 0
 
-  // Subscribe to real-time message changes
+  // SSE for real-time unread count updates
+  useUnreadCountSSE({
+    enabled: !!user?.id,
+    onCountUpdate: useCallback((count: number) => {
+      // Update the cache directly for immediate feedback
+      queryClient.setQueryData(queryKeys.conversationCount('self'), { unreadCount: count })
+    }, [queryClient]),
+  })
+
+  // Handle visibility change - refetch when tab becomes visible (debounced)
   useEffect(() => {
     if (!user?.id) return
 
-    // Subscribe to real-time message changes
-    const channelName = `nav-unread-${user.id}`
-    const channel = supabase
-      .channel(channelName, {
-        config: {
-          broadcast: { self: false },
-        },
-      })
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-        },
-        (payload) => {
-          // When a new inbound message arrives, invalidate the query
-          const newMessage = payload.new as { direction?: string }
-          if (newMessage.direction === 'inbound') {
-            queryClient.invalidateQueries({ queryKey: queryKeys.conversationCount('self') })
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'messages',
-        },
-        (payload) => {
-          // When a message is marked as read, invalidate the query
-          const oldMessage = payload.old as { read_at?: string | null }
-          const newMessage = payload.new as { read_at?: string | null; direction?: string }
-          if (!oldMessage.read_at && newMessage.read_at && newMessage.direction === 'inbound') {
-            queryClient.invalidateQueries({ queryKey: queryKeys.conversationCount('self') })
-          }
-        }
-      )
-      .subscribe()
-
-    // Handle visibility change - refetch when tab becomes visible (debounced)
     let visibilityTimeout: NodeJS.Timeout | null = null
     const handleVisibilityChange = () => {
       if (!document.hidden) {
@@ -268,11 +231,10 @@ export default function Navigation() {
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
-      supabase.removeChannel(channel)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (visibilityTimeout) clearTimeout(visibilityTimeout)
     }
-  }, [user?.id, supabase, queryClient])
+  }, [user?.id, queryClient])
 
   const handleLogout = async () => {
     try {

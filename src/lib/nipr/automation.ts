@@ -16,7 +16,6 @@ import os from 'os'
 import crypto from 'crypto'
 import type { NIPRInput, NIPRResult, NIPRConfig, NIPRAnalysisResult } from './types'
 import { analyzePDFReport } from './pdf-analyzer'
-import { createAdminClient } from '@/lib/supabase/server'
 import { getBrowserQueueManager } from './browser-queue-manager'
 
 // Progress steps with percentages and messages
@@ -78,7 +77,7 @@ async function updateProgress(jobId: string, step: keyof typeof PROGRESS_STEPS):
 
 
 /**
- * Mark job as failed with error message
+ * Mark job as failed with error message via Django API
  */
 async function markJobFailed(jobId: string, errorMessage: string): Promise<void> {
   if (!jobId || jobId.startsWith('legacy-')) {
@@ -86,15 +85,24 @@ async function markJobFailed(jobId: string, errorMessage: string): Promise<void>
   }
 
   try {
-    const supabase = createAdminClient()
-    await supabase
-      .from('nipr_jobs')
-      .update({
-        status: 'failed',
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
+    const response = await fetch(`${apiUrl}/api/nipr/complete-job`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+      body: JSON.stringify({
+        job_id: jobId,
+        success: false,
         error_message: errorMessage,
-        completed_at: new Date().toISOString()
-      })
-      .eq('id', jobId)
+      }),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error('[NIPR] Failed to mark job as failed:', errorData)
+    }
   } catch (error) {
     console.error('[NIPR] Failed to mark job as failed:', error)
   }

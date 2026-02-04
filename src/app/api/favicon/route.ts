@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
 import { isWhiteLabelDomain } from '@/lib/whitelabel'
 
 export const runtime = 'edge'
@@ -10,17 +9,21 @@ export async function GET(request: NextRequest) {
 
   let logoUrl: string | null = null
 
-  // If white-label, try to fetch agency branding
+  // If white-label, try to fetch agency branding via Django API
   if (isWhiteLabel) {
     try {
-      const supabase = createAdminClient()
-      const { data: agency } = await supabase
-        .from('agencies')
-        .select('logo_url')
-        .eq('whitelabel_domain', hostname)
-        .single()
+      const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
+      const response = await fetch(`${apiUrl}/api/agencies/by-domain?domain=${encodeURIComponent(hostname)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
 
-      logoUrl = agency?.logo_url || null
+      if (response.ok) {
+        const agency = await response.json()
+        logoUrl = agency?.logo_url || null
+      }
     } catch (error) {
       console.error('Error fetching agency branding for favicon:', error)
     }

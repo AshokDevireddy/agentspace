@@ -3,7 +3,6 @@
  * Provides automated responses to deal-specific questions via SMS
  */
 
-import { createAdminClient } from '@/lib/supabase/server';
 import { sendSMS, normalizePhoneNumber } from '@/lib/telnyx';
 import { logMessage, getDealWithDetails, type ConversationResult } from '@/lib/sms-helpers';
 import { Anthropic } from '@anthropic-ai/sdk';
@@ -455,33 +454,60 @@ Please provide a helpful response about their policy information. Keep it under 
 }
 
 /**
- * Get agency details
+ * Get agency details via Django API
  */
 async function getAgencyDetails(agencyId: string): Promise<Agency | null> {
-  const supabase = createAdminClient();
+  try {
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const response = await fetch(`${apiUrl}/api/agencies/${agencyId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+    });
 
-  const { data: agency } = await supabase
-    .from('agencies')
-    .select('id, messaging_enabled, name, phone_number')
-    .eq('id', agencyId)
-    .single();
+    if (!response.ok) {
+      console.error('Failed to fetch agency details:', response.status);
+      return null;
+    }
 
-  return agency;
+    const agency = await response.json();
+    return {
+      id: agency.id,
+      messaging_enabled: agency.messaging_enabled,
+      name: agency.name,
+      phone_number: agency.phone_number,
+    };
+  } catch (error) {
+    console.error('Error fetching agency details:', error);
+    return null;
+  }
 }
 
 /**
- * Flag deal for more information
+ * Flag deal for more information via Django API
  */
 async function flagDealForMoreInfo(dealId: string): Promise<void> {
-  const supabase = createAdminClient();
+  try {
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const response = await fetch(`${apiUrl}/api/deals/${dealId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+      },
+      body: JSON.stringify({
+        status_standardized: 'needs_more_info_notified',
+      }),
+    });
 
-  await supabase
-    .from('deals')
-    .update({
-      status_standardized: 'needs_more_info_notified',
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', dealId);
+    if (!response.ok) {
+      console.error('Failed to flag deal for more info:', response.status);
+    }
+  } catch (error) {
+    console.error('Error flagging deal for more info:', error);
+  }
 }
 
 /**
@@ -489,118 +515,85 @@ async function flagDealForMoreInfo(dealId: string): Promise<void> {
  * AI responses count as SMS messages, not AI requests
  */
 async function checkSMSUsageLimits(agent: Agent): Promise<boolean> {
-  // Get current SMS usage from database
-  const supabase = createAdminClient();
+  try {
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const response = await fetch(`${apiUrl}/api/user/sms-usage`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+        'X-User-Id': agent.id,
+      },
+    });
 
-  const { data: user, error } = await supabase
-    .from('users')
-    .select('messages_sent_count, subscription_tier, billing_cycle_end')
-    .eq('id', agent.id)
-    .single();
+    if (!response.ok) {
+      console.error('Failed to fetch user SMS usage:', response.status);
+      return false;
+    }
 
-  if (error || !user) {
-    console.error('Failed to fetch user SMS usage:', error);
-    return false;
-  }
+    const user = await response.json();
 
-  // Check if billing cycle has reset
-  const now = new Date();
-  const billingCycleEnd = user.billing_cycle_end ? new Date(user.billing_cycle_end) : null;
+    // Check if billing cycle has reset
+    const now = new Date();
+    const billingCycleEnd = user.billing_cycle_end ? new Date(user.billing_cycle_end) : null;
 
-  if (billingCycleEnd && now > billingCycleEnd) {
-    // Billing cycle has ended, usage should be reset
-    // This will be handled by the SMS sending system
-  }
+    if (billingCycleEnd && now > billingCycleEnd) {
+      // Billing cycle has ended, usage should be reset
+      // This will be handled by the SMS sending system
+    }
 
-  // SMS tier limits (from subscription-tiers.ts pattern)
-  const tierLimits = {
-    'free': 0,
-    'basic': 50,
-    'pro': 200,
-    'expert': 1000
-  };
-
-  const limit = tierLimits[user.subscription_tier as keyof typeof tierLimits] || 0;
-  const currentUsage = user.messages_sent_count || 0;
-
-  // Pro and Expert tiers allow overage with billing, others are hard limits
-  if (['pro', 'expert'].includes(user.subscription_tier)) {
-    return true; // Allow overage with billing
-  }
-
-  return currentUsage < limit;
-}
-
-/**
- * Update SMS message count and handle billing
- * AI responses count as SMS messages, not AI requests
- */
-async function updateSMSUsageCount(agentId: string): Promise<void> {
-  const supabase = createAdminClient();
-
-  // Get current SMS count and subscription info
-  const { data: user, error: fetchError } = await supabase
-    .from('users')
-    .select('messages_sent_count, subscription_tier, stripe_subscription_id, billing_cycle_end')
-    .eq('id', agentId)
-    .single();
-
-  if (fetchError || !user) {
-    console.error('Failed to fetch user for SMS billing:', fetchError);
-    return;
-  }
-
-  // Check if billing cycle needs reset
-  const now = new Date();
-  const billingCycleEnd = user.billing_cycle_end ? new Date(user.billing_cycle_end) : null;
-  let currentCount = user.messages_sent_count || 0;
-
-  if (billingCycleEnd && now > billingCycleEnd) {
-    // Reset count for new billing cycle
-    currentCount = 0;
-    console.log(`Resetting SMS count for new billing cycle for user ${agentId}`);
-  }
-
-  const newCount = currentCount + 1;
-
-  // Update the SMS count
-  const { error: updateError } = await supabase
-    .from('users')
-    .update({ messages_sent_count: newCount })
-    .eq('id', agentId);
-
-  if (updateError) {
-    console.error('Failed to update SMS messages count:', updateError);
-    return;
-  }
-
-  // Handle overage billing for Pro and Expert tiers
-  if (['pro', 'expert'].includes(user.subscription_tier) && user.stripe_subscription_id) {
+    // SMS tier limits (from subscription-tiers.ts pattern)
     const tierLimits = {
+      'free': 0,
+      'basic': 50,
       'pro': 200,
       'expert': 1000
     };
 
-    const limit = tierLimits[user.subscription_tier as keyof typeof tierLimits];
+    const limit = tierLimits[user.subscription_tier as keyof typeof tierLimits] || 0;
+    const currentUsage = user.messages_sent_count || 0;
 
-    if (newCount > limit) {
-      // Report SMS overage to Stripe
-      try {
-        const { reportMessageUsage } = await import('@/lib/stripe-usage');
-
-        // Get the correct metered price ID for the tier
-        const priceIds = {
-          'pro': process.env.STRIPE_PRO_METERED_MESSAGES_PRICE_ID!,
-          'expert': process.env.STRIPE_EXPERT_METERED_MESSAGES_PRICE_ID!
-        };
-
-        const priceId = priceIds[user.subscription_tier as keyof typeof priceIds];
-        await reportMessageUsage(user.stripe_subscription_id, priceId, 1);
-
-        console.log(`Reported SMS overage for ${user.subscription_tier} user ${agentId}: ${newCount - limit} messages over limit`);
-      } catch (billingError) {
-        console.error('Failed to report SMS overage billing:', billingError);
-      }
+    // Pro and Expert tiers allow overage with billing, others are hard limits
+    if (['pro', 'expert'].includes(user.subscription_tier)) {
+      return true; // Allow overage with billing
     }
+
+    return currentUsage < limit;
+  } catch (error) {
+    console.error('Error checking SMS usage limits:', error);
+    return false;
+  }
+}
+
+/**
+ * Update SMS message count and handle billing via Django API
+ * AI responses count as SMS messages, not AI requests
+ */
+async function updateSMSUsageCount(agentId: string): Promise<void> {
+  try {
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
+    // The Django endpoint handles:
+    // - Incrementing the message count
+    // - Checking billing cycle reset
+    // - Reporting overage to Stripe for Pro/Expert tiers
+    const response = await fetch(`${apiUrl}/api/user/sms-usage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Secret': process.env.CRON_SECRET || '',
+        'X-User-Id': agentId,
+      },
+      body: JSON.stringify({
+        action: 'increment',
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      console.error('Failed to update SMS usage count:', response.status, error);
+    }
+  } catch (error) {
+    console.error('Error updating SMS usage count:', error);
   }
 }

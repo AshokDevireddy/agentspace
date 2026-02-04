@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/providers/AuthProvider"
-import { createClient } from "@/lib/supabase/client"
 import { CreateConversationModal } from "@/components/modals/create-conversation-modal"
+import { useConversationMessagesSSE, useConversationsSSE } from "@/hooks/use-sse"
 import { DraftListView } from "@/components/sms/draft-list-view"
 import { InitialsAvatar } from "@/components/ui/initials-avatar"
 import {
@@ -106,9 +106,6 @@ function SMSMessagingPageContent() {
   const conversationIdFromUrl = searchParams.get('conversation')
   const { user } = useAuth()
   const queryClient = useQueryClient()
-  // Create stable supabase client instance
-  const supabaseRef = useRef(createClient())
-  const supabase = supabaseRef.current
 
   // Persisted filter state using custom hook (for real-time filters, use setAndApply)
   const { appliedFilters, setAndApply } = usePersistedFilters(
@@ -385,192 +382,111 @@ function SMSMessagingPageContent() {
   const handleConversationSelect = useCallback((conversation: Conversation) => {
     setSelectedConversation(conversation)
     // Queries will automatically fetch when selectedConversation changes
-    // Real-time subscription will handle updating unread counts
+    // SSE will handle real-time updates
   }, [])
 
-  // Subscribe to real-time updates - Global subscription for all conversations
-  useEffect(() => {
-    if (!user?.id) {
-      return
+  // Mark message as read helper function
+  const markMessageAsRead = useCallback(async (messageId: string) => {
+    // Clear any existing timeout for this message to prevent duplicates
+    const existingTimeout = messageReadTimeoutsRef.current.get(messageId)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
     }
 
+    const timeoutId = setTimeout(async () => {
+      // Remove from tracking after execution
+      messageReadTimeoutsRef.current.delete(messageId)
 
-    // Create a unique channel name based on user ID
-    const channelName = `realtime-sms-all-${user.id}`
-
-    const allConversationsChannel = supabase
-      .channel(channelName, {
-        config: {
-          broadcast: { self: false },
-        },
-      })
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-        },
-        (payload) => {
-          const newMessage = payload.new as Message
-
-          // Event deduplication - prevent double-processing
-          const eventKey = `global-${newMessage.id}-INSERT`
-          if (processedEventsRef.current.has(eventKey)) {
-            return
-          }
-          processedEventsRef.current.add(eventKey)
-          setTimeout(() => processedEventsRef.current.delete(eventKey), DEDUP_WINDOW_MS)
-
-          // Use ref to get current selected conversation and avoid stale closures
-          const currentSelectedId = selectedConversationRef.current?.id
-
-          // If this message is for a conversation that's not selected, invalidate conversations
-          // Use filtersRef.current to get fresh filter values and avoid stale closures
-          if (newMessage.conversation_id !== currentSelectedId && newMessage.direction === 'inbound') {
-            const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
-            queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
-          }
-        }
-      )
-      .subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') {
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Channel error:', err)
-        }
-      })
-
-    // Cleanup on unmount
-    return () => {
-      supabase.removeChannel(allConversationsChannel)
-    }
-  }, [user?.id]) // Removed selectedConversation?.id - using ref instead to avoid re-subscriptions
-
-  // Subscribe to real-time updates - Only for the selected conversation
-  useEffect(() => {
-    if (!user?.id || !selectedConversation) {
-      return
-    }
-
-
-    // Create a unique channel name based on user ID and conversation ID
-    const channelName = `realtime-sms-${user.id}-${selectedConversation.id}`
-
-    const channel = supabase
-      .channel(channelName, {
-        config: {
-          broadcast: { self: false },
-        },
-      })
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${selectedConversation.id}`,
-        },
-        (payload) => {
-          const newMessage = payload.new as Message
-
-          // Event deduplication - prevent double-processing
-          const eventKey = `specific-${newMessage.id}-INSERT`
-          if (processedEventsRef.current.has(eventKey)) {
-            return
-          }
-          processedEventsRef.current.add(eventKey)
-          setTimeout(() => processedEventsRef.current.delete(eventKey), DEDUP_WINDOW_MS)
-
-
-          // Invalidate messages query to refetch
-          queryClient.invalidateQueries({ queryKey: queryKeys.messages(selectedConversation.id) })
-
-          // Invalidate conversations list to update last message
-          // Use filtersRef.current to get fresh filter values and avoid stale closures
-          const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
-          queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
-
-          // If it's an inbound message, mark it as read after a short delay
-          // Track timeout to prevent race conditions on rapid messages or unmount
-          if (newMessage.direction === 'inbound') {
-            const messageId = newMessage.id
-
-            // Clear any existing timeout for this message to prevent duplicates
-            const existingTimeout = messageReadTimeoutsRef.current.get(messageId)
-            if (existingTimeout) {
-              clearTimeout(existingTimeout)
+      try {
+        // Get access token for API call
+        const { getClientAccessToken } = await import('@/lib/auth/client')
+        const accessToken = await getClientAccessToken()
+        if (accessToken) {
+          await fetch(`/api/sms/messages/${messageId}/read`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
             }
-
-            const timeoutId = setTimeout(async () => {
-              // Remove from tracking after execution
-              messageReadTimeoutsRef.current.delete(messageId)
-
-              try {
-                // Get access token for API call
-                const { getClientAccessToken } = await import('@/lib/auth/client')
-                const accessToken = await getClientAccessToken()
-                if (accessToken) {
-                  await fetch(`/api/sms/messages/${messageId}/read`, {
-                    method: 'POST',
-                    headers: {
-                      'Authorization': `Bearer ${accessToken}`
-                    }
-                  })
-                }
-
-                // Invalidate conversations to update unread count
-                // Get fresh filter values at the time of invalidation
-                const { effectiveViewMode: currentMode, searchQuery: currentSearch, notificationFilter: currentFilter } = filtersRef.current
-                queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(currentMode, { searchQuery: currentSearch, notificationFilter: currentFilter }) })
-              } catch (error) {
-                console.error('❌ Error marking message as read:', error)
-              }
-            }, 1000)
-
-            // Track the timeout so it can be cleaned up
-            messageReadTimeoutsRef.current.set(messageId, timeoutId)
-          }
+          })
         }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${selectedConversation.id}`,
-        },
-        (payload) => {
-          // Invalidate messages query to refetch and re-sort
-          queryClient.invalidateQueries({ queryKey: queryKeys.messages(selectedConversation.id) })
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'conversations',
-          filter: `id=eq.${selectedConversation.id}`,
-        },
-        (payload) => {
-          // Invalidate conversations list to update opt-in/opt-out status
-          // Use filtersRef.current to get fresh filter values and avoid stale closures
+
+        // Invalidate conversations to update unread count
+        // Get fresh filter values at the time of invalidation
+        const { effectiveViewMode: currentMode, searchQuery: currentSearch, notificationFilter: currentFilter } = filtersRef.current
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(currentMode, { searchQuery: currentSearch, notificationFilter: currentFilter }) })
+      } catch (error) {
+        console.error('Error marking message as read:', error)
+      }
+    }, 1000)
+
+    // Track the timeout so it can be cleaned up
+    messageReadTimeoutsRef.current.set(messageId, timeoutId)
+  }, [queryClient])
+
+  // SSE for global conversation updates (new inbound messages)
+  useConversationsSSE(
+    effectiveViewMode === 'all' ? 'all' : 'self',
+    {
+      enabled: !!user?.id,
+      onConversationUpdate: useCallback((conversationIds: string[]) => {
+        // Check if update is for non-selected conversation
+        const currentSelectedId = selectedConversationRef.current?.id
+        const hasNonSelectedUpdate = conversationIds.some(id => id !== currentSelectedId)
+
+        if (hasNonSelectedUpdate) {
           const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
           queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
         }
-      )
-      .subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') {
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Channel error:', err)
-        } else if (status === 'TIMED_OUT') {
-          console.error('⏱️ Channel subscription timed out')
-        } else if (status === 'CLOSED') {
-        }
-      })
+      }, [queryClient]),
+    }
+  )
 
-    // Cleanup on unmount or conversation change
+  // SSE for selected conversation messages
+  useConversationMessagesSSE(
+    selectedConversation?.id || null,
+    {
+      enabled: !!user?.id && !!selectedConversation,
+      onNewMessage: useCallback((message: Message) => {
+        // Event deduplication
+        const eventKey = `specific-${message.id}-INSERT`
+        if (processedEventsRef.current.has(eventKey)) {
+          return
+        }
+        processedEventsRef.current.add(eventKey)
+        setTimeout(() => processedEventsRef.current.delete(eventKey), DEDUP_WINDOW_MS)
+
+        // Invalidate messages query to refetch
+        const currentConvId = selectedConversationRef.current?.id
+        if (currentConvId) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConvId) })
+        }
+
+        // Invalidate conversations list to update last message
+        const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
+
+        // If it's an inbound message, mark it as read after a short delay
+        if (message.direction === 'inbound') {
+          markMessageAsRead(message.id)
+        }
+      }, [queryClient, markMessageAsRead]),
+      onMessageUpdated: useCallback(() => {
+        // Invalidate messages query to refetch and re-sort
+        const currentConvId = selectedConversationRef.current?.id
+        if (currentConvId) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConvId) })
+        }
+      }, [queryClient]),
+      onConversationUpdated: useCallback(() => {
+        // Invalidate conversations list to update opt-in/opt-out status
+        const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
+      }, [queryClient]),
+    }
+  )
+
+  // Cleanup message read timeouts on unmount
+  useEffect(() => {
     return () => {
       if (conversationRefreshTimeoutRef.current) {
         clearTimeout(conversationRefreshTimeoutRef.current)
@@ -580,9 +496,8 @@ function SMSMessagingPageContent() {
         clearTimeout(timeout)
       })
       messageReadTimeoutsRef.current.clear()
-      supabase.removeChannel(channel)
     }
-  }, [user?.id, selectedConversation?.id]) // Removed debouncedRefreshConversations to avoid re-subscriptions
+  }, [])
 
   // Auto-select conversation from URL parameter
   useEffect(() => {

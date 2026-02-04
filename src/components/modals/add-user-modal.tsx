@@ -481,21 +481,28 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setLoading(true)
       setPauseNameSearch(true)
 
-      // Fetch full user details
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
+      // Fetch full user details via Django API
+      const accessToken = await getClientAccessToken()
+      if (!accessToken) {
+        setErrors(['No access token available'])
+        return
+      }
 
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single()
+      const response = await fetch(`/api/agents/${userId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      })
 
-      if (error || !user) {
-        console.error('Error fetching user:', error)
+      if (!response.ok) {
+        console.error('Error fetching user:', response.status)
         setErrors(['Failed to load user data'])
         return
       }
+
+      const user = await response.json()
 
       // Pre-fill the form with user data
       setFormData({

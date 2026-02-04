@@ -63,7 +63,7 @@ export default function Home() {
 
   const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching, error: dashboardError } = useSupabaseRpc<any>(
     queryKeys.dashboard(userId || ''),
-    'get_dashboard_data_with_agency_id',
+    'get_dashboard_data_with_agency_id_v2',
     { p_user_id: userId },
     {
       enabled: !!userId,

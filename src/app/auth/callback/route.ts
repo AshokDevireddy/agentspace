@@ -1,4 +1,3 @@
-import { createAdminClient } from '@/lib/supabase/server'
 import { getSession } from '@/lib/session'
 import { getApiBaseUrl, authEndpoints } from '@/lib/api-config'
 import { NextResponse } from 'next/server'
@@ -36,11 +35,11 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const supabase = createAdminClient()
-
   // Check if there's already a Django session
   const session = await getSession()
   console.log('Existing session check:', { hasSession: !!session })
+
+  const apiUrl = getApiBaseUrl()
 
   // Handle invite token (from email invite links)
   if (type === 'invite' && (token || tokenHash)) {
@@ -48,7 +47,7 @@ export async function GET(request: NextRequest) {
 
     try {
       // Verify invite token via Django API
-      const verifyResponse = await fetch(`${getApiBaseUrl()}${authEndpoints.verifyInvite}`, {
+      const verifyResponse = await fetch(`${apiUrl}${authEndpoints.verifyInvite}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -75,20 +74,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${requestUrl.origin}/login#error=auth_failed&error_description=${encodeURIComponent('Failed to authenticate user')}`)
       }
 
-      // Get user profile to determine where to route them
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('id, role, status')
-        .eq('auth_user_id', authUserId)
-        .maybeSingle()
-
-      if (profileError || !userProfile) {
-        console.error('User profile not found:', profileError)
-        return NextResponse.redirect(`${requestUrl.origin}/login#error=profile_not_found&error_description=${encodeURIComponent('Account not found')}`)
-      }
-
-      // Handle user based on their status
-      return await routeUserByProfile(requestUrl.origin, userProfile, supabase)
+      // Get user profile and routing from Django
+      return await routeUserByAuthId(requestUrl.origin, authUserId, apiUrl)
     } catch (err) {
       console.error('Error in invite verification:', err)
       return NextResponse.redirect(
@@ -101,7 +88,7 @@ export async function GET(request: NextRequest) {
   if (code) {
     try {
       // Exchange code via Django API
-      const exchangeResponse = await fetch(`${getApiBaseUrl()}/api/auth/exchange-code`, {
+      const exchangeResponse = await fetch(`${apiUrl}/api/auth/exchange-code`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -134,19 +121,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(redirectUrl)
       }
 
-      // Get user profile to determine where to route them
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('id, role, status')
-        .eq('auth_user_id', authUserId)
-        .maybeSingle()
-
-      if (profileError || !userProfile) {
-        console.error('User profile not found:', profileError)
-        return NextResponse.redirect(`${requestUrl.origin}/login?error=profile-not-found`)
-      }
-
-      return await routeUserByProfile(requestUrl.origin, userProfile, supabase)
+      // Get user profile and routing from Django
+      return await routeUserByAuthId(requestUrl.origin, authUserId, apiUrl)
     } catch (err) {
       console.error('Error in code exchange:', err)
       return NextResponse.redirect(`${requestUrl.origin}/login?error=auth_failed`)
@@ -154,23 +130,41 @@ export async function GET(request: NextRequest) {
   }
 
   // No token or code provided - check if session was already established
-  if (session) {
+  if (session?.userId) {
     console.log('No params but session exists, routing user:', session.userId)
 
-    // Get user profile to determine where to route them
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('id, role, status')
-      .eq('id', session.userId)
-      .maybeSingle()
+    // Get user profile and routing from Django using user ID
+    try {
+      const callbackResponse = await fetch(
+        `${apiUrl}/api/auth/callback-user?auth_user_id=${session.userId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      )
 
-    if (profileError || !userProfile) {
-      console.error('User profile not found:', profileError)
+      if (!callbackResponse.ok) {
+        console.error('User profile not found from session')
+        return NextResponse.redirect(`${requestUrl.origin}/login#error=profile_not_found&error_description=${encodeURIComponent('Account not found')}`)
+      }
+
+      const userData = await callbackResponse.json()
+      console.log('User data from Django:', userData)
+
+      if (!userData.routing) {
+        console.error('User has invalid status:', userData.status)
+        return NextResponse.redirect(
+          `${requestUrl.origin}/login#error=invalid_status&error_description=${encodeURIComponent('Account is not accessible')}`
+        )
+      }
+
+      return NextResponse.redirect(`${requestUrl.origin}${userData.routing}`)
+    } catch (err) {
+      console.error('Error fetching user from session:', err)
       return NextResponse.redirect(`${requestUrl.origin}/login#error=profile_not_found&error_description=${encodeURIComponent('Account not found')}`)
     }
-
-    console.log('User profile:', userProfile)
-    return await routeUserByProfile(requestUrl.origin, userProfile, supabase)
   }
 
   // No session and no parameters
@@ -178,44 +172,42 @@ export async function GET(request: NextRequest) {
   return NextResponse.redirect(`${requestUrl.origin}/login`)
 }
 
-// Helper function to route user based on their profile status
-async function routeUserByProfile(
+// Helper function to route user based on their auth_user_id via Django API
+async function routeUserByAuthId(
   origin: string,
-  userProfile: { id: string; role: string; status: string },
-  supabase: ReturnType<typeof createAdminClient>
-) {
-  // Handle user based on their status
-  if (userProfile.status === 'invited') {
-    // First time clicking invite link - transition to onboarding
-    console.log('Transitioning user from invited to onboarding')
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({ status: 'onboarding', updated_at: new Date().toISOString() })
-      .eq('id', userProfile.id)
+  authUserId: string,
+  apiUrl: string
+): Promise<NextResponse> {
+  try {
+    // Call Django endpoint to get user info and handle status transitions
+    const callbackResponse = await fetch(
+      `${apiUrl}/api/auth/callback-user?auth_user_id=${authUserId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    )
 
-    if (updateError) {
-      console.error('Error updating user status:', updateError)
-      // Continue anyway, they can still proceed to setup
+    if (!callbackResponse.ok) {
+      console.error('User profile not found')
+      return NextResponse.redirect(`${origin}/login#error=profile_not_found&error_description=${encodeURIComponent('Account not found')}`)
     }
 
-    return NextResponse.redirect(`${origin}/setup-account`)
-  }
+    const userData = await callbackResponse.json()
+    console.log('User routing data:', userData)
 
-  if (userProfile.status === 'onboarding') {
-    return NextResponse.redirect(`${origin}/setup-account`)
-  }
-
-  if (userProfile.status === 'active') {
-    if (userProfile.role === 'client') {
-      return NextResponse.redirect(`${origin}/client/dashboard`)
-    } else {
-      return NextResponse.redirect(`${origin}/`)
+    if (!userData.routing) {
+      console.error('User has invalid status:', userData.status)
+      return NextResponse.redirect(
+        `${origin}/login#error=invalid_status&error_description=${encodeURIComponent('Account is not accessible')}`
+      )
     }
-  }
 
-  // Handle inactive or other statuses
-  console.error('User has invalid status:', userProfile.status)
-  return NextResponse.redirect(
-    `${origin}/login#error=invalid_status&error_description=${encodeURIComponent('Account is not accessible')}`
-  )
+    return NextResponse.redirect(`${origin}${userData.routing}`)
+  } catch (err) {
+    console.error('Error routing user:', err)
+    return NextResponse.redirect(`${origin}/login#error=auth_failed&error_description=${encodeURIComponent('Failed to route user')}`)
+  }
 }

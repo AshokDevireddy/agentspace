@@ -59,7 +59,7 @@ export function useClientDate(
 /**
  * Calculate week date range (Sunday to Saturday) in SSR-safe way.
  */
-export function useWeekDateRange(serverYear: number = 2024, serverMonth: number = 0, serverDay: number = 1) {
+export function useWeekDateRange(serverYear: number = 2025, serverMonth: number = 0, serverDay: number = 1) {
   // Memoize server default
   const serverDefault = useMemo(() => ({
     startDate: `${serverYear}-${String(serverMonth + 1).padStart(2, '0')}-01`,

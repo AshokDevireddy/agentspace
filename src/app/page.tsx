@@ -101,15 +101,16 @@ export default function Home() {
 
   // YTD production query for ProductionProgressCard
   const ytdRpcParams = {
-    p_user_id: user?.id,
+    p_user_id: userId,
     p_agent_ids: userId ? [userId] : [],
     p_start_date: productionDateRanges.ytd.start,
-    p_end_date: productionDateRanges.ytd.end
+    p_end_date: productionDateRanges.ytd.end,
+    p_admin_agency_view: !!userData?.is_admin
   }
 
   const { data: ytdProductionResult, isLoading: ytdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'ytd', user?.id, userId, productionDateRanges.ytd.start, productionDateRanges.ytd.end],
-    'get_agents_debt_production',
+    ['production', 'ytd', user?.id, userId, productionDateRanges.ytd.start, productionDateRanges.ytd.end, !!userData?.is_admin],
+    'get_agents_debt_production_v2',
     ytdRpcParams,
     {
       enabled: !!user?.id && !!userId,
@@ -119,15 +120,16 @@ export default function Home() {
 
   // MTD production query for ProductionProgressCard
   const mtdRpcParams = {
-    p_user_id: user?.id,
+    p_user_id: userId,
     p_agent_ids: userId ? [userId] : [],
     p_start_date: productionDateRanges.mtd.start,
-    p_end_date: productionDateRanges.mtd.end
+    p_end_date: productionDateRanges.mtd.end,
+    p_admin_agency_view: !!userData?.is_admin
   }
 
   const { data: mtdProductionResult, isLoading: mtdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'mtd', user?.id, userId, productionDateRanges.mtd.start, productionDateRanges.mtd.end],
-    'get_agents_debt_production',
+    ['production', 'mtd', user?.id, userId, productionDateRanges.mtd.start, productionDateRanges.mtd.end, !!userData?.is_admin],
+    'get_agents_debt_production_v2',
     mtdRpcParams,
     {
       enabled: !!user?.id && !!userId,

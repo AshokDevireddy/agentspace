@@ -116,7 +116,7 @@ export async function GET(
 
     // Fetch production/debt metrics using the same RPC as the table
     const { data: metricsData, error: metricsError } = await supabase.rpc(
-      "get_agents_debt_production",
+      "get_agents_debt_production_v2",
       {
         p_user_id: agentId, // Use the agent's ID as the user
         p_agent_ids: [agentId],

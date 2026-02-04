@@ -51,22 +51,22 @@ export default function Home() {
   const userId = userData?.id || null // users.id from the users table
 
   const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useSupabaseRpc<any>(
-    queryKeys.scoreboard(userId || '', weekRange.startDate, weekRange.endDate),
+    queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate),
     'get_scoreboard_data',
-    { p_user_id: userId, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate },
+    { p_user_id: user?.id, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate },
     {
-      enabled: !!userId,
+      enabled: !!user?.id,
       staleTime: 60 * 1000, // 1 minute - scoreboard data is more static
       placeholderData: (previousData: any) => previousData,
     }
   )
 
   const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching, error: dashboardError } = useSupabaseRpc<any>(
-    queryKeys.dashboard(userId || ''),
+    queryKeys.dashboard(user?.id || ''),
     'get_dashboard_data_with_agency_id_v2',
-    { p_user_id: userId },
+    { p_user_id: user?.id },
     {
-      enabled: !!userId,
+      enabled: !!user?.id,
       placeholderData: (previousData: any) => previousData,
     }
   )
@@ -89,11 +89,11 @@ export default function Home() {
   const topProducersRange = topProducersPeriod === 'ytd' ? productionDateRanges.ytd : productionDateRanges.mtd
 
   const { data: topProducersResult, isLoading: topProducersLoading } = useSupabaseRpc<any>(
-    [...queryKeys.scoreboard(userId || '', topProducersRange.start, topProducersRange.end), topProducersPeriod],
+    [...queryKeys.scoreboard(user?.id || '', topProducersRange.start, topProducersRange.end), topProducersPeriod],
     'get_scoreboard_data',
-    { p_user_id: userId, p_start_date: topProducersRange.start, p_end_date: topProducersRange.end },
+    { p_user_id: user?.id, p_start_date: topProducersRange.start, p_end_date: topProducersRange.end },
     {
-      enabled: !!userId,
+      enabled: !!user?.id,
       staleTime: 60 * 1000,
       placeholderData: (previousData: any) => previousData,
     }
@@ -101,74 +101,39 @@ export default function Home() {
 
   // YTD production query for ProductionProgressCard
   const ytdRpcParams = {
-    p_user_id: userId,
+    p_user_id: user?.id,
     p_agent_ids: userId ? [userId] : [],
     p_start_date: productionDateRanges.ytd.start,
     p_end_date: productionDateRanges.ytd.end
   }
-  console.log('[DASHBOARD YTD] Calling get_agents_debt_production with params:', JSON.stringify(ytdRpcParams, null, 2))
-  console.log('[DASHBOARD YTD] p_user_id:', ytdRpcParams.p_user_id)
-  console.log('[DASHBOARD YTD] p_agent_ids:', ytdRpcParams.p_agent_ids)
-  console.log('[DASHBOARD YTD] p_start_date:', ytdRpcParams.p_start_date)
-  console.log('[DASHBOARD YTD] p_end_date:', ytdRpcParams.p_end_date)
-  
+
   const { data: ytdProductionResult, isLoading: ytdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'ytd', userId, productionDateRanges.ytd.start, productionDateRanges.ytd.end],
+    ['production', 'ytd', user?.id, userId, productionDateRanges.ytd.start, productionDateRanges.ytd.end],
     'get_agents_debt_production',
     ytdRpcParams,
     {
-      enabled: !!userId,
+      enabled: !!user?.id && !!userId,
       staleTime: 5 * 60 * 1000, // 5 minutes
     }
   )
 
   // MTD production query for ProductionProgressCard
   const mtdRpcParams = {
-    p_user_id: userId,
+    p_user_id: user?.id,
     p_agent_ids: userId ? [userId] : [],
     p_start_date: productionDateRanges.mtd.start,
     p_end_date: productionDateRanges.mtd.end
   }
-  console.log('[DASHBOARD MTD] Calling get_agents_debt_production with params:', JSON.stringify(mtdRpcParams, null, 2))
-  console.log('[DASHBOARD MTD] p_user_id:', mtdRpcParams.p_user_id)
-  console.log('[DASHBOARD MTD] p_agent_ids:', mtdRpcParams.p_agent_ids)
-  console.log('[DASHBOARD MTD] p_start_date:', mtdRpcParams.p_start_date)
-  console.log('[DASHBOARD MTD] p_end_date:', mtdRpcParams.p_end_date)
-  
+
   const { data: mtdProductionResult, isLoading: mtdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'mtd', userId, productionDateRanges.mtd.start, productionDateRanges.mtd.end],
+    ['production', 'mtd', user?.id, userId, productionDateRanges.mtd.start, productionDateRanges.mtd.end],
     'get_agents_debt_production',
     mtdRpcParams,
     {
-      enabled: !!userId,
+      enabled: !!user?.id && !!userId,
       staleTime: 5 * 60 * 1000, // 5 minutes
     }
   )
-
-  // Log RPC responses
-  useEffect(() => {
-    if (ytdProductionResult) {
-      console.log('[DASHBOARD YTD] RPC Response:', JSON.stringify(ytdProductionResult, null, 2))
-      console.log('[DASHBOARD YTD] Response length:', ytdProductionResult?.length)
-      if (ytdProductionResult?.[0]) {
-        console.log('[DASHBOARD YTD] First result:', JSON.stringify(ytdProductionResult[0], null, 2))
-        console.log('[DASHBOARD YTD] individual_production:', ytdProductionResult[0].individual_production)
-        console.log('[DASHBOARD YTD] hierarchy_production:', ytdProductionResult[0].hierarchy_production)
-      }
-    }
-  }, [ytdProductionResult])
-
-  useEffect(() => {
-    if (mtdProductionResult) {
-      console.log('[DASHBOARD MTD] RPC Response:', JSON.stringify(mtdProductionResult, null, 2))
-      console.log('[DASHBOARD MTD] Response length:', mtdProductionResult?.length)
-      if (mtdProductionResult?.[0]) {
-        console.log('[DASHBOARD MTD] First result:', JSON.stringify(mtdProductionResult[0], null, 2))
-        console.log('[DASHBOARD MTD] individual_production:', mtdProductionResult[0].individual_production)
-        console.log('[DASHBOARD MTD] hierarchy_production:', mtdProductionResult[0].hierarchy_production)
-      }
-    }
-  }, [mtdProductionResult])
 
   // Extract production values for ProductionProgressCard
   const ytdProduction = useMemo(() => {

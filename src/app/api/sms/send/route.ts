@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     if (tierLimits.smsBlocked) {
       return NextResponse.json(
         {
-          error: 'SMS not available',
+          error: 'SMS not available, upgrade required',
           message: 'SMS messaging is not available on the Free tier. Please upgrade to Basic or higher to send messages.',
           upgrade_required: true
         },

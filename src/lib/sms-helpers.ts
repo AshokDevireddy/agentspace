@@ -161,22 +161,6 @@ export async function getOrCreateConversation(
     throw new Error(`Failed to create conversation: ${error.message}`);
   }
 
-  // Send welcome message when conversation is created
-  if (normalizedPhone) {
-    try {
-      await sendWelcomeMessage(
-        normalizedPhone,
-        agencyId,
-        agentId,
-        newConversation.id
-      );
-      console.log(`Sent welcome message to ${normalizedPhone}`);
-    } catch (error) {
-      console.error('Failed to send welcome message:', error);
-      // Don't throw - conversation was created successfully
-    }
-  }
-
   return newConversation as ConversationResult;
 }
 
@@ -542,16 +526,16 @@ export async function sendWelcomeMessage(
     finalAgentPhone = agent?.phone_number || '';
   }
 
-  // Fetch agency SMS template settings
+  // Fetch agency SMS template settings including master switch
   const { data: agencySettings } = await supabase
     .from('agencies')
-    .select('sms_welcome_enabled, sms_welcome_template')
+    .select('messaging_enabled, sms_welcome_enabled, sms_welcome_template')
     .eq('id', agencyId)
     .single();
 
-  // Check if welcome SMS is enabled for this agency
-  if (agencySettings?.sms_welcome_enabled === false) {
-    console.log('⏭️ Welcome message skipped: disabled for agency');
+  // Check master switch first
+  if (agencySettings?.messaging_enabled === false) {
+    console.log('⏭️ Welcome message skipped: messaging disabled for agency');
     return;
   }
 
@@ -559,8 +543,12 @@ export async function sendWelcomeMessage(
   const displayEmail = finalClientEmail || 'your email';
   const displayAgentName = finalAgentName || 'your agent';
 
-  // Use agency template or default
-  const template = agencySettings?.sms_welcome_template || DEFAULT_SMS_TEMPLATES.welcome;
+  // Choose template based on sms_welcome_enabled
+  // If enabled: use custom template or default
+  // If disabled: use default template
+  const template = agencySettings?.sms_welcome_enabled
+    ? (agencySettings?.sms_welcome_template || DEFAULT_SMS_TEMPLATES.welcome)
+    : DEFAULT_SMS_TEMPLATES.welcome;
   const welcomeMessage = replaceSmsPlaceholders(template, {
     client_first_name: clientFirstName,
     agency_name: agency.name,

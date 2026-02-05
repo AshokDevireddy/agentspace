@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, createAdminClient } from '@/lib/supabase/server';
-import { getOrCreateConversation, getDealWithDetails } from '@/lib/sms-helpers';
+import { getOrCreateConversation, getDealWithDetails, sendWelcomeMessage } from '@/lib/sms-helpers';
 
 export async function POST(request: NextRequest) {
   try {
@@ -161,6 +161,36 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Check agency messaging settings before creating conversation
+    const { data: agencySettings, error: agencyError } = await admin
+      .from('agencies')
+      .select('messaging_enabled, phone_number')
+      .eq('id', userData.agency_id)
+      .single();
+
+    if (agencyError || !agencySettings) {
+      return NextResponse.json(
+        { error: 'Failed to fetch agency settings' },
+        { status: 500 }
+      );
+    }
+
+    // Check master switch first
+    if (!agencySettings.messaging_enabled) {
+      return NextResponse.json(
+        { error: 'Messaging is disabled for this agency' },
+        { status: 400 }
+      );
+    }
+
+    // Check if agency phone is configured
+    if (!agencySettings.phone_number) {
+      return NextResponse.json(
+        { error: 'Agency phone number not configured' },
+        { status: 400 }
+      );
+    }
+
     // Create conversation using the deal's agent_id (writing agent)
     const conversation = await getOrCreateConversation(
       agentId,
@@ -168,6 +198,24 @@ export async function PUT(request: NextRequest) {
       userData.agency_id,
       deal.client_phone
     );
+
+    // Explicitly create welcome message draft
+    if (deal.client_phone) {
+      try {
+        await sendWelcomeMessage(
+          deal.client_phone,
+          userData.agency_id,
+          agentId,
+          conversation.id,
+          deal.client_name,
+          deal.client_email
+        );
+        console.log('Welcome message draft created for conversation:', conversation.id);
+      } catch (welcomeError) {
+        console.error('Failed to create welcome message:', welcomeError);
+        // Don't fail the conversation creation if welcome message fails
+      }
+    }
 
     return NextResponse.json({
       success: true,

@@ -687,23 +687,59 @@ export async function POST(req: NextRequest) {
             clientPhone: deal.client_phone,
           });
 
-          // Get agent and agency details
+          // Get agent and agency details with SMS template
           const { data: agentData } = await supabase
             .from("users")
             .select(
-              "id, first_name, last_name, agency_id, agency:agency_id(name, phone_number)",
+              "id, first_name, last_name, phone_number, agency_id, agency:agency_id(name, phone_number, messaging_enabled, sms_welcome_enabled, sms_welcome_template)",
             )
             .eq("id", deal.agent_id)
             .single();
 
-          if (agentData && agentData.agency?.phone_number) {
-            const agentName = `${agentData.first_name} ${agentData.last_name}`;
+          // Check master switch first
+          if (!agentData?.agency?.messaging_enabled) {
+            console.log(
+              "[Deals API] Welcome SMS skipped - messaging disabled for agency",
+            );
+            return;
+          }
+
+          // Check if agency phone is configured
+          if (!agentData.agency?.phone_number) {
+            console.warn(
+              "[Deals API] Cannot create welcome SMS draft - agency phone not configured",
+            );
+            return;
+          }
+
+          if (agentData) {
+            const agentName = [agentData.first_name, agentData.last_name].filter(Boolean).join(' ');
             const agencyName = agentData.agency.name;
             const clientFirstName = deal.client_name?.split(" ")[0] || "there";
             const clientEmail = deal.client_email || "your email";
 
-            const welcomeMessage =
-              `Welcome ${clientFirstName}! Thank you for choosing ${agencyName} for your life insurance needs. Your agent ${agentName} is here to help. You'll receive policy updates and reminders by text. Complete your account setup by clicking the invitation sent to ${clientEmail}. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
+            // Choose template based on sms_welcome_enabled
+            // If enabled: use custom template or default
+            // If disabled: use default template
+            const { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries } = await import('@/lib/sms-template-helpers');
+            const template = agentData.agency.sms_welcome_enabled
+              ? (agentData.agency.sms_welcome_template || DEFAULT_SMS_TEMPLATES.welcome)
+              : DEFAULT_SMS_TEMPLATES.welcome;
+
+            const welcomeMessage = replaceSmsPlaceholders(template, {
+              client_first_name: clientFirstName,
+              agency_name: agencyName,
+              agent_name: agentName,
+              agent_phone: agentData.phone_number || '',
+              client_email: clientEmail,
+              insured: deal.insured || '',
+              policy_number: deal.policy_number || '',
+              face_amount: deal.face_amount || '',
+              monthly_premium: deal.monthly_premium || '',
+              initial_draft: deal.initial_draft || '',
+              carrier_name: deal.carrier_name || '',
+              beneficiaries: formatBeneficiaries(deal.beneficiaries),
+            });
 
             // Create conversation and log message as DRAFT (not sent automatically)
             const conversation = await getOrCreateConversation(
@@ -732,10 +768,6 @@ export async function POST(req: NextRequest) {
             console.log(
               "[Deals API] Welcome SMS draft created successfully for",
               deal.client_phone,
-            );
-          } else {
-            console.warn(
-              "[Deals API] Cannot create welcome SMS draft - agency phone not configured",
             );
           }
         } catch (smsError) {

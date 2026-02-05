@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     const agencyId = deal.agency_id || currentUser.agency_id;
     const { data: agency, error: agencyError } = await admin
       .from("agencies")
-      .select("name, phone_number")
+      .select("name, phone_number, messaging_enabled, sms_welcome_enabled, sms_welcome_template")
       .eq("id", agencyId)
       .single();
 
@@ -61,14 +61,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Agency phone number not configured" }, { status: 400 });
     }
 
+    // Check master switch first
+    if (!agency.messaging_enabled) {
+      return NextResponse.json({ error: "Messaging is disabled for this agency" }, { status: 400 });
+    }
+
     // Fetch agent details for welcome message
     const { data: agentData } = await admin
       .from('users')
-      .select('id, first_name, last_name')
+      .select('id, first_name, last_name, phone_number')
       .eq('id', deal.agent_id)
       .single();
 
-    const agentName = agentData ? `${agentData.first_name} ${agentData.last_name}` : 'your agent';
+    const agentName = agentData ? [agentData.first_name, agentData.last_name].filter(Boolean).join(' ') : 'your agent';
 
     // Check if conversation already exists for this phone number in this agency
     // Use .limit(1) to get at most one result, avoiding the multiple rows error
@@ -118,19 +123,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: conversationError.message }, { status: 400 });
     }
 
-    // Send welcome message
+    // Create welcome message draft using agency template
     const clientFirstName = deal.client_name?.split(' ')[0] || 'there';
     const clientEmail = deal.client_email || 'your email';
-    const welcomeMessage = `Welcome ${clientFirstName}! Thank you for choosing ${agency.name} for your life insurance needs. Your agent ${agentName} is here to help. You'll receive policy updates and reminders by text. Complete your account setup by clicking the invitation sent to ${clientEmail}. Message frequency may vary. Msg&data rates may apply. Reply STOP to opt out. Reply HELP for help.`;
+
+    // Choose template based on sms_welcome_enabled
+    // If enabled: use custom template or default
+    // If disabled: use default template
+    const { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries } = await import('@/lib/sms-template-helpers');
+    const template = agency.sms_welcome_enabled
+      ? (agency.sms_welcome_template || DEFAULT_SMS_TEMPLATES.welcome)
+      : DEFAULT_SMS_TEMPLATES.welcome;
+
+    const welcomeMessage = replaceSmsPlaceholders(template, {
+      client_first_name: clientFirstName,
+      agency_name: agency.name,
+      agent_name: agentName,
+      agent_phone: agentData?.phone_number || '',
+      client_email: clientEmail,
+      insured: deal.insured || '',
+      policy_number: deal.policy_number || '',
+      face_amount: deal.face_amount || '',
+      monthly_premium: deal.monthly_premium || '',
+      initial_draft: deal.initial_draft || '',
+      carrier_name: deal.carrier_name || '',
+      beneficiaries: formatBeneficiaries(deal.beneficiaries),
+    });
 
     try {
-      const telnyxResponse = await sendSMS({
-        from: agency.phone_number,
-        to: deal.client_phone,
-        text: welcomeMessage
-      });
-
-      // Save message to database
+      // Create message as DRAFT (not sent automatically)
       await admin
         .from("messages")
         .insert({
@@ -139,17 +160,16 @@ export async function POST(req: NextRequest) {
           receiver_id: deal.agent_id, // Placeholder
           body: welcomeMessage,
           direction: "outbound",
-          sent_at: new Date().toISOString(),
-          status: "sent",
+          sent_at: null, // Draft messages don't have sent_at
+          status: "draft", // Create as draft instead of sending
           message_type: "sms",
           metadata: {
             automated: true,
-            type: "welcome_message",
-            telnyx_message_id: telnyxResponse.data?.id
+            type: "welcome_message"
           }
         });
 
-      console.log(`Welcome message sent to ${deal.client_phone}`);
+      console.log(`Welcome message draft created for ${deal.client_phone}`);
 
     } catch (smsError: any) {
       console.error('Error sending welcome SMS:', smsError);

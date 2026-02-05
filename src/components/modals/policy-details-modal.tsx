@@ -98,6 +98,8 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
 
   // Conversation state
   const [startConversationDialogOpen, setStartConversationDialogOpen] = useState(false)
+  const [welcomeMessagePreview, setWelcomeMessagePreview] = useState<string>('')
+  const [loadingPreview, setLoadingPreview] = useState(false)
 
   // Fetch deal details with TanStack Query
   const { data: dealData, isLoading: dealLoading, error: dealError, refetch: refetchDeal } = useQuery({
@@ -1073,7 +1075,39 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                             Start messaging this client
                           </p>
                           <Button
-                            onClick={() => setStartConversationDialogOpen(true)}
+                            onClick={async () => {
+                              setStartConversationDialogOpen(true)
+                              setLoadingPreview(true)
+                              try {
+                                // Fetch agency template for preview
+                                const response = await fetch(`/api/agencies/${dealData.agency_id}/sms-template`, {
+                                  credentials: 'include'
+                                })
+                                if (response.ok) {
+                                  const { template, enabled } = await response.json()
+                                  // Generate preview with deal data
+                                  const clientFirstName = dealData.client_name?.split(' ')[0] || 'there'
+                                  const agentName = dealData.agent_name || 'your agent'
+                                  const clientEmail = dealData.client_email || 'your email'
+
+                                  let preview = template
+                                  preview = preview.replace(/\{\{client_first_name\}\}/g, clientFirstName)
+                                  preview = preview.replace(/\{\{agency_name\}\}/g, dealData.agency_name || '[Agency Name]')
+                                  preview = preview.replace(/\{\{agent_name\}\}/g, agentName)
+                                  preview = preview.replace(/\{\{client_email\}\}/g, clientEmail)
+
+                                  setWelcomeMessagePreview(preview)
+                                } else {
+                                  // Use default preview if fetch fails
+                                  setWelcomeMessagePreview('Welcome! Thank you for your business. You\'ll receive policy updates and reminders by text.')
+                                }
+                              } catch (error) {
+                                console.error('Failed to fetch template:', error)
+                                setWelcomeMessagePreview('Welcome! Thank you for your business. You\'ll receive policy updates and reminders by text.')
+                              } finally {
+                                setLoadingPreview(false)
+                              }
+                            }}
                             className="btn-gradient w-full"
                           >
                             <MessageSquare className="h-4 w-4 mr-2" />
@@ -1112,20 +1146,24 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
               <DialogTitle>Start SMS Conversation</DialogTitle>
             </div>
             <DialogDescription>
-              Starting a conversation will automatically send a welcome message to the client.
+              Starting a conversation will create a welcome message draft for approval.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <div className="p-4 bg-accent/30 rounded-lg border border-border">
               <p className="text-sm font-medium text-foreground mb-2">Welcome Message Preview:</p>
-              <p className="text-sm text-muted-foreground italic">
-                "Thanks for your policy with [Agency Name]. You'll receive policy updates and reminders by text.
-                Message frequency may vary. Msg&data rates may apply.
-                Reply STOP to opt out. Reply HELP for help."
-              </p>
+              {loadingPreview ? (
+                <p className="text-sm text-muted-foreground italic">
+                  Loading preview...
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground italic whitespace-pre-wrap">
+                  "{welcomeMessagePreview || 'Welcome! You\'ll receive policy updates and reminders by text.'}"
+                </p>
+              )}
             </div>
             <p className="text-sm text-muted-foreground mt-4">
-              Client Phone: <span className="font-semibold text-foreground">{deal.client_phone}</span>
+              Client Phone: <span className="font-semibold text-foreground">{dealData?.client_phone}</span>
             </p>
           </div>
           <div className="flex justify-end gap-2">

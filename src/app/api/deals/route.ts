@@ -325,6 +325,7 @@ export async function POST(req: NextRequest) {
       notes,
       submission_date,
       beneficiaries,
+      face_value,
     } = data;
 
     // Check if a deal already exists with this policy_number and carrier_id
@@ -373,6 +374,7 @@ export async function POST(req: NextRequest) {
         lead_source: lead_source || existingDeal.lead_source,
         team: team !== undefined ? team : existingDeal.team,
         notes: notes !== undefined ? notes : existingDeal.notes,
+        face_value: face_value !== undefined && face_value !== null ? face_value : existingDeal.face_value,
         // Update timestamp
         updated_at: new Date().toISOString(),
       } as any;
@@ -582,6 +584,7 @@ export async function POST(req: NextRequest) {
         status: status || "Active", // Default status is 'active' for newly posted deals
         notes,
         submission_date,
+        face_value: face_value || null,
       };
 
       console.log("[Deals API] Inserting deal into database...");

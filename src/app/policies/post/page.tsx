@@ -39,6 +39,7 @@ const initialFormData = {
   clientAddress: "",
   policyNumber: "",
   applicationNumber: "",
+  coverageAmount: "",
 };
 
 type Beneficiary = {
@@ -595,6 +596,11 @@ export default function PostDeal() {
         ? formData.clientPhone.replace(/[^\d]/g, '')
         : null
 
+      // Parse coverage amount if provided
+      const coverageAmount = formData.coverageAmount
+        ? parseFloat(formData.coverageAmount)
+        : null
+
       const payload = {
         agent_id,
         carrier_id,
@@ -622,6 +628,7 @@ export default function PostDeal() {
         notes: formData.notes || null,
         submission_date: new Date().toISOString().split('T')[0],
         beneficiaries: normalizedBeneficiaries,
+        face_value: coverageAmount,
       }
 
       console.log('[PostDeal] ===== ABOUT TO SUBMIT TO API =====')
@@ -842,6 +849,13 @@ export default function PostDeal() {
   const handleInputChange = (field: string, value: string) => {
     // For monthly premium, allow any string (including empty, partial numbers)
     if (field === "monthlyPremium") {
+      // Don't allow negative sign as the first character
+      if (value.startsWith("-")) return
+      setFormData({ ...formData, [field]: value })
+      return
+    }
+    // For coverage amount, allow any string (including empty, partial numbers)
+    if (field === "coverageAmount") {
       // Don't allow negative sign as the first character
       if (value.startsWith("-")) return
       setFormData({ ...formData, [field]: value })
@@ -1309,6 +1323,24 @@ export default function PostDeal() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Coverage Amount Field */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Coverage Amount
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.coverageAmount}
+                      onChange={(e) => handleInputChange("coverageAmount", e.target.value)}
+                      className="h-12"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
                 {/* SSN Benefit */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
@@ -1708,6 +1740,12 @@ export default function PostDeal() {
                     <div>
                       <span className="text-muted-foreground">Monthly Premium:</span>
                       <p className="font-medium text-foreground mt-1">${formData.monthlyPremium}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Coverage Amount:</span>
+                      <p className="font-medium text-foreground mt-1">
+                        {formData.coverageAmount ? `$${parseFloat(formData.coverageAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A'}
+                      </p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Policy Number:</span>

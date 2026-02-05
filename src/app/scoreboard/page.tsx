@@ -71,7 +71,7 @@ export default function Scoreboard() {
   const isHydrated = useHydrated()
   const clientDate = useClientDate()
 
-  const [timeframe, setTimeframe] = useState<TimeframeOption>('ytd')
+  const [timeframe, setTimeframe] = useState<TimeframeOption>('this_month')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)

@@ -278,7 +278,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { email, phone_number, role, status, upline_id, is_active } = body;
+    const { email, phone_number, role, status, upline_id, is_active, sms_auto_send_enabled } = body;
 
     // Build update object with only fields that are actually being updated
     // Only include fields that are explicitly provided and have meaningful values
@@ -309,6 +309,10 @@ export async function PUT(
     // Only update is_active if it's explicitly provided (boolean)
     if (is_active !== undefined && typeof is_active === "boolean") {
       updateData.is_active = is_active;
+    }
+
+    if (sms_auto_send_enabled !== undefined && (sms_auto_send_enabled === null || typeof sms_auto_send_enabled === "boolean")) {
+      updateData.sms_auto_send_enabled = sms_auto_send_enabled;
     }
 
     // Only update upline_id if it's provided

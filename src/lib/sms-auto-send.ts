@@ -44,17 +44,21 @@ const MESSAGE_TYPE_TO_COLUMN: Record<SmsMessageType, keyof AutoSendSettings> = {
 };
 
 /**
- * Master OFF → false (all drafts)
- * Master ON + per-type override OFF → true (auto-send)
- * Master ON + per-type override ON → false (requires approval)
+ * Agent override (non-null) takes priority over agency master toggle.
+ *   Agent explicitly OFF  → always draft
+ *   Agent explicitly ON   → skip agency master toggle, check per-type overrides
+ *   Agent NULL (default)  → use agency master toggle, then per-type overrides
  */
 export function shouldAutoSend(
   settings: AutoSendSettings | null | undefined,
-  messageType: SmsMessageType
+  messageType: SmsMessageType,
+  agentAutoSendEnabled?: boolean | null
 ): boolean {
+  if (agentAutoSendEnabled === false) return false;
+
   const effectiveSettings = settings || DEFAULT_AUTO_SEND_SETTINGS;
 
-  if (!effectiveSettings.sms_auto_send_enabled) {
+  if (agentAutoSendEnabled == null && !effectiveSettings.sms_auto_send_enabled) {
     return false;
   }
 
@@ -84,6 +88,7 @@ export interface SendOrCreateDraftParams {
   clientPhone: string;
   messageType: SmsMessageType;
   autoSendSettings: AutoSendSettings | null | undefined;
+  agentAutoSendEnabled?: boolean | null;
   metadata?: Record<string, unknown>;
 }
 
@@ -126,11 +131,12 @@ export async function sendOrCreateDraft(
     messageType,
     messageText,
     autoSendSettings,
+    agentAutoSendEnabled,
     metadata = {},
     ...draftParams
   } = params;
 
-  if (!shouldAutoSend(autoSendSettings, messageType)) {
+  if (!shouldAutoSend(autoSendSettings, messageType, agentAutoSendEnabled)) {
     return createDraft({ ...draftParams, messageText, messageType, metadata });
   }
 
@@ -217,4 +223,29 @@ export async function fetchAutoSendSettings(
 ): Promise<AutoSendSettings | null> {
   const settingsMap = await batchFetchAutoSendSettings([agencyId]);
   return settingsMap.get(agencyId) || null;
+}
+
+/** Batch fetches per-agent auto-send override status. NULL means "follow agency default". */
+export async function batchFetchAgentAutoSendStatus(
+  agentIds: string[]
+): Promise<Map<string, boolean | null>> {
+  const uniqueIds = [...new Set(agentIds)];
+  if (uniqueIds.length === 0) return new Map();
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, sms_auto_send_enabled')
+    .in('id', uniqueIds);
+
+  if (error) {
+    console.error('Error fetching agent auto-send status:', error);
+    return new Map();
+  }
+
+  const map = new Map<string, boolean | null>();
+  for (const agent of data || []) {
+    map.set(agent.id, agent.sms_auto_send_enabled ?? null);
+  }
+  return map;
 }

@@ -6,7 +6,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { normalizePhoneForStorage, sendSMS, formatPhoneForDisplay } from '@/lib/telnyx';
 import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries, formatAgentName } from '@/lib/sms-template-helpers';
-import { sendOrCreateDraft, fetchAutoSendSettings } from '@/lib/sms-auto-send';
+import { sendOrCreateDraft, fetchAutoSendSettings, batchFetchAgentAutoSendStatus } from '@/lib/sms-auto-send';
 
 interface ConversationResult {
   id: string;
@@ -567,6 +567,7 @@ export async function sendWelcomeMessage(
 
   // Use auto-send logic to either send immediately or create draft
   const autoSendSettings = await fetchAutoSendSettings(agencyId);
+  const agentAutoSendMap = await batchFetchAgentAutoSendStatus([agentId]);
 
   const result = await sendOrCreateDraft({
     conversationId,
@@ -577,6 +578,7 @@ export async function sendWelcomeMessage(
     clientPhone,
     messageType: 'welcome',
     autoSendSettings,
+    agentAutoSendEnabled: agentAutoSendMap.get(agentId) ?? null,
     metadata: {
       client_phone: normalizePhoneForStorage(clientPhone),
     },

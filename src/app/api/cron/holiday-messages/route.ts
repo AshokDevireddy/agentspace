@@ -10,7 +10,7 @@ import {
 } from '@/lib/sms-helpers';
 import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries, formatAgentName } from '@/lib/sms-template-helpers';
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
-import { sendOrCreateDraft, batchFetchAutoSendSettings } from '@/lib/sms-auto-send';
+import { sendOrCreateDraft, batchFetchAutoSendSettings, batchFetchAgentAutoSendStatus } from '@/lib/sms-auto-send';
 import { formatPhoneForDisplay } from '@/lib/telnyx';
 
 // US Federal Bank Holidays configuration
@@ -143,9 +143,11 @@ export async function GET(request: NextRequest) {
     console.log(`📊 Found ${deals.length} unique clients for holiday messages`);
 
     const agencyIds = deals.map((d: { agency_id: string }) => d.agency_id);
-    const [agencySettingsMap, autoSendSettingsMap] = await Promise.all([
+    const agentIds = deals.map((d: { agent_id: string }) => d.agent_id);
+    const [agencySettingsMap, autoSendSettingsMap, agentAutoSendMap] = await Promise.all([
       batchFetchAgencySmsSettings(agencyIds),
       batchFetchAutoSendSettings(agencyIds),
+      batchFetchAgentAutoSendStatus(agentIds),
     ]);
 
     let successCount = 0;
@@ -273,6 +275,7 @@ export async function GET(request: NextRequest) {
           clientPhone: deal.client_phone,
           messageType: 'holiday',
           autoSendSettings: autoSendSettingsMap.get(deal.agency_id),
+          agentAutoSendEnabled: agentAutoSendMap.get(deal.agent_id) ?? null,
           metadata: {
             holiday_name: holiday.name,
             client_phone: deal.client_phone,

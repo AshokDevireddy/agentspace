@@ -1,6 +1,7 @@
 "use client"
 
 import { Switch } from "@/components/ui/switch"
+import { AgentSmsAutomationList, type AgentAutoSendInfo } from "@/components/agent-sms-automation-list"
 
 const MESSAGE_TYPES = [
   { key: "welcome", label: "Welcome Messages", description: "Sent when a new client conversation is created" },
@@ -18,6 +19,10 @@ interface SmsAutomationSettingsProps {
   typeOverrides: Record<string, boolean>
   onTypeOverrideChange: (type: string, requireApproval: boolean) => void
   saving: boolean
+  agents?: AgentAutoSendInfo[]
+  agentsLoading?: boolean
+  onAgentToggle?: (agentId: string, value: boolean | null) => void
+  agentSaving?: string | null
 }
 
 export function SmsAutomationSettings({
@@ -26,6 +31,10 @@ export function SmsAutomationSettings({
   typeOverrides,
   onTypeOverrideChange,
   saving,
+  agents,
+  agentsLoading,
+  onAgentToggle,
+  agentSaving,
 }: SmsAutomationSettingsProps) {
   return (
     <div className="space-y-6">
@@ -35,7 +44,7 @@ export function SmsAutomationSettings({
           <div>
             <h3 className="text-lg font-semibold text-foreground">Auto-Send SMS Messages</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              When enabled, automated messages are sent immediately via SMS. When disabled, all messages are saved as drafts for manual review.
+              When enabled, automated messages are sent immediately via SMS. When disabled, all messages are saved as drafts for manual review. Individual agents can override this default.
             </p>
           </div>
           <Switch
@@ -88,6 +97,25 @@ export function SmsAutomationSettings({
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* Per-Agent Overrides */}
+      {agents && onAgentToggle && (
+        <div className="rounded-lg border bg-card p-6">
+          <div className="mb-4">
+            <h3 className="text-base font-semibold text-foreground">Per-Agent Overrides</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Individual agents can override the agency default. When set to &quot;Agency Default&quot;, the agent follows the master toggle above.
+            </p>
+          </div>
+          <AgentSmsAutomationList
+            agents={agents}
+            loading={agentsLoading ?? false}
+            onToggle={onAgentToggle}
+            saving={agentSaving ?? null}
+            agencyAutoSendEnabled={smsAutoSendEnabled}
+          />
         </div>
       )}
     </div>

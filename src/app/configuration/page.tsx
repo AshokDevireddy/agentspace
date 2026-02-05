@@ -20,6 +20,7 @@ import { useAuth } from "@/providers/AuthProvider"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
 import { SmsTemplateEditor } from "@/components/sms-template-editor"
 import { SmsAutomationSettings } from "@/components/sms-automation-settings"
+import type { AgentAutoSendInfo } from "@/components/agent-sms-automation-list"
 import { DiscordTemplateEditor } from "@/components/discord-template-editor"
 import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_PLACEHOLDERS } from "@/lib/sms-template-helpers"
 import { DEFAULT_DISCORD_TEMPLATE, DISCORD_TEMPLATE_PLACEHOLDERS } from "@/lib/discord-template-helpers"
@@ -453,6 +454,10 @@ export default function ConfigurationPage() {
     holiday: false,
   })
   const [savingAutomation, setSavingAutomation] = useState(false)
+  // Per-agent auto-send override state
+  const [agentAutoSendList, setAgentAutoSendList] = useState<AgentAutoSendInfo[]>([])
+  const [agentAutoSendLoading, setAgentAutoSendLoading] = useState(false)
+  const [agentAutoSendSaving, setAgentAutoSendSaving] = useState<string | null>(null)
 
   // Lapse Email Notification Settings state
   const [lapseEmailEnabled, setLapseEmailEnabled] = useState(false)
@@ -937,6 +942,32 @@ export default function ConfigurationPage() {
     }
   }, [agencyData])
 
+  // Fetch agents for per-agent auto-send overrides when automation tab is active
+  useEffect(() => {
+    if (activeTab !== "automation" || !agency?.id) return
+    let cancelled = false
+    const fetchAgents = async () => {
+      setAgentAutoSendLoading(true)
+      try {
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('users')
+          .select('id, first_name, last_name, email, sms_auto_send_enabled')
+          .eq('agency_id', agency.id)
+          .order('last_name')
+        if (!cancelled && data) {
+          setAgentAutoSendList(data)
+        }
+      } catch (err) {
+        console.error('Failed to fetch agents for automation:', err)
+      } finally {
+        if (!cancelled) setAgentAutoSendLoading(false)
+      }
+    }
+    fetchAgents()
+    return () => { cancelled = true }
+  }, [activeTab, agency?.id])
+
   // Sync carriers to local state
   useEffect(() => {
     if (carriersData.length > 0) {
@@ -1328,6 +1359,27 @@ export default function ConfigurationPage() {
       showError('Failed to update setting')
     } finally {
       setSavingAutomation(false)
+    }
+  }
+
+  const handleAgentAutoSendToggle = async (agentId: string, value: boolean | null) => {
+    setAgentAutoSendSaving(agentId)
+    try {
+      const res = await fetch(`/api/agents/${agentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sms_auto_send_enabled: value }),
+      })
+      if (!res.ok) throw new Error('Failed to update agent')
+      setAgentAutoSendList(prev =>
+        prev.map(a => a.id === agentId ? { ...a, sms_auto_send_enabled: value } : a)
+      )
+      showSuccess('Agent auto-send setting updated')
+    } catch (error) {
+      console.error('Failed to update agent auto-send:', error)
+      showError('Failed to update agent setting')
+    } finally {
+      setAgentAutoSendSaving(null)
     }
   }
 
@@ -4841,6 +4893,10 @@ export default function ConfigurationPage() {
                   typeOverrides={smsTypeOverrides}
                   onTypeOverrideChange={handleAutoSendTypeOverrideChange}
                   saving={savingAutomation}
+                  agents={agentAutoSendList}
+                  agentsLoading={agentAutoSendLoading}
+                  onAgentToggle={handleAgentAutoSendToggle}
+                  agentSaving={agentAutoSendSaving}
                 />
               )}
 

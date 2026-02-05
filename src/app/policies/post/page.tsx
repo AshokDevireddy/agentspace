@@ -319,7 +319,7 @@ export default function PostDeal() {
   const requiredFields = useMemo<FormField[]>(() => {
     const baseFields: FormField[] = [
       "carrierId", "productId", "policyEffectiveDate", "rateClass", "ssnBenefit", "monthlyPremium",
-      "billingCycle", "leadSource",
+      "coverageAmount", "billingCycle", "leadSource",
       "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
       "clientAddress", "policyNumber"
     ]
@@ -847,16 +847,7 @@ export default function PostDeal() {
   }, [])
 
   const handleInputChange = (field: string, value: string) => {
-    // For monthly premium, allow any string (including empty, partial numbers)
-    if (field === "monthlyPremium") {
-      // Don't allow negative sign as the first character
-      if (value.startsWith("-")) return
-      setFormData({ ...formData, [field]: value })
-      return
-    }
-    // For coverage amount, allow any string (including empty, partial numbers)
-    if (field === "coverageAmount") {
-      // Don't allow negative sign as the first character
+    if (field === "monthlyPremium" || field === "coverageAmount") {
       if (value.startsWith("-")) return
       setFormData({ ...formData, [field]: value })
       return
@@ -909,10 +900,14 @@ export default function PostDeal() {
         return false
       }
     }
-    // Premium check (monthly premium must be a valid non-negative number)
     const monthly = parseFloat(formData.monthlyPremium)
     if (Number.isNaN(monthly) || monthly < 0) {
       setError("Please enter a valid monthly premium.")
+      return false
+    }
+    const coverage = parseFloat(formData.coverageAmount)
+    if (Number.isNaN(coverage) || coverage < 0) {
+      setError("Please enter a valid coverage amount.")
       return false
     }
     setError(null)
@@ -962,6 +957,15 @@ export default function PostDeal() {
       const monthly = parseFloat(formData.monthlyPremium)
       if (Number.isNaN(monthly) || monthly < 0) {
         setError("Please enter a valid monthly premium.")
+        return false
+      }
+      if (!formData.coverageAmount) {
+        setError("Please enter the coverage amount.")
+        return false
+      }
+      const coverage = parseFloat(formData.coverageAmount)
+      if (Number.isNaN(coverage) || coverage < 0) {
+        setError("Please enter a valid coverage amount.")
         return false
       }
       // At least one of policy number or application number must be filled
@@ -1327,7 +1331,7 @@ export default function PostDeal() {
                   {/* Coverage Amount Field */}
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
-                      Coverage Amount
+                      Coverage Amount <span className="text-destructive">*</span>
                     </label>
                     <Input
                       type="number"

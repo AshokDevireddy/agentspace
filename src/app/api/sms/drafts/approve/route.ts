@@ -26,31 +26,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Fetch all draft messages with conversation details
     const { data: draftMessages, error: fetchError } = await supabase
       .from('messages')
-      .select(`
-        id,
-        conversation_id,
-        sender_id,
-        receiver_id,
-        body,
-        direction,
-        metadata,
-        conversations!inner(
-          id,
-          deal_id,
-          client_phone,
-          deals!inner(
-            id,
-            agency_id,
-            agencies!inner(
-              id,
-              phone_number
-            )
-          )
-        )
-      `)
+      .select('id, conversation_id, body')
       .in('id', messageIds)
       .eq('status', 'draft')
 
@@ -72,29 +50,58 @@ export async function POST(request: NextRequest) {
     const results = []
     const errors = []
 
-    // Process each draft message
     for (const message of draftMessages) {
       try {
-        const conversation = message.conversations
-        const deal = conversation.deals
-        const agency = deal.agencies
+        const { data: conversation, error: convError } = await supabase
+          .from('conversations')
+          .select('id, deal_id, client_phone, agency_id')
+          .eq('id', message.conversation_id)
+          .single()
 
-        // Get phone numbers
-        const agencyPhone = agency.phone_number
-        const clientPhone = conversation.client_phone
-
-        if (!agencyPhone || !clientPhone) {
-          throw new Error('Missing phone numbers for sending SMS')
+        if (convError || !conversation) {
+          throw new Error(`Conversation not found for message ${message.id}`)
         }
 
-        // Send SMS via Telnyx
+        if (!conversation.client_phone) {
+          throw new Error(`Missing client phone number for conversation ${conversation.id}`)
+        }
+
+        // Resolve agency_id: prefer deal's agency, fall back to conversation's agency
+        let agencyPhone: string | null = null
+        let agencyId: string | null = conversation.agency_id
+
+        if (conversation.deal_id) {
+          const { data: deal } = await supabase
+            .from('deals')
+            .select('agency_id')
+            .eq('id', conversation.deal_id)
+            .single()
+
+          if (deal?.agency_id) {
+            agencyId = deal.agency_id
+          }
+        }
+
+        if (agencyId) {
+          const { data: agency } = await supabase
+            .from('agencies')
+            .select('phone_number')
+            .eq('id', agencyId)
+            .single()
+
+          agencyPhone = agency?.phone_number || null
+        }
+
+        if (!agencyPhone) {
+          throw new Error(`Missing agency phone number for conversation ${conversation.id} (deal_id: ${conversation.deal_id || 'none'})`)
+        }
+
         const telnyxResult = await sendSMS({
           from: agencyPhone,
-          to: clientPhone,
+          to: conversation.client_phone,
           text: message.body
         })
 
-        // Update message status to 'sent' and set sent_at timestamp
         const { error: updateError } = await supabase
           .from('messages')
           .update({

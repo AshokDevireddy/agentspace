@@ -9,7 +9,7 @@ import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";
 import { useNotification } from '@/contexts/notification-context'
 import { useTheme } from "next-themes"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
-import { Sun, Moon, Monitor, Check, Loader2 } from "lucide-react"
+import { Sun, Moon, Monitor, Check, Loader2, Phone } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -21,6 +21,7 @@ interface ProfileData {
   firstName: string;
   lastName: string;
   fullName: string;
+  phone_number: string | null;
   createdAt: string;
   is_admin: boolean;
   role: string;
@@ -71,6 +72,7 @@ export default function ProfilePage() {
   const { setTheme } = useTheme()
   const queryClient = useQueryClient()
   const [selectedPositionId, setSelectedPositionId] = useState<string>("");
+  const [phoneNumber, setPhoneNumber] = useState<string>("");
   const [savingTheme, setSavingTheme] = useState(false);
 
   // Password reset mutation
@@ -100,6 +102,12 @@ export default function ProfilePage() {
       setSelectedPositionId(profileData.position_id)
     }
   }, [profileData?.position_id])
+
+  React.useEffect(() => {
+    if (profileData?.phone_number) {
+      setPhoneNumber(profileData.phone_number)
+    }
+  }, [profileData?.phone_number])
 
   // Fetch positions if admin using TanStack Query with custom queryFn
   // Wrapped in try/catch to prevent errors from propagating to global error boundary
@@ -185,6 +193,54 @@ export default function ProfilePage() {
   const handlePositionUpdate = () => {
     if (!selectedPositionId) return;
     updatePositionMutation.mutate(selectedPositionId);
+  };
+
+  const updatePhoneMutation = useMutation({
+    mutationFn: async (phone: string) => {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
+      if (!accessToken) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch('/api/user/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ phone_number: phone }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update phone number');
+      }
+
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(user?.id) })
+      showSuccess('Phone number updated successfully!');
+    },
+    onError: (error: Error) => {
+      console.error('Error updating phone number:', error);
+      showError(error.message || 'Failed to update phone number');
+    }
+  })
+
+  const formatPhoneDisplay = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 10);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
+  const handlePhoneUpdate = () => {
+    updatePhoneMutation.mutate(phoneNumber);
   };
 
   const handleThemeChange = async (newTheme: ThemeMode) => {
@@ -303,6 +359,42 @@ export default function ProfilePage() {
             'Send Password Reset Email'
           )}
         </button>
+      </div>
+
+      {/* Phone Number Section */}
+      <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
+        <h2 className="text-xl font-bold text-foreground mb-2">
+          <Phone className="h-5 w-5 inline mr-2" />
+          Phone Number
+        </h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Your phone number is included in SMS messages sent to clients. Please enter your direct cell number.
+        </p>
+        <div className="flex items-end gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-muted-foreground mb-2">
+              Cell Phone Number
+            </label>
+            <input
+              type="tel"
+              value={formatPhoneDisplay(phoneNumber)}
+              onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              placeholder="(555) 123-4567"
+              maxLength={14}
+              className="w-full px-4 py-2 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Format: (XXX) XXX-XXXX
+            </p>
+          </div>
+          <button
+            onClick={handlePhoneUpdate}
+            disabled={updatePhoneMutation.isPending || phoneNumber.length !== 10}
+            className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {updatePhoneMutation.isPending ? 'Saving...' : 'Save Phone'}
+          </button>
+        </div>
       </div>
 
       {/* Position Selection (Admin Only) */}

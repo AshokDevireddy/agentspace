@@ -7,10 +7,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import {
   getConversationIfExists,
-  logMessage,
 } from '@/lib/sms-helpers';
 import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries, formatAgentName } from '@/lib/sms-template-helpers';
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
+import { sendOrCreateDraft, batchFetchAutoSendSettings } from '@/lib/sms-auto-send';
+import { formatPhoneForDisplay } from '@/lib/telnyx';
 
 export async function GET(request: NextRequest) {
   try {
@@ -57,7 +58,10 @@ export async function GET(request: NextRequest) {
     console.log(`Found ${deals.length} policies eligible for lapse reminders`);
 
     const agencyIds = deals.map((d: { agency_id: string }) => d.agency_id);
-    const agencySettingsMap = await batchFetchAgencySmsSettings(agencyIds);
+    const [agencySettingsMap, autoSendSettingsMap] = await Promise.all([
+      batchFetchAgencySmsSettings(agencyIds),
+      batchFetchAutoSendSettings(agencyIds),
+    ]);
 
     let successCount = 0;
     let errorCount = 0;
@@ -128,7 +132,7 @@ export async function GET(request: NextRequest) {
           .select('phone_number')
           .eq('id', deal.agent_id)
           .single();
-        const agentPhone = agent?.phone_number || '';
+        const agentPhone = formatPhoneForDisplay(agent?.phone_number);
         const clientFirstName = deal.client_name.split(' ')[0]; // Extract first name
 
         // Fetch additional deal data for template variables
@@ -178,25 +182,23 @@ export async function GET(request: NextRequest) {
         });
 
         console.log(`  📝 Message: "${messageText}"`);
-        console.log(`  📤 Creating draft message (not sending yet)...`);
 
-        // Create draft message (don't send via Telnyx yet)
-        console.log(`  💾 Logging draft message to database...`);
-        await logMessage({
+        const result = await sendOrCreateDraft({
           conversationId: conversation.id,
           senderId: deal.agent_id,
-          receiverId: deal.agent_id, // Placeholder
-          body: messageText,
-          direction: 'outbound',
-          status: 'draft', // Create as draft
+          receiverId: deal.agent_id,
+          messageText,
+          agencyPhone: deal.agency_phone,
+          clientPhone: deal.client_phone,
+          messageType: 'lapse',
+          autoSendSettings: autoSendSettingsMap.get(deal.agency_id),
           metadata: {
-            automated: true,
-            type: 'lapse_reminder',
             client_phone: deal.client_phone,
             client_name: deal.client_name,
           },
         });
-        console.log(`  💾 Draft message created successfully!`);
+
+        console.log(`  💾 Message ${result.status === 'sent' ? 'sent' : 'created as draft'} successfully!`);
 
         // Update deal status_standardized using staged notification logic
         // If email was already sent (lapse_email_notified) → lapse_sms_and_email_notified

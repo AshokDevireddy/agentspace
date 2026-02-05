@@ -7,10 +7,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import {
   getConversationIfExists,
-  logMessage,
 } from '@/lib/sms-helpers';
 import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries, formatAgentName } from '@/lib/sms-template-helpers';
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
+import { sendOrCreateDraft, batchFetchAutoSendSettings } from '@/lib/sms-auto-send';
+import { formatPhoneForDisplay } from '@/lib/telnyx';
 
 export async function GET(request: NextRequest) {
   try {
@@ -55,7 +56,10 @@ export async function GET(request: NextRequest) {
     console.log(`📊 Found ${deals.length} unique clients due for quarterly check-in`);
 
     const agencyIds = deals.map((d: { agency_id: string }) => d.agency_id);
-    const agencySettingsMap = await batchFetchAgencySmsSettings(agencyIds);
+    const [agencySettingsMap, autoSendSettingsMap] = await Promise.all([
+      batchFetchAgencySmsSettings(agencyIds),
+      batchFetchAutoSendSettings(agencyIds),
+    ]);
 
     let successCount = 0;
     let errorCount = 0;
@@ -127,7 +131,7 @@ export async function GET(request: NextRequest) {
           .select('phone_number')
           .eq('id', deal.agent_id)
           .single();
-        const agentPhone = agent?.phone_number || deal.agency_phone || '';
+        const agentPhone = formatPhoneForDisplay(agent?.phone_number || deal.agency_phone);
 
         // Fetch additional deal data for template variables
         const { data: dealDetails } = await supabase
@@ -175,17 +179,16 @@ export async function GET(request: NextRequest) {
 
         console.log(`  📝 Message: ${messageBody.substring(0, 80)}...`);
 
-        // Create draft message
-        await logMessage({
+        const result = await sendOrCreateDraft({
           conversationId: conversation.id,
           senderId: deal.agent_id,
           receiverId: deal.agent_id,
-          body: messageBody,
-          direction: 'outbound',
-          status: 'draft',
+          messageText: messageBody,
+          agencyPhone: deal.agency_phone,
+          clientPhone: deal.client_phone,
+          messageType: 'quarterly',
+          autoSendSettings: autoSendSettingsMap.get(deal.agency_id),
           metadata: {
-            automated: true,
-            type: 'quarterly_checkin',
             days_since_effective: deal.days_since_effective,
             policy_effective_date: deal.policy_effective_date,
             client_phone: deal.client_phone,
@@ -194,7 +197,7 @@ export async function GET(request: NextRequest) {
           },
         });
 
-        console.log(`  ✅ Draft message created successfully`);
+        console.log(`  ✅ Message ${result.status === 'sent' ? 'sent' : 'created as draft'} successfully`);
         successCount++;
       } catch (dealError) {
         console.error(`  ❌ Error processing deal ${deal.deal_id}:`, dealError);

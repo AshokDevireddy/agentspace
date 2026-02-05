@@ -5,13 +5,15 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { getConversationIfExists, logMessage } from "@/lib/sms-helpers";
+import { getConversationIfExists } from "@/lib/sms-helpers";
 import {
   DEFAULT_SMS_TEMPLATES,
   formatBeneficiaries,
   replaceSmsPlaceholders,
 } from "@/lib/sms-template-helpers";
 import { batchFetchAgencySmsSettings } from "@/lib/sms-template-helpers.server";
+import { sendOrCreateDraft, batchFetchAutoSendSettings } from '@/lib/sms-auto-send';
+import { formatPhoneForDisplay } from '@/lib/telnyx';
 import { calculateNextCustomBillingDate } from "@/lib/utils";
 
 export async function GET(request: NextRequest) {
@@ -85,7 +87,10 @@ export async function GET(request: NextRequest) {
     console.log(`📊 Found ${deals.length} deals with billing reminders due`);
 
     const agencyIds = deals.map((d: { agency_id: string }) => d.agency_id);
-    const agencySettingsMap = await batchFetchAgencySmsSettings(agencyIds);
+    const [agencySettingsMap, autoSendSettingsMap] = await Promise.all([
+      batchFetchAgencySmsSettings(agencyIds),
+      batchFetchAutoSendSettings(agencyIds),
+    ]);
 
     let successCount = 0;
     let errorCount = 0;
@@ -225,7 +230,7 @@ export async function GET(request: NextRequest) {
           .select("phone_number")
           .eq("id", deal.agent_id)
           .single();
-        const agentPhone = agent?.phone_number || "";
+        const agentPhone = formatPhoneForDisplay(agent?.phone_number);
 
         const template = agencySettings?.sms_billing_reminder_template ||
           DEFAULT_SMS_TEMPLATES.billing_reminder;
@@ -242,18 +247,17 @@ export async function GET(request: NextRequest) {
         });
 
         console.log(`  📝 Message: "${messageText}"`);
-        console.log(`  📤 Creating draft message...`);
 
-        await logMessage({
+        const result = await sendOrCreateDraft({
           conversationId: conversation.id,
           senderId: deal.agent_id,
           receiverId: deal.agent_id,
-          body: messageText,
-          direction: "outbound",
-          status: "draft",
+          messageText,
+          agencyPhone: deal.agency_phone,
+          clientPhone: deal.client_phone,
+          messageType: 'billing',
+          autoSendSettings: autoSendSettingsMap.get(deal.agency_id),
           metadata: {
-            automated: true,
-            type: "billing_reminder",
             client_phone: deal.client_phone,
             client_name: deal.client_name,
             billing_cycle: deal.billing_cycle,
@@ -267,7 +271,7 @@ export async function GET(request: NextRequest) {
 
         successCount++;
         console.log(
-          `  🎉 SUCCESS: Billing reminder created as draft for ${deal.client_name}`,
+          `  🎉 SUCCESS: Billing reminder ${result.status === 'sent' ? 'sent' : 'created as draft'} for ${deal.client_name}`,
         );
       } catch (error) {
         console.error(`  ❌ ERROR sending to ${deal.client_name}:`, error);

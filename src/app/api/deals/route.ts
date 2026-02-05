@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getOrCreateConversation, logMessage } from "@/lib/sms-helpers";
+import { formatPhoneForDisplay } from "@/lib/telnyx";
 
 /**
  * Prepares hierarchy snapshot data for a deal (without inserting)
@@ -750,7 +751,7 @@ export async function POST(req: NextRequest) {
               client_first_name: clientFirstName,
               agency_name: agencyName,
               agent_name: agentName,
-              agent_phone: agentData.phone_number || '',
+              agent_phone: formatPhoneForDisplay(agentData.phone_number),
               client_email: clientEmail,
               insured: deal.client_name || '',
               policy_number: deal.policy_number || '',

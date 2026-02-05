@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, createServerClient } from "@/lib/supabase/server";
-import { sendSMS } from "@/lib/telnyx";
+import { sendSMS, formatPhoneForDisplay } from "@/lib/telnyx";
 
 export async function POST(req: NextRequest) {
   const admin = createAdminClient();
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     // Fetch deal details
     const { data: deal, error: dealError } = await admin
       .from("deals")
-      .select("id, client_name, client_phone, client_email, agent_id, agency_id")
+      .select("id, client_name, client_phone, client_email, agent_id, agency_id, face_value, monthly_premium, policy_effective_date, policy_number, carrier_id")
       .eq("id", dealId)
       .single();
 
@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
       client_first_name: clientFirstName,
       agency_name: agency.name,
       agent_name: agentName,
-      agent_phone: agentData?.phone_number || '',
+      agent_phone: formatPhoneForDisplay(agentData?.phone_number),
       client_email: clientEmail,
       insured: deal.client_name || '',
       policy_number: deal.policy_number || '',
@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
 
       console.log(`Welcome message draft created for ${deal.client_phone}`);
 
-    } catch (smsError: any) {
+    } catch (smsError) {
       console.error('Error sending welcome SMS:', smsError);
       // Don't fail the whole request if SMS fails
       // The conversation is already created
@@ -199,10 +199,10 @@ export async function POST(req: NextRequest) {
       message: "Conversation started and welcome message sent"
     }, { status: 200 });
 
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error in start conversation API:', err);
     return NextResponse.json(
-      { error: err.message || "Failed to start conversation" },
+      { error: err instanceof Error ? err.message : "Failed to start conversation" },
       { status: 500 }
     );
   }

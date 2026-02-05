@@ -47,18 +47,67 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Batch-fetch conversations, deals, and agencies upfront
+    const conversationIds = [...new Set(draftMessages.map(m => m.conversation_id))]
+
+    const { data: conversations } = await supabase
+      .from('conversations')
+      .select('id, deal_id, client_phone, agency_id')
+      .in('id', conversationIds)
+
+    const conversationMap = new Map(
+      (conversations || []).map(c => [c.id, c])
+    )
+
+    // Fetch deals for conversations that have a deal_id
+    const dealIds = [...new Set(
+      (conversations || [])
+        .map(c => c.deal_id)
+        .filter((id): id is string => !!id)
+    )]
+
+    const dealMap = new Map<string, { agency_id: string | null }>()
+    if (dealIds.length > 0) {
+      const { data: deals } = await supabase
+        .from('deals')
+        .select('id, agency_id')
+        .in('id', dealIds)
+
+      for (const deal of deals || []) {
+        dealMap.set(deal.id, deal)
+      }
+    }
+
+    // Collect all agency IDs (prefer deal's agency, fall back to conversation's)
+    const agencyIds = new Set<string>()
+    for (const conv of conversations || []) {
+      const deal = conv.deal_id ? dealMap.get(conv.deal_id) : null
+      const agencyId = deal?.agency_id || conv.agency_id
+      if (agencyId) agencyIds.add(agencyId)
+    }
+
+    const agencyPhoneMap = new Map<string, string>()
+    if (agencyIds.size > 0) {
+      const { data: agencies } = await supabase
+        .from('agencies')
+        .select('id, phone_number')
+        .in('id', [...agencyIds])
+
+      for (const agency of agencies || []) {
+        if (agency.phone_number) {
+          agencyPhoneMap.set(agency.id, agency.phone_number)
+        }
+      }
+    }
+
     const results = []
     const errors = []
 
     for (const message of draftMessages) {
       try {
-        const { data: conversation, error: convError } = await supabase
-          .from('conversations')
-          .select('id, deal_id, client_phone, agency_id')
-          .eq('id', message.conversation_id)
-          .single()
+        const conversation = conversationMap.get(message.conversation_id)
 
-        if (convError || !conversation) {
+        if (!conversation) {
           throw new Error(`Conversation not found for message ${message.id}`)
         }
 
@@ -66,31 +115,9 @@ export async function POST(request: NextRequest) {
           throw new Error(`Missing client phone number for conversation ${conversation.id}`)
         }
 
-        // Resolve agency_id: prefer deal's agency, fall back to conversation's agency
-        let agencyPhone: string | null = null
-        let agencyId: string | null = conversation.agency_id
-
-        if (conversation.deal_id) {
-          const { data: deal } = await supabase
-            .from('deals')
-            .select('agency_id')
-            .eq('id', conversation.deal_id)
-            .single()
-
-          if (deal?.agency_id) {
-            agencyId = deal.agency_id
-          }
-        }
-
-        if (agencyId) {
-          const { data: agency } = await supabase
-            .from('agencies')
-            .select('phone_number')
-            .eq('id', agencyId)
-            .single()
-
-          agencyPhone = agency?.phone_number || null
-        }
+        const deal = conversation.deal_id ? dealMap.get(conversation.deal_id) : null
+        const agencyId = deal?.agency_id || conversation.agency_id
+        const agencyPhone = agencyId ? agencyPhoneMap.get(agencyId) : null
 
         if (!agencyPhone) {
           throw new Error(`Missing agency phone number for conversation ${conversation.id} (deal_id: ${conversation.deal_id || 'none'})`)

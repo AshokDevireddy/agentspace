@@ -31,6 +31,7 @@ export default function Home() {
   // SSR-safe localStorage hook - returns 'downlines' on server, synced value on client
   const [viewMode, setViewMode] = useLocalStorage<'just_me' | 'downlines'>('dashboard_view_mode', 'downlines')
   const [topProducersPeriod, setTopProducersPeriod] = useState<'ytd' | 'mtd'>('ytd')
+  const [dateMode, setDateMode] = useLocalStorage<'submitted_date' | 'policy_effective_date'>('dashboard_date_mode', 'submitted_date')
   const isHydrated = useHydrated()
 
   // SSR-safe week date range - returns deterministic dates on server, actual current week on client
@@ -51,12 +52,12 @@ export default function Home() {
   const userId = userData?.id || null // users.id from the users table
 
   const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useSupabaseRpc<any>(
-    queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate),
-    'get_scoreboard_data',
-    { p_user_id: user?.id, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate },
+    [...queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate), dateMode],
+    'get_scoreboard_data_updated_lapsed_deals_v2',
+    { p_user_id: user?.id, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate, assumed_months_till_lapse: 5, submitted: true, p_use_submitted_date: dateMode === 'submitted_date' },
     {
       enabled: !!user?.id && isHydrated,
-      staleTime: 60 * 1000, // 1 minute - scoreboard data is more static
+      staleTime: 60 * 1000,
       placeholderData: (previousData: any) => previousData,
     }
   )
@@ -89,14 +90,15 @@ export default function Home() {
   const topProducersRange = topProducersPeriod === 'ytd' ? productionDateRanges.ytd : productionDateRanges.mtd
 
   const { data: topProducersResult, isLoading: topProducersLoading } = useSupabaseRpc<any>(
-    [...queryKeys.scoreboard(user?.id || '', topProducersRange.start, topProducersRange.end), 'top-producers', topProducersPeriod],
-    'get_scoreboard_data_updated_lapsed_deals',
+    [...queryKeys.scoreboard(user?.id || '', topProducersRange.start, topProducersRange.end), 'top-producers', topProducersPeriod, dateMode],
+    'get_scoreboard_data_updated_lapsed_deals_v2',
     {
       p_user_id: user?.id,
       p_start_date: topProducersRange.start,
       p_end_date: topProducersRange.end,
       assumed_months_till_lapse: 5,
-      submitted: true
+      submitted: true,
+      p_use_submitted_date: dateMode === 'submitted_date'
     },
     {
       enabled: !!user?.id,
@@ -107,28 +109,30 @@ export default function Home() {
 
   // YTD production - aligned with Scoreboard
   const { data: ytdScoreboardResult, isLoading: ytdProductionLoading } = useSupabaseRpc<any>(
-    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.ytd.start, productionDateRanges.ytd.end), 'production-ytd'],
-    'get_scoreboard_data_updated_lapsed_deals',
+    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.ytd.start, productionDateRanges.ytd.end), 'production-ytd', dateMode],
+    'get_scoreboard_data_updated_lapsed_deals_v2',
     {
       p_user_id: user?.id || '',
       p_start_date: productionDateRanges.ytd.start,
       p_end_date: productionDateRanges.ytd.end,
       assumed_months_till_lapse: 5,
-      submitted: true
+      submitted: true,
+      p_use_submitted_date: dateMode === 'submitted_date'
     },
     { enabled: !!user?.id, staleTime: 5 * 60 * 1000 }
   )
 
   // MTD production - aligned with Scoreboard
   const { data: mtdScoreboardResult, isLoading: mtdProductionLoading } = useSupabaseRpc<any>(
-    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.mtd.start, productionDateRanges.mtd.end), 'production-mtd'],
-    'get_scoreboard_data_updated_lapsed_deals',
+    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.mtd.start, productionDateRanges.mtd.end), 'production-mtd', dateMode],
+    'get_scoreboard_data_updated_lapsed_deals_v2',
     {
       p_user_id: user?.id || '',
       p_start_date: productionDateRanges.mtd.start,
       p_end_date: productionDateRanges.mtd.end,
       assumed_months_till_lapse: 5,
-      submitted: true
+      submitted: true,
+      p_use_submitted_date: dateMode === 'submitted_date'
     },
     { enabled: !!user?.id, staleTime: 5 * 60 * 1000 }
   )
@@ -365,6 +369,13 @@ export default function Home() {
               </Link>
             )}
             <div className="relative bg-muted/50 p-1 rounded-lg">
+              <div className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out" style={{ left: dateMode === 'submitted_date' ? '4px' : 'calc(50%)', width: 'calc(50% - 4px)' }} />
+              <div className="relative z-10 flex">
+                <button onClick={() => setDateMode('submitted_date')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[120px] text-center ${dateMode === 'submitted_date' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Submitted Date</button>
+                <button onClick={() => setDateMode('policy_effective_date')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[120px] text-center ${dateMode === 'policy_effective_date' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Effective Date</button>
+              </div>
+            </div>
+            <div className="relative bg-muted/50 p-1 rounded-lg">
               <div className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out" style={{ left: viewMode === 'just_me' ? '4px' : 'calc(50%)', width: 'calc(50% - 4px)' }} />
               <div className="relative z-10 flex">
                 <button onClick={() => setViewMode('just_me')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${viewMode === 'just_me' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Just Me</button>
@@ -476,7 +487,7 @@ export default function Home() {
                       return ` • ${formatDate(startDate)} - ${formatDate(endDate)}`
                     })()}
                   </span>
-                  <span className="text-xs">Based on Submitted Policies</span>
+                  <span className="text-xs">Based on {dateMode === 'submitted_date' ? 'Submitted Date' : 'Policy Effective Date'}</span>
                 </div>
               )}
             </div>

@@ -154,6 +154,9 @@ export const queryKeys = {
   // Policy Reports
   policyReports: ['policy-reports'] as const,
   policyReportsFiles: (agencyId: string) => ['policy-reports', 'files', agencyId] as const,
+
+  // Carrier Payout Settings
+  carrierPayoutSettings: (agencyId: string) => ['configuration', 'carrier-payout-settings', agencyId] as const,
 }
 
 // Helper type for query key

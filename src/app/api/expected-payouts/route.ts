@@ -46,9 +46,9 @@ export async function GET(req: NextRequest) {
     const carrier_id = searchParams.get('carrier_id') || null;
     const agent_id = searchParams.get('agent_id') || userData.id; // Default to current user
 
-    // Call the RPC function
+    // Call the V2 RPC function (uses per-carrier date mode from agency_carrier_payout_settings)
     const { data: payouts, error: rpcError } = await supabase
-      .rpc('get_expected_payouts', {
+      .rpc('get_expected_payouts_v2', {
         p_user_id: userData.id,
         p_agent_id: agent_id,
         p_months_past: months_past,

@@ -17,6 +17,7 @@ import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { useHydrated } from "@/hooks/useHydrated"
 import { useClientDate } from "@/hooks/useClientDate"
+import { useLocalStorage } from "@/hooks/useLocalStorage"
 
 interface AgentScore {
   rank: number
@@ -84,6 +85,7 @@ export default function Scoreboard() {
   const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
   const [submittedFilter, setSubmittedFilter] = useState<'submitted' | 'issue_paid'>('submitted')
+  const [dateMode, setDateMode] = useLocalStorage<'submitted_date' | 'policy_effective_date'>('scoreboard_date_mode', 'submitted_date')
 
   // Update calendar state when client date becomes available after hydration
   useEffect(() => {
@@ -254,20 +256,22 @@ export default function Scoreboard() {
       ...queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate),
       'with-lapse',
       assumedMonthsTillLapse,
-      submittedFilter
+      submittedFilter,
+      dateMode
     ],
-    'get_scoreboard_data_updated_lapsed_deals',
+    'get_scoreboard_data_updated_lapsed_deals_v2',
     {
       p_user_id: user?.id || '',
       p_start_date: dateRange.startDate,
       p_end_date: dateRange.endDate,
       assumed_months_till_lapse: assumedMonthsTillLapse,
-      submitted: submittedFilter === 'submitted'
+      submitted: submittedFilter === 'submitted',
+      p_use_submitted_date: dateMode === 'submitted_date'
     },
     {
       enabled: shouldFetch,
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      gcTime: 1000 * 60 * 30, // 30 minutes (formerly cacheTime)
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 30,
       refetchOnWindowFocus: false,
     }
   )
@@ -639,6 +643,25 @@ export default function Scoreboard() {
                     </Button>
                   </div>
                 )}
+
+                <div className="flex items-center gap-1 border rounded-md p-1">
+                  <Button
+                    variant={dateMode === 'submitted_date' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setDateMode('submitted_date')}
+                    className="h-9 px-3 text-sm"
+                  >
+                    Submitted Date
+                  </Button>
+                  <Button
+                    variant={dateMode === 'policy_effective_date' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setDateMode('policy_effective_date')}
+                    className="h-9 px-3 text-sm"
+                  >
+                    Effective Date
+                  </Button>
+                </div>
               </>
             )}
           </div>

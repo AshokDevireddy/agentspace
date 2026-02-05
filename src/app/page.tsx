@@ -369,17 +369,17 @@ export default function Home() {
               </Link>
             )}
             <div className="relative bg-muted/50 p-1 rounded-lg">
-              <div className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out" style={{ left: dateMode === 'submitted_date' ? '4px' : 'calc(50%)', width: 'calc(50% - 4px)' }} />
-              <div className="relative z-10 flex">
-                <button onClick={() => setDateMode('submitted_date')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[120px] text-center ${dateMode === 'submitted_date' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Submitted Date</button>
-                <button onClick={() => setDateMode('policy_effective_date')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[120px] text-center ${dateMode === 'policy_effective_date' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Effective Date</button>
-              </div>
-            </div>
-            <div className="relative bg-muted/50 p-1 rounded-lg">
               <div className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out" style={{ left: viewMode === 'just_me' ? '4px' : 'calc(50%)', width: 'calc(50% - 4px)' }} />
               <div className="relative z-10 flex">
                 <button onClick={() => setViewMode('just_me')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${viewMode === 'just_me' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Just Me</button>
                 <button onClick={() => setViewMode('downlines')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${viewMode === 'downlines' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Downlines</button>
+              </div>
+            </div>
+            <div className="relative bg-muted/50 p-1 rounded-lg">
+              <div className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out" style={{ left: dateMode === 'submitted_date' ? '4px' : 'calc(50%)', width: 'calc(50% - 4px)' }} />
+              <div className="relative z-10 flex">
+                <button onClick={() => setDateMode('submitted_date')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[120px] text-center ${dateMode === 'submitted_date' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Submitted Date</button>
+                <button onClick={() => setDateMode('policy_effective_date')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[120px] text-center ${dateMode === 'policy_effective_date' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Effective Date</button>
               </div>
             </div>
           </div>

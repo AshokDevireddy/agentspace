@@ -289,7 +289,7 @@ export async function GET(request: Request) {
     let debtProductionMap: Record<string, any> = {};
     if (agentIds.length > 0) {
       const { data: debtProductionData, error: debtProductionError } =
-        await supabaseAdmin.rpc("get_agents_debt_production", {
+        await supabaseAdmin.rpc("get_agents_debt_production_v2", {
           p_user_id: currentUser.id,
           p_agent_ids: agentIds,
           p_start_date: startDate.toISOString(),
@@ -298,7 +298,7 @@ export async function GET(request: Request) {
 
       if (debtProductionError) {
         console.error(
-          "get_agents_debt_production RPC error:",
+          "get_agents_debt_production_v2 RPC error:",
           debtProductionError,
         );
         // Don't fail the request, just log the error and continue without metrics

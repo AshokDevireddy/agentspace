@@ -6,8 +6,8 @@ import { createServerClient } from "@/lib/supabase/server";
  * Fetches expected payouts for deals based on commission percentages
  *
  * Query Parameters:
- * - months_past: Number of months to look back (default: 12)
- * - months_future: Number of months to look forward (default: 12)
+ * - start_date: Start date in YYYY-MM-DD format (first day of start month)
+ * - end_date: End date in YYYY-MM-DD format (last day of end month)
  * - carrier_id: Optional carrier filter
  * - agent_id: Required agent ID to get payouts for (defaults to current user)
  */
@@ -41,18 +41,25 @@ export async function GET(req: NextRequest) {
 
     // Parse query parameters
     const searchParams = req.nextUrl.searchParams;
-    const months_past = searchParams.get('months_past') ? parseInt(searchParams.get('months_past')!) : 12;
-    const months_future = searchParams.get('months_future') ? parseInt(searchParams.get('months_future')!) : 12;
+    const start_date = searchParams.get('start_date');
+    const end_date = searchParams.get('end_date');
     const carrier_id = searchParams.get('carrier_id') || null;
     const agent_id = searchParams.get('agent_id') || userData.id; // Default to current user
 
-    // Call the RPC function
+    if (!start_date || !end_date) {
+      return NextResponse.json(
+        { error: "start_date and end_date are required (YYYY-MM-DD)" },
+        { status: 400 }
+      );
+    }
+
+    // Call the V3 RPC function (uses explicit date range + LEFT JOIN on status_mapping)
     const { data: payouts, error: rpcError } = await supabase
-      .rpc('get_expected_payouts', {
+      .rpc('get_expected_payouts_v3', {
         p_user_id: userData.id,
         p_agent_id: agent_id,
-        p_months_past: months_past,
-        p_months_future: months_future,
+        p_start_date: start_date,
+        p_end_date: end_date,
         p_carrier_id: carrier_id
       });
 
@@ -134,8 +141,8 @@ export async function GET(req: NextRequest) {
         totalCount: (payouts || []).length
       },
       filters: {
-        months_past,
-        months_future,
+        start_date,
+        end_date,
         carrier_id,
         agent_id
       },

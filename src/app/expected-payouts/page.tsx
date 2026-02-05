@@ -258,27 +258,18 @@ export default function ExpectedPayoutsPage() {
         throw new Error("Not authenticated")
       }
 
-      // Calculate months difference from now using proper month arithmetic
-      // Important: We need to calculate from the START of the current month
-      // SSR-safe: uses clientDate which is deterministic on server
-      const nowYear = clientDate.year
-      const nowMonth = clientDate.month // 0-indexed (0 = January)
+      // Build proper month-aligned date range from filter values (format: "YYYY-MM")
+      // First day of start month
+      const startDate = `${appliedFilters.startMonth}-01`
 
-      // Parse start and end months from the filter (format: "YYYY-MM")
-      const [startYear, startMonthStr] = appliedFilters.startMonth.split('-').map(Number)
+      // Last day of end month
       const [endYear, endMonthStr] = appliedFilters.endMonth.split('-').map(Number)
-      const startMonthIdx = startMonthStr - 1 // Convert to 0-indexed
-      const endMonthIdx = endMonthStr - 1 // Convert to 0-indexed
-
-      // Calculate month differences from current month
-      // For inclusive range: if selecting Jan-Dec, and current is Jan,
-      // we want past=0 (include Jan) and future=11 (include Dec)
-      const monthsPast = (nowYear - startYear) * 12 + (nowMonth - startMonthIdx)
-      const monthsFuture = (endYear - nowYear) * 12 + (endMonthIdx - nowMonth)
+      const endDay = new Date(endYear, endMonthStr, 0).getDate()
+      const endDate = `${appliedFilters.endMonth}-${String(endDay).padStart(2, '0')}`
 
       const params = new URLSearchParams()
-      params.append('months_past', Math.abs(monthsPast).toString())
-      params.append('months_future', Math.abs(monthsFuture).toString())
+      params.append('start_date', startDate)
+      params.append('end_date', endDate)
       params.append('agent_id', effectiveAgentId)
 
       if (appliedFilters.carrier !== "all") {

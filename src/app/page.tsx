@@ -31,6 +31,7 @@ export default function Home() {
   // SSR-safe localStorage hook - returns 'downlines' on server, synced value on client
   const [viewMode, setViewMode] = useLocalStorage<'just_me' | 'downlines'>('dashboard_view_mode', 'downlines')
   const [topProducersPeriod, setTopProducersPeriod] = useState<'ytd' | 'mtd'>('ytd')
+  const [dateMode, setDateMode] = useLocalStorage<'submitted_date' | 'policy_effective_date'>('dashboard_date_mode', 'submitted_date')
   const isHydrated = useHydrated()
 
   // SSR-safe week date range - returns deterministic dates on server, actual current week on client
@@ -51,22 +52,22 @@ export default function Home() {
   const userId = userData?.id || null // users.id from the users table
 
   const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useSupabaseRpc<any>(
-    queryKeys.scoreboard(userId || '', weekRange.startDate, weekRange.endDate),
-    'get_scoreboard_data',
-    { p_user_id: userId, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate },
+    [...queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate), dateMode],
+    'get_scoreboard_data_updated_lapsed_deals_v2',
+    { p_user_id: user?.id, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate, assumed_months_till_lapse: 5, submitted: true, p_use_submitted_date: dateMode === 'submitted_date' },
     {
-      enabled: !!userId,
-      staleTime: 60 * 1000, // 1 minute - scoreboard data is more static
+      enabled: !!user?.id && isHydrated,
+      staleTime: 60 * 1000,
       placeholderData: (previousData: any) => previousData,
     }
   )
 
   const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching, error: dashboardError } = useSupabaseRpc<any>(
-    queryKeys.dashboard(userId || ''),
-    'get_dashboard_data_with_agency_id',
-    { p_user_id: userId },
+    queryKeys.dashboard(user?.id || ''),
+    'get_dashboard_data_with_agency_id_v2',
+    { p_user_id: user?.id },
     {
-      enabled: !!userId,
+      enabled: !!user?.id,
       placeholderData: (previousData: any) => previousData,
     }
   )
@@ -89,103 +90,73 @@ export default function Home() {
   const topProducersRange = topProducersPeriod === 'ytd' ? productionDateRanges.ytd : productionDateRanges.mtd
 
   const { data: topProducersResult, isLoading: topProducersLoading } = useSupabaseRpc<any>(
-    [...queryKeys.scoreboard(userId || '', topProducersRange.start, topProducersRange.end), topProducersPeriod],
-    'get_scoreboard_data',
-    { p_user_id: userId, p_start_date: topProducersRange.start, p_end_date: topProducersRange.end },
+    [...queryKeys.scoreboard(user?.id || '', topProducersRange.start, topProducersRange.end), 'top-producers', topProducersPeriod, dateMode],
+    'get_scoreboard_data_updated_lapsed_deals_v2',
     {
-      enabled: !!userId,
+      p_user_id: user?.id,
+      p_start_date: topProducersRange.start,
+      p_end_date: topProducersRange.end,
+      assumed_months_till_lapse: 5,
+      submitted: true,
+      p_use_submitted_date: dateMode === 'submitted_date'
+    },
+    {
+      enabled: !!user?.id,
       staleTime: 60 * 1000,
       placeholderData: (previousData: any) => previousData,
     }
   )
 
-  // YTD production query for ProductionProgressCard
-  const ytdRpcParams = {
-    p_user_id: userId,
-    p_agent_ids: userId ? [userId] : [],
-    p_start_date: productionDateRanges.ytd.start,
-    p_end_date: productionDateRanges.ytd.end
-  }
-  console.log('[DASHBOARD YTD] Calling get_agents_debt_production with params:', JSON.stringify(ytdRpcParams, null, 2))
-  console.log('[DASHBOARD YTD] p_user_id:', ytdRpcParams.p_user_id)
-  console.log('[DASHBOARD YTD] p_agent_ids:', ytdRpcParams.p_agent_ids)
-  console.log('[DASHBOARD YTD] p_start_date:', ytdRpcParams.p_start_date)
-  console.log('[DASHBOARD YTD] p_end_date:', ytdRpcParams.p_end_date)
-  
-  const { data: ytdProductionResult, isLoading: ytdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'ytd', userId, productionDateRanges.ytd.start, productionDateRanges.ytd.end],
-    'get_agents_debt_production',
-    ytdRpcParams,
+  // YTD production - aligned with Scoreboard
+  const { data: ytdScoreboardResult, isLoading: ytdProductionLoading } = useSupabaseRpc<any>(
+    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.ytd.start, productionDateRanges.ytd.end), 'production-ytd', dateMode],
+    'get_scoreboard_data_updated_lapsed_deals_v2',
     {
-      enabled: !!userId,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    }
+      p_user_id: user?.id || '',
+      p_start_date: productionDateRanges.ytd.start,
+      p_end_date: productionDateRanges.ytd.end,
+      assumed_months_till_lapse: 5,
+      submitted: true,
+      p_use_submitted_date: dateMode === 'submitted_date'
+    },
+    { enabled: !!user?.id, staleTime: 5 * 60 * 1000 }
   )
 
-  // MTD production query for ProductionProgressCard
-  const mtdRpcParams = {
-    p_user_id: userId,
-    p_agent_ids: userId ? [userId] : [],
-    p_start_date: productionDateRanges.mtd.start,
-    p_end_date: productionDateRanges.mtd.end
-  }
-  console.log('[DASHBOARD MTD] Calling get_agents_debt_production with params:', JSON.stringify(mtdRpcParams, null, 2))
-  console.log('[DASHBOARD MTD] p_user_id:', mtdRpcParams.p_user_id)
-  console.log('[DASHBOARD MTD] p_agent_ids:', mtdRpcParams.p_agent_ids)
-  console.log('[DASHBOARD MTD] p_start_date:', mtdRpcParams.p_start_date)
-  console.log('[DASHBOARD MTD] p_end_date:', mtdRpcParams.p_end_date)
-  
-  const { data: mtdProductionResult, isLoading: mtdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'mtd', userId, productionDateRanges.mtd.start, productionDateRanges.mtd.end],
-    'get_agents_debt_production',
-    mtdRpcParams,
+  // MTD production - aligned with Scoreboard
+  const { data: mtdScoreboardResult, isLoading: mtdProductionLoading } = useSupabaseRpc<any>(
+    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.mtd.start, productionDateRanges.mtd.end), 'production-mtd', dateMode],
+    'get_scoreboard_data_updated_lapsed_deals_v2',
     {
-      enabled: !!userId,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    }
+      p_user_id: user?.id || '',
+      p_start_date: productionDateRanges.mtd.start,
+      p_end_date: productionDateRanges.mtd.end,
+      assumed_months_till_lapse: 5,
+      submitted: true,
+      p_use_submitted_date: dateMode === 'submitted_date'
+    },
+    { enabled: !!user?.id, staleTime: 5 * 60 * 1000 }
   )
-
-  // Log RPC responses
-  useEffect(() => {
-    if (ytdProductionResult) {
-      console.log('[DASHBOARD YTD] RPC Response:', JSON.stringify(ytdProductionResult, null, 2))
-      console.log('[DASHBOARD YTD] Response length:', ytdProductionResult?.length)
-      if (ytdProductionResult?.[0]) {
-        console.log('[DASHBOARD YTD] First result:', JSON.stringify(ytdProductionResult[0], null, 2))
-        console.log('[DASHBOARD YTD] individual_production:', ytdProductionResult[0].individual_production)
-        console.log('[DASHBOARD YTD] hierarchy_production:', ytdProductionResult[0].hierarchy_production)
-      }
-    }
-  }, [ytdProductionResult])
-
-  useEffect(() => {
-    if (mtdProductionResult) {
-      console.log('[DASHBOARD MTD] RPC Response:', JSON.stringify(mtdProductionResult, null, 2))
-      console.log('[DASHBOARD MTD] Response length:', mtdProductionResult?.length)
-      if (mtdProductionResult?.[0]) {
-        console.log('[DASHBOARD MTD] First result:', JSON.stringify(mtdProductionResult[0], null, 2))
-        console.log('[DASHBOARD MTD] individual_production:', mtdProductionResult[0].individual_production)
-        console.log('[DASHBOARD MTD] hierarchy_production:', mtdProductionResult[0].hierarchy_production)
-      }
-    }
-  }, [mtdProductionResult])
 
   // Extract production values for ProductionProgressCard
   const ytdProduction = useMemo(() => {
-    const data = ytdProductionResult?.[0]
+    const data = ytdScoreboardResult?.success ? ytdScoreboardResult.data : null
+    if (!data) return { individual: 0, hierarchy: 0 }
+    const myEntry = data.leaderboard?.find((a: any) => a.agent_id === userId)
     return {
-      individual: data?.individual_production || 0,
-      hierarchy: data?.hierarchy_production || 0
+      individual: myEntry?.total || 0,
+      hierarchy: data.stats?.totalProduction || 0
     }
-  }, [ytdProductionResult])
+  }, [ytdScoreboardResult, userId])
 
   const mtdProduction = useMemo(() => {
-    const data = mtdProductionResult?.[0]
+    const data = mtdScoreboardResult?.success ? mtdScoreboardResult.data : null
+    if (!data) return { individual: 0, hierarchy: 0 }
+    const myEntry = data.leaderboard?.find((a: any) => a.agent_id === userId)
     return {
-      individual: data?.individual_production || 0,
-      hierarchy: data?.hierarchy_production || 0
+      individual: myEntry?.total || 0,
+      hierarchy: data.stats?.totalProduction || 0
     }
-  }, [mtdProductionResult])
+  }, [mtdScoreboardResult, userId])
 
   const isProductionLoading = ytdProductionLoading || mtdProductionLoading
 
@@ -404,6 +375,13 @@ export default function Home() {
                 <button onClick={() => setViewMode('downlines')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${viewMode === 'downlines' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Downlines</button>
               </div>
             </div>
+            <div className="relative bg-muted/50 p-1 rounded-lg">
+              <div className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out" style={{ left: dateMode === 'submitted_date' ? '4px' : 'calc(50%)', width: 'calc(50% - 4px)' }} />
+              <div className="relative z-10 flex">
+                <button onClick={() => setDateMode('submitted_date')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[120px] text-center ${dateMode === 'submitted_date' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Submitted Date</button>
+                <button onClick={() => setDateMode('policy_effective_date')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[120px] text-center ${dateMode === 'policy_effective_date' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Effective Date</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -509,7 +487,7 @@ export default function Home() {
                       return ` • ${formatDate(startDate)} - ${formatDate(endDate)}`
                     })()}
                   </span>
-                  <span className="text-xs">Based on Submitted Policies</span>
+                  <span className="text-xs">Based on {dateMode === 'submitted_date' ? 'Submitted Date' : 'Policy Effective Date'}</span>
                 </div>
               )}
             </div>

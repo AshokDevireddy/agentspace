@@ -1,5 +1,6 @@
 /**
  * Replace {{placeholder}} syntax with actual values
+ * Handles both {{placeholder}} and {{ placeholder }} (with spaces)
  */
 export function replaceSmsPlaceholders(
   template: string,
@@ -8,7 +9,8 @@ export function replaceSmsPlaceholders(
   let result = template;
 
   for (const [key, value] of Object.entries(placeholders)) {
-    const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+    // Match {{key}} with optional spaces: {{key}}, {{ key }}, {{  key  }}, etc.
+    const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
     result = result.replace(regex, value || '');
   }
 

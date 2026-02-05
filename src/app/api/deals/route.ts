@@ -721,6 +721,23 @@ export async function POST(req: NextRequest) {
             const clientFirstName = deal.client_name?.split(" ")[0] || "there";
             const clientEmail = deal.client_email || "your email";
 
+            // Fetch carrier name if carrier_id exists
+            let carrierName = '';
+            if (deal.carrier_id) {
+              const { data: carrier } = await supabase
+                .from('carriers')
+                .select('name')
+                .eq('id', deal.carrier_id)
+                .single();
+              carrierName = carrier?.name || '';
+            }
+
+            // Fetch beneficiaries
+            const { data: beneficiaries } = await supabase
+              .from('beneficiaries')
+              .select('first_name, last_name')
+              .eq('deal_id', deal.id);
+
             // Choose template based on sms_welcome_enabled
             // If enabled: use custom template or default
             // If disabled: use default template
@@ -735,13 +752,13 @@ export async function POST(req: NextRequest) {
               agent_name: agentName,
               agent_phone: agentData.phone_number || '',
               client_email: clientEmail,
-              insured: deal.insured || '',
+              insured: deal.client_name || '',
               policy_number: deal.policy_number || '',
-              face_amount: deal.face_amount || '',
-              monthly_premium: deal.monthly_premium || '',
-              initial_draft: deal.initial_draft || '',
-              carrier_name: deal.carrier_name || '',
-              beneficiaries: formatBeneficiaries(deal.beneficiaries),
+              face_amount: deal.face_value ? `$${deal.face_value.toLocaleString()}` : '',
+              monthly_premium: deal.monthly_premium ? `$${deal.monthly_premium.toFixed(2)}` : '',
+              initial_draft: deal.policy_effective_date || '',
+              carrier_name: carrierName,
+              beneficiaries: formatBeneficiaries(beneficiaries),
             });
 
             // Create conversation and log message as DRAFT (not sent automatically)

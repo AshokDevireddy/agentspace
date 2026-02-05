@@ -15,14 +15,14 @@ export interface DateInfo {
  * Server-safe date hook. Returns deterministic defaults on server,
  * actual current date on client.
  *
- * @param serverYear - Year to use on server (e.g., 2024)
- * @param serverMonth - Month to use on server (0-indexed, e.g., 0 for January)
- * @param serverDay - Day to use on server (e.g., 1)
+ * @param serverYear - Year to use on server (defaults to current year)
+ * @param serverMonth - Month to use on server (0-indexed, defaults to current month)
+ * @param serverDay - Day to use on server (defaults to current day)
  */
 export function useClientDate(
-  serverYear: number = 2025,
-  serverMonth: number = 0,
-  serverDay: number = 1
+  serverYear: number = new Date().getFullYear(),
+  serverMonth: number = new Date().getMonth(),
+  serverDay: number = new Date().getDate()
 ): DateInfo {
   // Memoize server default to avoid creating new object each render
   const serverDefault = useMemo(() => ({
@@ -59,7 +59,7 @@ export function useClientDate(
 /**
  * Calculate week date range (Sunday to Saturday) in SSR-safe way.
  */
-export function useWeekDateRange(serverYear: number = 2024, serverMonth: number = 0, serverDay: number = 1) {
+export function useWeekDateRange(serverYear: number = new Date().getFullYear(), serverMonth: number = new Date().getMonth(), serverDay: number = new Date().getDate()) {
   // Memoize server default
   const serverDefault = useMemo(() => ({
     startDate: `${serverYear}-${String(serverMonth + 1).padStart(2, '0')}-01`,

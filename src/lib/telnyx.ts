@@ -72,6 +72,19 @@ export function normalizePhoneForStorage(phone: string): string {
 }
 
 /**
+ * Formats a phone number for human-readable display: (XXX) XXX-XXXX
+ * Handles any input format — strips non-digits first, then formats.
+ */
+export function formatPhoneForDisplay(phone: string | null | undefined): string {
+  if (!phone) return '';
+  const digits = phone.replace(/\D/g, '');
+  // Handle 11-digit numbers with leading 1
+  const normalized = digits.length === 11 && digits.startsWith('1') ? digits.substring(1) : digits;
+  if (normalized.length !== 10) return phone; // Return as-is if not 10 digits
+  return `(${normalized.slice(0, 3)}) ${normalized.slice(3, 6)}-${normalized.slice(6)}`;
+}
+
+/**
  * Sends an SMS message via Telnyx API
  */
 export async function sendSMS({ from, to, text }: SendSMSParams): Promise<TelnyxResponse> {

@@ -4,8 +4,9 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/server';
-import { normalizePhoneForStorage, sendSMS } from '@/lib/telnyx';
+import { normalizePhoneForStorage, sendSMS, formatPhoneForDisplay } from '@/lib/telnyx';
 import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries, formatAgentName } from '@/lib/sms-template-helpers';
+import { sendOrCreateDraft, fetchAutoSendSettings } from '@/lib/sms-auto-send';
 
 interface ConversationResult {
   id: string;
@@ -553,7 +554,7 @@ export async function sendWelcomeMessage(
     client_first_name: clientFirstName,
     agency_name: agency.name,
     agent_name: displayAgentName,
-    agent_phone: finalAgentPhone || '',
+    agent_phone: formatPhoneForDisplay(finalAgentPhone),
     client_email: displayEmail,
     insured: dealData.insured || '',
     policy_number: dealData.policy_number || '',
@@ -564,21 +565,23 @@ export async function sendWelcomeMessage(
     beneficiaries: dealData.beneficiaries || '',
   });
 
-  // Create draft message (don't send via Telnyx yet)
-  await logMessage({
+  // Use auto-send logic to either send immediately or create draft
+  const autoSendSettings = await fetchAutoSendSettings(agencyId);
+
+  const result = await sendOrCreateDraft({
     conversationId,
     senderId: agentId,
-    receiverId: agentId, // Placeholder
-    body: welcomeMessage,
-    direction: 'outbound',
-    status: 'draft', // Create as draft instead of sending
+    receiverId: agentId,
+    messageText: welcomeMessage,
+    agencyPhone: agency.phone_number,
+    clientPhone,
+    messageType: 'welcome',
+    autoSendSettings,
     metadata: {
-      automated: true,
-      type: 'welcome_message',
       client_phone: normalizePhoneForStorage(clientPhone),
     },
   });
 
-  console.log('✅ Welcome message created as draft');
+  console.log(`✅ Welcome message ${result.status === 'sent' ? 'sent' : 'created as draft'}`);
 }
 

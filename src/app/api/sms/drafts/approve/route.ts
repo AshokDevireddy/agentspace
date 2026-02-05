@@ -26,31 +26,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Fetch all draft messages with conversation details
     const { data: draftMessages, error: fetchError } = await supabase
       .from('messages')
-      .select(`
-        id,
-        conversation_id,
-        sender_id,
-        receiver_id,
-        body,
-        direction,
-        metadata,
-        conversations!inner(
-          id,
-          deal_id,
-          client_phone,
-          deals!inner(
-            id,
-            agency_id,
-            agencies!inner(
-              id,
-              phone_number
-            )
-          )
-        )
-      `)
+      .select('id, conversation_id, body')
       .in('id', messageIds)
       .eq('status', 'draft')
 
@@ -69,32 +47,88 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Batch-fetch conversations, deals, and agencies upfront
+    const conversationIds = [...new Set(draftMessages.map(m => m.conversation_id))]
+
+    const { data: conversations } = await supabase
+      .from('conversations')
+      .select('id, deal_id, client_phone, agency_id')
+      .in('id', conversationIds)
+
+    const conversationMap = new Map(
+      (conversations || []).map(c => [c.id, c])
+    )
+
+    // Fetch deals for conversations that have a deal_id
+    const dealIds = [...new Set(
+      (conversations || [])
+        .map(c => c.deal_id)
+        .filter((id): id is string => !!id)
+    )]
+
+    const dealMap = new Map<string, { agency_id: string | null }>()
+    if (dealIds.length > 0) {
+      const { data: deals } = await supabase
+        .from('deals')
+        .select('id, agency_id')
+        .in('id', dealIds)
+
+      for (const deal of deals || []) {
+        dealMap.set(deal.id, deal)
+      }
+    }
+
+    // Collect all agency IDs (prefer deal's agency, fall back to conversation's)
+    const agencyIds = new Set<string>()
+    for (const conv of conversations || []) {
+      const deal = conv.deal_id ? dealMap.get(conv.deal_id) : null
+      const agencyId = deal?.agency_id || conv.agency_id
+      if (agencyId) agencyIds.add(agencyId)
+    }
+
+    const agencyPhoneMap = new Map<string, string>()
+    if (agencyIds.size > 0) {
+      const { data: agencies } = await supabase
+        .from('agencies')
+        .select('id, phone_number')
+        .in('id', [...agencyIds])
+
+      for (const agency of agencies || []) {
+        if (agency.phone_number) {
+          agencyPhoneMap.set(agency.id, agency.phone_number)
+        }
+      }
+    }
+
     const results = []
     const errors = []
 
-    // Process each draft message
     for (const message of draftMessages) {
       try {
-        const conversation = message.conversations
-        const deal = conversation.deals
-        const agency = deal.agencies
+        const conversation = conversationMap.get(message.conversation_id)
 
-        // Get phone numbers
-        const agencyPhone = agency.phone_number
-        const clientPhone = conversation.client_phone
-
-        if (!agencyPhone || !clientPhone) {
-          throw new Error('Missing phone numbers for sending SMS')
+        if (!conversation) {
+          throw new Error(`Conversation not found for message ${message.id}`)
         }
 
-        // Send SMS via Telnyx
+        if (!conversation.client_phone) {
+          throw new Error(`Missing client phone number for conversation ${conversation.id}`)
+        }
+
+        const deal = conversation.deal_id ? dealMap.get(conversation.deal_id) : null
+        const agencyId = deal?.agency_id || conversation.agency_id
+        const agencyPhone = agencyId ? agencyPhoneMap.get(agencyId) : null
+
+        if (!agencyPhone) {
+          throw new Error(`Missing agency phone number for conversation ${conversation.id} (deal_id: ${conversation.deal_id || 'none'})`)
+        }
+
         const telnyxResult = await sendSMS({
           from: agencyPhone,
-          to: clientPhone,
+          to: conversation.client_phone,
           text: message.body
         })
 
-        // Update message status to 'sent' and set sent_at timestamp
         const { error: updateError } = await supabase
           .from('messages')
           .update({

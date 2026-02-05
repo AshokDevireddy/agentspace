@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft, Mail, MessageCircle, User, LogOut, ChevronLeft, Calendar, ArrowRight } from "lucide-react"
+import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft, Mail, MessageCircle, User, LogOut, ChevronLeft, Calendar, ArrowRight, Zap } from "lucide-react"
 import Link from "next/link"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
@@ -19,6 +19,7 @@ import { useNotification } from "@/contexts/notification-context"
 import { useAuth } from "@/providers/AuthProvider"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
 import { SmsTemplateEditor } from "@/components/sms-template-editor"
+import { SmsAutomationSettings } from "@/components/sms-automation-settings"
 import { DiscordTemplateEditor } from "@/components/discord-template-editor"
 import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_PLACEHOLDERS } from "@/lib/sms-template-helpers"
 import { DEFAULT_DISCORD_TEMPLATE, DISCORD_TEMPLATE_PLACEHOLDERS } from "@/lib/discord-template-helpers"
@@ -86,6 +87,14 @@ interface Agency {
   lapse_email_notifications_enabled?: boolean
   lapse_email_subject?: string
   lapse_email_body?: string
+  sms_auto_send_enabled?: boolean
+  sms_welcome_require_approval?: boolean
+  sms_birthday_require_approval?: boolean
+  sms_lapse_require_approval?: boolean
+  sms_billing_require_approval?: boolean
+  sms_quarterly_require_approval?: boolean
+  sms_policy_packet_require_approval?: boolean
+  sms_holiday_require_approval?: boolean
 }
 
 // Types for position data
@@ -111,7 +120,7 @@ interface Commission {
   commission_percentage: number
 }
 
-type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications" | "sms-templates" | "payout-settings"
+type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications" | "sms-templates" | "payout-settings" | "automation"
 
 // Default primary color schemes for light and dark mode
 const DEFAULT_PRIMARY_COLOR_LIGHT = "0 0% 0%" // Black for light mode
@@ -432,6 +441,19 @@ export default function ConfigurationPage() {
   const [smsLapseReminderTemplate, setSmsLapseReminderTemplate] = useState("")
   const [smsBirthdayEnabled, setSmsBirthdayEnabled] = useState(true)
   const [smsBirthdayTemplate, setSmsBirthdayTemplate] = useState("")
+  // SMS Automation Settings state
+  const [smsAutoSendEnabled, setSmsAutoSendEnabled] = useState(true)
+  const [smsTypeOverrides, setSmsTypeOverrides] = useState<Record<string, boolean>>({
+    welcome: false,
+    birthday: false,
+    lapse: false,
+    billing: false,
+    quarterly: false,
+    policy_packet: false,
+    holiday: false,
+  })
+  const [savingAutomation, setSavingAutomation] = useState(false)
+
   // Lapse Email Notification Settings state
   const [lapseEmailEnabled, setLapseEmailEnabled] = useState(false)
   const [lapseEmailSubject, setLapseEmailSubject] = useState("Policy Lapse Alert: {{client_name}}")
@@ -545,7 +567,7 @@ export default function ConfigurationPage() {
 
       const { data: agencyInfo, error } = await supabase
         .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, discord_notification_enabled, discord_notification_template, discord_bot_username, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template')
+        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, discord_notification_enabled, discord_notification_template, discord_bot_username, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template, sms_auto_send_enabled, sms_welcome_require_approval, sms_birthday_require_approval, sms_lapse_require_approval, sms_billing_require_approval, sms_quarterly_require_approval, sms_policy_packet_require_approval, sms_holiday_require_approval')
         .eq('id', userDataLocal.agency_id)
         .single()
 
@@ -902,6 +924,16 @@ export default function ConfigurationPage() {
       setLapseEmailBody(agencyData.lapse_email_body || "")
       setLapseSubjectValue(agencyData.lapse_email_subject || "Policy Lapse Alert: {{client_name}}")
       setLapseBodyValue(agencyData.lapse_email_body || "")
+      setSmsAutoSendEnabled(agencyData.sms_auto_send_enabled ?? true)
+      setSmsTypeOverrides({
+        welcome: agencyData.sms_welcome_require_approval ?? false,
+        birthday: agencyData.sms_birthday_require_approval ?? false,
+        lapse: agencyData.sms_lapse_require_approval ?? false,
+        billing: agencyData.sms_billing_require_approval ?? false,
+        quarterly: agencyData.sms_quarterly_require_approval ?? false,
+        policy_packet: agencyData.sms_policy_packet_require_approval ?? false,
+        holiday: agencyData.sms_holiday_require_approval ?? false,
+      })
     }
   }, [agencyData])
 
@@ -1255,6 +1287,47 @@ export default function ConfigurationPage() {
       showError('Failed to update theme preference')
       setAgencyThemeMode(previousTheme)
       setTheme(previousTheme)
+    }
+  }
+
+  const handleAutoSendEnabledChange = async (enabled: boolean) => {
+    if (!agency) return
+    setSavingAutomation(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('agencies')
+        .update({ sms_auto_send_enabled: enabled })
+        .eq('id', agency.id)
+      if (error) throw error
+      setSmsAutoSendEnabled(enabled)
+      showSuccess(`Auto-send ${enabled ? 'enabled' : 'disabled'}`)
+    } catch (error) {
+      console.error('Failed to update auto-send setting:', error)
+      showError('Failed to update auto-send setting')
+    } finally {
+      setSavingAutomation(false)
+    }
+  }
+
+  const handleAutoSendTypeOverrideChange = async (type: string, requireApproval: boolean) => {
+    if (!agency) return
+    setSavingAutomation(true)
+    try {
+      const supabase = createClient()
+      const columnName = `sms_${type}_require_approval`
+      const { error } = await supabase
+        .from('agencies')
+        .update({ [columnName]: requireApproval })
+        .eq('id', agency.id)
+      if (error) throw error
+      setSmsTypeOverrides(prev => ({ ...prev, [type]: requireApproval }))
+      showSuccess('Setting updated')
+    } catch (error) {
+      console.error('Failed to update automation setting:', error)
+      showError('Failed to update setting')
+    } finally {
+      setSavingAutomation(false)
     }
   }
 
@@ -2419,6 +2492,7 @@ export default function ConfigurationPage() {
     { id: "carrier-logins" as TabType, label: "Carrier Logins", icon: Lock },
     { id: "discord" as TabType, label: "Discord Notifications", icon: Bell },
     { id: "sms-templates" as TabType, label: "SMS Templates", icon: MessageCircle },
+    { id: "automation" as TabType, label: "Automation", icon: Zap },
     { id: "payout-settings" as TabType, label: "Payout Settings", icon: Calendar },
   ]
 
@@ -2435,6 +2509,7 @@ export default function ConfigurationPage() {
     "carrier-logins": { title: "Carrier Logins", description: "Store carrier portal credentials securely" },
     "discord": { title: "Discord Notifications", description: "Connect Discord webhooks for team alerts" },
     "sms-templates": { title: "SMS Templates", description: "Create and customize SMS message templates" },
+    "automation": { title: "SMS Automation", description: "Control whether messages are auto-sent or require manual approval" },
     "payout-settings": { title: "Payout Settings", description: "Configure which date each carrier uses for expected payout calculations" },
   }
 
@@ -4756,6 +4831,17 @@ export default function ConfigurationPage() {
                     />
                   </div>
                 </div>
+              )}
+
+              {/* Automation Tab */}
+              {activeTab === "automation" && agency?.id && (
+                <SmsAutomationSettings
+                  smsAutoSendEnabled={smsAutoSendEnabled}
+                  onAutoSendEnabledChange={handleAutoSendEnabledChange}
+                  typeOverrides={smsTypeOverrides}
+                  onTypeOverrideChange={handleAutoSendTypeOverrideChange}
+                  saving={savingAutomation}
+                />
               )}
 
               {/* Payout Settings Tab */}

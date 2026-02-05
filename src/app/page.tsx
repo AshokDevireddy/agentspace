@@ -89,9 +89,15 @@ export default function Home() {
   const topProducersRange = topProducersPeriod === 'ytd' ? productionDateRanges.ytd : productionDateRanges.mtd
 
   const { data: topProducersResult, isLoading: topProducersLoading } = useSupabaseRpc<any>(
-    [...queryKeys.scoreboard(user?.id || '', topProducersRange.start, topProducersRange.end), topProducersPeriod],
-    'get_scoreboard_data',
-    { p_user_id: user?.id, p_start_date: topProducersRange.start, p_end_date: topProducersRange.end },
+    [...queryKeys.scoreboard(user?.id || '', topProducersRange.start, topProducersRange.end), 'top-producers', topProducersPeriod],
+    'get_scoreboard_data_updated_lapsed_deals',
+    {
+      p_user_id: user?.id,
+      p_start_date: topProducersRange.start,
+      p_end_date: topProducersRange.end,
+      assumed_months_till_lapse: 5,
+      submitted: true
+    },
     {
       enabled: !!user?.id,
       staleTime: 60 * 1000,
@@ -99,60 +105,54 @@ export default function Home() {
     }
   )
 
-  // YTD production query for ProductionProgressCard
-  const ytdRpcParams = {
-    p_user_id: userId,
-    p_agent_ids: userId ? [userId] : [],
-    p_start_date: productionDateRanges.ytd.start,
-    p_end_date: productionDateRanges.ytd.end,
-    p_admin_agency_view: !!userData?.is_admin
-  }
-
-  const { data: ytdProductionResult, isLoading: ytdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'ytd', user?.id, userId, productionDateRanges.ytd.start, productionDateRanges.ytd.end, !!userData?.is_admin],
-    'get_agents_debt_production_v2',
-    ytdRpcParams,
+  // YTD production - aligned with Scoreboard
+  const { data: ytdScoreboardResult, isLoading: ytdProductionLoading } = useSupabaseRpc<any>(
+    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.ytd.start, productionDateRanges.ytd.end), 'production-ytd'],
+    'get_scoreboard_data_updated_lapsed_deals',
     {
-      enabled: !!user?.id && !!userId,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    }
+      p_user_id: user?.id || '',
+      p_start_date: productionDateRanges.ytd.start,
+      p_end_date: productionDateRanges.ytd.end,
+      assumed_months_till_lapse: 5,
+      submitted: true
+    },
+    { enabled: !!user?.id, staleTime: 5 * 60 * 1000 }
   )
 
-  // MTD production query for ProductionProgressCard
-  const mtdRpcParams = {
-    p_user_id: userId,
-    p_agent_ids: userId ? [userId] : [],
-    p_start_date: productionDateRanges.mtd.start,
-    p_end_date: productionDateRanges.mtd.end,
-    p_admin_agency_view: !!userData?.is_admin
-  }
-
-  const { data: mtdProductionResult, isLoading: mtdProductionLoading } = useSupabaseRpc<any>(
-    ['production', 'mtd', user?.id, userId, productionDateRanges.mtd.start, productionDateRanges.mtd.end, !!userData?.is_admin],
-    'get_agents_debt_production_v2',
-    mtdRpcParams,
+  // MTD production - aligned with Scoreboard
+  const { data: mtdScoreboardResult, isLoading: mtdProductionLoading } = useSupabaseRpc<any>(
+    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.mtd.start, productionDateRanges.mtd.end), 'production-mtd'],
+    'get_scoreboard_data_updated_lapsed_deals',
     {
-      enabled: !!user?.id && !!userId,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    }
+      p_user_id: user?.id || '',
+      p_start_date: productionDateRanges.mtd.start,
+      p_end_date: productionDateRanges.mtd.end,
+      assumed_months_till_lapse: 5,
+      submitted: true
+    },
+    { enabled: !!user?.id, staleTime: 5 * 60 * 1000 }
   )
 
   // Extract production values for ProductionProgressCard
   const ytdProduction = useMemo(() => {
-    const data = ytdProductionResult?.[0]
+    const data = ytdScoreboardResult?.success ? ytdScoreboardResult.data : null
+    if (!data) return { individual: 0, hierarchy: 0 }
+    const myEntry = data.leaderboard?.find((a: any) => a.agent_id === userId)
     return {
-      individual: data?.individual_production || 0,
-      hierarchy: data?.hierarchy_production || 0
+      individual: myEntry?.total || 0,
+      hierarchy: data.stats?.totalProduction || 0
     }
-  }, [ytdProductionResult])
+  }, [ytdScoreboardResult, userId])
 
   const mtdProduction = useMemo(() => {
-    const data = mtdProductionResult?.[0]
+    const data = mtdScoreboardResult?.success ? mtdScoreboardResult.data : null
+    if (!data) return { individual: 0, hierarchy: 0 }
+    const myEntry = data.leaderboard?.find((a: any) => a.agent_id === userId)
     return {
-      individual: data?.individual_production || 0,
-      hierarchy: data?.hierarchy_production || 0
+      individual: myEntry?.total || 0,
+      hierarchy: data.stats?.totalProduction || 0
     }
-  }, [mtdProductionResult])
+  }, [mtdScoreboardResult, userId])
 
   const isProductionLoading = ytdProductionLoading || mtdProductionLoading
 

@@ -182,7 +182,7 @@ export function ProductionProgressCard({
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Downline Production
+              Agency Production
             </p>
           )}
         </div>

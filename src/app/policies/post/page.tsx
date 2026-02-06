@@ -572,6 +572,7 @@ export default function PostDeal() {
         submission_date: new Date().toISOString().split('T')[0],
         beneficiaries: normalizedBeneficiaries,
         face_value: coverageAmount,
+        post_a_deal: true,
       }
 
       console.log('[PostDeal] ===== ABOUT TO SUBMIT TO API =====')

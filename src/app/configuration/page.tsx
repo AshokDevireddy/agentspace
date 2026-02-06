@@ -5,12 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft, Mail, MessageCircle, User, LogOut, ChevronLeft, Calendar, ArrowRight, Zap } from "lucide-react"
+import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Moon, Sun, Monitor, Lock, ArrowLeft, Mail, MessageCircle, User, LogOut, ChevronLeft, Calendar, ArrowRight, Zap } from "lucide-react"
 import Link from "next/link"
+import Image from "next/image"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
 import { createClient } from "@/lib/supabase/client"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn, getContrastTextColor } from "@/lib/utils"
 import { putToSignedUrl } from '@/lib/upload-policy-reports/client'
 import { HexColorPicker } from 'react-colorful'
@@ -23,7 +23,6 @@ import { SmsAutomationSettings } from "@/components/sms-automation-settings"
 import type { AgentAutoSendInfo } from "@/components/agent-sms-automation-list"
 import { DiscordTemplateEditor } from "@/components/discord-template-editor"
 import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_PLACEHOLDERS } from "@/lib/sms-template-helpers"
-import { DEFAULT_DISCORD_TEMPLATE, DISCORD_TEMPLATE_PLACEHOLDERS } from "@/lib/discord-template-helpers"
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
@@ -37,8 +36,6 @@ import {
   useSaveProductCommissions,
   useSyncCommissions,
   useSaveCarrierLogin,
-  useCreatePolicyReportJob,
-  useSignPolicyReportFiles,
 } from '@/hooks/mutations'
 
 // Types for carrier data
@@ -168,7 +165,7 @@ export default function ConfigurationPage() {
     if (urlTab !== activeTab) {
       setActiveTab(urlTab)
     }
-  }, [searchParams])
+  }, [searchParams, activeTab])
 
   // Function to change tab and update URL
   const handleTabChange = (tab: TabType) => {
@@ -185,7 +182,7 @@ export default function ConfigurationPage() {
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [primaryColor, setPrimaryColor] = useState("217 91% 60%") // Default blue
-  const [savingColor, setSavingColor] = useState(false)
+  const [savingColor] = useState(false)
   const [savingAllChanges, setSavingAllChanges] = useState(false)
   const [pendingColor, setPendingColor] = useState<string | null>(null)
   const [pendingLogo, setPendingLogo] = useState<string | null>(null)
@@ -285,7 +282,7 @@ export default function ConfigurationPage() {
       setSavingAllChanges(true)
       const supabase = createClient()
       
-      const updates: any = {}
+      const updates: Record<string, unknown> = {}
       
       // Save color if changed
       if (pendingColor) {
@@ -455,16 +452,12 @@ export default function ConfigurationPage() {
   })
   const [savingAutomation, setSavingAutomation] = useState(false)
   // Per-agent auto-send override state
-  const [agentAutoSendList, setAgentAutoSendList] = useState<AgentAutoSendInfo[]>([])
-  const [agentAutoSendLoading, setAgentAutoSendLoading] = useState(false)
   const [agentAutoSendSaving, setAgentAutoSendSaving] = useState<string | null>(null)
 
   // Lapse Email Notification Settings state
   const [lapseEmailEnabled, setLapseEmailEnabled] = useState(false)
   const [lapseEmailSubject, setLapseEmailSubject] = useState("Policy Lapse Alert: {{client_name}}")
   const [lapseEmailBody, setLapseEmailBody] = useState("")
-  const [editingLapseSubject, setEditingLapseSubject] = useState(false)
-  const [editingLapseBody, setEditingLapseBody] = useState(false)
   const [lapseSubjectValue, setLapseSubjectValue] = useState("")
   const [lapseBodyValue, setLapseBodyValue] = useState("")
   const [savingLapseEmail, setSavingLapseEmail] = useState(false)
@@ -490,7 +483,7 @@ export default function ConfigurationPage() {
   const [policyReportFiles, setPolicyReportFiles] = useState<PolicyReportFile[]>([])
   const [isDraggingPolicyReports, setIsDraggingPolicyReports] = useState(false)
   const [uploadingReports, setUploadingReports] = useState(false)
-  const [uploadedFilesInfo, setUploadedFilesInfo] = useState<any[]>([])
+  const [uploadedFilesInfo, setUploadedFilesInfo] = useState<Record<string, unknown>[]>([])
   
   // All supported carriers
   const supportedCarriers = [
@@ -511,10 +504,10 @@ export default function ConfigurationPage() {
 
   // Carriers and Products state with caching
   const [carriers, setCarriers] = useState<Carrier[]>([])
-  const [carriersLoaded, setCarriersLoaded] = useState(false)
+  const [, setCarriersLoaded] = useState(false)
   const [allProducts, setAllProducts] = useState<Product[]>([]) // Cache all products
   const [products, setProducts] = useState<Product[]>([]) // Filtered products for display
-  const [allProductsLoaded, setAllProductsLoaded] = useState(false)
+  const [, setAllProductsLoaded] = useState(false)
 
   // Product editing state
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
@@ -652,7 +645,7 @@ export default function ConfigurationPage() {
   })
 
   // Fetch positions (only when positions tab is active)
-  const { data: positionsData = [], isLoading: positionsLoading, error: positionsError, refetch: refetchPositions } = useQuery({
+  const { data: positionsData = [], isLoading: positionsLoading, error: positionsError } = useQuery({
     queryKey: queryKeys.configurationPositions(),
     queryFn: async () => {
       const supabase = createClient()
@@ -742,7 +735,7 @@ export default function ConfigurationPage() {
   )
 
   // Fetch existing policy files from ingest jobs (only when policy-reports tab is active)
-  const { data: policyFilesData, isLoading: checkingExistingFiles, refetch: refetchPolicyFiles } = useApiFetch<{files: any[], jobs?: any[]}>(
+  const { data: policyFilesData, isLoading: checkingExistingFiles, refetch: refetchPolicyFiles } = useApiFetch<{files: Record<string, unknown>[], jobs?: Record<string, unknown>[]}>(
     queryKeys.configurationPolicyFiles(),
     '/api/upload-policy-reports/jobs',
     {
@@ -751,19 +744,15 @@ export default function ConfigurationPage() {
     }
   )
 
-  // ============ Payout Settings ============
+  // Fetch agents for per-agent auto-send overrides (server-side, agency-scoped)
+  const { data: agentAutoSendData, isLoading: agentAutoSendLoading } = useApiFetch<{ agents: AgentAutoSendInfo[] }>(
+    queryKeys.configurationAgentAutoSend(),
+    '/api/agents/auto-send',
+    { enabled: activeTab === "automation" && !!userData, staleTime: 2 * 60 * 1000 }
+  )
+  const agentAutoSendList = agentAutoSendData?.agents ?? []
 
-  // Default carrier date mode assignments
-  const PAID_ON_DRAFT_CARRIERS = [
-    'Aetna', 'Aflac', 'AIG', 'Americo', 'Assurity', 'Baltimore Life',
-    'Elco Mutual', 'F&G', 'Gerber', 'GTL', 'Fidelity Life', 'KC Life',
-    'Lafayette', 'National Life Group', 'North American', 'Trinity',
-    'Illinois Mutual', 'Sentinel Security'
-  ]
-  const PAID_ON_APPROVAL_CARRIERS = [
-    'American Amicable', 'Royal Neighbors', 'TransAmerica', 'Forestors',
-    'Mutual of Omaha'
-  ]
+  // ============ Payout Settings ============
 
   const [carrierPayoutModes, setCarrierPayoutModes] = useState<Record<string, 'submission_date' | 'policy_effective_date'>>({})
   const [savingPayoutSettings, setSavingPayoutSettings] = useState(false)
@@ -788,6 +777,17 @@ export default function ConfigurationPage() {
   useEffect(() => {
     if (!carriersData.length) return
 
+    const PAID_ON_DRAFT_CARRIERS = [
+      'Aetna', 'Aflac', 'AIG', 'Americo', 'Assurity', 'Baltimore Life',
+      'Elco Mutual', 'F&G', 'Gerber', 'GTL', 'Fidelity Life', 'KC Life',
+      'Lafayette', 'National Life Group', 'North American', 'Trinity',
+      'Illinois Mutual', 'Sentinel Security'
+    ]
+    const PAID_ON_APPROVAL_CARRIERS = [
+      'American Amicable', 'Royal Neighbors', 'TransAmerica', 'Forestors',
+      'Mutual of Omaha'
+    ]
+
     const modes: Record<string, 'submission_date' | 'policy_effective_date'> = {}
 
     // Set defaults based on carrier name matching
@@ -804,7 +804,7 @@ export default function ConfigurationPage() {
 
     // Override with saved settings from DB
     if (payoutSettingsData) {
-      payoutSettingsData.forEach((setting: any) => {
+      payoutSettingsData.forEach((setting: { carrier_id: string; date_mode: 'submission_date' | 'policy_effective_date' }) => {
         modes[setting.carrier_id] = setting.date_mode
       })
     }
@@ -833,9 +833,9 @@ export default function ConfigurationPage() {
       if (isMounted) {
         queryClient.invalidateQueries({ queryKey: queryKeys.carrierPayoutSettings(userData.agency_id) })
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error saving payout settings:', err)
-      showError(err.message || 'Failed to save payout settings')
+      showError(err instanceof Error ? err.message : 'Failed to save payout settings')
     } finally {
       setSavingPayoutSettings(false)
     }
@@ -883,10 +883,6 @@ export default function ConfigurationPage() {
 
   // Carrier mutations
   const saveCarrierLoginMutation = useSaveCarrierLogin()
-
-  // Policy report mutations
-  const createPolicyJobMutation = useCreatePolicyReportJob()
-  const signPolicyFilesMutation = useSignPolicyReportFiles()
 
   // Derived loading states from mutations (replaces useState-based loading states)
   const savingPosition = createPositionMutation.isPending || updatePositionMutation.isPending
@@ -942,31 +938,6 @@ export default function ConfigurationPage() {
     }
   }, [agencyData])
 
-  // Fetch agents for per-agent auto-send overrides when automation tab is active
-  useEffect(() => {
-    if (activeTab !== "automation" || !agency?.id) return
-    let cancelled = false
-    const fetchAgents = async () => {
-      setAgentAutoSendLoading(true)
-      try {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('users')
-          .select('id, first_name, last_name, email, sms_auto_send_enabled')
-          .eq('agency_id', agency.id)
-          .order('last_name')
-        if (!cancelled && data) {
-          setAgentAutoSendList(data)
-        }
-      } catch (err) {
-        console.error('Failed to fetch agents for automation:', err)
-      } finally {
-        if (!cancelled) setAgentAutoSendLoading(false)
-      }
-    }
-    fetchAgents()
-    return () => { cancelled = true }
-  }, [activeTab, agency?.id])
 
   // Sync carriers to local state
   useEffect(() => {
@@ -1252,7 +1223,8 @@ export default function ConfigurationPage() {
 
     const max = Math.max(r, g, b)
     const min = Math.min(r, g, b)
-    let h = 0, s = 0, l = (max + min) / 2
+    let h = 0, s = 0
+    const l = (max + min) / 2
 
     if (max !== min) {
       const d = max - min
@@ -1371,8 +1343,9 @@ export default function ConfigurationPage() {
         body: JSON.stringify({ sms_auto_send_enabled: value }),
       })
       if (!res.ok) throw new Error('Failed to update agent')
-      setAgentAutoSendList(prev =>
-        prev.map(a => a.id === agentId ? { ...a, sms_auto_send_enabled: value } : a)
+      queryClient.setQueryData<{ agents: AgentAutoSendInfo[] }>(
+        queryKeys.configurationAgentAutoSend(),
+        (old) => old ? { agents: old.agents.map(a => a.id === agentId ? { ...a, sms_auto_send_enabled: value } : a) } : old
       )
       showSuccess('Agent auto-send setting updated')
     } catch (error) {
@@ -1681,7 +1654,7 @@ export default function ConfigurationPage() {
   }
 
   // Helper function to sync commissions for a specific carrier (silently)
-  const syncCommissionsForCarrier = async (carrierId: string, forceRefresh: boolean = false): Promise<void> => {
+  const syncCommissionsForCarrier = async (carrierId: string): Promise<void> => {
     try {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
@@ -1735,7 +1708,7 @@ export default function ConfigurationPage() {
       // Sync for all active carriers
       const activeCarriers = carriers.filter(c => c.is_active)
       for (const carrier of activeCarriers) {
-        await syncCommissionsForCarrier(carrier.id, false)
+        await syncCommissionsForCarrier(carrier.id)
       }
       
       console.log(`Completed auto-sync for ${activeCarriers.length} carriers`)
@@ -1815,7 +1788,7 @@ export default function ConfigurationPage() {
 
     // Auto-sync commissions for this product's carrier (always sync, even if inactive)
     console.log(`Product created/updated for carrier ${newProduct.carrier_id}, auto-syncing commissions...`)
-    await syncCommissionsForCarrier(newProduct.carrier_id, false)
+    await syncCommissionsForCarrier(newProduct.carrier_id)
   }
 
   const handleEditProduct = (product: Product) => {
@@ -1893,7 +1866,7 @@ export default function ConfigurationPage() {
           // Auto-sync commissions if product was activated/deactivated
           if (wasActivationChange && productCarrierId) {
             console.log(`Product activation changed for carrier ${productCarrierId}, auto-syncing commissions...`)
-            await syncCommissionsForCarrier(productCarrierId, false)
+            await syncCommissionsForCarrier(productCarrierId)
           }
         },
         onError: (error) => {
@@ -2178,78 +2151,6 @@ export default function ConfigurationPage() {
     } finally {
       setSavingLapseEmail(false)
     }
-  }
-
-  const handleEditLapseSubject = () => {
-    setEditingLapseSubject(true)
-    setLapseSubjectValue(lapseEmailSubject)
-  }
-
-  const handleSaveLapseSubject = async () => {
-    if (!agency || !lapseSubjectValue.trim()) return
-
-    try {
-      setSavingLapseEmail(true)
-      const supabase = createClient()
-
-      const { error } = await supabase
-        .from('agencies')
-        .update({ lapse_email_subject: lapseSubjectValue.trim() })
-        .eq('id', agency.id)
-
-      if (error) throw error
-
-      setLapseEmailSubject(lapseSubjectValue.trim())
-      setEditingLapseSubject(false)
-      setLapseSubjectValue("")
-      showSuccess('Email subject updated')
-    } catch (error) {
-      console.error('Error updating email subject:', error)
-      showError('Failed to update email subject')
-    } finally {
-      setSavingLapseEmail(false)
-    }
-  }
-
-  const handleCancelLapseSubjectEdit = () => {
-    setEditingLapseSubject(false)
-    setLapseSubjectValue("")
-  }
-
-  const handleEditLapseBody = () => {
-    setEditingLapseBody(true)
-    setLapseBodyValue(lapseEmailBody)
-  }
-
-  const handleSaveLapseBody = async () => {
-    if (!agency) return
-
-    try {
-      setSavingLapseEmail(true)
-      const supabase = createClient()
-
-      const { error } = await supabase
-        .from('agencies')
-        .update({ lapse_email_body: lapseBodyValue })
-        .eq('id', agency.id)
-
-      if (error) throw error
-
-      setLapseEmailBody(lapseBodyValue)
-      setEditingLapseBody(false)
-      setLapseBodyValue("")
-      showSuccess('Email template updated')
-    } catch (error) {
-      console.error('Error updating email template:', error)
-      showError('Failed to update email template')
-    } finally {
-      setSavingLapseEmail(false)
-    }
-  }
-
-  const handleCancelLapseBodyEdit = () => {
-    setEditingLapseBody(false)
-    setLapseBodyValue("")
   }
 
   // Email template helper data and functions
@@ -2916,14 +2817,15 @@ export default function ConfigurationPage() {
                           >
                             {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) ? (
                               <div className="relative w-full h-full flex items-center justify-center">
-                                <img
-                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url}
+                                <Image
+                                  src={(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) || ''}
                                   alt="Agency Logo"
-                                  className="max-w-full max-h-full object-contain p-2"
-                                  crossOrigin="anonymous"
+                                  className="object-contain p-2"
+                                  fill
+                                  unoptimized
                                   onError={(e) => {
                                     console.error('Error loading logo:', pendingLogo || agency?.logo_url)
-                                    e.currentTarget.style.display = 'none'
+                                    ;(e.target as HTMLImageElement).style.display = 'none'
                                   }}
                                 />
                                 <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center">
@@ -2991,7 +2893,7 @@ export default function ConfigurationPage() {
                         Primary Color Scheme
                       </h3>
                       <p className="text-sm text-muted-foreground mb-4">
-                        Choose your agency's primary brand color. This color will be used for buttons, links, and highlights throughout the platform.
+                        Choose your agency&apos;s primary brand color. This color will be used for buttons, links, and highlights throughout the platform.
                       </p>
 
                       <div className="space-y-6">
@@ -3253,7 +3155,7 @@ export default function ConfigurationPage() {
                               disabled={savingWhitelabelDomain}
                             />
                             <p className="text-xs text-muted-foreground mt-2">
-                              After adding your domain, you'll need to configure a CNAME record with your DNS provider pointing to <code className="bg-muted px-1 py-0.5 rounded">cname.vercel-dns.com</code>
+                              After adding your domain, you&apos;ll need to configure a CNAME record with your DNS provider pointing to <code className="bg-muted px-1 py-0.5 rounded">cname.vercel-dns.com</code>
                             </p>
                           </div>
                           <div className="flex gap-2">
@@ -3322,11 +3224,13 @@ export default function ConfigurationPage() {
                           <div className="bg-sidebar-background rounded-lg p-6 border-2 border-sidebar-border">
                             <div className="flex items-center space-x-3">
                               {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) ? (
-                                <img
-                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url}
+                                <Image
+                                  src={(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) || ''}
                                   alt="Logo Preview"
+                                  width={40}
+                                  height={40}
                                   className="w-10 h-10 rounded-xl object-contain"
-                                  crossOrigin="anonymous"
+                                  unoptimized
                                 />
                               ) : (
                                 <div
@@ -3698,7 +3602,7 @@ export default function ConfigurationPage() {
                               // Always sync when a carrier is selected to ensure all products/positions are covered
                               setTimeout(async () => {
                                 console.log(`Carrier ${carrierId} selected, auto-syncing commissions...`)
-                                await syncCommissionsForCarrier(carrierId, true)
+                                await syncCommissionsForCarrier(carrierId)
                               }, 200)
                             }
                           }}
@@ -4485,7 +4389,7 @@ export default function ConfigurationPage() {
                     <div className="bg-blue-50 dark:bg-blue-950/50 rounded-lg p-4 border border-blue-200 dark:border-blue-800/50">
                       <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-2">How It Works</h3>
                       <ul className="space-y-1 text-sm text-blue-800 dark:text-blue-200">
-                        <li>When a policy status changes to "lapse pending" or "lapse", the system sends an email to the writing agent and all their uplines.</li>
+                        <li>When a policy status changes to &quot;lapse pending&quot; or &quot;lapse&quot;, the system sends an email to the writing agent and all their uplines.</li>
                         <li>Use the placeholders above to personalize the email with policy details.</li>
                       </ul>
                     </div>
@@ -4516,7 +4420,7 @@ export default function ConfigurationPage() {
                       <h3 className="text-xl font-semibold text-foreground mb-4">Discord Webhook URL</h3>
                       <p className="text-sm text-muted-foreground mb-4">
                         Enter your Discord webhook URL to receive notifications when agents post deals.
-                        Each notification will include the agent's name, deal details, and deal value.
+                        Each notification will include the agent&apos;s name, deal details, and deal value.
                       </p>
 
                       {editingDiscordWebhook ? (
@@ -4598,7 +4502,7 @@ export default function ConfigurationPage() {
                         </li>
                         <li className="flex gap-2">
                           <span className="font-bold">4.</span>
-                          <span>Give your webhook a name (e.g., "Deal Notifications")</span>
+                          <span>Give your webhook a name (e.g., &quot;Deal Notifications&quot;)</span>
                         </li>
                         <li className="flex gap-2">
                           <span className="font-bold">5.</span>
@@ -4615,7 +4519,7 @@ export default function ConfigurationPage() {
                       <div className="bg-amber-50 rounded-lg p-6 border border-amber-200">
                         <h3 className="text-lg font-semibold text-amber-900 mb-2">⚠️ No Webhook Configured</h3>
                         <p className="text-sm text-amber-800">
-                          You won't receive Discord notifications until you configure a webhook URL above.
+                          You won&apos;t receive Discord notifications until you configure a webhook URL above.
                         </p>
                       </div>
                     )}
@@ -4719,7 +4623,7 @@ export default function ConfigurationPage() {
                         <div className="mb-8 text-center">
                           <h3 className="text-2xl font-bold text-foreground mb-3">Enter your credentials</h3>
                           <p className="text-sm text-muted-foreground">
-                            By providing your {selectedCarrierLogin} credentials to AgentSpace, you're enabling AgentSpace to retrieve your financial data.
+                            By providing your {selectedCarrierLogin} credentials to AgentSpace, you&apos;re enabling AgentSpace to retrieve your financial data.
                           </p>
                         </div>
 
@@ -5151,12 +5055,12 @@ export default function ConfigurationPage() {
             <DialogHeader>
               <DialogTitle>Delete Product</DialogTitle>
               <DialogDescription>
-                Are you sure you want to delete the product "{productToDelete?.name}"? This action cannot be undone.
+                Are you sure you want to delete the product &quot;{productToDelete?.name}&quot;? This action cannot be undone.
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <p className="text-muted-foreground">
-                Are you sure you want to delete the product "{productToDelete?.name}"? This action cannot be undone.
+                Are you sure you want to delete the product &quot;{productToDelete?.name}&quot;? This action cannot be undone.
               </p>
             </div>
             <DialogFooter className="flex space-x-2">
@@ -5184,12 +5088,12 @@ export default function ConfigurationPage() {
             <DialogHeader>
               <DialogTitle>Delete Position</DialogTitle>
               <DialogDescription>
-                Are you sure you want to delete the position "{positionToDelete?.name}"? This action cannot be undone. You cannot delete a position that is currently assigned to agents.
+                Are you sure you want to delete the position &quot;{positionToDelete?.name}&quot;? This action cannot be undone. You cannot delete a position that is currently assigned to agents.
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <p className="text-muted-foreground">
-                Are you sure you want to delete the position "{positionToDelete?.name}"? This action cannot be undone.
+                Are you sure you want to delete the position &quot;{positionToDelete?.name}&quot;? This action cannot be undone.
               </p>
               <p className="text-sm text-amber-700 mt-2">
                 Note: You cannot delete a position that is currently assigned to agents.

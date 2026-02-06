@@ -236,7 +236,7 @@ export async function PUT(
     // Get current user info
     const { data: currentUser } = await supabaseAdmin
       .from("users")
-      .select("id, is_admin, perm_level, role")
+      .select("id, is_admin, perm_level, role, agency_id")
       .eq("auth_user_id", user.id)
       .single();
 
@@ -266,7 +266,7 @@ export async function PUT(
       }
 
       // Check if the agent being edited is in the downline tree
-      const downlineIds = (downlines as any[])?.map((d: any) => d.id) || [];
+      const downlineIds = (downlines as { id: string }[])?.map((d) => d.id) || [];
       const isInDownline = downlineIds.includes(agentId);
 
       if (!isInDownline) {
@@ -282,7 +282,7 @@ export async function PUT(
 
     // Build update object with only fields that are actually being updated
     // Only include fields that are explicitly provided and have meaningful values
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
 
     // Only update email if it's provided and not an empty string (empty string means clear it, set to null)
     if (email !== undefined) {
@@ -329,16 +329,33 @@ export async function PUT(
       });
     }
 
-    // Update agent
-    const { data: updatedAgent, error: updateError } = await supabaseAdmin
+    const updateQuery = supabaseAdmin
       .from("users")
       .update(updateData)
-      .eq("id", agentId)
+      .eq("id", agentId);
+
+    if (currentUser.agency_id) {
+      updateQuery.eq("agency_id", currentUser.agency_id);
+    }
+
+    const { data: updatedAgent, error: updateError } = await updateQuery
       .select()
       .single();
 
     if (updateError) {
-      console.error("Agent update error:", updateError);
+      console.error("Agent update error:", updateError, "updateData:", updateData);
+
+      // Handle duplicate key constraint (e.g., email already in use)
+      if (updateError.code === '23505') {
+        let message = 'A record with this value already exists.'
+        if (updateError.message?.includes('email')) {
+          message = 'An agent with this email address already exists.'
+        } else if (updateError.message?.includes('phone')) {
+          message = 'An agent with this phone number already exists.'
+        }
+        return NextResponse.json({ error: message, detail: updateError.message }, { status: 409 });
+      }
+
       return NextResponse.json({
         error: "Failed to update agent",
         detail: updateError.message,

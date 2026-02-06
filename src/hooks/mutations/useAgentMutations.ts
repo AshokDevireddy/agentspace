@@ -239,6 +239,7 @@ interface SaveAgentInput {
     role: string
     status: string
     upline_id?: string
+    is_active?: boolean
   }
   positionId?: string | null
   shouldSendInvite: boolean
@@ -302,7 +303,7 @@ export function useSaveAgent(options?: {
 
         if (!response.ok) {
           const errorData = await response.json()
-          throw new Error(errorData.error || 'Failed to update agent')
+          throw new Error(errorData.error || errorData.detail || 'Failed to update agent')
         }
 
         return { type: 'update' as const }

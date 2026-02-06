@@ -121,6 +121,7 @@ export const queryKeys = {
   configurationCommissionsCarriers: () => ['configuration', 'commissions-carriers'] as const,
   configurationCarrierNames: () => ['configuration', 'carrier-names'] as const,
   configurationPolicyFiles: () => ['configuration', 'policy-files'] as const,
+  configurationAgentAutoSend: () => ['configuration', 'agent-auto-send'] as const,
 
   // Subscriptions & Billing
   subscription: ['subscription'] as const,

@@ -23,271 +23,43 @@ import { queryKeys } from '@/hooks/queryKeys'
 import { QueryErrorDisplay } from '@/components/ui/query-error-display'
 import { RefreshingIndicator } from '@/components/ui/refreshing-indicator'
 
-// analytics_test_value: static data for the test analytics page
-const analytics_test_value = {
-  "meta": {
-    "window": "all_time",
-    "grain": "month",
-    "as_of": "2025-10-30",
-    "carriers": ["American Amicable", "Allstate", "Acme Life"],
-    "include_window_slices_12": false,
-    "definitions": {
-      "active_count_eom": "Policies active at month end",
-      "inactive_count_eom": "Policies lapsed/terminated by month end",
-      "submitted_count": "Policies submitted during the calendar month",
-      "avg_premium_submitted": "Average written premium of policies submitted during the month (USD)",
-      "persistency_formula": "active / (active + inactive)"
-    },
-    "period_start": "2024-11",
-    "period_end": "2025-10"
-  },
+// Analytics data type (matches shape returned by get_analytics_split_view RPC)
+type WindowAggregates = {
+	active: number
+	inactive: number
+	submitted: number
+	avg_premium_submitted: number
+	persistency: number
+}
 
-  "series": [
-    {"period":"2024-11","carrier":"American Amicable","active":122,"inactive":30,"submitted":82,"avg_premium_submitted":92.0,"persistency":0.8026},
-    {"period":"2024-12","carrier":"American Amicable","active":123,"inactive":31,"submitted":83,"avg_premium_submitted":92.6,"persistency":0.7987},
-    {"period":"2025-01","carrier":"American Amicable","active":125,"inactive":31,"submitted":83,"avg_premium_submitted":93.2,"persistency":0.8013},
-    {"period":"2025-02","carrier":"American Amicable","active":128,"inactive":32,"submitted":84,"avg_premium_submitted":93.8,"persistency":0.8000},
-    {"period":"2025-03","carrier":"American Amicable","active":132,"inactive":33,"submitted":86,"avg_premium_submitted":94.4,"persistency":0.8000},
-    {"period":"2025-04","carrier":"American Amicable","active":134,"inactive":34,"submitted":87,"avg_premium_submitted":95.0,"persistency":0.7976},
-    {"period":"2025-05","carrier":"American Amicable","active":137,"inactive":35,"submitted":89,"avg_premium_submitted":95.6,"persistency":0.7966},
-    {"period":"2025-06","carrier":"American Amicable","active":140,"inactive":35,"submitted":90,"avg_premium_submitted":96.2,"persistency":0.8000},
-    {"period":"2025-07","carrier":"American Amicable","active":144,"inactive":36,"submitted":92,"avg_premium_submitted":96.8,"persistency":0.8000},
-    {"period":"2025-08","carrier":"American Amicable","active":146,"inactive":37,"submitted":93,"avg_premium_submitted":97.4,"persistency":0.7986},
-    {"period":"2025-09","carrier":"American Amicable","active":149,"inactive":37,"submitted":95,"avg_premium_submitted":98.0,"persistency":0.8016},
-    {"period":"2025-10","carrier":"American Amicable","active":152,"inactive":38,"submitted":96,"avg_premium_submitted":98.6,"persistency":0.8000},
+type StateEntry = {
+	state: string
+	active: number
+	inactive: number
+	submitted: number
+	avg_premium_submitted: number
+}
 
-    {"period":"2024-11","carrier":"Allstate","active":202,"inactive":50,"submitted":118,"avg_premium_submitted":106.0,"persistency":0.8016},
-    {"period":"2024-12","carrier":"Allstate","active":204,"inactive":51,"submitted":121,"avg_premium_submitted":106.6,"persistency":0.8000},
-    {"period":"2025-01","carrier":"Allstate","active":206,"inactive":51,"submitted":122,"avg_premium_submitted":107.2,"persistency":0.8016},
-    {"period":"2025-02","carrier":"Allstate","active":208,"inactive":52,"submitted":124,"avg_premium_submitted":107.8,"persistency":0.8000},
-    {"period":"2025-03","carrier":"Allstate","active":210,"inactive":53,"submitted":126,"avg_premium_submitted":108.4,"persistency":0.7985},
-    {"period":"2025-04","carrier":"Allstate","active":212,"inactive":54,"submitted":127,"avg_premium_submitted":109.0,"persistency":0.7970},
-    {"period":"2025-05","carrier":"Allstate","active":214,"inactive":55,"submitted":129,"avg_premium_submitted":109.6,"persistency":0.7957},
-    {"period":"2025-06","carrier":"Allstate","active":216,"inactive":55,"submitted":131,"avg_premium_submitted":110.2,"persistency":0.7963},
-    {"period":"2025-07","carrier":"Allstate","active":218,"inactive":56,"submitted":133,"avg_premium_submitted":110.8,"persistency":0.7956},
-    {"period":"2025-08","carrier":"Allstate","active":220,"inactive":57,"submitted":135,"avg_premium_submitted":111.4,"persistency":0.7948},
-    {"period":"2025-09","carrier":"Allstate","active":222,"inactive":58,"submitted":137,"avg_premium_submitted":112.0,"persistency":0.7938},
-    {"period":"2025-10","carrier":"Allstate","active":224,"inactive":58,"submitted":139,"avg_premium_submitted":112.6,"persistency":0.7946},
+type AgeBandEntry = {
+	age_band: string
+	active: number
+	inactive: number
+	submitted: number
+	avg_premium_submitted: number
+}
 
-    {"period":"2024-11","carrier":"Acme Life","active":92,"inactive":25,"submitted":61,"avg_premium_submitted":82.0,"persistency":0.7863},
-    {"period":"2024-12","carrier":"Acme Life","active":93,"inactive":26,"submitted":62,"avg_premium_submitted":82.6,"persistency":0.7815},
-    {"period":"2025-01","carrier":"Acme Life","active":94,"inactive":26,"submitted":64,"avg_premium_submitted":83.2,"persistency":0.7832},
-    {"period":"2025-02","carrier":"Acme Life","active":95,"inactive":27,"submitted":65,"avg_premium_submitted":83.8,"persistency":0.7787},
-    {"period":"2025-03","carrier":"Acme Life","active":96,"inactive":27,"submitted":67,"avg_premium_submitted":84.4,"persistency":0.7805},
-    {"period":"2025-04","carrier":"Acme Life","active":97,"inactive":28,"submitted":68,"avg_premium_submitted":85.0,"persistency":0.7760},
-    {"period":"2025-05","carrier":"Acme Life","active":98,"inactive":29,"submitted":70,"avg_premium_submitted":85.6,"persistency":0.7714},
-    {"period":"2025-06","carrier":"Acme Life","active":99,"inactive":29,"submitted":71,"avg_premium_submitted":86.2,"persistency":0.7733},
-    {"period":"2025-07","carrier":"Acme Life","active":100,"inactive":30,"submitted":73,"avg_premium_submitted":86.8,"persistency":0.7692},
-    {"period":"2025-08","carrier":"Acme Life","active":101,"inactive":31,"submitted":74,"avg_premium_submitted":87.4,"persistency":0.7652},
-    {"period":"2025-09","carrier":"Acme Life","active":102,"inactive":31,"submitted":76,"avg_premium_submitted":88.0,"persistency":0.7672},
-    {"period":"2025-10","carrier":"Acme Life","active":103,"inactive":32,"submitted":77,"avg_premium_submitted":88.6,"persistency":0.7630}
-  ],
+type WindowSlices<T> = {
+	"3m": T
+	"6m": T
+	"9m": T
+	all_time: T
+}
 
-  "windows_by_carrier": {
-    "American Amicable": {
-      "3m":  { "active": 447,  "inactive": 112, "submitted": 284,  "avg_premium_submitted": 98.01, "persistency": 0.7996 },
-      "6m":  { "active": 868,  "inactive": 218, "submitted": 555,  "avg_premium_submitted": 97.13, "persistency": 0.7993 },
-      "9m":  { "active": 1262, "inactive": 317, "submitted": 812,  "avg_premium_submitted": 96.27, "persistency": 0.7992 },
-      "all_time": { "active": 1632, "inactive": 409, "submitted": 1060, "avg_premium_submitted": 95.41, "persistency": 0.7996 }
-    },
-    "Allstate": {
-      "3m":  { "active": 666,  "inactive": 173, "submitted": 411,  "avg_premium_submitted": 112.01, "persistency": 0.7938 },
-      "6m":  { "active": 1314, "inactive": 339, "submitted": 804,  "avg_premium_submitted": 111.13, "persistency": 0.7949 },
-      "9m":  { "active": 1944, "inactive": 498, "submitted": 1181, "avg_premium_submitted": 110.26, "persistency": 0.7961 },
-      "all_time": { "active": 2556, "inactive": 650, "submitted": 1542, "avg_premium_submitted": 109.40, "persistency": 0.7973 }
-    },
-    "Acme Life": {
-      "3m":  { "active": 306,  "inactive": 94,  "submitted": 227,  "avg_premium_submitted": 88.01, "persistency": 0.7650 },
-      "6m":  { "active": 603,  "inactive": 182, "submitted": 441,  "avg_premium_submitted": 87.13, "persistency": 0.7682 },
-      "9m":  { "active": 891,  "inactive": 264, "submitted": 641,  "avg_premium_submitted": 86.28, "persistency": 0.7714 },
-      "all_time": { "active": 1170, "inactive": 341, "submitted": 828,  "avg_premium_submitted": 85.45, "persistency": 0.7743 }
-    }
-  },
-
-  "totals": {
-    "by_carrier": [
-      {"window":"all_time","carrier":"American Amicable","active":1632,"inactive":409,"submitted":1060,"avg_premium_submitted":95.41,"persistency":0.7996},
-      {"window":"all_time","carrier":"Allstate","active":2556,"inactive":650,"submitted":1542,"avg_premium_submitted":109.40,"persistency":0.7973},
-      {"window":"all_time","carrier":"Acme Life","active":1170,"inactive":341,"submitted":828,"avg_premium_submitted":85.45,"persistency":0.7743}
-    ],
-    "all": {"window":"all_time","carrier":"ALL","active":5358,"inactive":1400,"submitted":3430,"avg_premium_submitted":99.30,"persistency":0.7928}
-  },
-
-  "breakdowns_over_time": {
-    "by_carrier": {
-      "American Amicable": {
-        "status": {
-          "3m":  {"Lapsed": 78, "Terminated": 22, "Pending": 12},
-          "6m":  {"Lapsed": 153, "Terminated": 44, "Pending": 21},
-          "9m":  {"Lapsed": 222, "Terminated": 63, "Pending": 32},
-          "all_time": {"Lapsed": 286, "Terminated": 82, "Pending": 41}
-        },
-        "state": {
-          "3m":  [
-            {"state":"CA","active":210,"inactive":54,"submitted":135,"avg_premium_submitted":99.8},
-            {"state":"TX","active":126,"inactive":35,"submitted":85,"avg_premium_submitted":93.9},
-            {"state":"FL","active":111,"inactive":28,"submitted":64,"avg_premium_submitted":87.5}
-          ],
-          "6m":  [
-            {"state":"CA","active":415,"inactive":106,"submitted":270,"avg_premium_submitted":99.5},
-            {"state":"TX","active":249,"inactive":70,"submitted":170,"avg_premium_submitted":93.7},
-            {"state":"FL","active":204,"inactive":52,"submitted":115,"avg_premium_submitted":87.3}
-          ],
-          "9m":  [
-            {"state":"CA","active":603,"inactive":153,"submitted":400,"avg_premium_submitted":99.1},
-            {"state":"TX","active":364,"inactive":99,"submitted":250,"avg_premium_submitted":93.6},
-            {"state":"FL","active":295,"inactive":75,"submitted":162,"avg_premium_submitted":87.1}
-          ],
-          "all_time": [
-            {"state":"CA","active":823,"inactive":200,"submitted":530,"avg_premium_submitted":100.76},
-            {"state":"TX","active":494,"inactive":129,"submitted":318,"avg_premium_submitted":94.04},
-            {"state":"FL","active":329,"inactive":80,"submitted":212,"avg_premium_submitted":88.29}
-          ]
-        },
-        "age_band": {
-          "3m":  [
-            {"age_band":"18-29","active":82,"inactive":19,"submitted":54,"avg_premium_submitted":81.9},
-            {"age_band":"30-44","active":165,"inactive":40,"submitted":106,"avg_premium_submitted":91.3},
-            {"age_band":"45-64","active":153,"inactive":38,"submitted":98,"avg_premium_submitted":103.8},
-            {"age_band":"65+","active":47,"inactive":11,"submitted":26,"avg_premium_submitted":115.3}
-          ],
-          "6m":  [
-            {"age_band":"18-29","active":164,"inactive":38,"submitted":106,"avg_premium_submitted":81.7},
-            {"age_band":"30-44","active":329,"inactive":76,"submitted":213,"avg_premium_submitted":91.2},
-            {"age_band":"45-64","active":312,"inactive":72,"submitted":194,"avg_premium_submitted":103.7},
-            {"age_band":"65+","active":107,"inactive":24,"submitted":61,"avg_premium_submitted":115.2}
-          ],
-          "9m":  [
-            {"age_band":"18-29","active":248,"inactive":57,"submitted":160,"avg_premium_submitted":81.6},
-            {"age_band":"30-44","active":497,"inactive":115,"submitted":320,"avg_premium_submitted":91.2},
-            {"age_band":"45-64","active":471,"inactive":109,"submitted":295,"avg_premium_submitted":103.6},
-            {"age_band":"65+","active":161,"inactive":36,"submitted":98,"avg_premium_submitted":115.2}
-          ],
-          "all_time": [
-            {"age_band":"18-29","active":296,"inactive":72,"submitted":191,"avg_premium_submitted":81.57},
-            {"age_band":"30-44","active":592,"inactive":144,"submitted":382,"avg_premium_submitted":91.16},
-            {"age_band":"45-64","active":560,"inactive":136,"submitted":360,"avg_premium_submitted":103.64},
-            {"age_band":"65+","active":198,"inactive":47,"submitted":127,"avg_premium_submitted":115.15}
-          ]
-        }
-      },
-
-      "Allstate": {
-        "status": {
-          "3m":  {"Lapsed": 121, "Terminated": 35, "Pending": 17},
-          "6m":  {"Lapsed": 237, "Terminated": 68, "Pending": 34},
-          "9m":  {"Lapsed": 349, "Terminated": 100, "Pending": 49},
-          "all_time": {"Lapsed": 455, "Terminated": 130, "Pending": 65}
-        },
-        "state": {
-          "3m":  [
-            {"state":"CA","active":634,"inactive":158,"submitted":391,"avg_premium_submitted":115.7},
-            {"state":"TX","active":380,"inactive":93,"submitted":230,"avg_premium_submitted":108.2},
-            {"state":"FL","active":259,"inactive":65,"submitted":150,"avg_premium_submitted":101.5}
-          ],
-          "6m":  [
-            {"state":"CA","active":900,"inactive":231,"submitted":540,"avg_premium_submitted":115.5},
-            {"state":"TX","active":540,"inactive":131,"submitted":335,"avg_premium_submitted":108.0},
-            {"state":"FL","active":374,"inactive":100,"submitted":219,"avg_premium_submitted":101.2}
-          ],
-          "9m":  [
-            {"state":"CA","active":1100,"inactive":282,"submitted":675,"avg_premium_submitted":115.4},
-            {"state":"TX","active":660,"inactive":161,"submitted":420,"avg_premium_submitted":107.8},
-            {"state":"FL","active":484,"inactive":127,"submitted":281,"avg_premium_submitted":100.9}
-          ],
-          "all_time": [
-            {"state":"CA","active":1278,"inactive":325,"submitted":765,"avg_premium_submitted":115.44},
-            {"state":"TX","active":767,"inactive":195,"submitted":467,"avg_premium_submitted":107.74},
-            {"state":"FL","active":511,"inactive":130,"submitted":310,"avg_premium_submitted":101.15}
-          ]
-        },
-        "age_band": {
-          "3m":  [
-            {"age_band":"18-29","active":215,"inactive":52,"submitted":132,"avg_premium_submitted":93.6},
-            {"age_band":"30-44","active":435,"inactive":108,"submitted":264,"avg_premium_submitted":104.5},
-            {"age_band":"45-64","active":411,"inactive":103,"submitted":247,"avg_premium_submitted":118.8},
-            {"age_band":"65+","active":145,"inactive":36,"submitted":83,"avg_premium_submitted":132.1}
-          ],
-          "6m":  [
-            {"age_band":"18-29","active":430,"inactive":104,"submitted":263,"avg_premium_submitted":93.5},
-            {"age_band":"30-44","active":870,"inactive":209,"submitted":527,"avg_premium_submitted":104.4},
-            {"age_band":"45-64","active":822,"inactive":206,"submitted":494,"avg_premium_submitted":118.7},
-            {"age_band":"65+","active":285,"inactive":67,"submitted":154,"avg_premium_submitted":131.9}
-          ],
-          "9m":  [
-            {"age_band":"18-29","active":665,"inactive":160,"submitted":400,"avg_premium_submitted":93.5},
-            {"age_band":"30-44","active":1340,"inactive":322,"submitted":812,"avg_premium_submitted":104.4},
-            {"age_band":"45-64","active":1268,"inactive":319,"submitted":765,"avg_premium_submitted":118.7},
-            {"age_band":"65+","active":450,"inactive":107,"submitted":240,"avg_premium_submitted":131.9}
-          ],
-          "all_time": [
-            {"age_band":"18-29","active":460,"inactive":119,"submitted":302,"avg_premium_submitted":93.45},
-            {"age_band":"30-44","active":920,"inactive":234,"submitted":561,"avg_premium_submitted":104.44},
-            {"age_band":"45-64","active":869,"inactive":221,"submitted":530,"avg_premium_submitted":118.73},
-            {"age_band":"65+","active":307,"inactive":76,"submitted":163,"avg_premium_submitted":131.93}
-          ]
-        }
-      },
-
-      "Acme Life": {
-        "status": {
-          "3m":  {"Lapsed": 66, "Terminated": 19, "Pending": 9},
-          "6m":  {"Lapsed": 127, "Terminated": 36, "Pending": 19},
-          "9m":  {"Lapsed": 185, "Terminated": 53, "Pending": 26},
-          "all_time": {"Lapsed": 239, "Terminated": 68, "Pending": 34}
-        },
-        "state": {
-          "3m":  [
-            {"state":"CA","active":150,"inactive":43,"submitted":100,"avg_premium_submitted":90.3},
-            {"state":"TX","active":89,"inactive":25,"submitted":60,"avg_premium_submitted":84.2},
-            {"state":"FL","active":67,"inactive":19,"submitted":43,"avg_premium_submitted":77.5}
-          ],
-          "6m":  [
-            {"state":"CA","active":299,"inactive":85,"submitted":201,"avg_premium_submitted":90.2},
-            {"state":"TX","active":178,"inactive":49,"submitted":120,"avg_premium_submitted":84.2},
-            {"state":"FL","active":134,"inactive":38,"submitted":80,"avg_premium_submitted":77.4}
-          ],
-          "9m":  [
-            {"state":"CA","active":434,"inactive":123,"submitted":302,"avg_premium_submitted":90.2},
-            {"state":"TX","active":259,"inactive":73,"submitted":182,"avg_premium_submitted":84.2},
-            {"state":"FL","active":197,"inactive":55,"submitted":117,"avg_premium_submitted":77.4}
-          ],
-          "all_time": [
-            {"state":"CA","active":569,"inactive":161,"submitted":402,"avg_premium_submitted":90.2},
-            {"state":"TX","active":341,"inactive":97,"submitted":241,"avg_premium_submitted":84.19},
-            {"state":"FL","active":228,"inactive":64,"submitted":158,"avg_premium_submitted":77.41}
-          ]
-        },
-        "age_band": {
-          "3m":  [
-            {"age_band":"18-29","active":60,"inactive":18,"submitted":40,"avg_premium_submitted":73.1},
-            {"age_band":"30-44","active":121,"inactive":34,"submitted":78,"avg_premium_submitted":85.7},
-            {"age_band":"45-64","active":115,"inactive":32,"submitted":74,"avg_premium_submitted":96.4},
-            {"age_band":"65+","active":40,"inactive":10,"submitted":35,"avg_premium_submitted":103.1}
-          ],
-          "6m":  [
-            {"age_band":"18-29","active":120,"inactive":34,"submitted":80,"avg_premium_submitted":73.1},
-            {"age_band":"30-44","active":240,"inactive":68,"submitted":156,"avg_premium_submitted":85.6},
-            {"age_band":"45-64","active":230,"inactive":66,"submitted":148,"avg_premium_submitted":96.3},
-            {"age_band":"65+","active":80,"inactive":20,"submitted":70,"avg_premium_submitted":103.1}
-          ],
-          "9m":  [
-            {"age_band":"18-29","active":180,"inactive":52,"submitted":120,"avg_premium_submitted":73.1},
-            {"age_band":"30-44","active":360,"inactive":102,"submitted":234,"avg_premium_submitted":85.6},
-            {"age_band":"45-64","active":345,"inactive":98,"submitted":222,"avg_premium_submitted":96.3},
-            {"age_band":"65+","active":120,"inactive":33,"submitted":90,"avg_premium_submitted":103.1}
-          ],
-          "all_time": [
-            {"age_band":"18-29","active":205,"inactive":56,"submitted":122,"avg_premium_submitted":73.03},
-            {"age_band":"30-44","active":410,"inactive":116,"submitted":287,"avg_premium_submitted":85.61},
-            {"age_band":"45-64","active":387,"inactive":110,"submitted":272,"avg_premium_submitted":96.32},
-            {"age_band":"65+","active":136,"inactive":40,"submitted":120,"avg_premium_submitted":103.09}
-          ]
-        }
-      }
-    }
-  }
-} as const
+type CarrierBreakdown = {
+	status: WindowSlices<Record<string, number>>
+	state: WindowSlices<StateEntry[]>
+	age_band: WindowSlices<AgeBandEntry[]>
+}
 
 function parsePeriodToIndex(period: string): number {
 	const [y, m] = period.split("-").map(Number)
@@ -502,213 +274,35 @@ function createSmoothCurvePath(points: Array<{ x: number; y: number }>): string 
 	return path
 }
 
-type AnalyticsTestValue = typeof analytics_test_value
-
-export default function AnalyticsTestPage() {
-	const [groupBy, setGroupBy] = React.useState("carrier")
-	const [trendMetric, setTrendMetric] = React.useState<"persistency" | "placement" | "submitted" | "active" | "avgprem" | "all">("persistency")
-	const [timeWindow, setTimeWindow] = React.useState<"3" | "6" | "9" | "all">("all")
-	const [carrierFilter, setCarrierFilter] = React.useState<string>("ALL")
-	const [selectedCarrier, setSelectedCarrier] = React.useState<string | null>(null)
-	const [hoverInfo, setHoverInfo] = React.useState<null | { x: number; y: number; label: string; submitted: number; sharePct: number; persistencyPct: number; active: number }>(null)
-	const [hoverStatusInfo, setHoverStatusInfo] = React.useState<null | { x: number; y: number; status: string; count: number; pct: number }>(null)
-	const [hoverBreakdownInfo, setHoverBreakdownInfo] = React.useState<null | { x: number; y: number; label: string; value: number; pct: number; groupedStates?: { label: string; value: number; pct: number }[]; total?: number }>(null)
-	const [hoverPersistencyInfo, setHoverPersistencyInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
-	const [hoverPlacementInfo, setHoverPlacementInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
-	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; placement?: number; avgPremium?: number }>(null)
-	const [showPersistencyTooltip, setShowPersistencyTooltip] = React.useState(false)
-	const [showPlacementTooltip, setShowPlacementTooltip] = React.useState(false)
-	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
-	const [draggedCarrier, setDraggedCarrier] = React.useState<string | null>(null)
-	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
-	const [downlineTitle, setDownlineTitle] = React.useState<string | null>(null)
-	const [downlineBreadcrumbInfo, setDownlineBreadcrumbInfo] = React.useState<{ currentAgentName: string; breadcrumbs: Array<{ agentId: string; agentName: string }>; isAtRoot: boolean } | null>(null)
-	const downlineChartRef = React.useRef<DownlineProductionChartHandle>(null)
-	const [selectedAgentId, setSelectedAgentId] = React.useState<string>("")
-	const [viewMode, setViewMode] = React.useState<'just_me' | 'downlines'>(() => {
-		if (typeof window !== 'undefined') {
-			return (localStorage.getItem('analytics_view_mode') as 'just_me' | 'downlines') || 'downlines'
-		}
-		return 'downlines'
-	})
-
-	// Save view mode to localStorage
-	React.useEffect(() => {
-		localStorage.setItem('analytics_view_mode', viewMode)
-	}, [viewMode])
-
-	const queryClient = useQueryClient()
-
-	// 1. Main analytics fetch - Get user data and analytics
-	const { data: mainAnalyticsData, isPending: isMainAnalyticsLoading, isFetching: isMainAnalyticsFetching, error: mainAnalyticsError } = useQuery({
-		queryKey: queryKeys.analyticsData({ view: 'initial' }),
-		queryFn: async () => {
-			const supabase = createClient()
-			const { data: auth } = await supabase.auth.getUser()
-			const userId = auth?.user?.id
-			if (!userId) throw new Error('No authenticated user')
-
-			const { data: userRow, error: userError } = await supabase
-				.from("users")
-				.select("id, agency_id, subscription_tier, role")
-				.eq("auth_user_id", userId)
-				.single()
-			if (userError || !userRow?.id) throw userError || new Error('User not found')
-
-			console.log("🏢 Current User Agency ID:", userRow.agency_id)
-
-			const { data: rpcData, error: rpcError } = await supabase
-				.rpc("get_analytics_split_view", { p_user_id: userRow.id })
-
-			if (rpcError) throw rpcError
-			if (!rpcData) throw new Error('No analytics data returned')
-
-			return {
-				analyticsFullData: rpcData as {your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null},
-				userId: userRow.id,
-				subscriptionTier: userRow.subscription_tier || 'free',
-				userRole: userRow.role || null,
-			}
-		},
-		staleTime: 5 * 60 * 1000, // 5 minutes
-		gcTime: 10 * 60 * 1000, // 10 minutes
-	})
-
-	// Derive state directly from query data (no useState/useEffect sync needed)
-	const originalUserId = mainAnalyticsData?.userId || null
-	const subscriptionTier = mainAnalyticsData?.subscriptionTier || 'free'
-	const userRole = mainAnalyticsData?.userRole || null
-	const userId = selectedAgentId || originalUserId
-
-	// 2. Fetch all agents for the search dropdown
-	const { data: agentsData } = useApiFetch<{ allAgents?: Array<{ id: string; name: string }> }>(
-		queryKeys.agents,
-		'/api/agents?view=table&page=1&limit=1',
-		{
-			enabled: !!originalUserId,
-			staleTime: 5 * 60 * 1000, // 5 minutes
-		}
-	)
-
-	// Filter agents list - exclude current user (pure transformation, no side effects)
-	const allAgents = React.useMemo(() => {
-		if (!agentsData?.allAgents) return []
-		if (originalUserId) {
-			// Filter out the current user from the agents list
-			return agentsData.allAgents.filter((agent: { id: string }) => agent.id !== originalUserId)
-		}
-		return agentsData.allAgents
-	}, [agentsData?.allAgents, originalUserId])
-
-	// 3. Fetch analytics when selected agent changes
-	const targetUserId = selectedAgentId || originalUserId
-	const { data: selectedAgentAnalytics, isPending: isSelectedAgentLoading } = useSupabaseRpc<{your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null}>(
-		queryKeys.analyticsData({ agentId: targetUserId }),
-		'get_analytics_split_view',
-		{ p_user_id: targetUserId },
-		{
-			enabled: !!targetUserId,
-			staleTime: 5 * 60 * 1000, // 5 minutes
-		}
-	)
-
-	// Compute the active analytics data based on viewMode and selectedAgentAnalytics
-	const _analyticsFullData = selectedAgentAnalytics || mainAnalyticsData?.analyticsFullData || null
-	const _analyticsData = React.useMemo(() => {
-		if (!_analyticsFullData) return null
-		if (viewMode === 'just_me') {
-			return _analyticsFullData.your_deals as AnalyticsTestValue
-		} else {
-			return _analyticsFullData.downline_production as AnalyticsTestValue
-		}
-	}, [viewMode, _analyticsFullData])
-
-	const isLoading = isMainAnalyticsLoading || isSelectedAgentLoading || !_analyticsData
-	const isRefreshing = isMainAnalyticsFetching && !isMainAnalyticsLoading
-	const analyticsData = _analyticsData as AnalyticsTestValue | null
-
-	const carriers = React.useMemo(() => ["ALL", ...(_analyticsData?.meta.carriers ?? [])], [_analyticsData])
-
-	// Don't initialize visible carriers - by default, only show cumulative (all carriers hidden)
-	// Users can click on carriers in the legend to show/hide them
-
-	const n: number | "all" = timeWindow === "all" ? "all" : Number(timeWindow)
-	const periods = React.useMemo(() => {
-		if (!_analyticsData) return [] as string[]
-		return getLastNPeriods(_analyticsData.series, _analyticsData.meta.period_end, n)
-	}, [_analyticsData, timeWindow])
-
-	// Aggregations per carrier for current window
-	const byCarrierAgg = React.useMemo(() => {
-		const agg: Record<string, { submitted: number; active: number; inactive: number }> = {}
-		for (const c of (_analyticsData?.meta.carriers ?? [])) agg[c] = { submitted: 0, active: 0, inactive: 0 }
-		for (const row of (_analyticsData?.series ?? [])) {
-			if (!periods.includes(row.period)) continue
-			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) continue
-			agg[row.carrier].submitted += row.submitted
-			agg[row.carrier].active += row.active
-			agg[row.carrier].inactive += row.inactive
-		}
-		return agg
-	}, [periods, carrierFilter])
-
-	const totalSubmitted = React.useMemo(() => Object.values(byCarrierAgg).reduce((a, s) => a + s.submitted, 0), [byCarrierAgg])
-
-	// Calculate top stats based on selected carrier and time window
-	const topStats = React.useMemo(() => {
-		let totalActive = 0
-		let totalInactive = 0
-		let totalSubmittedValue = 0
-		let totalPlaced = 0
-		let totalNotPlaced = 0
-
-		for (const row of (_analyticsData?.series ?? [])) {
-			if (!periods.includes(row.period)) continue
-			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) continue
-			totalActive += row.active || 0
-			totalInactive += row.inactive || 0
-			totalSubmittedValue += row.submitted || 0
-		}
-
-		// Calculate placement from windows_by_carrier data
-		const windowKey = timeWindow === "all" ? "all_time" : `${timeWindow}m` as "3m" | "6m" | "9m" | "all_time"
-		const windowsByCarrier = _analyticsData?.windows_by_carrier
-		
-		if (carrierFilter === "ALL") {
-			// Sum across all carriers
-			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
-				if (!windowsByCarrier || !(carrier in windowsByCarrier)) continue
-				const carrierData = windowsByCarrier[carrier as keyof typeof windowsByCarrier]
-				if (!carrierData) continue
-				const windowData = carrierData[windowKey]
-				if (!windowData) continue
-				totalPlaced += (windowData as any).placed || 0
-				totalNotPlaced += (windowData as any).not_placed || 0
-			}
-		} else {
-			// Single carrier
-			if (windowsByCarrier && carrierFilter in windowsByCarrier) {
-				const carrierData = windowsByCarrier[carrierFilter as keyof typeof windowsByCarrier]
-				if (carrierData) {
-					const windowData = carrierData[windowKey]
-					if (windowData) {
-						totalPlaced = (windowData as any).placed || 0
-						totalNotPlaced = (windowData as any).not_placed || 0
-					}
-				}
-			}
-		}
-
-		const persistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
-		const placement = totalPlaced + totalNotPlaced > 0 ? totalPlaced / (totalPlaced + totalNotPlaced) : 0
-
-		return {
-			persistency: persistency,
-			placement: placement,
-			submitted: totalSubmittedValue,
-			active: totalActive,
-		}
-	}, [periods, carrierFilter, timeWindow, _analyticsData])
+type AnalyticsTestValue = {
+	meta: {
+		window: string
+		grain: string
+		as_of: string
+		carriers: string[]
+		include_window_slices_12: boolean
+		definitions: Record<string, string>
+		period_start: string
+		period_end: string
+	}
+	series: Array<{
+		period: string
+		carrier: string
+		active: number
+		inactive: number
+		submitted: number
+		avg_premium_submitted: number
+		persistency: number
+	}>
+	windows_by_carrier: Record<string, WindowSlices<WindowAggregates>>
+	totals: {
+		by_carrier: Array<WindowAggregates & { window: string; carrier: string }>
+		all: WindowAggregates & { window: string; carrier: string }
+	}
+	breakdowns_over_time: {
+		by_carrier: Record<string, CarrierBreakdown>
+	}
+}
 
 const CUMULATIVE_COLOR = "#8b5cf6" // Purple for cumulative
 
@@ -759,22 +353,256 @@ const FALLBACK_COLORS = [
     "#06b6d4", "#f43f5e", "#059669", "#0ea5e9", "#fb923c", "#34d399",
 ]
 
-function colorForLabel(label: string, explicitIndex?: number): string {
+export default function AnalyticsTestPage() {
+	const [groupBy, setGroupBy] = React.useState("carrier")
+	const [trendMetric, setTrendMetric] = React.useState<"persistency" | "placement" | "submitted" | "active" | "avgprem" | "all">("persistency")
+	const [timeWindow, setTimeWindow] = React.useState<"3" | "6" | "9" | "all">("all")
+	const [carrierFilter, setCarrierFilter] = React.useState<string>("ALL")
+	const [leadSourceFilter, setLeadSourceFilter] = React.useState<string>("ALL")
+	const [selectedCarrier, setSelectedCarrier] = React.useState<string | null>(null)
+	const [hoverInfo, setHoverInfo] = React.useState<null | { x: number; y: number; label: string; submitted: number; sharePct: number; persistencyPct: number; active: number }>(null)
+	const [hoverStatusInfo, setHoverStatusInfo] = React.useState<null | { x: number; y: number; status: string; count: number; pct: number }>(null)
+	const [hoverBreakdownInfo, setHoverBreakdownInfo] = React.useState<null | { x: number; y: number; label: string; value: number; pct: number; groupedStates?: { label: string; value: number; pct: number }[]; total?: number }>(null)
+	const [hoverPersistencyInfo, setHoverPersistencyInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
+	const [hoverPlacementInfo, setHoverPlacementInfo] = React.useState<null | { x: number; y: number; label: string; count: number; pct: number }>(null)
+	const [hoverTrendInfo, setHoverTrendInfo] = React.useState<null | { x: number; y: number; period: string; value: number; carrier?: string; submitted?: number; active?: number; persistency?: number; placement?: number; avgPremium?: number }>(null)
+	const [showPersistencyTooltip, setShowPersistencyTooltip] = React.useState(false)
+	const [showPlacementTooltip, setShowPlacementTooltip] = React.useState(false)
+	const [visibleCarriers, setVisibleCarriers] = React.useState<Set<string>>(new Set())
+	const [, setDraggedCarrier] = React.useState<string | null>(null)
+	const [isUploadModalOpen, setIsUploadModalOpen] = React.useState(false)
+	const [downlineTitle, setDownlineTitle] = React.useState<string | null>(null)
+	const [downlineBreadcrumbInfo, setDownlineBreadcrumbInfo] = React.useState<{ currentAgentName: string; breadcrumbs: Array<{ agentId: string; agentName: string }>; isAtRoot: boolean } | null>(null)
+	const downlineChartRef = React.useRef<DownlineProductionChartHandle>(null)
+	const [selectedAgentId, setSelectedAgentId] = React.useState<string>("")
+	const [viewMode, setViewMode] = React.useState<'just_me' | 'downlines'>(() => {
+		if (typeof window !== 'undefined') {
+			return (localStorage.getItem('analytics_view_mode') as 'just_me' | 'downlines') || 'downlines'
+		}
+		return 'downlines'
+	})
+
+	// Save view mode to localStorage
+	React.useEffect(() => {
+		localStorage.setItem('analytics_view_mode', viewMode)
+	}, [viewMode])
+
+	const queryClient = useQueryClient()
+
+	const leadSourceParam = leadSourceFilter === "ALL" ? null : leadSourceFilter
+
+	// 1. Main analytics fetch - Get user data and analytics
+	const { data: mainAnalyticsData, isPending: isMainAnalyticsLoading, isFetching: isMainAnalyticsFetching, error: mainAnalyticsError } = useQuery({
+		queryKey: queryKeys.analyticsData({ view: 'initial', leadSource: leadSourceParam }),
+		queryFn: async () => {
+			const supabase = createClient()
+			const { data: auth } = await supabase.auth.getUser()
+			const userId = auth?.user?.id
+			if (!userId) throw new Error('No authenticated user')
+
+			const { data: userRow, error: userError } = await supabase
+				.from("users")
+				.select("id, agency_id, subscription_tier, role")
+				.eq("auth_user_id", userId)
+				.single()
+			if (userError || !userRow?.id) throw userError || new Error('User not found')
+
+			console.log("🏢 Current User Agency ID:", userRow.agency_id)
+
+			const { data: agencyData } = await supabase
+				.from("agencies")
+				.select("lead_sources")
+				.eq("id", userRow.agency_id)
+				.single()
+
+			const { data: rpcData, error: rpcError } = await supabase
+				.rpc("get_analytics_split_view", {
+					p_user_id: userRow.id,
+					p_lead_source: leadSourceParam,
+				})
+
+			if (rpcError) throw rpcError
+			if (!rpcData) throw new Error('No analytics data returned')
+
+			return {
+				analyticsFullData: rpcData as {your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null},
+				userId: userRow.id,
+				subscriptionTier: userRow.subscription_tier || 'free',
+				userRole: userRow.role || null,
+				leadSources: (agencyData?.lead_sources as string[]) || [],
+			}
+		},
+		staleTime: 5 * 60 * 1000, // 5 minutes
+		gcTime: 10 * 60 * 1000, // 10 minutes
+	})
+
+	// Derive state directly from query data (no useState/useEffect sync needed)
+	const originalUserId = mainAnalyticsData?.userId || null
+	const subscriptionTier = mainAnalyticsData?.subscriptionTier || 'free'
+	const userRole = mainAnalyticsData?.userRole || null
+	const userId = selectedAgentId || originalUserId
+	const leadSources: string[] = mainAnalyticsData?.leadSources || []
+
+	const leadSourceSelect = leadSources.length > 0 ? (
+		<Select value={leadSourceFilter} onValueChange={setLeadSourceFilter}>
+			<SelectTrigger className="w-[160px] rounded-md h-9 text-sm flex-shrink-0">
+				<SelectValue placeholder="All Lead Types" />
+			</SelectTrigger>
+			<SelectContent className="rounded-md">
+				<SelectItem value="ALL">All Lead Types</SelectItem>
+				{leadSources.map((ls) => (
+					<SelectItem key={ls} value={ls}>{ls}</SelectItem>
+				))}
+			</SelectContent>
+		</Select>
+	) : null
+
+	// 2. Fetch all agents for the search dropdown
+	const { data: agentsData } = useApiFetch<{ allAgents?: Array<{ id: string; name: string }> }>(
+		queryKeys.agents,
+		'/api/agents?view=table&page=1&limit=1',
+		{
+			enabled: !!originalUserId,
+			staleTime: 5 * 60 * 1000, // 5 minutes
+		}
+	)
+
+	// Filter agents list - exclude current user (pure transformation, no side effects)
+	const allAgents = React.useMemo(() => {
+		if (!agentsData?.allAgents) return []
+		if (originalUserId) {
+			// Filter out the current user from the agents list
+			return agentsData.allAgents.filter((agent: { id: string }) => agent.id !== originalUserId)
+		}
+		return agentsData.allAgents
+	}, [agentsData?.allAgents, originalUserId])
+
+	// 3. Fetch analytics when selected agent changes
+	const targetUserId = selectedAgentId || originalUserId
+	const { data: selectedAgentAnalytics, isPending: isSelectedAgentLoading } = useSupabaseRpc<{your_deals: AnalyticsTestValue | null, downline_production: AnalyticsTestValue | null}>(
+		queryKeys.analyticsData({ agentId: targetUserId, leadSource: leadSourceParam }),
+		'get_analytics_split_view',
+		{ p_user_id: targetUserId, p_lead_source: leadSourceParam },
+		{
+			enabled: !!targetUserId,
+			staleTime: 5 * 60 * 1000, // 5 minutes
+		}
+	)
+
+	// Compute the active analytics data based on viewMode and selectedAgentAnalytics
+	const _analyticsFullData = selectedAgentAnalytics || mainAnalyticsData?.analyticsFullData || null
+	const _analyticsData = React.useMemo(() => {
+		if (!_analyticsFullData) return null
+		if (viewMode === 'just_me') {
+			return _analyticsFullData.your_deals as AnalyticsTestValue
+		} else {
+			return _analyticsFullData.downline_production as AnalyticsTestValue
+		}
+	}, [viewMode, _analyticsFullData])
+
+	const isLoading = isMainAnalyticsLoading || isSelectedAgentLoading || !_analyticsData
+	const isRefreshing = isMainAnalyticsFetching && !isMainAnalyticsLoading
+
+
+	const carriers = React.useMemo(() => ["ALL", ...(_analyticsData?.meta.carriers ?? [])], [_analyticsData])
+
+	// Don't initialize visible carriers - by default, only show cumulative (all carriers hidden)
+	// Users can click on carriers in the legend to show/hide them
+
+	const n: number | "all" = timeWindow === "all" ? "all" : Number(timeWindow)
+	const periods = React.useMemo(() => {
+		if (!_analyticsData) return [] as string[]
+		return getLastNPeriods(_analyticsData.series, _analyticsData.meta.period_end, n)
+	}, [_analyticsData, n])
+
+	// Aggregations per carrier for current window
+	const byCarrierAgg = React.useMemo(() => {
+		const agg: Record<string, { submitted: number; active: number; inactive: number }> = {}
+		for (const c of (_analyticsData?.meta.carriers ?? [])) agg[c] = { submitted: 0, active: 0, inactive: 0 }
+		for (const row of (_analyticsData?.series ?? [])) {
+			if (!periods.includes(row.period)) continue
+			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) continue
+			agg[row.carrier].submitted += row.submitted
+			agg[row.carrier].active += row.active
+			agg[row.carrier].inactive += row.inactive
+		}
+		return agg
+	}, [periods, carrierFilter, _analyticsData?.meta.carriers, _analyticsData?.series])
+
+	const totalSubmitted = React.useMemo(() => Object.values(byCarrierAgg).reduce((a, s) => a + s.submitted, 0), [byCarrierAgg])
+
+	// Calculate top stats based on selected carrier and time window
+	const topStats = React.useMemo(() => {
+		let totalActive = 0
+		let totalInactive = 0
+		let totalSubmittedValue = 0
+		let totalPlaced = 0
+		let totalNotPlaced = 0
+
+		for (const row of (_analyticsData?.series ?? [])) {
+			if (!periods.includes(row.period)) continue
+			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) continue
+			totalActive += row.active || 0
+			totalInactive += row.inactive || 0
+			totalSubmittedValue += row.submitted || 0
+		}
+
+		// Calculate placement from windows_by_carrier data
+		const windowKey = timeWindow === "all" ? "all_time" : `${timeWindow}m` as "3m" | "6m" | "9m" | "all_time"
+		const windowsByCarrier = _analyticsData?.windows_by_carrier
+		
+		if (carrierFilter === "ALL") {
+			// Sum across all carriers
+			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
+				if (!windowsByCarrier || !(carrier in windowsByCarrier)) continue
+				const carrierData = windowsByCarrier[carrier as keyof typeof windowsByCarrier]
+				if (!carrierData) continue
+				const windowData = carrierData[windowKey]
+				if (!windowData) continue
+				totalPlaced += (windowData as unknown as Record<string, number>).placed || 0
+				totalNotPlaced += (windowData as unknown as Record<string, number>).not_placed || 0
+			}
+		} else {
+			// Single carrier
+			if (windowsByCarrier && carrierFilter in windowsByCarrier) {
+				const carrierData = windowsByCarrier[carrierFilter as keyof typeof windowsByCarrier]
+				if (carrierData) {
+					const windowData = carrierData[windowKey]
+					if (windowData) {
+						totalPlaced = (windowData as unknown as Record<string, number>).placed || 0
+						totalNotPlaced = (windowData as unknown as Record<string, number>).not_placed || 0
+					}
+				}
+			}
+		}
+
+		const persistency = totalActive + totalInactive > 0 ? totalActive / (totalActive + totalInactive) : 0
+		const placement = totalPlaced + totalNotPlaced > 0 ? totalPlaced / (totalPlaced + totalNotPlaced) : 0
+
+		return {
+			persistency: persistency,
+			placement: placement,
+			submitted: totalSubmittedValue,
+			active: totalActive,
+		}
+	}, [periods, carrierFilter, timeWindow, _analyticsData])
+
+const colorForLabel = React.useCallback((label: string, explicitIndex?: number): string => {
     if (typeof explicitIndex === "number") return FALLBACK_COLORS[explicitIndex % FALLBACK_COLORS.length]
     let hash = 0
     for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) >>> 0
     return FALLBACK_COLORS[hash % FALLBACK_COLORS.length]
-}
+}, [])
 
-function carrierColorForLabel(label: string, explicitIndex?: number): string {
+const carrierColorForLabel = React.useCallback((label: string, explicitIndex?: number): string => {
     // Normalize the label: trim whitespace and check for exact match first
     const normalized = label.trim()
-    
+
     // Check if we have a fixed color for this carrier (exact match)
     if (CARRIER_COLORS[normalized]) {
         return CARRIER_COLORS[normalized]
     }
-    
+
     // Check case-insensitive match
     const lowerLabel = normalized.toLowerCase()
     for (const [key, value] of Object.entries(CARRIER_COLORS)) {
@@ -782,10 +610,10 @@ function carrierColorForLabel(label: string, explicitIndex?: number): string {
             return value
         }
     }
-    
+
     // Fallback to generated color
     return colorForLabel(normalized, explicitIndex)
-}
+}, [colorForLabel])
 
 // Map old age bands to new standardized age ranges with proportional distribution
 function mapAgeBandToStandardRanges(oldAgeBand: string): Array<{ range: string; proportion: number }> {
@@ -876,7 +704,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 				cursor += ang
 				return piece
 			})
-	}, [byCarrierAgg, totalSubmitted, _analyticsData])
+	}, [byCarrierAgg, totalSubmitted, _analyticsData, carrierColorForLabel])
 
 	// Determine if we should show detail view
 	const detailCarrier = React.useMemo(() => {
@@ -940,7 +768,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		}))
 
 		return { wedges: donutWedges, legendEntries: allEntries, total }
-	}, [detailCarrier, timeWindow, windowKey, groupBy])
+	}, [detailCarrier, windowKey, groupBy, _analyticsData?.breakdowns_over_time?.by_carrier, colorForLabel])
 
 	// State breakdown for detail view (when groupBy === "state")
 	const stateBreakdown = React.useMemo(() => {
@@ -1070,7 +898,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		})
 
 		return { wedges, total, isFullyUnknown: false, groupedStates }
-	}, [carrierFilter, windowKey, groupBy, _analyticsData])
+	}, [carrierFilter, windowKey, groupBy, _analyticsData, colorForLabel])
 
 	// Age breakdown for detail view (when groupBy === "age")
 	const ageBreakdown = React.useMemo(() => {
@@ -1162,7 +990,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		})
 
 		return { wedges, total, isFullyUnknown: false }
-	}, [carrierFilter, windowKey, groupBy, _analyticsData])
+	}, [carrierFilter, windowKey, groupBy, _analyticsData, colorForLabel])
 
 	// Persistency breakdown for detail view (when groupBy === "persistency")
 	const persistencyBreakdown = React.useMemo(() => {
@@ -1223,7 +1051,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		}).filter(e => e.count > 0) // Filter after calculating angles to ensure proper rendering
 
 		return { wedges, total, active, inactive }
-	}, [carrierFilter, windowKey, groupBy])
+	}, [carrierFilter, windowKey, groupBy, _analyticsData?.meta.carriers, _analyticsData?.windows_by_carrier])
 
 	// Placement breakdown for detail view (when groupBy === "placement")
 	const placementBreakdown = React.useMemo(() => {
@@ -1246,8 +1074,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 				if (!carrierData) continue
 				const windowData = carrierData[windowKey]
 				if (!windowData) continue
-				placed += (windowData as any).placed || 0
-				not_placed += (windowData as any).not_placed || 0
+				placed += (windowData as unknown as Record<string, number>).placed || 0
+				not_placed += (windowData as unknown as Record<string, number>).not_placed || 0
 			}
 		} else {
 			// Single carrier
@@ -1257,8 +1085,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			if (!carrierData) return null
 			const windowData = carrierData[windowKey]
 			if (!windowData) return null
-			placed = (windowData as any).placed || 0
-			not_placed = (windowData as any).not_placed || 0
+			placed = (windowData as unknown as Record<string, number>).placed || 0
+			not_placed = (windowData as unknown as Record<string, number>).not_placed || 0
 		}
 
 		const entries: { label: string; count: number; color: string }[] = [
@@ -1338,7 +1166,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 				return aIdx - bIdx
 			})
 
-			return sortedPeriods as any
+			return sortedPeriods as unknown as { period: string; value: number; carriers?: Record<string, number> }[]
 		}
 
 		// Filter series data by periods and carrier filter
@@ -1404,7 +1232,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		})
 
 		return sortedPeriods
-	}, [periods, carrierFilter, trendMetric])
+	}, [periods, carrierFilter, trendMetric, _analyticsData?.series])
 
 	return (
 		isLoading ? (
@@ -1542,7 +1370,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 						</div>
 
 						{/* Time window: 3,6,9,All Time */}
-						<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
+						<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as "3" | "6" | "9" | "all")}>
 							<SelectTrigger className="w-[120px] rounded-md h-9 text-sm flex-shrink-0"><SelectValue placeholder="3 Months" /></SelectTrigger>
 							<SelectContent className="rounded-md">
 								<SelectItem value="3">3 Months</SelectItem>
@@ -1568,6 +1396,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 								))}
 							</SelectContent>
 						</Select>
+
+						{leadSourceSelect}
 
 						{/* Agent Search */}
 						<SimpleSearchableSelect
@@ -1623,7 +1453,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 					</div>
 
 					{/* Time window: 3,6,9,All Time */}
-					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
+					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as "3" | "6" | "9" | "all")}>
 						<SelectTrigger className="w-[120px] rounded-md h-9 text-sm flex-shrink-0"><SelectValue placeholder="3 Months" /></SelectTrigger>
 						<SelectContent className="rounded-md">
 							<SelectItem value="3">3 Months</SelectItem>
@@ -1649,6 +1479,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							))}
 						</SelectContent>
 					</Select>
+
+					{leadSourceSelect}
 
 					{/* Agent Search */}
 					<SimpleSearchableSelect
@@ -2628,11 +2460,13 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 						(() => {
 							// Handle "Show All" case - show submitted and active together
 							if (trendMetric === "all") {
+								type AllTrendDataItem = { period: string; submitted: { value: number; carriers?: Record<string, number> }; active: { value: number; carriers?: Record<string, number> } }
+								const allTrendData = trendData as unknown as AllTrendDataItem[]
 								// Calculate min/max for submitted and active
 								let minValue = Infinity
 								let maxValue = -Infinity
 
-								for (const data of trendData as any[]) {
+								for (const data of allTrendData) {
 									// Check submitted values
 									if (carrierFilter === "ALL") {
 										// Calculate cumulative submitted for this period
@@ -2694,12 +2528,6 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 								const chartHeight = 240
 								const chartBottom = 260
 
-								const valueToY = (value: number) => {
-									if (maxValue === 0) return chartBottom
-									const normalized = value / maxValue
-									return chartBottom - (normalized * chartHeight)
-								}
-
 								const formatYLabel = (value: number): string => {
 									return numberWithCommas(Math.round(value))
 								}
@@ -2758,7 +2586,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 														})}
 
 														{/* X-axis labels */}
-														{(trendData as any[]).map((data, idx) => {
+														{(allTrendData).map((data, idx) => {
 												const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
 												const monthLabel = data.period.split("-")[1]
 												const yearLabel = data.period.split("-")[0].slice(2)
@@ -2792,8 +2620,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 														{/* Cumulative Submitted Volume line */}
 											{(() => {
 												const submittedColor = "#16a34a" // Green for submitted
-												const submittedPoints = (trendData as any[])
-													.map((data: any, idx: number) => {
+												const submittedPoints = (allTrendData)
+													.map((data: AllTrendDataItem, idx: number) => {
 														// Calculate cumulative submitted for this period
 														let cumulativeSubmitted = 0
 														if (carrierFilter === "ALL") {
@@ -2827,8 +2655,9 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 															const submitted = row.submitted || 0
 															totalSubmitted += submitted
 															totalPremium += (row.avg_premium_submitted || 0) * submitted
-															if ((row as any).placement !== undefined && (row as any).placement !== null) {
-																totalPlacement += (row as any).placement
+															const rowRecord = row as unknown as Record<string, number>
+															if (rowRecord.placement !== undefined && rowRecord.placement !== null) {
+																totalPlacement += rowRecord.placement
 																placementCount++
 															}
 														}
@@ -2844,7 +2673,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 												return (
 													<g key="cumulative-submitted">
 														<path d={pathData} fill="none" stroke={submittedColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-														{submittedPoints.map((p: any, i: number) => (
+														{submittedPoints.map((p, i) => (
 															<circle
 																key={i}
 																cx={p.x}
@@ -2877,8 +2706,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 											{/* Cumulative Active Policies line */}
 											{(() => {
 												const activeColor = "#2563eb" // Blue for active
-												const activePoints = (trendData as any[])
-													.map((data: any, idx: number) => {
+												const activePoints = (allTrendData)
+													.map((data: AllTrendDataItem, idx: number) => {
 														// Calculate cumulative active for this period
 														let cumulativeActive = 0
 														if (carrierFilter === "ALL") {
@@ -2912,8 +2741,9 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 															totalActive += row.active || 0
 															totalInactive += row.inactive || 0
 															totalPremium += (row.avg_premium_submitted || 0) * submitted
-															if ((row as any).placement !== undefined && (row as any).placement !== null) {
-																totalPlacement += (row as any).placement
+															const rowRecord = row as unknown as Record<string, number>
+															if (rowRecord.placement !== undefined && rowRecord.placement !== null) {
+																totalPlacement += rowRecord.placement
 																placementCount++
 															}
 														}
@@ -2929,7 +2759,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 												return (
 													<g key="cumulative-active">
 														<path d={pathData} fill="none" stroke={activeColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6 4" />
-														{activePoints.map((p: any, i: number) => (
+														{activePoints.map((p, i) => (
 															<circle
 																key={i}
 																cx={p.x}
@@ -3132,22 +2962,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							}
 
 							const chartHeight = 240
-							const chartTop = 20
 							const chartBottom = 260
-
-							// Convert value to Y coordinate
-							const valueToY = (value: number) => {
-								if (maxValue === 0) return chartBottom
-								if (trendMetric === "persistency" || trendMetric === "placement") {
-									// For persistency and placement, use minValue (which is 0) and maxValue (which is 1)
-									const normalized = (value - minValue) / (maxValue - minValue)
-									return chartBottom - (normalized * chartHeight)
-								} else {
-									// For other metrics, always start from 0
-									const normalized = value / maxValue
-									return chartBottom - (normalized * chartHeight)
-								}
-							}
 
 							return (
 								<div className="flex gap-6">
@@ -3212,7 +3027,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 													})}
 
 													{/* X-axis labels and vertical grid lines */}
-													{trendData.map((data: any, idx: number) => {
+													{trendData.map((data, idx) => {
 														const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
 														const monthLabel = data.period.split("-")[1]
 														const yearLabel = data.period.split("-")[0].slice(2)
@@ -3277,7 +3092,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 															{(_analyticsData?.meta.carriers ?? []).filter(carrier => visibleCarriers.has(carrier)).map((carrier) => {
 																const color = carrierColorForLabel(String(carrier))
 																const points = trendData
-																	.map((data: any, idx: number) => {
+																	.map((data, idx) => {
 																		const value = data.carriers?.[carrier]
 																		if (value === undefined || value === null) return null
 																		const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
@@ -3290,11 +3105,11 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 															const submitted = periodRow?.submitted || 0
 															const active = periodRow?.active || 0
 															const persistency = periodRow?.persistency || 0
-															const placement = (periodRow as any)?.placement || 0
+															const placement = (periodRow as unknown as Record<string, number>)?.placement || 0
 
-															return { x: xPos, y: yPos, value, period: data.period, carrier: carrier as any, submitted, active, persistency, placement }
+															return { x: xPos, y: yPos, value, period: data.period, carrier: carrier as string, submitted, active, persistency, placement }
 														})
-																		.filter((p: any): p is { x: number; y: number; value: number; period: string; carrier: any; submitted: number; active: number; persistency: number; placement: number } => p !== null)
+																		.filter((p): p is { x: number; y: number; value: number; period: string; carrier: string; submitted: number; active: number; persistency: number; placement: number } => p !== null)
 
 													if (points.length === 0) return null
 
@@ -3312,7 +3127,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																strokeLinejoin="round"
 															/>
 															{/* Dots on line */}
-															{points.map((p: any, i: number) => (
+															{points.map((p, i) => (
 																<circle
 																	key={i}
 																	cx={p.x}
@@ -3346,7 +3161,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 												{(() => {
 													const cumulativeColor = CUMULATIVE_COLOR // Purple for cumulative
 													const cumulativePoints = trendData
-														.map((data: any, idx: number) => {
+														.map((data, idx) => {
 															let cumulativeValue = 0
 
 															if (trendMetric === "persistency") {
@@ -3400,8 +3215,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																totalSubmitted += row.submitted || 0
 																totalActive += row.active || 0
 																totalInactive += row.inactive || 0
-																if ((row as any).placement !== undefined && (row as any).placement !== null) {
-																	totalPlacement += (row as any).placement
+																if ((row as unknown as Record<string, number>).placement !== undefined && (row as unknown as Record<string, number>).placement !== null) {
+																	totalPlacement += (row as unknown as Record<string, number>).placement
 																	placementCount++
 																}
 															}
@@ -3410,7 +3225,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 
 															return { x: xPos, y: yPos, value: cumulativeValue, period: data.period, submitted: totalSubmitted, active: totalActive, persistency: cumulativePersistency, placement: cumulativePlacement }
 														})
-																		.filter((p: any) => p.value > 0 || trendMetric === "persistency" || trendMetric === "placement")
+																		.filter((p) => p.value > 0 || trendMetric === "persistency" || trendMetric === "placement")
 
 													if (cumulativePoints.length === 0) return null
 
@@ -3429,7 +3244,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																opacity={0.9}
 															/>
 															{/* Dots on cumulative line */}
-															{cumulativePoints.map((p: any, i: number) => (
+															{cumulativePoints.map((p, i) => (
 																<circle
 																	key={i}
 																	cx={p.x}
@@ -3464,7 +3279,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 														(() => {
 															const color = carrierColorForLabel(String(carrierFilter))
 															const points = trendData
-																.map((data: any, idx: number) => {
+																.map((data, idx) => {
 																	const value = data.value
 																	const xPos = 60 + (720 / (trendData.length - 1 || 1)) * idx
 																	const yPos = valueToYWithScale(value)
@@ -3476,7 +3291,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																	const submitted = periodRow?.submitted || 0
 																	const active = periodRow?.active || 0
 																	const persistency = periodRow?.persistency || 0
-																	const placement = (periodRow as any)?.placement || 0
+																	const placement = (periodRow as unknown as Record<string, number> | undefined)?.placement || 0
 
 																	return { x: xPos, y: yPos, value, period: data.period, submitted, active, persistency, placement }
 																})
@@ -3493,7 +3308,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 																		strokeLinecap="round"
 																		strokeLinejoin="round"
 																	/>
-																	{points.map((p: any, i: number) => (
+																	{points.map((p, i) => (
 																		<circle
 																			key={i}
 																			cx={p.x}
@@ -3545,7 +3360,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 												<div className="mb-1 text-xs text-white/80">{hoverTrendInfo.carrier}</div>
 											)}
 											<div className="space-y-1">
-												{(trendMetric === "all" as any) ? (
+												{(trendMetric === "all") ? (
 													/* For "Show All": show all values */
 													<>
 														{hoverTrendInfo.submitted !== undefined && (
@@ -3615,7 +3430,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 													{(() => {
 														// Get all carriers that have data
 														const carriersWithData = (_analyticsData?.meta.carriers ?? []).filter(carrier => {
-															const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
+															const hasData = trendData.some((d) => d.carriers && d.carriers[carrier] !== undefined)
 															return hasData
 														})
 														// Check if all carriers with data are visible
@@ -3653,7 +3468,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 													{/* Active Carriers */}
 													{(_analyticsData?.meta.carriers ?? [])
 														.filter(carrier => {
-															const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
+															const hasData = trendData.some((d) => d.carriers && d.carriers[carrier] !== undefined)
 															return hasData && visibleCarriers.has(carrier)
 														})
 														.map((carrier) => {
@@ -3680,7 +3495,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 
 													{/* Divider if there are hidden carriers */}
 													{(_analyticsData?.meta.carriers ?? []).filter(carrier => {
-														const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
+														const hasData = trendData.some((d) => d.carriers && d.carriers[carrier] !== undefined)
 														return hasData && !visibleCarriers.has(carrier)
 													}).length > 0 && (
 														<div className="border-t border-muted my-1"></div>
@@ -3689,7 +3504,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 													{/* Hidden Carriers */}
 													{(_analyticsData?.meta.carriers ?? [])
 														.filter(carrier => {
-															const hasData = trendData.some((d: any) => d.carriers && d.carriers[carrier] !== undefined)
+															const hasData = trendData.some((d) => d.carriers && d.carriers[carrier] !== undefined)
 															return hasData && !visibleCarriers.has(carrier)
 														})
 														.map((carrier) => {

@@ -1,7 +1,9 @@
 "use client"
 
+import { useState } from "react"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2 } from "lucide-react"
+import { Loader2, Search } from "lucide-react"
 
 export interface AgentAutoSendInfo {
   id: string
@@ -30,6 +32,8 @@ export function AgentSmsAutomationList({
   saving,
   agencyAutoSendEnabled,
 }: AgentSmsAutomationListProps) {
+  const [search, setSearch] = useState("")
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -46,9 +50,33 @@ export function AgentSmsAutomationList({
     )
   }
 
+  const query = search.toLowerCase().trim()
+  const filteredAgents = query
+    ? agents.filter((agent) => {
+        const fullName = [agent.first_name, agent.last_name].filter(Boolean).join(" ").toLowerCase()
+        const email = (agent.email ?? "").toLowerCase()
+        return fullName.includes(query) || email.includes(query)
+      })
+    : agents
+
   return (
-    <div className="divide-y divide-border">
-      {agents.map((agent) => {
+    <div className="space-y-3">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search agents..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+      {filteredAgents.length === 0 ? (
+        <div className="text-center py-8 text-sm text-muted-foreground">
+          No agents match your search.
+        </div>
+      ) : (
+        <div className="divide-y divide-border">
+          {filteredAgents.map((agent) => {
         const displayName = [agent.first_name, agent.last_name].filter(Boolean).join(" ") || "Unnamed Agent"
         const isOverridden = agent.sms_auto_send_enabled !== null
         const effectiveValue = agent.sms_auto_send_enabled ?? agencyAutoSendEnabled
@@ -108,7 +136,9 @@ export function AgentSmsAutomationList({
             </div>
           </div>
         )
-      })}
+          })}
+        </div>
+      )}
     </div>
   )
 }

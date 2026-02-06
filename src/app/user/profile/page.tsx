@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState } from "react";
+import Image from "next/image";
 import { useAuth } from "@/providers/AuthProvider";
 import { createClient } from "@/lib/supabase/client";
 import { PricingTierCard } from "@/components/pricing-tier-card";
@@ -9,8 +10,9 @@ import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";
 import { useNotification } from '@/contexts/notification-context'
 import { useTheme } from "next-themes"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
-import { Sun, Moon, Monitor, Check, Loader2, Phone } from "lucide-react"
+import { Sun, Moon, Monitor, Check, Loader2, Phone, MessageSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
@@ -40,6 +42,8 @@ interface ProfileData {
   billing_cycle_end?: string | null;
   scheduled_tier_change?: string | null;
   scheduled_tier_change_date?: string | null;
+  sms_auto_send_enabled: boolean | null;
+  agency_sms_auto_send_enabled: boolean;
 }
 
 interface Position {
@@ -74,6 +78,7 @@ export default function ProfilePage() {
   const [selectedPositionId, setSelectedPositionId] = useState<string>("");
   const [phoneNumber, setPhoneNumber] = useState<string>("");
   const [savingTheme, setSavingTheme] = useState(false);
+  const [smsAutoSendValue, setSmsAutoSendValue] = useState<"default" | "on" | "off">("default");
 
   // Password reset mutation
   const resetPasswordMutation = useResetPassword();
@@ -109,11 +114,17 @@ export default function ProfilePage() {
     }
   }, [profileData?.phone_number])
 
+  React.useEffect(() => {
+    const val = profileData?.sms_auto_send_enabled
+    if (val === true) setSmsAutoSendValue("on")
+    else if (val === false) setSmsAutoSendValue("off")
+    else if (val === null) setSmsAutoSendValue("default")
+  }, [profileData?.sms_auto_send_enabled])
+
   // Fetch positions if admin using TanStack Query with custom queryFn
   // Wrapped in try/catch to prevent errors from propagating to global error boundary
   const {
     data: positions = [],
-    isLoading: positionsLoading
   } = useQuery<Position[]>({
     queryKey: queryKeys.positionsList(),
     queryFn: async () => {
@@ -152,85 +163,50 @@ export default function ProfilePage() {
     retry: 1,
   })
 
-  // Handle position update with mutation
-  const updatePositionMutation = useMutation({
-    mutationFn: async (positionId: string) => {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const accessToken = session?.access_token;
+  const updateProfile = async (body: Record<string, unknown>) => {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const accessToken = session?.access_token;
+    if (!accessToken) throw new Error('Not authenticated');
 
-      if (!accessToken) {
-        throw new Error('Not authenticated');
-      }
+    const response = await fetch('/api/user/profile', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(body),
+    });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || 'Failed to update profile');
+    return result;
+  }
 
-      const response = await fetch('/api/user/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({ position_id: positionId }),
-      });
-
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update position');
-      }
-
-      return result;
-    },
+  const useProfileMutation = (successMsg: string) => useMutation({
+    mutationFn: updateProfile,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(user?.id) })
-      showSuccess('Position updated successfully!');
+      showSuccess(successMsg);
     },
     onError: (error: Error) => {
-      console.error('Error updating position:', error);
-      showError('Failed to update position: ' + error.message);
+      showError(error.message || 'Failed to update profile');
     }
   })
+
+  const updatePositionMutation = useProfileMutation('Position updated successfully!');
+  const updatePhoneMutation = useProfileMutation('Phone number updated successfully!');
+  const updateSmsAutoSendMutation = useProfileMutation('SMS automation preference updated!');
 
   const handlePositionUpdate = () => {
     if (!selectedPositionId) return;
-    updatePositionMutation.mutate(selectedPositionId);
+    updatePositionMutation.mutate({ position_id: selectedPositionId });
   };
 
-  const updatePhoneMutation = useMutation({
-    mutationFn: async (phone: string) => {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const accessToken = session?.access_token;
-
-      if (!accessToken) {
-        throw new Error('Not authenticated');
-      }
-
-      const response = await fetch('/api/user/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({ phone_number: phone }),
-      });
-
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update phone number');
-      }
-
-      return result;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(user?.id) })
-      showSuccess('Phone number updated successfully!');
-    },
-    onError: (error: Error) => {
-      console.error('Error updating phone number:', error);
-      showError(error.message || 'Failed to update phone number');
-    }
-  })
+  const handleSmsAutoSendChange = (selectValue: string) => {
+    const dbValue = selectValue === "default" ? null : selectValue === "on" ? true : false;
+    setSmsAutoSendValue(selectValue as "default" | "on" | "off");
+    updateSmsAutoSendMutation.mutate({ sms_auto_send_enabled: dbValue });
+  }
 
   const formatPhoneDisplay = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 10);
@@ -240,7 +216,7 @@ export default function ProfilePage() {
   }
 
   const handlePhoneUpdate = () => {
-    updatePhoneMutation.mutate(phoneNumber);
+    updatePhoneMutation.mutate({ phone_number: phoneNumber });
   };
 
   const handleThemeChange = async (newTheme: ThemeMode) => {
@@ -321,10 +297,10 @@ export default function ProfilePage() {
       <div className="w-full max-w-3xl bg-card rounded-2xl shadow-md p-8 mb-8 border border-border">
         <div className="flex items-center">
           {/* Avatar */}
-          <div className="w-32 h-32 bg-muted rounded-lg flex items-center justify-center mr-8 shadow">
+          <div className="relative w-32 h-32 bg-muted rounded-lg flex items-center justify-center mr-8 shadow">
             {/* Show avatar if available, else fallback */}
             {user_profile.avatarUrl ? (
-              <img src={user_profile.avatarUrl} alt="Profile" className="w-full h-full object-cover rounded-lg" />
+              <Image src={user_profile.avatarUrl} alt="Profile" fill className="object-cover rounded-lg" />
             ) : (
               <svg className="w-20 h-20 text-muted-foreground" fill="currentColor" viewBox="0 0 24 24">
                 <circle cx="12" cy="8" r="5" />
@@ -396,6 +372,56 @@ export default function ProfilePage() {
           </button>
         </div>
       </div>
+
+      {!profileData.is_admin && (
+        <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
+          <h2 className="text-xl font-bold text-foreground mb-2">
+            <MessageSquare className="h-5 w-5 inline mr-2" />
+            SMS Automation
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Control whether automated SMS messages are sent immediately or saved as drafts for your review.
+            Your agency default is currently set to{' '}
+            <span className="font-medium text-foreground">
+              {profileData.agency_sms_auto_send_enabled ? 'Auto-Send' : 'Drafts Only'}
+            </span>.
+          </p>
+          <div className="flex items-end gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-muted-foreground mb-2">
+                Automation Preference
+              </label>
+              <Select
+                value={smsAutoSendValue}
+                onValueChange={handleSmsAutoSendChange}
+                disabled={updateSmsAutoSendMutation.isPending}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">
+                    Agency Default ({profileData.agency_sms_auto_send_enabled ? 'Auto-Send' : 'Drafts Only'})
+                  </SelectItem>
+                  <SelectItem value="on">Auto-Send (Override)</SelectItem>
+                  <SelectItem value="off">Drafts Only (Override)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {smsAutoSendValue !== "default" && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-3">
+              You are overriding your agency&apos;s default setting. Select &quot;Agency Default&quot; to follow your agency&apos;s preference.
+            </p>
+          )}
+          {updateSmsAutoSendMutation.isPending && (
+            <div className="mt-3 flex items-center text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Saving preference...
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Position Selection (Admin Only) */}
       {profileData.is_admin && (
@@ -634,7 +660,7 @@ export default function ProfilePage() {
             </div>
             {((profileData.deals_created_count || 0) >= 10 || (profileData.messages_sent_count || 0) >= 10) && (
               <p className="text-sm font-semibold text-red-600 dark:text-red-400 mt-4">
-                ⚠️ You've reached your limits. Upgrade to unlock more!
+                You&apos;ve reached your limits. Upgrade to unlock more!
               </p>
             )}
           </div>

@@ -52,6 +52,7 @@ export async function GET(request: Request) {
         scheduled_tier_change,
         scheduled_tier_change_date,
         theme_mode,
+        sms_auto_send_enabled,
         position:positions(id, name, level)
       `)
       .eq('auth_user_id', userId)
@@ -63,6 +64,18 @@ export async function GET(request: Request) {
         { error: 'Failed to fetch user data' },
         { status: 500 }
       )
+    }
+
+    let agencySmsAutoSendEnabled = true
+    if (userData.agency_id) {
+      const { data: agencyData } = await supabase
+        .from('agencies')
+        .select('sms_auto_send_enabled')
+        .eq('id', userData.agency_id)
+        .single()
+      if (agencyData) {
+        agencySmsAutoSendEnabled = agencyData.sms_auto_send_enabled ?? true
+      }
     }
 
     const profileData = {
@@ -88,6 +101,8 @@ export async function GET(request: Request) {
       scheduled_tier_change: userData.scheduled_tier_change || null,
       scheduled_tier_change_date: userData.scheduled_tier_change_date || null,
       theme_mode: userData.theme_mode || null,
+      sms_auto_send_enabled: userData.sms_auto_send_enabled ?? null,
+      agency_sms_auto_send_enabled: agencySmsAutoSendEnabled,
     }
 
     return NextResponse.json({
@@ -148,7 +163,7 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json()
-    const { first_name, last_name, phone_number, theme_mode, position_id } = body
+    const { first_name, last_name, phone_number, theme_mode, position_id, sms_auto_send_enabled } = body
 
     // Build update object with allowed fields
     const updateData: Record<string, unknown> = {
@@ -167,6 +182,15 @@ export async function PUT(request: Request) {
     }
     if (theme_mode !== undefined) {
       updateData.theme_mode = theme_mode
+    }
+    if (sms_auto_send_enabled !== undefined) {
+      if (sms_auto_send_enabled !== null && typeof sms_auto_send_enabled !== 'boolean') {
+        return NextResponse.json(
+          { error: 'sms_auto_send_enabled must be null, true, or false' },
+          { status: 400 }
+        )
+      }
+      updateData.sms_auto_send_enabled = sms_auto_send_enabled
     }
 
     // Position update - admin only

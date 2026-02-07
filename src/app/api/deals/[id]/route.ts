@@ -299,3 +299,144 @@ export async function PUT(
     );
   }
 }
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const admin = createAdminClient();
+  const server = await createServerClient();
+
+  try {
+    const { id: dealId } = await params;
+
+    if (!dealId) {
+      return NextResponse.json({ error: "Deal ID is required" }, { status: 400 });
+    }
+
+    // Get current user
+    const {
+      data: { user },
+    } = await server.auth.getUser();
+
+    if (!user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Map auth user to `users` row
+    const { data: currentUser, error: currentUserError } = await admin
+      .from('users')
+      .select('id, agency_id, perm_level, role, is_admin')
+      .eq('auth_user_id', user.id)
+      .single();
+
+    if (currentUserError || !currentUser) {
+      return NextResponse.json({ error: 'Failed to resolve current user' }, { status: 500 });
+    }
+
+    // Fetch the deal
+    const { data: deal, error: dealError } = await admin
+      .from('deals')
+      .select('id, agent_id, agency_id, client_id')
+      .eq('id', dealId)
+      .single();
+
+    if (dealError || !deal) {
+      return NextResponse.json({ error: 'Deal not found' }, { status: 404 });
+    }
+
+    // Authorization check
+    const isAdmin = currentUser.perm_level === 'admin' || currentUser.role === 'admin' || currentUser.is_admin;
+
+    if (isAdmin) {
+      // Admin must be in the same agency
+      if (deal.agency_id !== currentUser.agency_id) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+    } else {
+      // Non-admin: verify deal.agent_id is self or in downline
+      const { data: downline, error: downlineError } = await admin.rpc('get_agent_downline', {
+        agent_id: currentUser.id,
+      });
+
+      if (downlineError) {
+        console.error('Error fetching downline:', downlineError);
+        return NextResponse.json({ error: 'Failed to verify permissions' }, { status: 500 });
+      }
+
+      const allowedIds = [currentUser.id, ...(downline || []).map((d: { id: string }) => d.id)];
+
+      if (!allowedIds.includes(deal.agent_id)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+    }
+
+    // Cascade delete in FK-safe order (children before parents)
+    const { data: conversations } = await admin
+      .from('conversations')
+      .select('id')
+      .eq('deal_id', dealId);
+
+    const conversationIds = (conversations || []).map((c: { id: string }) => c.id);
+
+    if (conversationIds.length > 0) {
+      await admin.from('messages').delete().in('conversation_id', conversationIds);
+    }
+
+    await admin.from('conversations').delete().eq('deal_id', dealId);
+    await admin.from('beneficiaries').delete().eq('deal_id', dealId);
+    await admin.from('deal_hierarchy_snapshot').delete().eq('deal_id', dealId);
+
+    const { error: deleteError } = await admin
+      .from('deals')
+      .delete()
+      .eq('id', dealId);
+
+    if (deleteError) {
+      console.error('Error deleting deal:', deleteError);
+      return NextResponse.json({ error: deleteError.message }, { status: 500 });
+    }
+
+    // Decrement agent's deals_created_count (floor at 0)
+    const { data: agent } = await admin
+      .from('users')
+      .select('deals_created_count')
+      .eq('id', deal.agent_id)
+      .single();
+
+    if (agent) {
+      await admin
+        .from('users')
+        .update({ deals_created_count: Math.max(0, (agent.deals_created_count || 0) - 1) })
+        .eq('id', deal.agent_id);
+    }
+
+    // Clean up orphaned client user (only if role is 'client' and no other deals reference them)
+    if (deal.client_id) {
+      const { count: otherDealsCount } = await admin
+        .from('deals')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', deal.client_id);
+
+      if (otherDealsCount === 0) {
+        const { data: clientUser } = await admin
+          .from('users')
+          .select('id, role')
+          .eq('id', deal.client_id)
+          .single();
+
+        if (clientUser?.role === 'client') {
+          await admin.from('users').delete().eq('id', deal.client_id);
+        }
+      }
+    }
+
+    return NextResponse.json({ message: 'Deal deleted successfully' }, { status: 200 });
+  } catch (err: any) {
+    console.error('Error deleting deal:', err);
+    return NextResponse.json(
+      { error: err.message || "Failed to delete deal" },
+      { status: 500 }
+    );
+  }
+}

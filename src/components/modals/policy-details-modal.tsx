@@ -1,18 +1,19 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, VisuallyHidden } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, VisuallyHidden } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
-import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2, Mail, Check, Circle, Bot, Users, ChevronDown, ChevronUp } from "lucide-react"
+import { Edit, Save, X, MessageSquare, AlertCircle, Loader2, User, Phone, Calendar, DollarSign, FileText, Building2, Package, CheckCircle2, Mail, Check, Circle, Bot, Users, ChevronDown, ChevronUp, Trash2 } from "lucide-react"
 import { cn, calculateNextCustomBillingDate, formatBillingPattern, calculateNextDraftDate } from "@/lib/utils"
 import Link from "next/link"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { useDeleteDeal } from '@/hooks/mutations/useDealMutations'
 
 interface PolicyDetailsModalProps {
   open: boolean
@@ -100,6 +101,10 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   const [startConversationDialogOpen, setStartConversationDialogOpen] = useState(false)
   const [welcomeMessagePreview, setWelcomeMessagePreview] = useState<string>('')
   const [loadingPreview, setLoadingPreview] = useState(false)
+
+  // Delete state
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const deleteDealMutation = useDeleteDeal()
 
   // Fetch deal details with TanStack Query
   const { data: dealData, isLoading: dealLoading, error: dealError, refetch: refetchDeal } = useQuery({
@@ -566,10 +571,19 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                   </Button>
                 </div>
               ) : (
-                <Button onClick={handleEdit} className="btn-gradient mr-8">
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit Policy
-                </Button>
+                <div className="flex items-center gap-2 mr-8">
+                  <Button onClick={handleEdit} className="btn-gradient">
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Policy
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => setDeleteConfirmOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -1182,6 +1196,67 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
               {startingConversation ? 'Starting...' : 'Send Welcome & Start'}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Deal Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-destructive" />
+              <DialogTitle>Delete Deal</DialogTitle>
+            </div>
+            <DialogDescription>
+              This action is permanent and cannot be undone. All related data will be removed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="p-4 bg-destructive/10 rounded-lg border border-destructive/20">
+              <p className="text-sm font-medium text-foreground mb-3">The following deal will be permanently deleted:</p>
+              <div className="space-y-1.5 text-sm">
+                <p><span className="text-muted-foreground">Client:</span> <span className="font-semibold">{deal.client_name || 'N/A'}</span></p>
+                <p><span className="text-muted-foreground">Policy #:</span> <span className="font-semibold">{deal.policy_number || 'N/A'}</span></p>
+                <p><span className="text-muted-foreground">Carrier:</span> <span className="font-semibold">{deal.carrier?.name || 'N/A'}</span></p>
+                <p><span className="text-muted-foreground">Annual Premium:</span> <span className="font-semibold">${deal.annual_premium?.toFixed(2) || '0.00'}</span></p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground mt-3">
+              This will also delete all conversations, messages, and beneficiaries associated with this deal.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteConfirmOpen(false)}
+              disabled={deleteDealMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                deleteDealMutation.mutate(
+                  { dealId },
+                  {
+                    onSuccess: () => {
+                      setDeleteConfirmOpen(false)
+                      onOpenChange(false)
+                      onUpdate?.()
+                      showSuccess('Deal deleted successfully')
+                    },
+                    onError: (error: Error) => {
+                      showError(error.message || 'Failed to delete deal')
+                    },
+                  }
+                )
+              }}
+              disabled={deleteDealMutation.isPending}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {deleteDealMutation.isPending ? 'Deleting...' : 'Delete Deal'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

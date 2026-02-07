@@ -126,7 +126,7 @@ export async function GET(request: Request) {
         if (!agentsError && agentsData) {
           downlineAgents = agentsData.map((agent: any) => ({
             value: agent.id,
-            label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}`,
+            label: `${agent.first_name || ''} ${agent.last_name || ''}`.trim() + `${agent.email ? ' - ' + agent.email : ''}`,
             status: agent.status
           }))
         } else {
@@ -141,7 +141,7 @@ export async function GET(request: Request) {
     // Build default upline (current user)
     const defaultUpline = {
       userId: userData.id,
-      userLabel: `${userData.first_name} ${userData.last_name} - ${userData.email}`,
+      userLabel: `${userData.first_name || ''} ${userData.last_name || ''}`.trim() + ` - ${userData.email}`,
       isAdmin
     }
 

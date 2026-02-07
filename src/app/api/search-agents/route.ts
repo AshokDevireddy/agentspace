@@ -241,7 +241,7 @@ export async function GET(request: Request) {
       // Transform to {value, label} format for select components
       const options = agents.map((agent) => ({
         value: agent.id,
-        label: `${agent.first_name} ${agent.last_name}${
+        label: `${agent.first_name || ''} ${agent.last_name || ''}`.trim() + `${
           agent.email ? " - " + agent.email : ""
         }${agent.status === "pre-invite" ? " (Pre-invite)" : ""}`,
       }));

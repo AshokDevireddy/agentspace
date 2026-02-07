@@ -51,7 +51,7 @@ export async function GET(request: Request) {
       const endDate = new Date(now.getFullYear() + 1, 0, 1); // Jan 1 of next year
 
       const { data: metricsData, error: metricsError } = await supabase.rpc(
-        "get_agents_debt_production_v2",
+        "get_agents_debt_production_v3",
         {
           p_user_id: agentId, // Use the parent agent ID as the user
           p_agent_ids: downlineIds,

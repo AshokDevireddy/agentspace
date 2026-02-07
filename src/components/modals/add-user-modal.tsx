@@ -129,7 +129,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
       return agents.map((agent: any) => ({
         value: agent.id,
-        label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}`,
+        label: `${agent.first_name || ''} ${agent.last_name || ''}`.trim() + `${agent.email ? ' - ' + agent.email : ''}`,
         status: agent.status
       }))
     },
@@ -250,7 +250,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
       return agents.map(agent => ({
         value: agent.id,
-        label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+        label: `${agent.first_name || ''} ${agent.last_name || ''}`.trim() + `${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
         status: agent.status
       }))
     },

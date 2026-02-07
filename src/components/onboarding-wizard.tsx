@@ -267,7 +267,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
           if (Array.isArray(agents)) {
             const options: SearchOption[] = agents.map(agent => ({
               value: agent.id,
-              label: `${agent.first_name} ${agent.last_name} - ${agent.email}`
+              label: `${agent.first_name || ''} ${agent.last_name || ''}`.trim() + ` - ${agent.email}`
             }))
             setAgentSearchResults(options)
           }
@@ -324,7 +324,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
         const options: SearchOption[] = agents.map(agent => ({
           value: agent.id,
-          label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+          label: `${agent.first_name || ''} ${agent.last_name || ''}`.trim() + `${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
           status: agent.status
         }))
 

@@ -788,6 +788,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               <Input
                 type="text"
                 value={uplineInputValue}
+                readOnly={!!formData.uplineAgentId}
                 onChange={(e) => {
                   const value = e.target.value
                   setUplineInputValue(value)
@@ -799,9 +800,24 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                   }
                 }}
                 onFocus={() => {
-                  setPauseUplineSearch(false)
+                  if (!formData.uplineAgentId) {
+                    setPauseUplineSearch(false)
+                  }
                 }}
-                className={`h-12 ${errorFields.uplineAgentId ? 'border-red-500' : ''}`}
+                onBlur={() => {
+                  // Delay to let dropdown onClick register before auto-selecting
+                  setTimeout(() => {
+                    if (!formData.uplineAgentId && uplineInputValue.trim()) {
+                      const exactMatch = uplineSearchResults.find(
+                        (opt: SearchOption) => opt.label.toLowerCase() === uplineInputValue.trim().toLowerCase()
+                      )
+                      if (exactMatch) {
+                        applyUplineSelection(exactMatch)
+                      }
+                    }
+                  }, 200)
+                }}
+                className={`h-12 ${formData.uplineAgentId ? 'cursor-pointer' : ''} ${errorFields.uplineAgentId ? 'border-red-500' : ''}`}
                 placeholder="Type to search for upline agent..."
               />
               {/* Loading indicator */}

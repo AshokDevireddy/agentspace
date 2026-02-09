@@ -220,7 +220,7 @@ export default function ExpectedPayoutsPage() {
 
   const agentOptions: AgentOption[] = agents.map(a => ({
     value: a.id,
-    label: `${a.first_name} ${a.last_name}`
+    label: [a.first_name, a.last_name].filter(Boolean).join(' ')
   }))
 
   // Fetch all carriers for filter

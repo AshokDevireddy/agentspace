@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, createServerClient } from "@/lib/supabase/server";
-import { sendSMS, formatPhoneForDisplay } from "@/lib/telnyx";
+import { sendWelcomeMessage } from "@/lib/sms-helpers";
 
 export async function POST(req: NextRequest) {
   const admin = createAdminClient();
@@ -44,11 +44,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No phone number on file for this client" }, { status: 400 });
     }
 
-    // Fetch agency details for welcome message
+    // Fetch agency details for pre-validation
     const agencyId = deal.agency_id || currentUser.agency_id;
     const { data: agency, error: agencyError } = await admin
       .from("agencies")
-      .select("name, phone_number, messaging_enabled, sms_welcome_enabled, sms_welcome_template")
+      .select("phone_number, messaging_enabled")
       .eq("id", agencyId)
       .single();
 
@@ -65,15 +65,6 @@ export async function POST(req: NextRequest) {
     if (!agency.messaging_enabled) {
       return NextResponse.json({ error: "Messaging is disabled for this agency" }, { status: 400 });
     }
-
-    // Fetch agent details for welcome message
-    const { data: agentData } = await admin
-      .from('users')
-      .select('id, first_name, last_name, phone_number')
-      .eq('id', deal.agent_id)
-      .single();
-
-    const agentName = agentData ? [agentData.first_name, agentData.last_name].filter(Boolean).join(' ') : 'your agent';
 
     // Check if conversation already exists for this phone number in this agency
     // Use .limit(1) to get at most one result, avoiding the multiple rows error
@@ -123,75 +114,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: conversationError.message }, { status: 400 });
     }
 
-    // Create welcome message draft using agency template
-    const clientFirstName = deal.client_name?.split(' ')[0] || 'there';
-    const clientEmail = deal.client_email || 'your email';
-
-    // Fetch carrier name if carrier_id exists
-    let carrierName = '';
-    if (deal.carrier_id) {
-      const { data: carrier } = await admin
-        .from('carriers')
-        .select('name')
-        .eq('id', deal.carrier_id)
-        .single();
-      carrierName = carrier?.name || '';
-    }
-
-    // Fetch beneficiaries
-    const { data: beneficiaries } = await admin
-      .from('beneficiaries')
-      .select('first_name, last_name')
-      .eq('deal_id', deal.id);
-
-    // Choose template based on sms_welcome_enabled
-    // If enabled: use custom template or default
-    // If disabled: use default template
-    const { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries } = await import('@/lib/sms-template-helpers');
-    const template = agency.sms_welcome_enabled
-      ? (agency.sms_welcome_template || DEFAULT_SMS_TEMPLATES.welcome)
-      : DEFAULT_SMS_TEMPLATES.welcome;
-
-    const welcomeMessage = replaceSmsPlaceholders(template, {
-      client_first_name: clientFirstName,
-      agency_name: agency.name,
-      agent_name: agentName,
-      agent_phone: formatPhoneForDisplay(agentData?.phone_number),
-      client_email: clientEmail,
-      insured: deal.client_name || '',
-      policy_number: deal.policy_number || '',
-      face_amount: deal.face_value ? `$${deal.face_value.toLocaleString()}` : '',
-      monthly_premium: deal.monthly_premium ? `$${deal.monthly_premium.toFixed(2)}` : '',
-      initial_draft: deal.policy_effective_date || '',
-      carrier_name: carrierName,
-      beneficiaries: formatBeneficiaries(beneficiaries),
-    });
-
     try {
-      // Create message as DRAFT (not sent automatically)
-      await admin
-        .from("messages")
-        .insert({
-          conversation_id: conversation.id,
-          sender_id: deal.agent_id,
-          receiver_id: deal.agent_id, // Placeholder
-          body: welcomeMessage,
-          direction: "outbound",
-          sent_at: null, // Draft messages don't have sent_at
-          status: "draft", // Create as draft instead of sending
-          message_type: "sms",
-          metadata: {
-            automated: true,
-            type: "welcome_message"
-          }
-        });
-
-      console.log(`Welcome message draft created for ${deal.client_phone}`);
-
+      await sendWelcomeMessage(
+        deal.client_phone,
+        agencyId,
+        deal.agent_id,
+        conversation.id,
+        deal.client_name,
+        deal.client_email,
+      );
     } catch (smsError) {
-      console.error('Error sending welcome SMS:', smsError);
-      // Don't fail the whole request if SMS fails
-      // The conversation is already created
+      console.error('Error creating welcome SMS:', smsError);
     }
 
     return NextResponse.json({

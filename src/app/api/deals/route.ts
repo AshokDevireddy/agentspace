@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { getOrCreateConversation, logMessage } from "@/lib/sms-helpers";
-import { formatPhoneForDisplay } from "@/lib/telnyx";
+import { getOrCreateConversation, sendWelcomeMessage } from "@/lib/sms-helpers";
 
 /**
  * Prepares hierarchy snapshot data for a deal (without inserting)
@@ -686,120 +685,25 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Create welcome SMS draft for client (if client phone exists)
       if (deal?.id && deal.client_phone && deal.agent_id) {
         try {
-          console.log("[Deals API] Creating welcome SMS draft for client", {
-            dealId: deal.id,
-            clientPhone: deal.client_phone,
-          });
-
-          // Get agent and agency details with SMS template
-          const { data: agentData } = await supabase
-            .from("users")
-            .select(
-              "id, first_name, last_name, phone_number, agency_id, agency:agency_id(name, phone_number, messaging_enabled, sms_welcome_enabled, sms_welcome_template)",
-            )
-            .eq("id", deal.agent_id)
-            .single();
-
-          // Check master switch first
-          if (!agentData?.agency?.messaging_enabled) {
-            console.log(
-              "[Deals API] Welcome SMS skipped - messaging disabled for agency",
-            );
-            return;
-          }
-
-          // Check if agency phone is configured
-          if (!agentData.agency?.phone_number) {
-            console.warn(
-              "[Deals API] Cannot create welcome SMS draft - agency phone not configured",
-            );
-            return;
-          }
-
-          if (agentData) {
-            const agentName = [agentData.first_name, agentData.last_name].filter(Boolean).join(' ');
-            const agencyName = agentData.agency.name;
-            const clientFirstName = deal.client_name?.split(" ")[0] || "there";
-            const clientEmail = deal.client_email || "your email";
-
-            // Fetch carrier name if carrier_id exists
-            let carrierName = '';
-            if (deal.carrier_id) {
-              const { data: carrier } = await supabase
-                .from('carriers')
-                .select('name')
-                .eq('id', deal.carrier_id)
-                .single();
-              carrierName = carrier?.name || '';
-            }
-
-            // Fetch beneficiaries
-            const { data: beneficiaries } = await supabase
-              .from('beneficiaries')
-              .select('first_name, last_name')
-              .eq('deal_id', deal.id);
-
-            // Choose template based on sms_welcome_enabled
-            // If enabled: use custom template or default
-            // If disabled: use default template
-            const { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries } = await import('@/lib/sms-template-helpers');
-            const template = agentData.agency.sms_welcome_enabled
-              ? (agentData.agency.sms_welcome_template || DEFAULT_SMS_TEMPLATES.welcome)
-              : DEFAULT_SMS_TEMPLATES.welcome;
-
-            const welcomeMessage = replaceSmsPlaceholders(template, {
-              client_first_name: clientFirstName,
-              agency_name: agencyName,
-              agent_name: agentName,
-              agent_phone: formatPhoneForDisplay(agentData.phone_number),
-              client_email: clientEmail,
-              insured: deal.client_name || '',
-              policy_number: deal.policy_number || '',
-              face_amount: deal.face_value ? `$${deal.face_value.toLocaleString()}` : '',
-              monthly_premium: deal.monthly_premium ? `$${deal.monthly_premium.toFixed(2)}` : '',
-              initial_draft: deal.policy_effective_date || '',
-              carrier_name: carrierName,
-              beneficiaries: formatBeneficiaries(beneficiaries),
-            });
-
-            // Create conversation and log message as DRAFT (not sent automatically)
-            const conversation = await getOrCreateConversation(
-              agentData.id,
-              deal.id,
-              agentData.agency_id,
-              deal.client_phone,
-            );
-
-            await logMessage({
-              conversationId: conversation.id,
-              senderId: agentData.id,
-              receiverId: agentData.id, // Placeholder
-              body: welcomeMessage,
-              direction: "outbound",
-              status: "draft", // Create as draft - requires approval before sending
-              metadata: {
-                automated: true,
-                type: "welcome",
-                client_phone: deal.client_phone,
-                client_name: deal.client_name,
-                deal_id: deal.id,
-              },
-            });
-
-            console.log(
-              "[Deals API] Welcome SMS draft created successfully for",
-              deal.client_phone,
-            );
-          }
-        } catch (smsError) {
-          // Don't fail the deal creation if SMS draft creation fails
-          console.error(
-            "[Deals API] Failed to create welcome SMS draft:",
-            smsError,
+          const conversation = await getOrCreateConversation(
+            deal.agent_id,
+            deal.id,
+            agency_id,
+            deal.client_phone,
           );
+
+          await sendWelcomeMessage(
+            deal.client_phone,
+            agency_id,
+            deal.agent_id,
+            conversation.id,
+            deal.client_name,
+            deal.client_email,
+          );
+        } catch (smsError) {
+          console.error("[Deals API] Failed to create welcome SMS:", smsError);
         }
       }
 

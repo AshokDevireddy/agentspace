@@ -81,6 +81,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Diagnostic: log a sample payout to verify the spread formula is active
+    if (payouts && payouts.length > 0) {
+      console.log('[Expected Payouts] Sample payout:', {
+        deal_id: payouts[0].deal_id,
+        agent_commission_pct: payouts[0].agent_commission_percentage,
+        hierarchy_total_pct: payouts[0].hierarchy_total_percentage,
+        expected_payout: payouts[0].expected_payout,
+        annual_premium: payouts[0].annual_premium,
+      });
+    }
+
     // Get deal information to determine writing agent for each deal
     const dealIds = (payouts || []).map((p: any) => p.deal_id);
     let dealAgentMap: Record<string, string> = {};
@@ -119,13 +130,20 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    // Calculate totals
-    const calculateTotal = (arr: any[]) =>
+    // Calculate payout totals (commission-based expected_payout)
+    const calculatePayoutTotal = (arr: any[]) =>
       arr.reduce((sum, p) => sum + (parseFloat(p.expected_payout) || 0), 0);
 
-    const yourTotal = calculateTotal(yourProduction);
-    const downlineTotal = calculateTotal(downlineProduction);
-    const totalPayout = yourTotal + downlineTotal;
+    // Calculate production totals (annual_premium volume)
+    const calculateProductionTotal = (arr: any[]) =>
+      arr.reduce((sum, p) => sum + (parseFloat(p.annual_premium) || 0), 0);
+
+    const yourPayoutTotal = calculatePayoutTotal(yourProduction);
+    const downlinePayoutTotal = calculatePayoutTotal(downlineProduction);
+    const totalPayout = yourPayoutTotal + downlinePayoutTotal;
+
+    const yourProductionTotal = calculateProductionTotal(yourProduction);
+    const downlineProductionTotal = calculateProductionTotal(downlineProduction);
 
     return NextResponse.json({
       success: true,
@@ -133,12 +151,14 @@ export async function GET(req: NextRequest) {
       production: {
         your: {
           payouts: yourProduction,
-          total: yourTotal,
+          total: yourPayoutTotal,
+          productionTotal: yourProductionTotal,
           count: yourProduction.length
         },
         downline: {
           payouts: downlineProduction,
-          total: downlineTotal,
+          total: downlinePayoutTotal,
+          productionTotal: downlineProductionTotal,
           count: downlineProduction.length
         },
         total: totalPayout,

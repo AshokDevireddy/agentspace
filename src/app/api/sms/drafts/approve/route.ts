@@ -1,6 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { sendSMS } from '@/lib/telnyx'
+import { sendSMS, isLandlineError } from '@/lib/telnyx'
 
 export async function POST(request: NextRequest) {
   try {
@@ -150,10 +150,24 @@ export async function POST(request: NextRequest) {
         console.log(`✅ Draft message ${message.id} approved and sent`)
       } catch (error) {
         console.error(`Error approving message ${message.id}:`, error)
-        errors.push({
-          messageId: message.id,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        })
+
+        // Landline errors: mark as failed so it doesn't stay as an approvable draft
+        if (isLandlineError(error)) {
+          await supabase
+            .from('messages')
+            .update({ status: 'failed', metadata: { error: 'Landline number cannot receive SMS', error_code: '40001' } })
+            .eq('id', message.id)
+
+          errors.push({
+            messageId: message.id,
+            error: 'Landline number cannot receive SMS'
+          })
+        } else {
+          errors.push({
+            messageId: message.id,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          })
+        }
       }
     }
 

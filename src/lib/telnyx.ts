@@ -140,6 +140,15 @@ export function verifyWebhookSignature(
 }
 
 /**
+ * Detects Telnyx landline/non-routable error codes (40001, 40100).
+ * These indicate the destination number cannot receive SMS (e.g. standard landline).
+ */
+export function isLandlineError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.includes('40001') || msg.includes('40100');
+}
+
+/**
  * Detects urgent keywords in message body
  */
 export function containsUrgentKeywords(messageBody: string): boolean {

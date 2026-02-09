@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server';
-import { sendSMS } from '@/lib/telnyx';
+import { sendSMS, isLandlineError } from '@/lib/telnyx';
 import { logMessage } from '@/lib/sms-helpers';
 
 export type SmsMessageType =
@@ -162,6 +162,22 @@ export async function sendOrCreateDraft(
     return { success: true, messageId: message.id, status: 'sent' };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // Landline errors: log as failed, not draft — re-sending would just fail again
+    if (isLandlineError(error)) {
+      console.error(`Telnyx send failed (landline): ${errorMessage}`);
+      const message = await logMessage({
+        conversationId: draftParams.conversationId,
+        senderId: draftParams.senderId,
+        receiverId: draftParams.receiverId,
+        body: messageText,
+        direction: 'outbound',
+        status: 'failed',
+        metadata: { ...metadata, automated: true, type: messageType, error: 'Landline number cannot receive SMS', error_code: '40001' },
+      });
+      return { success: false, messageId: message.id, status: 'sent' as const, error: 'landline' };
+    }
+
     console.error(`Telnyx send failed, falling back to draft: ${errorMessage}`);
 
     const result = await createDraft({ ...draftParams, messageText, messageType, metadata });

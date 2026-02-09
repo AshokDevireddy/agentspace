@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, createAdminClient } from '@/lib/supabase/server';
-import { sendSMS } from '@/lib/telnyx';
+import { sendSMS, isLandlineError } from '@/lib/telnyx';
 import {
   getDealWithDetails,
   getOrCreateConversation,
@@ -237,6 +237,29 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: 'Client has blocked messages. They previously sent STOP to unsubscribe.' },
           { status: 403 }
+        );
+      }
+
+      // Check if this is a landline/non-routable error (40001 or 40100)
+      if (isLandlineError(telnyxError)) {
+        await logMessage({
+          conversationId: conversation.id,
+          senderId: userData.id,
+          receiverId: userData.id,
+          body: message,
+          direction: 'outbound',
+          status: 'failed',
+          metadata: {
+            error: 'Landline number cannot receive SMS',
+            error_code: '40001',
+            client_phone: deal.client_phone,
+            client_name: deal.client_name,
+          },
+        });
+
+        return NextResponse.json(
+          { error: 'This number appears to be a landline and cannot receive SMS messages.' },
+          { status: 422 }
         );
       }
 

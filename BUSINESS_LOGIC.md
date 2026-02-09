@@ -261,14 +261,14 @@ Different carriers report statuses differently. AgentSpace normalizes this using
 ### The Formula
 
 ```
-expected_payout = annual_premium * 0.75 * (agent_commission_% / hierarchy_total_commission_%)
+expected_payout = annual_premium * 0.75 * (agent_commission_% - downline_commission_%) / 100
 ```
 
 **Breaking it down:**
-- `annual_premium * 0.75` = Commission pool (75% of annual premium available)
+- `annual_premium * 0.75` = 9-month advance (75% of annual premium)
 - `agent_commission_%` = This specific agent's commission % from their position
-- `hierarchy_total_commission_%` = Sum of ALL commission % in the hierarchy for this deal
-- The division ensures the pool is split proportionally
+- `downline_commission_%` = The direct downline's commission % (0 for the writing agent)
+- The subtraction gives the agent's **spread/override** — the portion they earn above their direct report
 
 ### Deal Hierarchy Snapshot
 
@@ -877,7 +877,7 @@ canPerformAction(userTier, 'messages', currentCount)
 1. Check `deal_hierarchy_snapshot` for the deal
 2. Verify all agents have positions assigned
 3. Check `position_product_commissions` for this position + product combo
-4. Formula: `annual_premium * 0.75 * (agent_% / total_%)`
+4. Formula: `annual_premium * 0.75 * (agent_% - downline_%) / 100`
 
 ### Adding New Cron Job
 

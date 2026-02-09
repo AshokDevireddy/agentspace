@@ -91,6 +91,10 @@ export async function GET(req: NextRequest) {
         .select('id, agent_id')
         .in('id', dealIds);
 
+      if (dealsError) {
+        console.error('[Expected Payouts] Failed to fetch deal agents:', dealsError);
+      }
+
       if (!dealsError && deals) {
         dealAgentMap = deals.reduce((acc: Record<string, string>, deal: any) => {
           acc[deal.id] = deal.agent_id;

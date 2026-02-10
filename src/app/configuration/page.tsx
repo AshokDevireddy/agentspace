@@ -791,12 +791,14 @@ export default function ConfigurationPage() {
     const modes: Record<string, 'submission_date' | 'policy_effective_date'> = {}
 
     // Set defaults based on carrier name matching
+    // Paid on draft → policy_effective_date (carrier pays when first premium collected)
+    // Paid on approval/issue → submission_date (carrier pays when app submitted/approved)
     carriersData.forEach((carrier: Carrier) => {
       const name = carrier.display_name || carrier.name
       if (PAID_ON_DRAFT_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
-        modes[carrier.id] = 'submission_date'
-      } else if (PAID_ON_APPROVAL_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
         modes[carrier.id] = 'policy_effective_date'
+      } else if (PAID_ON_APPROVAL_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
+        modes[carrier.id] = 'submission_date'
       } else {
         modes[carrier.id] = 'policy_effective_date' // default
       }

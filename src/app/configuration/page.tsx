@@ -4811,7 +4811,7 @@ export default function ConfigurationPage() {
                 <div>
                   <div className="mb-6">
                     <p className="text-sm text-muted-foreground">
-                      Configure whether each carrier pays based on the submission date (Paid on Draft) or the policy effective/approval date (Paid on Approval). This affects expected payout calculations.
+                      Configure whether each carrier pays based on the submission date (Paid on Approval) or the policy effective date (Paid on Draft). This affects expected payout calculations.
                     </p>
                   </div>
 
@@ -4826,10 +4826,10 @@ export default function ConfigurationPage() {
                   ) : (
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Paid on Draft Column */}
+                        {/* Paid on Approval/Issue Column — uses submission_date */}
                         <div className="space-y-3">
                           <div className="flex items-center gap-2 pb-2 border-b border-border">
-                            <h3 className="text-sm font-semibold text-foreground">Paid on Draft</h3>
+                            <h3 className="text-sm font-semibold text-foreground">Paid on Approval / Issue</h3>
                             <span className="text-xs text-muted-foreground">(Submission Date)</span>
                           </div>
                           <div className="space-y-2">
@@ -4858,10 +4858,10 @@ export default function ConfigurationPage() {
                           </div>
                         </div>
 
-                        {/* Paid on Approval Column */}
+                        {/* Paid on Draft Column — uses policy_effective_date */}
                         <div className="space-y-3">
                           <div className="flex items-center gap-2 pb-2 border-b border-border">
-                            <h3 className="text-sm font-semibold text-foreground">Paid on Approval / Issue</h3>
+                            <h3 className="text-sm font-semibold text-foreground">Paid on Draft</h3>
                             <span className="text-xs text-muted-foreground">(Policy Effective Date)</span>
                           </div>
                           <div className="space-y-2">

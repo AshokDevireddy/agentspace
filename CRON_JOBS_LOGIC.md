@@ -59,6 +59,20 @@ The RPC function:
 - Deal effective date: January 18, 2025 (3 days from now)
 - Result: ✅ **WILL SEND** reminder for upcoming effective date!
 
+### FIXED: Effective Date Guard (Feb 2026)
+Billing reminders are now blocked for calculated billing dates that fall before the policy effective date. This prevents premature reminders for deals that haven't started yet.
+
+**The fix is applied at 3 layers:**
+1. **SQL RPC** (`get_billing_reminder_deals_v2`): WHERE clause requires `calculated_next_billing_date >= policy_effective_date`
+2. **TypeScript utility** (`calculateNextCustomBillingDate`): Accepts optional `effectiveDate` param and advances the billing date past the effective date
+3. **TypeScript cron** (`billing-reminders/route.ts`): Passes `policy_effective_date` to the utility and verifies the result matches 3-days-from-now before sending
+
+**Example of the bug this fixes:**
+- Deal: SSN benefit, pattern = "2nd Wednesday", effective date = March 11, 2026
+- Today: Feb 8 → next "2nd Wednesday" = Feb 11 → 3 days from now matches
+- ❌ **OLD:** Billing reminder sent on Feb 8 for a policy that hasn't started
+- ✅ **NEW:** `calculateNextCustomBillingDate("2nd", "Wednesday", "2026-03-11")` → March 11 (skips Feb 11 since it's before effective date). No match, no reminder.
+
 ### To Test Billing Reminders:
 **Option 1:** Set effective date 3 days in the FUTURE
 ```sql

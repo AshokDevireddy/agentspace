@@ -136,7 +136,8 @@ export function calculateNextDraftDate(effectiveDate: string, billingCycle: stri
  */
 export function calculateNextCustomBillingDate(
   billingDayOfMonth: string | null,
-  billingWeekday: string | null
+  billingWeekday: string | null,
+  effectiveDate?: string | null
 ): Date | null {
   if (!billingDayOfMonth || !billingWeekday) return null
 
@@ -191,6 +192,20 @@ export function calculateNextCustomBillingDate(
     targetDate = findNthWeekdayOfMonth(currentYear, currentMonth, targetWeekday, targetOrdinal)
 
     while (targetDate.getMonth() !== currentMonth) {
+      currentMonth++
+      if (currentMonth > 11) {
+        currentMonth = 0
+        currentYear++
+      }
+      targetDate = findNthWeekdayOfMonth(currentYear, currentMonth, targetWeekday, targetOrdinal)
+    }
+  }
+
+  // Ensure billing date is on or after policy effective date
+  if (effectiveDate) {
+    const effective = new Date(effectiveDate + 'T00:00:00')
+    effective.setHours(0, 0, 0, 0)
+    while (targetDate < effective) {
       currentMonth++
       if (currentMonth > 11) {
         currentMonth = 0

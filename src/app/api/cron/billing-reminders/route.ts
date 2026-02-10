@@ -109,6 +109,7 @@ export async function GET(request: NextRequest) {
           const customDate = calculateNextCustomBillingDate(
             deal.billing_day_of_month,
             deal.billing_weekday,
+            deal.policy_effective_date,
           );
           nextBillingDate = customDate || new Date(deal.next_billing_date);
           console.log(
@@ -118,6 +119,16 @@ export async function GET(request: NextRequest) {
           nextBillingDate = new Date(deal.next_billing_date);
         }
         const nextBillingDateStr = nextBillingDate.toLocaleDateString("en-US");
+
+        // Safety net: skip if recalculated billing date doesn't match 3 days from now
+        const nextBillingNorm = new Date(nextBillingDate);
+        nextBillingNorm.setHours(0, 0, 0, 0);
+        if (nextBillingNorm.getTime() !== threeDaysFromNow.getTime()) {
+          console.log(`  ⏭️  SKIPPED: Billing date ${nextBillingDateStr} is not 3 days from now`);
+          skippedCount++;
+          continue;
+        }
+
         console.log(
           `\n📬 Processing: ${deal.client_name} (${deal.client_phone})`,
         );

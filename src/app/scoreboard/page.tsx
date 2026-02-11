@@ -12,7 +12,8 @@ import { useAuth } from "@/providers/AuthProvider"
 import { useSupabaseRpc } from "@/hooks/useSupabaseQuery"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useAgencyScoreboardSettings } from "@/hooks/useUserQueries"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { createClient } from "@/lib/supabase/client"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { useHydrated } from "@/hooks/useHydrated"
@@ -86,6 +87,24 @@ export default function Scoreboard() {
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
   const [submittedFilter, setSubmittedFilter] = useState<'submitted' | 'issue_paid'>('submitted')
   const [dateMode, setDateMode] = useLocalStorage<'submitted_date' | 'policy_effective_date'>('scoreboard_date_mode', 'submitted_date')
+  const [viewMode, setViewMode] = useState<'agency' | 'my_team'>('agency')
+
+  // Fetch downline IDs for "My Team" filtering
+  const supabase = createClient()
+  const { data: downlineIdSet } = useQuery({
+    queryKey: queryKeys.myDownlineIds(userData?.id || ''),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_agent_downline', {
+        agent_id: userData!.id
+      })
+      if (error) throw error
+      const ids = new Set<string>((data || []).map((d: { id: string }) => d.id))
+      ids.add(userData!.id) // Include self
+      return ids
+    },
+    enabled: !!userData?.id,
+    staleTime: 1000 * 60 * 5,
+  })
 
   // Update calendar state when client date becomes available after hydration
   useEffect(() => {
@@ -277,8 +296,26 @@ export default function Scoreboard() {
   )
 
   // Extract data and error from RPC response
-  const data = rpcResponse?.success ? rpcResponse.data : null
+  const rawData = rpcResponse?.success ? rpcResponse.data : null
   const error = rpcResponse?.success === false ? rpcResponse.error : queryError?.message
+
+  // Apply "My Team" filter: client-side filter + re-rank
+  const data = useMemo(() => {
+    if (!rawData) return null
+    if (viewMode === 'agency' || !downlineIdSet) return rawData
+
+    const filtered = rawData.leaderboard.filter(agent => downlineIdSet.has(agent.agent_id))
+    const reRanked = filtered.map((agent, idx) => ({ ...agent, rank: idx + 1 }))
+    return {
+      leaderboard: reRanked,
+      stats: {
+        totalProduction: reRanked.reduce((sum, a) => sum + a.total, 0),
+        totalDeals: reRanked.reduce((sum, a) => sum + a.dealCount, 0),
+        activeAgents: reRanked.length,
+      },
+      dateRange: rawData.dateRange,
+    }
+  }, [rawData, viewMode, downlineIdSet])
 
   // Include authLoading to show skeletons while auth initializes (prevents "no data" flash)
   const isLoading = authLoading || isDataLoading
@@ -435,6 +472,25 @@ export default function Scoreboard() {
               </>
             ) : (
               <>
+                <div className="flex items-center gap-1 border rounded-md p-1">
+                  <Button
+                    variant={viewMode === 'agency' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('agency')}
+                    className="h-9 px-3 text-sm"
+                  >
+                    Agency
+                  </Button>
+                  <Button
+                    variant={viewMode === 'my_team' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('my_team')}
+                    className="h-9 px-3 text-sm"
+                  >
+                    My Team
+                  </Button>
+                </div>
+
                 <div className="flex items-center gap-2">
                   <Input
                     type="number"

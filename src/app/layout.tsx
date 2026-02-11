@@ -91,12 +91,13 @@ export default async function RootLayout({
       // Fetch user profile data
       const { data: userData } = await supabase
         .from('users')
-        .select('role, status, theme_mode, is_admin, agency_id, subscription_tier')
+        .select('id, role, status, theme_mode, is_admin, agency_id, subscription_tier')
         .eq('auth_user_id', session.user.id)
         .single();
 
       if (userData) {
         initialUserData = {
+          id: userData.id as string,
           role: userData.role as 'admin' | 'agent' | 'client',
           status: userData.status as 'active' | 'onboarding' | 'invited' | 'inactive',
           theme_mode: userData.theme_mode as 'light' | 'dark' | 'system' | null,

@@ -89,6 +89,7 @@ export const queryKeys = {
   // Scoreboard
   scoreboard: (userId: string, startDate: string, endDate: string) =>
     ['scoreboard', userId, startDate, endDate] as const,
+  myDownlineIds: (userId: string) => ['my-downline-ids', userId] as const,
 
   // Analytics
   analytics: ['analytics'] as const,

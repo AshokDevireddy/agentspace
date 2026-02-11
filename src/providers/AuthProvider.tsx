@@ -8,6 +8,7 @@ import { AUTH_RETRY_TIMEOUTS } from '@/lib/auth/constants'
 import type { User } from '@supabase/supabase-js'
 
 export type UserData = {
+  id: string
   role: 'admin' | 'agent' | 'client'
   status: 'active' | 'onboarding' | 'invited' | 'inactive'
   theme_mode: 'light' | 'dark' | 'system' | null
@@ -121,7 +122,7 @@ export function AuthProvider({
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('role, status, theme_mode, is_admin, agency_id, subscription_tier')
+        .select('id, role, status, theme_mode, is_admin, agency_id, subscription_tier')
         .eq('auth_user_id', authUserId)
         .single()
 
@@ -131,6 +132,7 @@ export function AuthProvider({
       }
 
       return {
+        id: data.id as string,
         role: data.role as 'admin' | 'agent' | 'client',
         status: data.status as 'active' | 'onboarding' | 'invited' | 'inactive',
         theme_mode: data.theme_mode as 'light' | 'dark' | 'system' | null,
@@ -384,7 +386,7 @@ export function AuthProvider({
 
       const { data: userProfile, error: userError } = await supabase
         .from('users')
-        .select('role, status, theme_mode, is_admin, agency_id, subscription_tier')
+        .select('id, role, status, theme_mode, is_admin, agency_id, subscription_tier')
         .eq('auth_user_id', data.user.id)
         .single()
 
@@ -405,6 +407,7 @@ export function AuthProvider({
 
       setUser(data.user)
       setUserData({
+        id: userProfile.id as string,
         role: userProfile.role as 'admin' | 'agent' | 'client',
         status: userProfile.status as 'active' | 'onboarding' | 'invited' | 'inactive',
         theme_mode: userProfile.theme_mode as 'light' | 'dark' | 'system' | null,

@@ -42,6 +42,12 @@ export function useInvalidation() {
       }
 
       await Promise.all(invalidations)
+
+      // Then trigger refetch of active queries (don't await - let it happen in background)
+      // This prevents blocking the mutation callback while still triggering immediate updates
+      queryClient.refetchQueries({ queryKey: queryKeys.agents, type: 'active' }).catch(err => {
+        console.error('[Invalidation] Failed to refetch agents:', err)
+      })
     },
     [queryClient]
   )

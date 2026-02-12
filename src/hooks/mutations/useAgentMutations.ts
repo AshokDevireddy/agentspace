@@ -93,9 +93,13 @@ export function useResendInvite(options?: {
 
       return data
     },
-    onSuccess: async (data, agentId) => {
-      // Invalidate agent-related queries to refresh status
-      await invalidateAgentRelated(agentId)
+    onSuccess: (data, agentId) => {
+      // Invalidate agent-related queries to refresh status (fire and forget)
+      // Don't await to prevent blocking the UI update
+      invalidateAgentRelated(agentId).catch(err => {
+        console.error('[useResendInvite] Failed to invalidate queries:', err)
+      })
+      // Call the page-level success handler immediately
       options?.onSuccess?.(data, agentId)
     },
     onError: options?.onError,

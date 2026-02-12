@@ -258,20 +258,18 @@ export default function ExpectedPayoutsPage() {
   } = useQuery({
     queryKey: queryKeys.expectedPayoutsData({ ...appliedFilters, agent: effectiveAgentId }),
     queryFn: async () => {
-      const nowYear = clientDate.year
-      const nowMonth = clientDate.month
+      // Build proper month-aligned date range from filter values (format: "YYYY-MM")
+      // First day of start month
+      const startDate = `${appliedFilters.startMonth}-01`
 
-      const [startYear, startMonthStr] = appliedFilters.startMonth.split('-').map(Number)
+      // Last day of end month
       const [endYear, endMonthStr] = appliedFilters.endMonth.split('-').map(Number)
-      const startMonthIdx = startMonthStr - 1
-      const endMonthIdx = endMonthStr - 1
-
-      const monthsPast = (nowYear - startYear) * 12 + (nowMonth - startMonthIdx)
-      const monthsFuture = (endYear - nowYear) * 12 + (endMonthIdx - nowMonth)
+      const endDay = new Date(endYear, endMonthStr, 0).getDate()
+      const endDate = `${appliedFilters.endMonth}-${String(endDay).padStart(2, '0')}`
 
       const params = new URLSearchParams()
-      params.append('months_past', Math.abs(monthsPast).toString())
-      params.append('months_future', Math.abs(monthsFuture).toString())
+      params.append('start_date', startDate)
+      params.append('end_date', endDate)
       params.append('agent_id', effectiveAgentId)
 
       if (appliedFilters.carrier !== "all") {

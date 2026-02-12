@@ -13,6 +13,9 @@ import { queryKeys } from '@/hooks/queryKeys'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { useOnboardingProgress } from '@/hooks/useOnboardingProgress'
 import { fetchWithCredentials } from '@/lib/api-client'
+import { useAuth } from '@/providers/AuthProvider'
+import { Button } from '@/components/ui/button'
+import { LogOut } from 'lucide-react'
 import { NiprVerificationStep } from './steps/NiprVerificationStep'
 import { TeamInvitationStep } from './steps/TeamInvitationStep'
 import type { UserData } from './types'
@@ -24,6 +27,7 @@ interface OnboardingWizardProps {
 
 export default function OnboardingWizard({ userData, onComplete }: OnboardingWizardProps) {
   const router = useRouter()
+  const { signOut } = useAuth()
   const onboardingProgress = useOnboardingProgress(userData.id)
 
   // Step management
@@ -173,14 +177,25 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   return (
     <div className="min-h-screen bg-background py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto space-y-8">
-        {/* Header */}
-        <div>
-          <h1 className="text-4xl font-bold mb-2 text-foreground dark:text-white">
-            Complete Your Setup
-          </h1>
-          <p className="text-muted-foreground">
-            Verify your credentials and invite your team to get started
-          </p>
+        {/* Header with Logout */}
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-4xl font-bold mb-2 text-foreground dark:text-white">
+              Complete Your Setup
+            </h1>
+            <p className="text-muted-foreground">
+              Verify your credentials and invite your team to get started
+            </p>
+          </div>
+          <Button
+            onClick={signOut}
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:bg-destructive/10 border-destructive/30"
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Logout
+          </Button>
         </div>
 
         {/* Error Banner */}

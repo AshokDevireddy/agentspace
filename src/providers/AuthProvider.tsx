@@ -46,6 +46,7 @@ export function AuthProvider({
   const [user, setUser] = useState<UserData | null>(initialUser)
   const [loading, setLoading] = useState(!initialUser)
   const [isHydrated, setIsHydrated] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
   const router = useRouter()
   const queryClient = useQueryClient()
 
@@ -164,7 +165,10 @@ export function AuthProvider({
   }, [])
 
   const signOut = useCallback(async () => {
-    // Clear TanStack Query cache
+    // Show loading overlay to hide UI during logout
+    setIsLoggingOut(true)
+
+    // Clear TanStack Query cache (prevents stale data on re-login)
     queryClient.clear()
 
     // Clear localStorage filters
@@ -177,17 +181,15 @@ export function AuthProvider({
       keysToRemove.forEach(key => localStorage.removeItem(key))
     }
 
-    // Clear React state
-    setUser(null)
+    // Start server signOut (fire and forget - don't await to avoid delay)
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(err => {
+      console.error('[AuthProvider] Server signOut failed:', err)
+    })
 
-    // Call logout API (clears httpOnly cookie)
-    try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
-    } catch {
-      // Continue with redirect even if API fails
-    }
+    // Small delay to ensure overlay renders, then redirect
+    await new Promise(resolve => setTimeout(resolve, 50))
 
-    // Hard redirect to ensure fresh state
+    // Hard redirect to login page
     window.location.href = '/login'
   }, [queryClient])
 
@@ -203,6 +205,16 @@ export function AuthProvider({
   return (
     <AuthContext.Provider value={contextValue}>
       {children}
+
+      {/* Logout overlay - covers entire screen during logout */}
+      {isLoggingOut && (
+        <div className="fixed inset-0 z-[99999] bg-background/80 backdrop-blur-sm flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            <p className="text-sm font-medium text-foreground">Logging out...</p>
+          </div>
+        </div>
+      )}
     </AuthContext.Provider>
   )
 }

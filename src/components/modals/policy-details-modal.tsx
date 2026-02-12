@@ -173,13 +173,35 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
     staleTime: 5 * 60 * 1000, // 5 minutes - status options don't change often
   })
 
-  const statusOptions = statusOptionsData || [
-    { value: "draft", label: "Draft" },
-    { value: "pending", label: "Pending Approval" },
-    { value: "verified", label: "Verified" },
-    { value: "active", label: "Active" },
-    { value: "terminated", label: "Terminated" }
-  ]
+  // Ensure statusOptions is always an array
+  // Handle case where statusOptionsData might be the full API response object (from cache)
+  // or the processed array (from fresh query)
+  const statusOptions = (() => {
+    // If it's already an array, use it
+    if (Array.isArray(statusOptionsData)) {
+      return statusOptionsData
+    }
+
+    // If it's an object with a statuses property, extract and filter it
+    if (statusOptionsData && typeof statusOptionsData === 'object' && 'statuses' in statusOptionsData) {
+      const statuses = (statusOptionsData as { statuses: StatusOption[] }).statuses
+      if (Array.isArray(statuses) && statuses.length > 0) {
+        const filtered = statuses.filter((s: StatusOption) => s.value !== 'all')
+        if (filtered.length > 0) {
+          return filtered
+        }
+      }
+    }
+
+    // Fallback to default options
+    return [
+      { value: "draft", label: "Draft" },
+      { value: "pending", label: "Pending Approval" },
+      { value: "verified", label: "Verified" },
+      { value: "active", label: "Active" },
+      { value: "terminated", label: "Terminated" }
+    ]
+  })()
 
   // Beneficiaries section state
   const [beneficiariesExpanded, setBeneficiariesExpanded] = useState(false)

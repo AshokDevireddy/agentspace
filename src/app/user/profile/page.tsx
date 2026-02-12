@@ -8,8 +8,9 @@ import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";
 import { useNotification } from '@/contexts/notification-context'
 import { useTheme } from "next-themes"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
-import { Sun, Moon, Monitor, Check, Loader2 } from "lucide-react"
+import { Sun, Moon, Monitor, Check, Loader2, MessageSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
@@ -21,23 +22,26 @@ interface ProfileData {
   lastName: string;
   fullName: string;
   createdAt: string;
-  is_admin: boolean;
+  isAdmin: boolean;
   role: string;
-  position_id: string | null;
+  positionId: string | null;
   position: {
     id: string;
     name: string;
     level: number;
   } | null;
-  subscription_status?: string;
-  subscription_tier?: string;
-  deals_created_count?: number;
-  ai_requests_count?: number;
-  messages_sent_count?: number;
-  billing_cycle_start?: string | null;
-  billing_cycle_end?: string | null;
-  scheduled_tier_change?: string | null;
-  scheduled_tier_change_date?: string | null;
+  subscriptionStatus?: string;
+  subscriptionTier?: string;
+  dealsCreatedCount?: number;
+  aiRequestsCount?: number;
+  messagesSentCount?: number;
+  billingCycleStart?: string | null;
+  billingCycleEnd?: string | null;
+  scheduledTierChange?: string | null;
+  scheduledTierChangeDate?: string | null;
+  phoneNumber?: string | null;
+  smsAutoSendEnabled: boolean | null;
+  agencySmsAutoSendEnabled: boolean;
 }
 
 interface Position {
@@ -71,6 +75,7 @@ export default function ProfilePage() {
   const queryClient = useQueryClient()
   const [selectedPositionId, setSelectedPositionId] = useState<string>("");
   const [savingTheme, setSavingTheme] = useState(false);
+  const [smsAutoSendValue, setSmsAutoSendValue] = useState<"default" | "on" | "off">("default");
 
   // Password reset mutation
   const resetPasswordMutation = useResetPassword();
@@ -95,10 +100,18 @@ export default function ProfilePage() {
 
   // Update selectedPositionId when profileData changes
   React.useEffect(() => {
-    if (profileData?.position_id) {
-      setSelectedPositionId(profileData.position_id)
+    if (profileData?.positionId) {
+      setSelectedPositionId(profileData.positionId)
     }
-  }, [profileData?.position_id])
+  }, [profileData?.positionId])
+
+  // Sync SMS auto-send value from profile data
+  React.useEffect(() => {
+    const val = profileData?.smsAutoSendEnabled
+    if (val === true) setSmsAutoSendValue("on")
+    else if (val === false) setSmsAutoSendValue("off")
+    else if (val === null || val === undefined) setSmsAutoSendValue("default")
+  }, [profileData?.smsAutoSendEnabled])
 
   // Fetch positions if admin using TanStack Query with custom queryFn
   // Wrapped in try/catch to prevent errors from propagating to global error boundary
@@ -137,51 +150,53 @@ export default function ProfilePage() {
       }
     },
     // Wait for auth to be ready and user to be admin
-    enabled: !authLoading && !!profileData?.is_admin,
+    enabled: !authLoading && !!profileData?.isAdmin,
     retry: 1,
   })
 
-  // Handle position update with mutation
-  const updatePositionMutation = useMutation({
-    mutationFn: async (positionId: string) => {
-      const { getClientAccessToken } = await import('@/lib/auth/client');
-      const accessToken = await getClientAccessToken();
+  // Shared profile update helper
+  const updateProfile = async (body: Record<string, unknown>) => {
+    const { getClientAccessToken } = await import('@/lib/auth/client');
+    const accessToken = await getClientAccessToken();
+    if (!accessToken) throw new Error('Not authenticated');
 
-      if (!accessToken) {
-        throw new Error('Not authenticated');
-      }
+    const response = await fetch('/api/user/profile', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(body),
+    });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || 'Failed to update profile');
+    return result;
+  }
 
-      const response = await fetch('/api/user/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({ position_id: positionId }),
-      });
-
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update position');
-      }
-
-      return result;
-    },
+  const useProfileMutation = (successMsg: string) => useMutation({
+    mutationFn: updateProfile,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(user?.id) })
-      showSuccess('Position updated successfully!');
+      showSuccess(successMsg);
     },
     onError: (error: Error) => {
-      console.error('Error updating position:', error);
-      showError('Failed to update position: ' + error.message);
+      showError(error.message || 'Failed to update profile');
     }
   })
 
+  const updatePositionMutation = useProfileMutation('Position updated successfully!');
+  const updateSmsAutoSendMutation = useProfileMutation('SMS automation preference updated!');
+
   const handlePositionUpdate = () => {
     if (!selectedPositionId) return;
-    updatePositionMutation.mutate(selectedPositionId);
+    updatePositionMutation.mutate({ position_id: selectedPositionId });
   };
+
+  const handleSmsAutoSendChange = (selectValue: string) => {
+    const dbValue = selectValue === "default" ? null : selectValue === "on" ? true : false;
+    setSmsAutoSendValue(selectValue as "default" | "on" | "off");
+    updateSmsAutoSendMutation.mutate({ sms_auto_send_enabled: dbValue });
+  }
 
   const handleThemeChange = async (newTheme: ThemeMode) => {
     setSavingTheme(true)
@@ -301,8 +316,59 @@ export default function ProfilePage() {
         </button>
       </div>
 
+      {/* SMS Automation Self-Service (Non-admin agents) */}
+      {!profileData.isAdmin && (
+        <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
+          <h2 className="text-xl font-bold text-foreground mb-2">
+            <MessageSquare className="h-5 w-5 inline mr-2" />
+            SMS Automation
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Control whether automated SMS messages are sent immediately or saved as drafts for your review.
+            Your agency default is currently set to{' '}
+            <span className="font-medium text-foreground">
+              {profileData.agencySmsAutoSendEnabled ? 'Auto-Send' : 'Drafts Only'}
+            </span>.
+          </p>
+          <div className="flex items-end gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-muted-foreground mb-2">
+                Automation Preference
+              </label>
+              <Select
+                value={smsAutoSendValue}
+                onValueChange={handleSmsAutoSendChange}
+                disabled={updateSmsAutoSendMutation.isPending}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">
+                    Agency Default ({profileData.agencySmsAutoSendEnabled ? 'Auto-Send' : 'Drafts Only'})
+                  </SelectItem>
+                  <SelectItem value="on">Auto-Send (Override)</SelectItem>
+                  <SelectItem value="off">Drafts Only (Override)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {smsAutoSendValue !== "default" && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-3">
+              You are overriding your agency&apos;s default setting. Select &quot;Agency Default&quot; to follow your agency&apos;s preference.
+            </p>
+          )}
+          {updateSmsAutoSendMutation.isPending && (
+            <div className="mt-3 flex items-center text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Saving preference...
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Position Selection (Admin Only) */}
-      {profileData.is_admin && (
+      {profileData.isAdmin && (
         <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
           <h2 className="text-xl font-bold text-foreground mb-4">Position</h2>
           <div className="flex items-end gap-4">
@@ -325,7 +391,7 @@ export default function ProfilePage() {
             </div>
             <button
               onClick={handlePositionUpdate}
-              disabled={updatePositionMutation.isPending || !selectedPositionId || selectedPositionId === profileData.position_id}
+              disabled={updatePositionMutation.isPending || !selectedPositionId || selectedPositionId === profileData.positionId}
               className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {updatePositionMutation.isPending ? 'Updating...' : 'Update Position'}
@@ -335,7 +401,7 @@ export default function ProfilePage() {
       )}
 
       {/* Theme Preference (Non-admin agents only - Admins use Settings page) */}
-      {!profileData.is_admin && user?.role === 'agent' && (
+      {!profileData.isAdmin && user?.role === 'agent' && (
         <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
           <h2 className="text-xl font-bold text-foreground mb-2">
             <Moon className="h-5 w-5 inline mr-2" />
@@ -467,32 +533,32 @@ export default function ProfilePage() {
         <p className="text-muted-foreground text-center mb-8">Select the perfect tier for your needs</p>
 
         {/* Current Subscription Status */}
-        {profileData.subscription_tier && profileData.subscription_tier !== 'free' && (
+        {profileData.subscriptionTier && profileData.subscriptionTier !== 'free' && (
           <div className="mb-8">
             <SubscriptionManager
-              subscriptionStatus={profileData.subscription_status || 'active'}
+              subscriptionStatus={profileData.subscriptionStatus || 'active'}
               hasAiAddon={false}
             />
 
             {/* Billing Cycle Information */}
-            {profileData.billing_cycle_end && (
+            {profileData.billingCycleEnd && (
               <div className="mt-4 p-4 bg-muted/50 rounded-lg border border-border">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Next Billing Date</p>
                     <p className="text-lg font-semibold text-foreground">
-                      {formatRenewalDate(profileData.billing_cycle_end)}
+                      {formatRenewalDate(profileData.billingCycleEnd)}
                     </p>
                   </div>
 
                   {/* Show scheduled tier change if any */}
-                  {profileData.scheduled_tier_change && (
+                  {profileData.scheduledTierChange && (
                     <div className="text-right">
                       <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
                         Scheduled Change
                       </p>
                       <p className="text-base font-semibold text-amber-700 dark:text-amber-300 capitalize">
-                        → {profileData.scheduled_tier_change} Tier
+                        → {profileData.scheduledTierChange} Tier
                       </p>
                     </div>
                   )}
@@ -503,7 +569,7 @@ export default function ProfilePage() {
         )}
 
         {/* Usage Stats */}
-        {profileData.subscription_tier === 'free' && (
+        {profileData.subscriptionTier === 'free' && (
           <div className="mb-8 rounded-xl border-2 border-yellow-300 bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20 dark:border-yellow-700 p-6">
             <h3 className="font-bold text-yellow-900 dark:text-yellow-200 mb-3 text-lg">Free Tier Usage</h3>
             <div className="grid gap-3">
@@ -511,13 +577,13 @@ export default function ProfilePage() {
                 <div className="flex justify-between mb-1">
                   <span className="text-sm text-yellow-800 dark:text-yellow-300">Deals Created</span>
                   <span className="text-sm font-medium text-yellow-900 dark:text-yellow-200">
-                    {profileData.deals_created_count || 0} / 10
+                    {profileData.dealsCreatedCount || 0} / 10
                   </span>
                 </div>
                 <div className="w-full bg-yellow-200 dark:bg-yellow-900/30 rounded-full h-2">
                   <div
                     className="bg-yellow-600 dark:bg-yellow-500 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(((profileData.deals_created_count || 0) / 10) * 100, 100)}%` }}
+                    style={{ width: `${Math.min(((profileData.dealsCreatedCount || 0) / 10) * 100, 100)}%` }}
                   />
                 </div>
               </div>
@@ -525,18 +591,18 @@ export default function ProfilePage() {
                 <div className="flex justify-between mb-1">
                   <span className="text-sm text-yellow-800 dark:text-yellow-300">Messages Sent</span>
                   <span className="text-sm font-medium text-yellow-900 dark:text-yellow-200">
-                    {profileData.messages_sent_count || 0} / 10
+                    {profileData.messagesSentCount || 0} / 10
                   </span>
                 </div>
                 <div className="w-full bg-yellow-200 dark:bg-yellow-900/30 rounded-full h-2">
                   <div
                     className="bg-yellow-600 dark:bg-yellow-500 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(((profileData.messages_sent_count || 0) / 10) * 100, 100)}%` }}
+                    style={{ width: `${Math.min(((profileData.messagesSentCount || 0) / 10) * 100, 100)}%` }}
                   />
                 </div>
               </div>
             </div>
-            {((profileData.deals_created_count || 0) >= 10 || (profileData.messages_sent_count || 0) >= 10) && (
+            {((profileData.dealsCreatedCount || 0) >= 10 || (profileData.messagesSentCount || 0) >= 10) && (
               <p className="text-sm font-semibold text-red-600 dark:text-red-400 mt-4">
                 ⚠️ You've reached your limits. Upgrade to unlock more!
               </p>
@@ -553,9 +619,9 @@ export default function ProfilePage() {
             price={TIER_LIMITS.free.price}
             features={TIER_LIMITS.free.features}
             priceId=""
-            isCurrentPlan={profileData.subscription_tier === 'free'}
-            currentTier={(profileData.subscription_tier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscription_status === 'active' && profileData.subscription_tier !== 'free'}
+            isCurrentPlan={profileData.subscriptionTier === 'free'}
+            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
           />
 
           {/* Basic Tier */}
@@ -565,9 +631,9 @@ export default function ProfilePage() {
             price={TIER_LIMITS.basic.price}
             features={TIER_LIMITS.basic.features}
             priceId={TIER_PRICE_IDS.basic}
-            isCurrentPlan={profileData.subscription_tier === 'basic'}
-            currentTier={(profileData.subscription_tier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscription_status === 'active' && profileData.subscription_tier !== 'free'}
+            isCurrentPlan={profileData.subscriptionTier === 'basic'}
+            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
           />
 
           {/* Pro Tier */}
@@ -577,10 +643,10 @@ export default function ProfilePage() {
             price={TIER_LIMITS.pro.price}
             features={TIER_LIMITS.pro.features}
             priceId={TIER_PRICE_IDS.pro}
-            isCurrentPlan={profileData.subscription_tier === 'pro'}
+            isCurrentPlan={profileData.subscriptionTier === 'pro'}
             recommended={true}
-            currentTier={(profileData.subscription_tier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscription_status === 'active' && profileData.subscription_tier !== 'free'}
+            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
           />
 
           {/* Expert Tier */}
@@ -590,15 +656,15 @@ export default function ProfilePage() {
             price={TIER_LIMITS.expert.price}
             features={TIER_LIMITS.expert.features}
             priceId={TIER_PRICE_IDS.expert}
-            isCurrentPlan={profileData.subscription_tier === 'expert'}
-            currentTier={(profileData.subscription_tier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscription_status === 'active' && profileData.subscription_tier !== 'free'}
+            isCurrentPlan={profileData.subscriptionTier === 'expert'}
+            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
           />
         </div>
 
         {/* Basic Tier Usage */}
-        {profileData.subscription_tier === 'basic' && (() => {
-          const msgUsage = profileData.messages_sent_count || 0;
+        {profileData.subscriptionTier === 'basic' && (() => {
+          const msgUsage = profileData.messagesSentCount || 0;
           const msgLimit = 50;
           const msgOverage = Math.max(msgUsage - msgLimit, 0);
           const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
@@ -643,8 +709,8 @@ export default function ProfilePage() {
         })()}
 
         {/* Pro Tier Usage */}
-        {profileData.subscription_tier === 'pro' && (() => {
-          const msgUsage = profileData.messages_sent_count || 0;
+        {profileData.subscriptionTier === 'pro' && (() => {
+          const msgUsage = profileData.messagesSentCount || 0;
           const msgLimit = 200;
           const msgOverage = Math.max(msgUsage - msgLimit, 0);
           const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
@@ -689,16 +755,16 @@ export default function ProfilePage() {
         })()}
 
         {/* Expert Tier Usage (for all Expert tier users) */}
-        {profileData.subscription_tier === 'expert' && (() => {
-          const msgUsage = profileData.messages_sent_count || 0;
+        {profileData.subscriptionTier === 'expert' && (() => {
+          const msgUsage = profileData.messagesSentCount || 0;
           const msgLimit = 1000;
           const msgOverage = Math.max(msgUsage - msgLimit, 0);
           const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
           const msgOverageCost = msgOverage * 0.05;
 
           // Admin users see both AI and messages
-          if (profileData.is_admin) {
-            const aiUsage = profileData.ai_requests_count || 0;
+          if (profileData.isAdmin) {
+            const aiUsage = profileData.aiRequestsCount || 0;
             const aiLimit = 50;
             const aiOverage = Math.max(aiUsage - aiLimit, 0);
             const aiPercentage = Math.min((aiUsage / aiLimit) * 100, 100);

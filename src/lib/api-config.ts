@@ -33,6 +33,15 @@ export const authEndpoints = {
 } as const
 
 // ============================================================================
+// User Endpoints
+// ============================================================================
+
+export const userEndpoints = {
+  modalInitData: '/api/user/modal-init-data',
+  detail: (id: string) => `/api/users/${id}`,
+} as const
+
+// ============================================================================
 // Dashboard Endpoints
 // ============================================================================
 
@@ -55,6 +64,7 @@ export const agentEndpoints = {
   withoutPositions: '/api/agents/without-positions',
   assignPosition: '/api/agents/assign-position',
   search: '/api/search-agents',
+  autoSend: '/api/agents/auto-send',
 } as const
 
 // ============================================================================
@@ -225,6 +235,15 @@ export function getAuthEndpoint(
   endpoint: keyof typeof authEndpoints
 ): string {
   return `${getApiBaseUrl()}${authEndpoints[endpoint]}`
+}
+
+export function getUserEndpoint(
+  endpoint: keyof typeof userEndpoints,
+  id?: string
+): string {
+  const ep = userEndpoints[endpoint]
+  const path = typeof ep === 'function' ? ep(id!) : ep
+  return `${getApiBaseUrl()}${path}`
 }
 
 export function getDashboardEndpoint(

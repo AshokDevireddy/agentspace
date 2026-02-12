@@ -33,6 +33,7 @@ export const queryKeys = {
     ['agents', 'list', page, view, stableFilterKey(filters)] as const,
   agentDetail: (id: string) => ['agents', 'detail', id] as const,
   agentDownlines: (id: string) => ['agents', 'downlines', id] as const,
+  myDownlineIds: (userId: string) => ['my-downline-ids', userId] as const,
   agentsPendingPositions: () => ['agents', 'pending-positions'] as const,
 
   // Deals
@@ -110,8 +111,12 @@ export const queryKeys = {
   expectedPayoutsDebt: (agentId: string) =>
     ['expected-payouts', 'debt', agentId] as const,
 
+  // Add User Modal
+  addUserModalInitData: () => ['user', 'add-user-modal-init'] as const,
+
   // Configuration
   configuration: ['configuration'] as const,
+  configurationAgentAutoSend: () => ['configuration', 'agent-auto-send'] as const,
   configurationTab: (tab: string) => ['configuration', tab] as const,
   configurationAgency: () => ['configuration', 'agency'] as const,
   configurationCarriers: () => ['configuration', 'carriers'] as const,

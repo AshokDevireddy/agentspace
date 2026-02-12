@@ -11,8 +11,8 @@ import { useEffect, useState, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import { useScoreboardBillingCycleData } from "@/hooks/useDashboardData"
 import { queryKeys } from "@/hooks/queryKeys"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useAgencyScoreboardSettings } from "@/hooks/useUserQueries"
-import { useQueryClient } from "@tanstack/react-query"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { useHydrated } from "@/hooks/useHydrated"
@@ -84,6 +84,23 @@ export default function Scoreboard() {
   const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
   const [submittedFilter, setSubmittedFilter] = useState<'submitted' | 'issue_paid'>('submitted')
+  const [viewMode, setViewMode] = useState<'agency' | 'my_team'>('agency')
+
+  // Fetch downline IDs for My Team filter
+  const { data: downlineData } = useQuery({
+    queryKey: queryKeys.myDownlineIds(user?.id || ''),
+    queryFn: async () => {
+      const response = await fetch(`/api/agents/downlines?agentId=${user?.id}`, {
+        credentials: 'include'
+      })
+      if (!response.ok) return { downlineIds: [] as string[] }
+      const data = await response.json()
+      const ids: string[] = (data.downlines || data || []).map((d: { id: string }) => d.id)
+      return { downlineIds: ids }
+    },
+    enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000,
+  })
 
   // Update calendar state when client date becomes available after hydration
   useEffect(() => {
@@ -261,7 +278,27 @@ export default function Scoreboard() {
     }
   }, [data, dateRange])
 
-  const topAgents = data?.leaderboard?.slice(0, 3) || []
+  // Filter leaderboard based on view mode (agency vs my team)
+  const filteredLeaderboard = useMemo(() => {
+    if (!data?.leaderboard) return []
+    if (viewMode === 'agency') return data.leaderboard
+    const myDownlineIds = new Set(downlineData?.downlineIds || [])
+    if (user?.id) myDownlineIds.add(user.id)
+    return data.leaderboard
+      .filter(agent => myDownlineIds.has(agent.agent_id))
+      .map((agent, index) => ({ ...agent, rank: index + 1 }))
+  }, [data?.leaderboard, viewMode, downlineData?.downlineIds, user?.id])
+
+  const filteredStats = useMemo(() => {
+    if (viewMode === 'agency' || !data?.stats) return data?.stats || null
+    return {
+      totalProduction: filteredLeaderboard.reduce((sum, a) => sum + (a.total || 0), 0),
+      totalDeals: filteredLeaderboard.reduce((sum, a) => sum + (a.dealCount || 0), 0),
+      activeAgents: filteredLeaderboard.length,
+    }
+  }, [viewMode, data?.stats, filteredLeaderboard])
+
+  const topAgents = filteredLeaderboard.slice(0, 3)
 
   // Generate all dates in the range
   const generateDateRange = (start: string, end: string): string[] => {
@@ -447,6 +484,24 @@ export default function Scoreboard() {
                 )}
               </div>
             </div>
+            <div className="flex rounded-md overflow-hidden border border-border">
+              <Button
+                variant={viewMode === 'agency' ? 'default' : 'ghost'}
+                size="sm"
+                className="rounded-none h-9 text-sm"
+                onClick={() => setViewMode('agency')}
+              >
+                Agency
+              </Button>
+              <Button
+                variant={viewMode === 'my_team' ? 'default' : 'ghost'}
+                size="sm"
+                className="rounded-none h-9 text-sm"
+                onClick={() => setViewMode('my_team')}
+              >
+                My Team
+              </Button>
+            </div>
             <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeOption)}>
               <SelectTrigger className="w-[160px] rounded-md h-9 text-sm">
                 <SelectValue placeholder="Select timeframe" />
@@ -630,7 +685,7 @@ export default function Scoreboard() {
                 {isLoading ? (
                   <span className="inline-block h-8 w-32 bg-muted animate-pulse rounded" />
                 ) : (
-                  formatCurrency(data?.stats?.totalProduction || 0)
+                  formatCurrency(filteredStats?.totalProduction || 0)
                 )}
               </p>
             </CardContent>
@@ -643,7 +698,7 @@ export default function Scoreboard() {
                 {isLoading ? (
                   <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
                 ) : (
-                  data?.stats?.totalDeals || 0
+                  filteredStats?.totalDeals || 0
                 )}
               </p>
             </CardContent>
@@ -656,7 +711,7 @@ export default function Scoreboard() {
                 {isLoading ? (
                   <span className="inline-block h-8 w-24 bg-muted animate-pulse rounded" />
                 ) : (
-                  data?.stats?.activeAgents || 0
+                  filteredStats?.activeAgents || 0
                 )}
               </p>
             </CardContent>
@@ -762,7 +817,7 @@ export default function Scoreboard() {
               variant="inline"
               className="mx-auto max-w-md"
             />
-          ) : !data || data.leaderboard.length === 0 ? (
+          ) : !data || filteredLeaderboard.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               No deals found for this period
             </div>
@@ -782,7 +837,7 @@ export default function Scoreboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.leaderboard.map((agent, index) => {
+                  {filteredLeaderboard.map((agent, index) => {
                     const rowBgClass = index < 3 ? 'bg-primary/10' : 'bg-card'
                     return (
                       <tr key={agent.agent_id} className={`border-b border-border hover:bg-accent/50 transition-colors ${index < 3 ? 'bg-primary/10' : ''}`}>

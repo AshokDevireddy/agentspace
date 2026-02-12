@@ -18,6 +18,8 @@ import { useNotification } from "@/contexts/notification-context"
 import { useAuth } from "@/providers/AuthProvider"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
 import { SmsTemplateEditor } from "@/components/sms-template-editor"
+import { SmsAutomationSettings } from "@/components/sms-automation-settings"
+import type { AgentAutoSendInfo } from "@/components/agent-sms-automation-list"
 import { DiscordTemplateEditor } from "@/components/discord-template-editor"
 import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_PLACEHOLDERS } from "@/lib/sms-template-helpers"
 import { DEFAULT_DISCORD_TEMPLATE, DISCORD_TEMPLATE_PLACEHOLDERS } from "@/lib/discord-template-helpers"
@@ -88,7 +90,7 @@ interface Commission {
   commission_percentage: number
 }
 
-type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications" | "sms-templates"
+type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "automation" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications" | "sms-templates"
 
 // Default primary color schemes for light and dark mode
 const DEFAULT_PRIMARY_COLOR_LIGHT = "0 0% 0%" // Black for light mode
@@ -378,6 +380,23 @@ export default function ConfigurationPage() {
   // Messaging Settings state
   const [messagingEnabled, setMessagingEnabled] = useState<boolean>(false)
   const [savingMessagingEnabled, setSavingMessagingEnabled] = useState(false)
+
+  // SMS Automation state
+  const [automationAgentSaving, setAutomationAgentSaving] = useState<string | null>(null)
+
+  // Fetch agents for automation tab
+  const { data: automationAgentsData, isLoading: automationAgentsLoading } = useQuery({
+    queryKey: queryKeys.configurationAgentAutoSend(),
+    queryFn: async () => {
+      const response = await fetch('/api/agents/auto-send', { credentials: 'include' })
+      if (!response.ok) return []
+      const data = await response.json()
+      return (data.agents || data || []) as AgentAutoSendInfo[]
+    },
+    enabled: activeTab === 'automation',
+    staleTime: 5 * 60 * 1000,
+  })
+  const automationAgents = automationAgentsData || []
 
   // Discord Settings state
   const [discordWebhookUrl, setDiscordWebhookUrl] = useState<string>("")
@@ -2124,6 +2143,7 @@ export default function ConfigurationPage() {
     { id: "commissions" as TabType, label: "Commissions", icon: DollarSign },
     { id: "lead-sources" as TabType, label: "Lead Sources", icon: Users },
     { id: "messaging" as TabType, label: "Messaging", icon: MessageSquare },
+    { id: "automation" as TabType, label: "Automation", icon: Bell },
     { id: "email-notifications" as TabType, label: "Email Notifications", icon: Mail },
     { id: "policy-reports" as TabType, label: "Policy Reports", icon: BarChart3 },
     { id: "carrier-logins" as TabType, label: "Carrier Logins", icon: Lock },
@@ -2139,6 +2159,7 @@ export default function ConfigurationPage() {
     "commissions": { title: "Commissions", description: "Set up commission structures and percentage splits" },
     "lead-sources": { title: "Lead Sources", description: "Track and manage where your leads originate" },
     "messaging": { title: "Messaging", description: "Configure SMS and messaging preferences" },
+    "automation": { title: "SMS Automation", description: "Control automatic sending of SMS messages vs draft creation" },
     "email-notifications": { title: "Email Notifications", description: "Set up automated email notification rules" },
     "policy-reports": { title: "Policy Reports", description: "Upload and manage carrier policy reports" },
     "carrier-logins": { title: "Carrier Logins", description: "Store carrier portal credentials securely" },
@@ -3758,6 +3779,58 @@ export default function ConfigurationPage() {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* SMS Automation Tab */}
+              {activeTab === "automation" && (
+                <div>
+                  <div className="mb-6">
+                    <h2 className="text-xl font-semibold text-foreground mb-1">SMS Automation</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Control whether automated messages are sent immediately or saved as drafts
+                    </p>
+                  </div>
+                  <SmsAutomationSettings
+                    smsAutoSendEnabled={agencyData?.sms_auto_send_enabled ?? true}
+                    onAutoSendEnabledChange={async (enabled) => {
+                      if (!agencyData?.id) return
+                      try {
+                        await fetch(`/api/agencies/${agencyData.id}/settings`, {
+                          method: 'PATCH',
+                          credentials: 'include',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ sms_auto_send_enabled: enabled }),
+                        })
+                        queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+                        showSuccess(`SMS auto-send ${enabled ? 'enabled' : 'disabled'}`)
+                      } catch {
+                        showError('Failed to update auto-send setting')
+                      }
+                    }}
+                    typeOverrides={{}}
+                    onTypeOverrideChange={() => {}}
+                    saving={false}
+                    agents={automationAgents}
+                    agentsLoading={automationAgentsLoading}
+                    onAgentToggle={async (agentId, value) => {
+                      setAutomationAgentSaving(agentId)
+                      try {
+                        await fetch('/api/agents/auto-send', {
+                          method: 'PATCH',
+                          credentials: 'include',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ agent_id: agentId, sms_auto_send_enabled: value }),
+                        })
+                        queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgentAutoSend() })
+                      } catch {
+                        showError('Failed to update agent auto-send setting')
+                      } finally {
+                        setAutomationAgentSaving(null)
+                      }
+                    }}
+                    agentSaving={automationAgentSaving}
+                  />
                 </div>
               )}
 

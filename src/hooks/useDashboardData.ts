@@ -141,15 +141,19 @@ export function useScoreboardBillingCycleData(
   startDate: string,
   endDate: string,
   scope: 'agency' | 'downline' = 'agency',
-  options?: { enabled?: boolean; staleTime?: number }
+  options?: { enabled?: boolean; staleTime?: number },
+  dateMode?: string,
 ) {
   return useQuery<ScoreboardData, Error>({
-    queryKey: queryKeys.scoreboardBillingCycle(userId || '', startDate, endDate, scope),
+    queryKey: queryKeys.scoreboardBillingCycle(userId || '', startDate, endDate, scope, dateMode),
     queryFn: async () => {
       const url = new URL('/api/dashboard/scoreboard-billing-cycle', window.location.origin)
       url.searchParams.set('start_date', startDate)
       url.searchParams.set('end_date', endDate)
       url.searchParams.set('scope', scope)
+      if (dateMode) {
+        url.searchParams.set('date_mode', dateMode)
+      }
 
       return fetchWithCookies(url.toString(), 'Failed to fetch scoreboard billing cycle data')
     },

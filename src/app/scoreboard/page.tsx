@@ -17,6 +17,7 @@ import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { useHydrated } from "@/hooks/useHydrated"
 import { useClientDate } from "@/hooks/useClientDate"
+import { useLocalStorage } from "@/hooks/useLocalStorage"
 
 interface AgentScore {
   rank: number
@@ -83,7 +84,7 @@ export default function Scoreboard() {
   const [assumedMonthsTillLapse, setAssumedMonthsTillLapse] = useState<number>(5)
   const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
-  const [submittedFilter, setSubmittedFilter] = useState<'submitted' | 'issue_paid'>('submitted')
+  const [submittedFilter, setSubmittedFilter] = useLocalStorage<'submitted' | 'issue_paid'>('scoreboard_date_mode', 'submitted')
   const [viewMode, setViewMode] = useState<'agency' | 'my_team'>('agency')
 
   // Fetch downline IDs for My Team filter
@@ -246,6 +247,9 @@ export default function Scoreboard() {
   // Fetch scoreboard data using TanStack Query
   const shouldFetch = !!user?.id && (timeframe !== 'custom' || (!!dateRange.startDate && !!dateRange.endDate))
 
+  // Map UI filter to backend date_mode parameter
+  const dateMode = submittedFilter === 'issue_paid' ? 'effective_date' : 'submission_date'
+
   const { data: rpcResponse, isPending: isDataLoading, isFetching, error: queryError } = useScoreboardBillingCycleData(
     user?.id,
     dateRange.startDate,
@@ -254,7 +258,8 @@ export default function Scoreboard() {
     {
       enabled: shouldFetch,
       staleTime: 1000 * 60 * 5, // 5 minutes
-    }
+    },
+    dateMode,
   )
 
   // Extract data and error from response

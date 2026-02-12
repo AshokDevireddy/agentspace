@@ -89,8 +89,8 @@ export const queryKeys = {
   // Scoreboard
   scoreboard: (userId: string, startDate: string, endDate: string, scope?: string) =>
     ['scoreboard', userId, startDate, endDate, scope] as const,
-  scoreboardBillingCycle: (userId: string, startDate: string, endDate: string, scope?: string) =>
-    ['scoreboard', 'billing-cycle', userId, startDate, endDate, scope] as const,
+  scoreboardBillingCycle: (userId: string, startDate: string, endDate: string, scope?: string, dateMode?: string) =>
+    ['scoreboard', 'billing-cycle', userId, startDate, endDate, scope, dateMode] as const,
 
   // Analytics
   analytics: ['analytics'] as const,

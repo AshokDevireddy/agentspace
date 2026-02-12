@@ -34,11 +34,13 @@ interface ProductionBreakdown {
   your: {
     payouts: PayoutData[]
     total: number
+    productionTotal: number
     count: number
   }
   downline: {
     payouts: PayoutData[]
     total: number
+    productionTotal: number
     count: number
   }
   total: number
@@ -518,7 +520,7 @@ export default function ExpectedPayoutsPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  ${(production?.your.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${(production?.your.productionTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   From {production?.your.count || 0} deals you wrote
@@ -533,7 +535,7 @@ export default function ExpectedPayoutsPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  ${(production?.downline.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${(production?.downline.productionTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   From {production?.downline.count || 0} downline deals

@@ -718,17 +718,18 @@ export default function Agents() {
     setSelectedAgentIdForModal(null)
   }
 
-  // Generate agent options for dropdowns
+  // Generate agent options for dropdowns - deduplicate by name
+  const uniqueAgentNames = Array.from(new Set(allAgents.map(agent => agent.name))).sort()
   const agentOptions = [
     { value: "all", label: "All Agents" },
-    ...allAgents.map(agent => ({ value: agent.name, label: agent.name }))
+    ...uniqueAgentNames.map(name => ({ value: name, label: name }))
   ]
 
-  // Generate direct upline options with "Not Set" option
+  // Generate direct upline options with "Not Set" option - deduplicate by name
   const directUplineOptions = [
     { value: "all", label: "All Agents" },
     { value: "not_set", label: "Not Set" },
-    ...allAgents.map(agent => ({ value: agent.name, label: agent.name }))
+    ...uniqueAgentNames.map(name => ({ value: name, label: name }))
   ]
 
   // Generate position options with "Not Set" option
@@ -1579,7 +1580,7 @@ export default function Agents() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <div className="font-medium text-foreground">
-                          {agent.first_name} {agent.last_name}
+                          {agent.first_name}{agent.last_name ? ` ${agent.last_name}` : ''}
                         </div>
                         {agent.has_position && agent.position_name && (
                           <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs">

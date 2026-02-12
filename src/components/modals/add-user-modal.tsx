@@ -125,8 +125,11 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const [errorFields, setErrorFields] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [selectedPreInviteUserId, setSelectedPreInviteUserId] = useState<string | null>(null)
+  const [selectedPreInviteUserLabel, setSelectedPreInviteUserLabel] = useState<string>("")
+  const [isLoadingPreInviteUser, setIsLoadingPreInviteUser] = useState(false)
   const [nameSearchTerm, setNameSearchTerm] = useState("")
   const [debouncedNameSearchTerm, setDebouncedNameSearchTerm] = useState("")
+  const [showNameDropdown, setShowNameDropdown] = useState(false)
   const [selectedUplineLabel, setSelectedUplineLabel] = useState<string>("")
   const [hasSetDefaultUpline, setHasSetDefaultUpline] = useState(false)
   const [pauseNameSearch, setPauseNameSearch] = useState(false)
@@ -255,7 +258,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setUplineInputValue("")
       setSelectedUplineLabel("")
       setSelectedPreInviteUserId(null)
+      setSelectedPreInviteUserLabel("")
       setHasSetDefaultUpline(false)
+      setNameSearchTerm("")
+      setShowNameDropdown(false)
     },
     onError: (error: Error) => {
       console.error('Error inviting agent:', error)
@@ -317,8 +323,20 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   useEffect(() => {
     if (!isOpen) {
       setHasSetDefaultUpline(false)
+      setShowNameDropdown(false)
+      setNameSearchTerm("")
+      setPauseNameSearch(false)
     }
   }, [isOpen])
+
+  // Show dropdown when search results are ready
+  useEffect(() => {
+    if (nameSearchResults.length > 0 && nameSearchTerm.length >= 2 && !pauseNameSearch && !selectedPreInviteUserId) {
+      setShowNameDropdown(true)
+    } else if (nameSearchResults.length === 0 || pauseNameSearch || selectedPreInviteUserId) {
+      setShowNameDropdown(false)
+    }
+  }, [nameSearchResults, nameSearchTerm, pauseNameSearch, selectedPreInviteUserId])
 
   // When upline is provided from graph view, trigger search to find the user
   useEffect(() => {
@@ -443,7 +461,31 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   }
 
   const handleInputChange = (field: string, value: string) => {
-    setFormData({ ...formData, [field]: value })
+    // Special handling for phone number - format as (XXX) XXX-XXXX but store only digits
+    if (field === 'phoneNumber') {
+      // Remove all non-digit characters
+      const digitsOnly = value.replace(/\D/g, '')
+
+      // Limit to 10 digits
+      const limitedDigits = digitsOnly.slice(0, 10)
+
+      // Store only digits in state (database format)
+      setFormData({ ...formData, [field]: limitedDigits })
+    } else {
+      setFormData({ ...formData, [field]: value })
+    }
+  }
+
+  // Format phone number for display as (XXX) XXX-XXXX
+  const formatPhoneForDisplay = (phone: string) => {
+    // Remove all non-digit characters
+    const digitsOnly = phone.replace(/\D/g, '')
+
+    // Format based on number of digits
+    if (digitsOnly.length === 0) return ''
+    if (digitsOnly.length <= 3) return `(${digitsOnly}`
+    if (digitsOnly.length <= 6) return `(${digitsOnly.slice(0, 3)}) ${digitsOnly.slice(3)}`
+    return `(${digitsOnly.slice(0, 3)}) ${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6, 10)}`
   }
 
   // Handle upline agent selection
@@ -479,12 +521,18 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const handlePreInviteUserSelect = async (userId: string, selectedOption: SearchOption) => {
     try {
       setLoading(true)
+      setShowNameDropdown(false) // Hide dropdown immediately
       setPauseNameSearch(true)
+      setIsLoadingPreInviteUser(true)
 
       // Fetch full user details via Django API
       const accessToken = await getClientAccessToken()
       if (!accessToken) {
         setErrors(['No access token available'])
+        setPauseNameSearch(false)
+        setShowNameDropdown(false)
+        setIsLoadingPreInviteUser(false)
+        setLoading(false)
         return
       }
 
@@ -498,13 +546,32 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
       if (!response.ok) {
         console.error('Error fetching user:', response.status)
-        setErrors(['Failed to load user data'])
+        setErrors([`Failed to load user data: HTTP ${response.status}`])
+        setPauseNameSearch(false)
+        setShowNameDropdown(false)
+        setIsLoadingPreInviteUser(false)
+        setLoading(false)
         return
       }
 
       const user = await response.json()
 
-      // Pre-fill the form with user data
+      if (!user) {
+        console.error('No user data returned')
+        setErrors(['Failed to load user data: User not found'])
+        setPauseNameSearch(false)
+        setShowNameDropdown(false)
+        setIsLoadingPreInviteUser(false)
+        setLoading(false)
+        return
+      }
+
+      // Set all state updates together
+      // Set the label first so UI has data to display
+      setSelectedPreInviteUserLabel(selectedOption.label)
+      setNameSearchTerm(selectedOption.label)
+
+      // Set form data
       setFormData({
         firstName: user.first_name || "",
         lastName: user.last_name || "",
@@ -515,9 +582,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         positionId: user.position_id || ""
       })
 
+      // Set selected ID and clear loading state
       setSelectedPreInviteUserId(userId)
-      setNameSearchTerm(selectedOption.label)
-      // No need to clear results - TanStack Query manages this automatically when pauseNameSearch is set
+      setIsLoadingPreInviteUser(false)
+      setLoading(false)
 
       // If there's an upline, set the search term for upline field
       if (user.upline_id) {
@@ -528,8 +596,10 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       }
     } catch (error) {
       console.error('Error selecting pre-invite user:', error)
-      setErrors(['Failed to load user data'])
-    } finally {
+      setErrors([`Failed to load user data: ${error instanceof Error ? error.message : 'Unknown error'}`])
+      setPauseNameSearch(false)
+      setShowNameDropdown(false)
+      setIsLoadingPreInviteUser(false)
       setLoading(false)
     }
   }
@@ -576,11 +646,14 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                 type="text"
                 value={nameSearchTerm}
                 onChange={(e) => {
+                  const newValue = e.target.value
                   setPauseNameSearch(false)
-                  setNameSearchTerm(e.target.value)
+                  setNameSearchTerm(newValue)
+                  setShowNameDropdown(true)
                   // Clear selection if user changes search
                   if (selectedPreInviteUserId) {
                     setSelectedPreInviteUserId(null)
+                    setSelectedPreInviteUserLabel("")
                     setFormData({
                       firstName: "",
                       lastName: "",
@@ -590,6 +663,11 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                       uplineAgentId: "",
                       positionId: ""
                     })
+                  }
+                }}
+                onFocus={() => {
+                  if (nameSearchTerm.length >= 2 && !pauseNameSearch) {
+                    setShowNameDropdown(true)
                   }
                 }}
                 className="h-12"
@@ -603,14 +681,18 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             </div>
 
             {/* Name search results dropdown */}
-            {nameSearchTerm.length >= 2 && !isNameSearching && nameSearchResults.length > 0 && (
+            {showNameDropdown && nameSearchTerm.length >= 2 && !pauseNameSearch && nameSearchResults.length > 0 && (
               <div className="border border-border rounded-lg bg-card shadow-lg max-h-60 overflow-y-auto z-10">
                 {nameSearchResults.map((option) => (
                   <button
                     key={option.value}
                     type="button"
                     className="w-full text-left px-4 py-3 hover:bg-accent/50 border-b border-border last:border-b-0 transition-colors"
-                    onClick={() => handlePreInviteUserSelect(option.value, option)}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handlePreInviteUserSelect(option.value, option)
+                    }}
                   >
                     <div className="text-sm font-medium text-foreground">
                       {option.label}
@@ -640,33 +722,42 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
             )}
 
             {/* Selected pre-invite user indicator */}
-            {selectedPreInviteUserId && (
+            {(selectedPreInviteUserId || isLoadingPreInviteUser) && (
               <div className="mt-2 p-2 bg-blue-500/20 rounded border border-blue-500/30">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-blue-400">
-                    Updating existing user: {formData.firstName} {formData.lastName}
+                    {isLoadingPreInviteUser ? (
+                      <>Loading user data...</>
+                    ) : (
+                      <>Updating existing user: {selectedPreInviteUserLabel || `${formData.firstName} ${formData.lastName}`}</>
+                    )}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedPreInviteUserId(null)
-                      setNameSearchTerm("")
-                      setPauseNameSearch(false)
-                      setFormData({
-                        firstName: "",
-                        lastName: "",
-                        email: "",
-                        phoneNumber: "",
-                        permissionLevel: "",
-                        uplineAgentId: "",
-                        positionId: ""
-                      })
-                      clearUplineSelection()
-                    }}
-                    className="text-destructive hover:text-destructive/80 text-sm transition-colors"
-                  >
-                    Clear
-                  </button>
+                  {!isLoadingPreInviteUser && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPreInviteUserId(null)
+                        setSelectedPreInviteUserLabel("")
+                        setNameSearchTerm("")
+                        setPauseNameSearch(false)
+                        setShowNameDropdown(false)
+                        setIsLoadingPreInviteUser(false)
+                        setFormData({
+                          firstName: "",
+                          lastName: "",
+                          email: "",
+                          phoneNumber: "",
+                          permissionLevel: "",
+                          uplineAgentId: "",
+                          positionId: ""
+                        })
+                        clearUplineSelection()
+                      }}
+                      className="text-destructive hover:text-destructive/80 text-sm transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -676,7 +767,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
-                First name
+                First name <span className="text-red-500">*</span>
               </label>
               <Input
                 type="text"
@@ -697,7 +788,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
-                Last name
+                Last name <span className="text-red-500">*</span>
               </label>
               <Input
                 type="text"
@@ -718,7 +809,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
-                Email
+                Email <span className="text-red-500">*</span>
               </label>
               <Input
                 type="email"
@@ -731,14 +822,14 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
-                Phone number
+                Phone number <span className="text-red-500">*</span>
               </label>
               <Input
                 type="tel"
-                value={formData.phoneNumber}
+                value={formatPhoneForDisplay(formData.phoneNumber)}
                 onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
                 className={`h-12 ${errorFields.phoneNumber ? 'border-red-500' : ''}`}
-                placeholder="xxx-xxx-xxxx"
+                placeholder="(000) 000-0000"
                 required
               />
               {errorFields.phoneNumber && (
@@ -751,7 +842,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
-                Permission Level
+                Permission Level <span className="text-red-500">*</span>
               </label>
               <SimpleSearchableSelect
                 options={permissionLevels}
@@ -791,6 +882,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
               <Input
                 type="text"
                 value={uplineInputValue}
+                readOnly={!!formData.uplineAgentId}
                 onChange={(e) => {
                   const value = e.target.value
                   setUplineInputValue(value)
@@ -801,7 +893,25 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                     setSelectedUplineLabel("")
                   }
                 }}
-                className={`h-12 ${errorFields.uplineAgentId ? 'border-red-500' : ''}`}
+                onFocus={() => {
+                  if (!formData.uplineAgentId) {
+                    setPauseUplineSearch(false)
+                  }
+                }}
+                onBlur={() => {
+                  // Delay to let dropdown onClick register before auto-selecting
+                  setTimeout(() => {
+                    if (!formData.uplineAgentId && uplineInputValue.trim()) {
+                      const exactMatch = uplineSearchResults.find(
+                        (opt: SearchOption) => opt.label.toLowerCase() === uplineInputValue.trim().toLowerCase()
+                      )
+                      if (exactMatch) {
+                        applyUplineSelection(exactMatch)
+                      }
+                    }
+                  }, 200)
+                }}
+                className={`h-12 ${formData.uplineAgentId ? 'cursor-pointer' : ''} ${errorFields.uplineAgentId ? 'border-red-500' : ''}`}
                 placeholder="Type to search for upline agent..."
               />
               {/* Loading indicator */}

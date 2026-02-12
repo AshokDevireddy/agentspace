@@ -610,8 +610,20 @@ export default function PostDeal() {
 
       console.log('[PostDeal] Response received, status:', res.status)
       console.log('[PostDeal] Response headers:', Object.fromEntries(res.headers.entries()))
-      console.log('[PostDeal] Parsing response JSON...')
-      const data = await res.json()
+      console.log('[PostDeal] Parsing response...')
+      const responseText = await res.text()
+      let data: any
+      try {
+        data = JSON.parse(responseText)
+      } catch {
+        // Server returned non-JSON (e.g. HTML error page or plain text)
+        console.error('[PostDeal] Non-JSON response:', responseText.substring(0, 200))
+        throw new Error(
+          res.status >= 500
+            ? "Server error. Please try again in a moment."
+            : `Unexpected response (${res.status}): ${responseText.substring(0, 100)}`
+        )
+      }
       console.log('[PostDeal] JSON parsed successfully:', { ok: res.ok, status: res.status, data })
 
       if (!res.ok) {

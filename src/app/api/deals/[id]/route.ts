@@ -282,7 +282,13 @@ export async function PUT(
           }
         );
 
-        const result = await response.json();
+        const resultText = await response.text();
+        let result: any = {};
+        try {
+          result = JSON.parse(resultText);
+        } catch {
+          console.error('[Deals API] Non-JSON lapse notification response:', resultText.substring(0, 200));
+        }
         console.log(`[Deals API] Lapse notifications: ${result.sent || 0} emails sent`,
           result.errors ? `Errors: ${result.errors.join(', ')}` : '');
       } catch (notificationError) {

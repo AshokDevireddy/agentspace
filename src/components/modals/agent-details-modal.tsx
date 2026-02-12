@@ -156,6 +156,10 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
   const { user: authUser } = useAuth()
   const isAdmin = authUser?.is_admin || authUser?.role === 'admin'
 
+  // Can edit: admin can edit anyone, non-admin can edit their downline
+  // canEdit flag comes from Django (camelCased by proxy)
+  const canEditAgent = agent?.canEdit || isAdmin
+
   // Fetch agent details
   const { data: agent, isLoading: loading, error: agentError, refetch: refetchAgent } = useQuery({
     queryKey: [...queryKeys.agentDetail(agentId), startMonth, endMonth],
@@ -371,7 +375,7 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
               </div>
             </div>
 
-            {isAdmin && (
+            {canEditAgent && (
               isEditing ? (
                 <div className="flex items-center gap-2 mr-8">
                   <Button

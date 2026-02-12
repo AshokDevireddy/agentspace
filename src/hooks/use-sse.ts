@@ -106,7 +106,7 @@ export function useSSE(
 
       // Construct full URL with auth token as query param
       // (EventSource doesn't support custom headers)
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       const separator = url.includes('?') ? '&' : '?'
       const fullUrl = `${baseUrl}${url}${separator}token=${accessToken}`
 
@@ -155,6 +155,7 @@ export function useSSE(
       // Handle specific named events
       const handleNamedEvent = (eventType: string) => (event: MessageEvent) => {
         if (!mountedRef.current) return
+        if (!event.data) return
         try {
           const data = JSON.parse(event.data)
           onEventRef.current?.(eventType, data)

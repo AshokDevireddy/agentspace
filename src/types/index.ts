@@ -155,15 +155,25 @@ export interface ApiResponse<T> {
 
 export interface UserProfile {
   id: string
-  firstName: string
-  lastName: string
   email: string
+  firstName: string | null
+  lastName: string | null
+  agencyId: string | null
+  agencyName: string | null
   role: 'admin' | 'agent' | 'client'
-  is_admin: boolean
+  isAdmin: boolean
   status: 'pre-invite' | 'invited' | 'onboarding' | 'active' | 'inactive'
-  agency_id: string
-  position_id?: string
-  upline_id?: string
+  permLevel: string | null
+  subscriptionTier: string | null
+  phone: string | null
+  startDate: string | null
+  annualGoal: number | null
+  totalProd: number
+  totalPoliciesSold: number
+  createdAt: string | null
+  positionId: string | null
+  positionName: string | null
+  positionLevel: number | null
 }
 
 export interface DealsSummary {

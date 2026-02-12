@@ -10,7 +10,7 @@ import { useAuth } from "@/providers/AuthProvider"
 import OnboardingWizard from "@/components/onboarding/OnboardingWizard"
 import type { UserData as OnboardingUserData } from "@/components/onboarding/types"
 import { useTour } from "@/contexts/onboarding-tour-context"
-import type { ApiResponse, UserProfile, CarrierActive, PieChartEntry, LeaderboardProducer, DashboardData, DealsSummary } from "@/types"
+import type { UserProfile, CarrierActive, PieChartEntry, LeaderboardProducer, DashboardData, DealsSummary } from "@/types"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { useDashboardSummary, useScoreboardData, useProductionData } from "@/hooks/useDashboardData"
 import { useCompleteOnboarding } from "@/hooks/mutations"
@@ -40,7 +40,7 @@ export default function Home() {
   const queryClient = useQueryClient()
   const completeOnboardingMutation = useCompleteOnboarding()
 
-  const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useApiFetch<ApiResponse<UserProfile>>(
+  const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useApiFetch<UserProfile>(
     queryKeys.userProfile(user?.id),
     `/api/user/profile?user_id=${user?.id}`,
     {
@@ -133,12 +133,12 @@ export default function Home() {
   // Combined error state for main data
   const queryError = dashboardError || scoreboardError || profileError
 
-  const userData = profileData?.success ? profileData.data : null
+  const userData = profileData || null
   const firstName = userData?.firstName || 'User'
 
   useEffect(() => {
     if (userData) {
-      setUserRole(userData.is_admin ? 'admin' : 'agent')
+      setUserRole(userData.isAdmin ? 'admin' : 'agent')
       if (userData.status === 'onboarding') {
         setShowWizard(true)
       }
@@ -313,8 +313,8 @@ export default function Home() {
       last_name: userData.lastName || '',
       email: user?.email || '',
       role: userData.role as 'admin' | 'agent' | 'client',
-      is_admin: userData.is_admin,
-      agency_id: userData.agency_id,
+      is_admin: userData.isAdmin,
+      agency_id: userData.agencyId ?? undefined,
     }
     return <OnboardingWizard userData={wizardUserData} onComplete={handleOnboardingComplete} />
   }

@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { useAuth } from "@/providers/AuthProvider"
 import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2, MapPin } from "lucide-react"
@@ -34,6 +35,10 @@ const initialFormData = {
   clientAddress: "",
   policyNumber: "",
   applicationNumber: "",
+  team: "",
+  notes: "",
+  rateClass: "",
+  coverageAmount: "",
 };
 
 type Beneficiary = {
@@ -43,13 +48,6 @@ type Beneficiary = {
 };
 
 type FormField = keyof typeof initialFormData;
-
-const requiredFields: FormField[] = [
-  "carrierId", "productId", "policyEffectiveDate", "ssnBenefit", "monthlyPremium",
-  "billingCycle", "leadSource",
-  "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
-  "clientAddress", "policyNumber"
-];
 
 const STEPS = [
   { id: 1, name: 'Policy Information', icon: FileText },
@@ -84,6 +82,16 @@ export default function PostDeal() {
     { value: "quarterly", label: "Quarterly" },
     { value: "semi-annually", label: "Semi-Annually" },
     { value: "annually", label: "Annually" },
+  ]
+
+  // Rate class options
+  const rateClassOptions = [
+    { value: "Preferred", label: "Preferred" },
+    { value: "Standard", label: "Standard" },
+    { value: "Sub-Standard", label: "Sub-Standard" },
+    { value: "Graded", label: "Graded" },
+    { value: "Modified", label: "Modified" },
+    { value: "Guaranteed Issue", label: "Guaranteed Issue" },
   ]
 
   // Billing day of month options
@@ -176,7 +184,9 @@ export default function PostDeal() {
         carriersOptions: data.carriers || [],
         userFirstName: data.user_first_name,
         userLastName: data.user_last_name,
-        deactivatedPostADeal: data.deactivated_post_a_deal || false
+        deactivatedPostADeal: data.deactivated_post_a_deal || false,
+        teamsOptions: data.teams || [],
+        beneficiariesRequired: data.beneficiaries_required ?? false
       }
     },
     enabled: !!user?.id,
@@ -191,6 +201,24 @@ export default function PostDeal() {
   const userFirstName = agencyData?.userFirstName ?? ''
   const userLastName = agencyData?.userLastName ?? ''
   const deactivatedPostADeal = agencyData?.deactivatedPostADeal ?? false
+  const teamsOptions = agencyData?.teamsOptions ?? []
+  const beneficiariesRequired = agencyData?.beneficiariesRequired ?? false
+
+  const hasTeams = teamsOptions.length > 0
+
+  // Dynamic required fields based on agency settings
+  const requiredFields: FormField[] = useMemo(() => {
+    const baseFields: FormField[] = [
+      "carrierId", "productId", "policyEffectiveDate", "ssnBenefit", "monthlyPremium",
+      "billingCycle", "leadSource",
+      "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
+      "clientAddress", "policyNumber"
+    ]
+    if (hasTeams) {
+      baseFields.push("team")
+    }
+    return baseFields
+  }, [hasTeams])
 
   // Query: Load products when carrier changes via Django API
   const { data: productsOptions = [], isFetching: isProductsFetching } = useQuery({
@@ -408,6 +436,12 @@ export default function PostDeal() {
         billing_cycle: formData.billingCycle || null,
         lead_source: formData.leadSource || null,
         beneficiaries: normalizedBeneficiaries,
+        team: formData.team || null,
+        notes: formData.notes || null,
+        rate_class: formData.rateClass || null,
+        submission_date: new Date().toISOString().split('T')[0],
+        face_value: formData.coverageAmount ? parseFloat(formData.coverageAmount) : null,
+        post_a_deal: true,
       }
 
 
@@ -600,6 +634,12 @@ export default function PostDeal() {
       setFormData({ ...formData, [field]: value })
       return
     }
+    // For coverage amount, prevent negative values
+    if (field === "coverageAmount") {
+      if (value.startsWith("-")) return
+      setFormData({ ...formData, [field]: value })
+      return
+    }
     // Reset productId when carrier changes to prevent stale product selection
     if (field === "carrierId") {
       setFormData(prev => ({ ...prev, carrierId: value, productId: "" }))
@@ -699,6 +739,10 @@ export default function PostDeal() {
         setError("Please enter a valid monthly premium.")
         return false
       }
+      if (!formData.rateClass) {
+        setError("Please select a rate class.")
+        return false
+      }
       // At least one of policy number or application number must be filled
       if (!formData.policyNumber && !formData.applicationNumber) {
         setError("Please enter either a policy number or an application number.")
@@ -710,6 +754,10 @@ export default function PostDeal() {
       }
       if (!formData.leadSource) {
         setError("Please select a lead source.")
+        return false
+      }
+      if (hasTeams && !formData.team) {
+        setError("Please select a team.")
         return false
       }
     } else if (step === 2) {
@@ -744,6 +792,21 @@ export default function PostDeal() {
       }
       if (!formData.clientAddress) {
         setError("Please enter the client's address.")
+        return false
+      }
+      // Validate beneficiaries based on agency settings
+      const validBeneficiaries = beneficiaries.filter(b => b.name.trim() && b.relationship.trim())
+      const incompleteBeneficiaries = beneficiaries.filter(b =>
+        (b.name.trim() && !b.relationship.trim()) || (!b.name.trim() && b.relationship.trim())
+      )
+
+      if (beneficiariesRequired && validBeneficiaries.length === 0) {
+        setError("Please add at least one beneficiary with both name and relationship.")
+        return false
+      }
+
+      if (incompleteBeneficiaries.length > 0) {
+        setError("Each beneficiary must have both name and relationship filled in.")
         return false
       }
     }
@@ -1002,6 +1065,37 @@ export default function PostDeal() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Rate Class */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Rate Class <span className="text-destructive">*</span>
+                    </label>
+                    <SimpleSearchableSelect
+                      options={rateClassOptions}
+                      value={formData.rateClass}
+                      onValueChange={(value) => handleInputChange("rateClass", value)}
+                      placeholder="Select rate class"
+                    />
+                  </div>
+
+                  {/* Coverage Amount */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Coverage Amount
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.coverageAmount}
+                      onChange={(e) => handleInputChange("coverageAmount", e.target.value)}
+                      className="h-12"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
                 {/* SSN Benefit */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
@@ -1116,6 +1210,38 @@ export default function PostDeal() {
                     />
                   </div>
                 </div>
+
+                {/* Team - Only shown if teams exist */}
+                {teamsOptions.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Team <span className="text-destructive">*</span>
+                    </label>
+                    <SimpleSearchableSelect
+                      options={teamsOptions}
+                      value={formData.team}
+                      onValueChange={(value) => handleInputChange("team", value)}
+                      placeholder="Select team"
+                    />
+                  </div>
+                )}
+
+                {/* Notes */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-foreground">
+                    Notes
+                  </label>
+                  <Textarea
+                    value={formData.notes}
+                    onChange={(e) => handleInputChange("notes", e.target.value)}
+                    placeholder={
+                      agencyId === "b731a3a7-a357-468e-ad6a-50a426b3735c"
+                        ? "Add any additional notes about this policy... (These notes will appear in the Discord message)"
+                        : "Add any additional notes about this policy..."
+                    }
+                    className="min-h-[100px]"
+                  />
+                </div>
               </div>
             )}
 
@@ -1229,9 +1355,13 @@ export default function PostDeal() {
                 <div className="space-y-4 border border-dashed border-border rounded-lg p-4">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div>
-                      <h3 className="text-lg font-semibold text-foreground">Beneficiaries (Optional)</h3>
+                      <h3 className="text-lg font-semibold text-foreground">
+                        Beneficiaries {beneficiariesRequired && <span className="text-destructive">*</span>}
+                      </h3>
                       <p className="text-sm text-muted-foreground">
-                        Add one or more beneficiaries for this policy. Leave blank if not applicable.
+                        {beneficiariesRequired
+                          ? "Add at least one beneficiary with name and relationship."
+                          : "Add one or more beneficiaries for this policy. Leave blank if not applicable."}
                       </p>
                     </div>
                     <Button
@@ -1340,6 +1470,16 @@ export default function PostDeal() {
                       <p className="font-medium text-foreground mt-1">${formData.monthlyPremium}</p>
                     </div>
                     <div>
+                      <span className="text-muted-foreground">Rate Class:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.rateClass || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Coverage Amount:</span>
+                      <p className="font-medium text-foreground mt-1">
+                        {formData.coverageAmount ? `$${parseFloat(formData.coverageAmount).toLocaleString()}` : 'N/A'}
+                      </p>
+                    </div>
+                    <div>
                       <span className="text-muted-foreground">Policy Number:</span>
                       <p className="font-medium text-foreground mt-1">{formData.policyNumber || 'N/A'}</p>
                     </div>
@@ -1359,6 +1499,20 @@ export default function PostDeal() {
                       <span className="text-muted-foreground">Lead Source:</span>
                       <p className="font-medium text-foreground mt-1">{formData.leadSource || 'N/A'}</p>
                     </div>
+                    {teamsOptions.length > 0 && formData.team && (
+                      <div>
+                        <span className="text-muted-foreground">Team:</span>
+                        <p className="font-medium text-foreground mt-1">
+                          {teamsOptions.find(t => t.value === formData.team)?.label || formData.team}
+                        </p>
+                      </div>
+                    )}
+                    {formData.notes && (
+                      <div className="md:col-span-2">
+                        <span className="text-muted-foreground">Notes:</span>
+                        <p className="font-medium text-foreground mt-1 whitespace-pre-wrap">{formData.notes}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

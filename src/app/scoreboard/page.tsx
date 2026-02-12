@@ -71,7 +71,7 @@ export default function Scoreboard() {
   const isHydrated = useHydrated()
   const clientDate = useClientDate()
 
-  const [timeframe, setTimeframe] = useState<TimeframeOption>('ytd')
+  const [timeframe, setTimeframe] = useState<TimeframeOption>('this_month')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
@@ -105,17 +105,28 @@ export default function Scoreboard() {
 
     switch (selectedTimeframe) {
       case 'this_week': {
+        // Monday to Sunday week
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
         startDate = new Date(today)
-        startDate.setDate(today.getDate() - dayOfWeek)
+        startDate.setDate(today.getDate() - daysFromMonday)
+        startDate.setHours(0, 0, 0, 0)
+        const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek
         endDate = new Date(today)
-        endDate.setDate(today.getDate() + (6 - dayOfWeek))
+        endDate.setDate(today.getDate() + daysToSunday)
+        endDate.setHours(23, 59, 59, 999)
         break
       }
       case 'last_week': {
-        endDate = new Date(today)
-        endDate.setDate(today.getDate() - dayOfWeek - 1)
-        startDate = new Date(endDate)
-        startDate.setDate(endDate.getDate() - 6)
+        // Last Monday to Sunday week
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+        const thisWeekMonday = new Date(today)
+        thisWeekMonday.setDate(today.getDate() - daysFromMonday)
+        startDate = new Date(thisWeekMonday)
+        startDate.setDate(thisWeekMonday.getDate() - 7)
+        startDate.setHours(0, 0, 0, 0)
+        endDate = new Date(startDate)
+        endDate.setDate(startDate.getDate() + 6)
+        endDate.setHours(23, 59, 59, 999)
         break
       }
       case 'past_7_days':
@@ -159,22 +170,35 @@ export default function Scoreboard() {
           endDate: customEndDate || clientDate.isoDate
         }
       default: {
+        // Monday to Sunday week
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+        const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek
         startDate = new Date(today)
-        startDate.setDate(today.getDate() - dayOfWeek)
+        startDate.setDate(today.getDate() - daysFromMonday)
+        startDate.setHours(0, 0, 0, 0)
         endDate = new Date(today)
-        endDate.setDate(today.getDate() + (6 - dayOfWeek))
+        endDate.setDate(today.getDate() + daysToSunday)
+        endDate.setHours(23, 59, 59, 999)
         break
       }
     }
 
+    // Format dates in local timezone to avoid UTC conversion issues
+    const formatLocalDate = (date: Date): string => {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+
     // Use agency default start date if available and not null, but only when submitted filter is true
-    const finalStartDate = (submittedFilter === 'submitted' && defaultScoreboardStartDate) 
-      ? defaultScoreboardStartDate 
-      : startDate.toISOString().split('T')[0]
+    const finalStartDate = (submittedFilter === 'submitted' && defaultScoreboardStartDate)
+      ? defaultScoreboardStartDate
+      : formatLocalDate(startDate)
 
     return {
       startDate: finalStartDate,
-      endDate: endDate.toISOString().split('T')[0]
+      endDate: formatLocalDate(endDate)
     }
   }, [clientDate, customStartDate, customEndDate, defaultScoreboardStartDate, submittedFilter])
 

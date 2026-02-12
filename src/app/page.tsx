@@ -54,7 +54,7 @@ export default function Home() {
     weekRange.startDate,
     weekRange.endDate,
     {
-      enabled: !!user?.id,
+      enabled: !!user?.id && isHydrated,
       staleTime: 60 * 1000, // 1 minute - scoreboard data is more static
     }
   )

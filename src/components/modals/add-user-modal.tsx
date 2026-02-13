@@ -478,29 +478,27 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setNameSearchTerm(selectedOption.label)
 
       // Set form data
-      setFormData({
+      setFormData(prev => ({
         firstName: user.first_name || "",
         lastName: user.last_name || "",
         email: user.email || "",
         phoneNumber: user.phone_number || "",
         permissionLevel: user.perm_level || "",
-        uplineAgentId: user.upline_id || "",
+        uplineAgentId: user.upline_id || prev.uplineAgentId,
         positionId: user.position_id || ""
-      })
+      }))
 
       // Set selected ID and clear loading state
       setSelectedPreInviteUserId(userId)
       setIsLoadingPreInviteUser(false)
       setLoading(false)
 
-      // Clear upline display state - applyUplineSelection will re-set if user has upline
-      setUplineInputValue("")
-      setSelectedUplineLabel("")
-      setPauseUplineSearch(false)
-      setUplineSearchTerm("")
-
-      // If there's an upline, set it from the preloaded agents list
       if (user.upline_id) {
+        setUplineInputValue("")
+        setSelectedUplineLabel("")
+        setPauseUplineSearch(false)
+        setUplineSearchTerm("")
+
         const uplineOption = preloadedAgents.find((r: SearchOption) => r.value === user.upline_id)
         if (uplineOption) {
           applyUplineSelection(uplineOption)

@@ -22,6 +22,7 @@ const initialFormData = {
   carrierId: "",
   productId: "",
   policyEffectiveDate: "",
+  submittedDate: "",
   rateClass: "",
   ssnBenefit: "",
   billingDayOfMonth: "",
@@ -67,6 +68,7 @@ export default function PostDeal() {
   const errorRef = useRef<HTMLDivElement>(null)
   const [currentStep, setCurrentStep] = useState(1)
   const submitIntentRef = useRef(false)
+  const today = useMemo(() => new Date().toISOString().split('T')[0], [])
 
   // Dynamic option states
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([])
@@ -117,6 +119,10 @@ export default function PostDeal() {
     { value: "modified", label: "Modified" },
     { value: "guaranteed issue", label: "Guaranteed Issue" },
   ]
+
+  useEffect(() => {
+    setFormData(prev => ({ ...prev, submittedDate: today }))
+  }, [today])
 
   useEffect(() => {
     if (error && errorRef.current) {
@@ -569,7 +575,7 @@ export default function PostDeal() {
         lead_source: formData.leadSource || null,
         team: formData.team || null,
         notes: formData.notes || null,
-        submission_date: new Date().toISOString().split('T')[0],
+        submission_date: formData.submittedDate || today,
         beneficiaries: normalizedBeneficiaries,
         face_value: coverageAmount,
         post_a_deal: true,
@@ -1299,6 +1305,22 @@ export default function PostDeal() {
                       placeholder="0.00"
                     />
                   </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Submitted Date
+                    </label>
+                    <Input
+                      type="date"
+                      value={formData.submittedDate}
+                      onChange={(e) => handleInputChange("submittedDate", e.target.value)}
+                      className="h-12"
+                      max={today}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Defaults to today. Change this to backdate a previously sold deal.
+                    </p>
+                  </div>
                 </div>
 
                 {/* SSN Benefit */}
@@ -1683,6 +1705,10 @@ export default function PostDeal() {
                     <div>
                       <span className="text-muted-foreground">Effective Date:</span>
                       <p className="font-medium text-foreground mt-1">{formData.policyEffectiveDate}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Submitted Date:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.submittedDate}</p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">SSN Benefit:</span>

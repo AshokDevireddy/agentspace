@@ -386,9 +386,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       const limitedDigits = digitsOnly.slice(0, 10)
 
       // Store only digits in state (database format)
-      setFormData({ ...formData, [field]: limitedDigits })
+      setFormData(prev => ({ ...prev, [field]: limitedDigits }))
     } else {
-      setFormData({ ...formData, [field]: value })
+      setFormData(prev => ({ ...prev, [field]: value }))
     }
   }
 
@@ -406,7 +406,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
   // Handle upline agent selection
   const handleUplineAgentChange = (agentId: string) => {
-    setFormData({ ...formData, uplineAgentId: agentId })
+    setFormData(prev => ({ ...prev, uplineAgentId: agentId }))
   }
 
   const applyUplineSelection = (option: SearchOption) => {
@@ -492,6 +492,12 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setSelectedPreInviteUserId(userId)
       setIsLoadingPreInviteUser(false)
       setLoading(false)
+
+      // Clear upline display state - applyUplineSelection will re-set if user has upline
+      setUplineInputValue("")
+      setSelectedUplineLabel("")
+      setPauseUplineSearch(false)
+      setUplineSearchTerm("")
 
       // If there's an upline, set it from the preloaded agents list
       if (user.upline_id) {

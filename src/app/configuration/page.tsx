@@ -148,6 +148,14 @@ export default function ConfigurationPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
+  // Defense-in-depth: redirect non-admin users (middleware also blocks this route)
+  const isAdmin = userData?.is_admin || userData?.role === 'admin'
+  useEffect(() => {
+    if (userData && !isAdmin) {
+      router.replace('/unauthorized')
+    }
+  }, [userData, isAdmin, router])
+
   // Ensure we're on the client before using queryClient
   useEffect(() => {
     setIsMounted(true)
@@ -2532,6 +2540,9 @@ export default function ConfigurationPage() {
   }
 
   const gridData = getCommissionsGrid()
+
+  // Block render for non-admin users (redirect is handled by useEffect above)
+  if (!userData || !isAdmin) return null
 
   return (
     <div className="flex min-h-screen bg-background">

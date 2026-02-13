@@ -1,28 +1,25 @@
 // API ROUTE: /api/users/[id]
-// Fetches user details by user ID with authentication
+// Fetches user details by user ID with authentication and authorization
 
-import { createServerClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { authenticateRoute, authorizeAgentAccess, isAuthError } from "@/lib/auth/route-auth";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Await params (required in Next.js 15+)
     const { id } = await params;
 
-    // Create server client with auth
-    const supabase = await createServerClient();
+    // Authenticate and authorize
+    const authResult = await authenticateRoute();
+    if (isAuthError(authResult)) return authResult;
 
-    // Verify authentication
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (!authUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const accessResult = await authorizeAgentAccess(authResult.supabaseAdmin, authResult.user, id);
+    if (accessResult !== true) return accessResult;
 
     // Fetch the requested user
-    const { data: user, error } = await supabase
+    const { data: user, error } = await authResult.supabaseAdmin
       .from('users')
       .select('id, first_name, last_name, email, phone_number, perm_level, upline_id, position_id, status')
       .eq('id', id)

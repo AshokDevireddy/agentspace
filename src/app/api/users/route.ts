@@ -1,8 +1,8 @@
 // API ROUTE: /api/users
 // This endpoint fetches user information by ID, primarily for getting agent names
 
-import { createAdminClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { authenticateRoute, isAuthError, isSameAgency } from '@/lib/auth/route-auth'
 
 export async function GET(request: Request) {
   try {
@@ -16,12 +16,16 @@ export async function GET(request: Request) {
       }, { status: 400 })
     }
 
-    const supabase = createAdminClient()
+    // Authenticate the caller
+    const authResult = await authenticateRoute()
+    if (isAuthError(authResult)) return authResult
+
+    const supabase = authResult.supabaseAdmin
 
     // Get user information
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, first_name, last_name')
+      .select('id, first_name, last_name, agency_id')
       .eq('id', userId)
       .single()
 
@@ -38,6 +42,14 @@ export async function GET(request: Request) {
         error: 'User not found',
         detail: 'No user found with the provided ID'
       }, { status: 404 })
+    }
+
+    // Agency-scope check: both must have a non-null agency_id and they must match
+    if (!isSameAgency(user.agency_id, authResult.user.agencyId)) {
+      return NextResponse.json({
+        error: 'Forbidden',
+        detail: 'User is not in your agency'
+      }, { status: 403 })
     }
 
     return NextResponse.json({

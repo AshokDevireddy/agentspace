@@ -24,7 +24,7 @@ import { useHydrated } from "@/hooks/useHydrated"
 const PIE_CHART_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#ffb347', '#d084d0', '#84d0d0', '#d0d084'] as const
 
 export default function Home() {
-  const { user, loading: authLoading, refreshUserData } = useAuth()
+  const { user, userData: authUserData, loading: authLoading, refreshUserData } = useAuth()
   const { startTour, setUserRole, isTourActive } = useTour()
   const [showWizard, setShowWizard] = useState(false)
   const [hasStartedTour, setHasStartedTour] = useState(false)
@@ -48,8 +48,8 @@ export default function Home() {
     }
   )
 
-  const userData = profileData?.success ? profileData.data : null
-  const userId = userData?.id || null // users.id from the users table
+  const profileUserData = profileData?.success ? profileData.data : null
+  const userId = authUserData?.id || profileUserData?.id || null
 
   const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useSupabaseRpc<any>(
     [...queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate), dateMode],
@@ -163,15 +163,14 @@ export default function Home() {
   // Combined error state for main data
   const queryError = dashboardError || scoreboardError || profileError
 
-  const firstName = userData?.firstName || user?.user_metadata?.first_name || 'User'
+  const firstName = profileUserData?.firstName || user?.user_metadata?.first_name || 'User'
 
   useEffect(() => {
-    if (userData) {
-      setUserRole(userData.is_admin ? 'admin' : 'agent')
-      // Show wizard only if status is 'onboarding', hide if status changes to 'active'
-      setShowWizard(userData.status === 'onboarding')
+    if (profileUserData) {
+      setUserRole(profileUserData.is_admin ? 'admin' : 'agent')
+      setShowWizard(profileUserData.status === 'onboarding')
     }
-  }, [userData, setUserRole])
+  }, [profileUserData, setUserRole])
 
   // Weekly scoreboard for date display
   const scoreboardData = scoreboardResult?.success ? scoreboardResult.data : null
@@ -192,20 +191,20 @@ export default function Home() {
   const dashboardData = dashboardResult
 
   useEffect(() => {
-    if (!authLoading && !profileLoading && userData && user?.id) {
+    if (!authLoading && !profileLoading && profileUserData && user?.id) {
       const oldKey = `tour_shown_${user.id}`
       if (localStorage.getItem(oldKey)) {
         localStorage.removeItem(oldKey)
       }
       const tourCompleted = localStorage.getItem(`tour_completed_${user.id}`)
-      if (userData.status === 'active' && !tourCompleted && !isTourActive && !hasStartedTour) {
+      if (profileUserData.status === 'active' && !tourCompleted && !isTourActive && !hasStartedTour) {
         setTimeout(() => {
           startTour()
           setHasStartedTour(true)
         }, 500)
       }
     }
-  }, [authLoading, profileLoading, userData, isTourActive, hasStartedTour, startTour, user?.id])
+  }, [authLoading, profileLoading, profileUserData, isTourActive, hasStartedTour, startTour, user?.id])
 
   const handleOnboardingComplete = () => {
     completeOnboardingMutation.mutate(undefined, {
@@ -217,7 +216,6 @@ export default function Home() {
           queryClient.refetchQueries({ queryKey: queryKeys.user, type: 'active' }),
           queryClient.refetchQueries({ queryKey: queryKeys.userProfile(), type: 'active' }),
         ])
-        // showWizard will be automatically set to false by the useEffect watching userData.status
       },
       onError: async (error) => {
         console.error('Error completing onboarding:', error)
@@ -229,7 +227,6 @@ export default function Home() {
   }
 
   // Decoupled loading states per section for better UX
-  // Include authLoading to show skeletons while auth is initializing (prevents "no data" flash)
   const isHeaderLoading = authLoading || profileLoading
   const isStatsLoading = authLoading || dashboardLoading
   const isScoreboardLoading = authLoading || scoreboardLoading
@@ -326,8 +323,8 @@ export default function Home() {
     )
   }, [])
 
-  if (showWizard && userData) {
-    return <OnboardingWizard userData={userData} onComplete={handleOnboardingComplete} />
+  if (showWizard && profileUserData) {
+    return <OnboardingWizard userData={profileUserData} onComplete={handleOnboardingComplete} />
   }
 
   return (

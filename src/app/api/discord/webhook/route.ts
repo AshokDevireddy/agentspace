@@ -1,27 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { replaceDiscordPlaceholders, DEFAULT_DISCORD_TEMPLATE } from '@/lib/discord-template-helpers'
+import { authenticateRoute, isAuthError } from '@/lib/auth/route-auth'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
+    const authResult = await authenticateRoute()
+    if (isAuthError(authResult)) return authResult
+    const { user } = authResult
 
-    // Verify authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const agencyId = user.agencyId
+    if (!agencyId) {
+      return NextResponse.json({ error: 'No agency associated' }, { status: 403 })
     }
 
     // Get request body
     const body = await request.json()
-    const { agencyId, placeholders } = body
+    const { placeholders } = body
 
-    if (!agencyId || !placeholders) {
+    if (!placeholders) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
     // Get the agency's Discord webhook URL, template, and bot username
+    const supabase = await createServerClient()
     const { data: agency, error: agencyError } = await supabase
       .from('agencies')
       .select('discord_webhook_url, discord_notification_enabled, discord_notification_template, discord_bot_username')

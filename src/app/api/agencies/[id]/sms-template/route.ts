@@ -1,14 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { DEFAULT_SMS_TEMPLATES } from '@/lib/sms-template-helpers';
+import { authenticateRoute, isAuthError } from '@/lib/auth/route-auth';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const admin = createAdminClient();
+    const authResult = await authenticateRoute();
+    if (isAuthError(authResult)) return authResult;
+    const { user } = authResult;
+
     const agencyId = params.id;
+    if (user.agencyId !== agencyId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const admin = createAdminClient();
 
     // Fetch agency SMS welcome settings
     const { data: agency, error } = await admin

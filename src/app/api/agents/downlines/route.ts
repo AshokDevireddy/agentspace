@@ -1,8 +1,8 @@
 // API ROUTE: /api/agents/downlines
 // This endpoint fetches the downlines for a specific agent
 
-import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { authenticateRoute, authorizeAgentAccess, isAuthError } from "@/lib/auth/route-auth";
 
 export async function GET(request: Request) {
   try {
@@ -16,7 +16,14 @@ export async function GET(request: Request) {
       }, { status: 400 });
     }
 
-    const supabase = createAdminClient();
+    // Authenticate and authorize
+    const authResult = await authenticateRoute();
+    if (isAuthError(authResult)) return authResult;
+
+    const accessResult = await authorizeAgentAccess(authResult.supabaseAdmin, authResult.user, agentId);
+    if (accessResult !== true) return accessResult;
+
+    const supabase = authResult.supabaseAdmin;
 
     // Fetch downlines with their details
     const { data: downlines, error } = await supabase

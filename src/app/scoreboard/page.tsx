@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { Calendar as CalendarIcon, Info } from "lucide-react"
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
@@ -88,21 +89,48 @@ export default function Scoreboard() {
   const [submittedFilter, setSubmittedFilter] = useState<'submitted' | 'issue_paid'>('submitted')
   const [dateMode, setDateMode] = useLocalStorage<'submitted_date' | 'policy_effective_date'>('scoreboard_date_mode', 'submitted_date')
   const [viewMode, setViewMode] = useState<'agency' | 'my_team'>('agency')
+  const [selectedDownlineAgentId, setSelectedDownlineAgentId] = useState<string>('')
 
   // Fetch downline IDs for "My Team" filtering
   const supabase = createClient()
-  const { data: downlineIdSet } = useQuery({
+  const { data: downlineData } = useQuery({
     queryKey: queryKeys.myDownlineIds(userData?.id || ''),
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_agent_downline', {
         agent_id: userData!.id
       })
       if (error) throw error
-      const ids = new Set<string>((data || []).map((d: { id: string }) => d.id))
-      ids.add(userData!.id) // Include self
-      return ids
+      const agents = (data || []) as Array<{ id: string; first_name: string; last_name: string }>
+      const idSet = new Set<string>(agents.map(d => d.id))
+      idSet.add(userData!.id) // Include self
+      return { idSet, agents }
     },
     enabled: !!userData?.id,
+    staleTime: 1000 * 60 * 5,
+  })
+
+  const downlineIdSet = downlineData?.idSet
+
+  const downlineAgentOptions = useMemo(() => {
+    if (!downlineData?.agents) return []
+    return downlineData.agents
+      .map(a => ({ value: a.id, label: `${a.first_name} ${a.last_name}`.trim() }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [downlineData?.agents])
+
+  // Fetch downline IDs for the selected agent's sub-tree
+  const { data: selectedAgentDownlineIdSet } = useQuery({
+    queryKey: queryKeys.selectedAgentDownlineIds(selectedDownlineAgentId),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_agent_downline', {
+        agent_id: selectedDownlineAgentId
+      })
+      if (error) throw error
+      const ids = new Set<string>((data || []).map((d: { id: string }) => d.id))
+      ids.add(selectedDownlineAgentId) // Include self
+      return ids
+    },
+    enabled: !!selectedDownlineAgentId,
     staleTime: 1000 * 60 * 5,
   })
 
@@ -304,7 +332,11 @@ export default function Scoreboard() {
     if (!rawData) return null
     if (viewMode === 'agency' || !downlineIdSet) return rawData
 
-    const filtered = rawData.leaderboard.filter(agent => downlineIdSet.has(agent.agent_id))
+    const filterSet = (selectedDownlineAgentId && selectedAgentDownlineIdSet)
+      ? selectedAgentDownlineIdSet
+      : downlineIdSet
+
+    const filtered = rawData.leaderboard.filter(agent => filterSet.has(agent.agent_id))
     const reRanked = filtered.map((agent, idx) => ({ ...agent, rank: idx + 1 }))
     return {
       leaderboard: reRanked,
@@ -315,7 +347,7 @@ export default function Scoreboard() {
       },
       dateRange: rawData.dateRange,
     }
-  }, [rawData, viewMode, downlineIdSet])
+  }, [rawData, viewMode, downlineIdSet, selectedDownlineAgentId, selectedAgentDownlineIdSet])
 
   // Include authLoading to show skeletons while auth initializes (prevents "no data" flash)
   const isLoading = authLoading || isDataLoading
@@ -476,7 +508,10 @@ export default function Scoreboard() {
                   <Button
                     variant={viewMode === 'agency' ? 'default' : 'ghost'}
                     size="sm"
-                    onClick={() => setViewMode('agency')}
+                    onClick={() => {
+                      setViewMode('agency')
+                      setSelectedDownlineAgentId('')
+                    }}
                     className="h-9 px-3 text-sm"
                   >
                     Agency
@@ -490,6 +525,17 @@ export default function Scoreboard() {
                     My Team
                   </Button>
                 </div>
+
+                {viewMode === 'my_team' && downlineAgentOptions.length > 0 && (
+                  <SimpleSearchableSelect
+                    options={downlineAgentOptions}
+                    value={selectedDownlineAgentId}
+                    onValueChange={setSelectedDownlineAgentId}
+                    placeholder="All (My Team)"
+                    searchPlaceholder="Search agents..."
+                    className="w-[200px]"
+                  />
+                )}
 
                 <div className="flex items-center gap-2">
                   <Input

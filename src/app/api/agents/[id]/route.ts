@@ -1,8 +1,8 @@
 // API ROUTE: /api/agents/[id]
 // This endpoint fetches and updates agent information by ID
 
-import { createAdminClient, createServerClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { authenticateRoute, authorizeAgentAccess, isAuthError } from "@/lib/auth/route-auth";
 
 export async function GET(
   request: Request,
@@ -18,12 +18,19 @@ export async function GET(
       }, { status: 400 });
     }
 
+    // Authenticate and authorize
+    const authResult = await authenticateRoute();
+    if (isAuthError(authResult)) return authResult;
+
+    const accessResult = await authorizeAgentAccess(authResult.supabaseAdmin, authResult.user, agentId);
+    if (accessResult !== true) return accessResult;
+
     // Get date range from query parameters
     const { searchParams } = new URL(request.url);
     const startMonthParam = searchParams.get("startMonth");
     const endMonthParam = searchParams.get("endMonth");
 
-    const supabase = createAdminClient();
+    const supabase = authResult.supabaseAdmin;
 
     // Get agent information
     const { data: agent, error: agentError } = await supabase
@@ -224,58 +231,15 @@ export async function PUT(
       }, { status: 400 });
     }
 
-    const supabaseAdmin = createAdminClient();
-    const supabaseUser = await createServerClient();
+    // Authenticate and authorize
+    const authResult = await authenticateRoute();
+    if (isAuthError(authResult)) return authResult;
 
-    // Check if user is authenticated
-    const { data: { user } } = await supabaseUser.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const accessResult = await authorizeAgentAccess(authResult.supabaseAdmin, authResult.user, agentId);
+    if (accessResult !== true) return accessResult;
 
-    // Get current user info
-    const { data: currentUser } = await supabaseAdmin
-      .from("users")
-      .select("id, is_admin, perm_level, role, agency_id")
-      .eq("auth_user_id", user.id)
-      .single();
-
-    if (!currentUser) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    // Check if user is admin (check all admin indicators)
-    const isAdmin = currentUser.is_admin ||
-      currentUser.perm_level === "admin" ||
-      currentUser.role === "admin";
-
-    // If not admin, check if the agent being edited is in the current user's downline tree
-    if (!isAdmin) {
-      // Get all downlines for the current user (includes direct and indirect)
-      const { data: downlines, error: downlineError } = await supabaseAdmin
-        .rpc("get_agent_downline", {
-          agent_id: currentUser.id,
-        });
-
-      if (downlineError) {
-        console.error("Downline fetch error:", downlineError);
-        return NextResponse.json({
-          error: "Failed to verify permissions",
-          detail: "Could not check downline relationships",
-        }, { status: 500 });
-      }
-
-      // Check if the agent being edited is in the downline tree
-      const downlineIds = (downlines as { id: string }[])?.map((d) => d.id) || [];
-      const isInDownline = downlineIds.includes(agentId);
-
-      if (!isInDownline) {
-        return NextResponse.json({
-          error: "Forbidden",
-          detail: "You can only edit agents in your downline tree",
-        }, { status: 403 });
-      }
-    }
+    const supabaseAdmin = authResult.supabaseAdmin;
+    const currentUser = authResult.user;
 
     const body = await request.json();
     const { email, phone_number, role, status, upline_id, is_active, sms_auto_send_enabled } = body;
@@ -296,13 +260,25 @@ export async function PUT(
         : phone_number;
     }
 
-    // Only update role if it's provided and not empty
+    // Only update role if it's provided and not empty — only admins can change roles
     if (role !== undefined && role !== "") {
+      if (!currentUser.isAdmin) {
+        return NextResponse.json({
+          error: "Forbidden",
+          detail: "Only admins can change user roles",
+        }, { status: 403 });
+      }
       updateData.role = role;
     }
 
-    // Only update status if it's provided and not empty
+    // Only update status if it's provided and not empty — only admins can change status
     if (status !== undefined && status !== "") {
+      if (!currentUser.isAdmin) {
+        return NextResponse.json({
+          error: "Forbidden",
+          detail: "Only admins can change user status",
+        }, { status: 403 });
+      }
       updateData.status = status;
     }
 
@@ -329,14 +305,18 @@ export async function PUT(
       });
     }
 
+    if (!currentUser.agencyId) {
+      return NextResponse.json({
+        error: "Forbidden",
+        detail: "Your account is not associated with an agency",
+      }, { status: 403 });
+    }
+
     const updateQuery = supabaseAdmin
       .from("users")
       .update(updateData)
-      .eq("id", agentId);
-
-    if (currentUser.agency_id) {
-      updateQuery.eq("agency_id", currentUser.agency_id);
-    }
+      .eq("id", agentId)
+      .eq("agency_id", currentUser.agencyId);
 
     const { data: updatedAgent, error: updateError } = await updateQuery
       .select()

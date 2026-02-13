@@ -90,6 +90,7 @@ export const queryKeys = {
   scoreboard: (userId: string, startDate: string, endDate: string) =>
     ['scoreboard', userId, startDate, endDate] as const,
   myDownlineIds: (userId: string) => ['my-downline-ids', userId] as const,
+  selectedAgentDownlineIds: (agentId: string) => ['selected-agent-downline-ids', agentId] as const,
 
   // Analytics
   analytics: ['analytics'] as const,

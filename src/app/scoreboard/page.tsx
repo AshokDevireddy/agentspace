@@ -791,8 +791,8 @@ export default function Scoreboard() {
         </div>
       )}
 
-      {/* Weekly Stats - Only show for admins (after hydration to avoid mismatch) */}
-      {isHydrated && userData?.role === 'admin' && (
+      {/* Weekly Stats - Show for admins, or any role when viewing My Team (after hydration to avoid mismatch) */}
+      {isHydrated && (userData?.role === 'admin' || viewMode === 'my_team') && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="professional-card rounded-md">
             <CardContent className="p-6 text-center">

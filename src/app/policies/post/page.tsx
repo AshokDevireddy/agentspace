@@ -32,7 +32,8 @@ const initialFormData = {
   leadSource: "",
   team: "",
   notes: "",
-  clientName: "",
+  clientFirstName: "",
+  clientLastName: "",
   clientEmail: "",
   clientPhone: "",
   clientDateOfBirth: "",
@@ -325,7 +326,7 @@ export default function PostDeal() {
     const baseFields: FormField[] = [
       "carrierId", "productId", "policyEffectiveDate", "rateClass", "ssnBenefit", "monthlyPremium",
       "coverageAmount", "billingCycle", "leadSource",
-      "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
+      "clientFirstName", "clientLastName", "clientEmail", "clientPhone", "clientDateOfBirth",
       "clientAddress", "policyNumber"
     ]
     if (hasTeams) {
@@ -385,7 +386,7 @@ export default function PostDeal() {
             product_name: productName,
             monthly_premium: monthlyPremium.toFixed(2),
             annual_premium: annualPremium,
-            client_name: formData.clientName,
+            client_name: `${formData.clientFirstName} ${formData.clientLastName}`.trim(),
             policy_number: formData.policyNumber,
             effective_date: formData.policyEffectiveDate,
           },
@@ -471,8 +472,8 @@ export default function PostDeal() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 email: formData.clientEmail,
-                firstName: formData.clientName.split(' ')[0] || formData.clientName,
-                lastName: formData.clientName.split(' ').slice(1).join(' ') || 'Client',
+                firstName: formData.clientFirstName,
+                lastName: formData.clientLastName,
                 phoneNumber: cleanPhoneForInvite
               }),
               signal: inviteController.signal
@@ -556,7 +557,7 @@ export default function PostDeal() {
         product_id,
         client_id,
         agency_id: agencyId,
-        client_name: formData.clientName,
+        client_name: `${formData.clientFirstName} ${formData.clientLastName}`.trim(),
         client_email: formData.clientEmail || null,
         client_phone: cleanPhoneNumber,
         date_of_birth: formData.clientDateOfBirth || null,
@@ -949,8 +950,12 @@ export default function PostDeal() {
       }
     } else if (step === 2) {
       // Client Information validation
-      if (!formData.clientName) {
-        setError("Please enter the client's full name (first and last).")
+      if (!formData.clientFirstName) {
+        setError("Please enter the client's first name.")
+        return false
+      }
+      if (!formData.clientLastName) {
+        setError("Please enter the client's last name.")
         return false
       }
       if (!formData.clientEmail) {
@@ -1490,17 +1495,32 @@ export default function PostDeal() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
-                      Full Name (First and Last) <span className="text-destructive">*</span>
+                      First Name <span className="text-destructive">*</span>
                     </label>
                     <Input
                       type="text"
-                      value={formData.clientName}
-                      onChange={(e) => handleInputChange("clientName", e.target.value)}
+                      value={formData.clientFirstName}
+                      onChange={(e) => handleInputChange("clientFirstName", e.target.value)}
                       className="h-12"
-                      placeholder="Enter client's full name"
+                      placeholder="Enter client's first name"
                     />
                   </div>
 
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Last Name <span className="text-destructive">*</span>
+                    </label>
+                    <Input
+                      type="text"
+                      value={formData.clientLastName}
+                      onChange={(e) => handleInputChange("clientLastName", e.target.value)}
+                      className="h-12"
+                      placeholder="Enter client's last name"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
                       Client Email <span className="text-destructive">*</span>
@@ -1516,9 +1536,7 @@ export default function PostDeal() {
                       An invitation will be sent to this email for client portal access
                     </p>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
                       Client Phone <span className="text-destructive">*</span>
@@ -1772,7 +1790,7 @@ export default function PostDeal() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-muted-foreground">Name:</span>
-                      <p className="font-medium text-foreground mt-1">{formData.clientName}</p>
+                      <p className="font-medium text-foreground mt-1">{formData.clientFirstName} {formData.clientLastName}</p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Email:</span>

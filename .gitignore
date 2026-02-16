@@ -49,3 +49,5 @@ rework-plan.md
 .gitignore
 types.csv
 rpc_functions.csv
+
+/supabase/schema

@@ -26,6 +26,7 @@ interface AgencySettings {
   lapse_email_notifications_enabled: boolean
   lapse_email_subject: string | null
   lapse_email_body: string | null
+  sms_auto_send_enabled: boolean | null
 }
 
 interface Agent {
@@ -33,6 +34,7 @@ interface Agent {
   email: string | null
   first_name: string | null
   last_name: string | null
+  sms_auto_send_enabled: boolean | null
 }
 
 const must = (v: string | undefined, name: string) => {
@@ -129,7 +131,7 @@ Deno.serve(async (req) => {
     // 1. Fetch agency email settings
     const { data: agency, error: agencyError } = await supabase
       .from('agencies')
-      .select('lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body')
+      .select('lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_auto_send_enabled')
       .eq('id', agency_id)
       .single()
 
@@ -185,7 +187,7 @@ Deno.serve(async (req) => {
 
     const { data: agents, error: agentsError } = await supabase
       .from('users')
-      .select('id, email, first_name, last_name')
+      .select('id, email, first_name, last_name, sms_auto_send_enabled')
       .in('id', agentIds)
 
     if (agentsError || !agents || agents.length === 0) {
@@ -224,8 +226,20 @@ Deno.serve(async (req) => {
     let sentCount = 0
     const errors: string[] = []
 
+    const agencyAutoSend = agency.sms_auto_send_enabled ?? true
+
     for (const agent of agents) {
       if (!agent.email) continue
+
+      // Per-agent automation check: if agent is explicitly OFF, or follows agency default and agency is OFF, skip
+      if (agent.sms_auto_send_enabled === false) {
+        console.log(`[Lapse Notification] Skipping ${agent.email}: agent automation is OFF`)
+        continue
+      }
+      if (agent.sms_auto_send_enabled === null && !agencyAutoSend) {
+        console.log(`[Lapse Notification] Skipping ${agent.email}: agent follows agency default (OFF)`)
+        continue
+      }
 
       const result = await sendEmail(agent.email, subject, bodyHtml)
       if (result.success) {

@@ -2472,7 +2472,7 @@ export default function ConfigurationPage() {
     "carrier-logins": { title: "Carrier Logins", description: "Store carrier portal credentials securely" },
     "discord": { title: "Discord Notifications", description: "Connect Discord webhooks for team alerts" },
     "sms-templates": { title: "SMS Templates", description: "Create and customize SMS message templates" },
-    "automation": { title: "SMS Automation", description: "Control whether messages are auto-sent or require manual approval" },
+    "automation": { title: "Automation", description: "Control whether automated SMS and email messages are sent or require manual review" },
     "payout-settings": { title: "Payout Settings", description: "Configure which date each carrier uses for expected payout calculations" },
   }
 

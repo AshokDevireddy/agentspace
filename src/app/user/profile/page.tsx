@@ -195,7 +195,7 @@ export default function ProfilePage() {
 
   const updatePositionMutation = useProfileMutation('Position updated successfully!');
   const updatePhoneMutation = useProfileMutation('Phone number updated successfully!');
-  const updateSmsAutoSendMutation = useProfileMutation('SMS automation preference updated!');
+  const updateSmsAutoSendMutation = useProfileMutation('Automation preference updated!');
 
   const handlePositionUpdate = () => {
     if (!selectedPositionId) return;
@@ -377,10 +377,10 @@ export default function ProfilePage() {
         <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
           <h2 className="text-xl font-bold text-foreground mb-2">
             <MessageSquare className="h-5 w-5 inline mr-2" />
-            SMS Automation
+            Automation
           </h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Control whether automated SMS messages are sent immediately or saved as drafts for your review.
+            Control whether automated messages (SMS and email) are sent on your behalf. When disabled, SMS messages are saved as drafts and automated emails are not sent.
             Your agency default is currently set to{' '}
             <span className="font-medium text-foreground">
               {profileData.agency_sms_auto_send_enabled ? 'Auto-Send' : 'Drafts Only'}

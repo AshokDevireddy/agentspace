@@ -42,9 +42,9 @@ export function SmsAutomationSettings({
       <div className="rounded-lg border bg-card p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-foreground">Auto-Send SMS Messages</h3>
+            <h3 className="text-lg font-semibold text-foreground">Auto-Send Messages</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              When enabled, automated messages are sent immediately via SMS. When disabled, all messages are saved as drafts for manual review. Individual agents can override this default.
+              When enabled, automated SMS messages are sent immediately and email notifications are delivered. When disabled, SMS messages are saved as drafts and automated emails are not sent. Individual agents can override this default.
             </p>
           </div>
           <Switch
@@ -61,7 +61,7 @@ export function SmsAutomationSettings({
           <div className="mb-4">
             <h3 className="text-base font-semibold text-foreground">Message Type Overrides</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Require manual approval for specific message types even when auto-send is enabled.
+              Require manual approval for specific message types even when auto-send is enabled. Note: These overrides apply to SMS messages only.
             </p>
           </div>
 
@@ -106,7 +106,7 @@ export function SmsAutomationSettings({
           <div className="mb-4">
             <h3 className="text-base font-semibold text-foreground">Per-Agent Overrides</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Individual agents can override the agency default. When set to &quot;Agency Default&quot;, the agent follows the master toggle above.
+              Individual agents can override the agency default for both SMS and email automations. When set to &quot;Agency Default&quot;, the agent follows the master toggle above.
             </p>
           </div>
           <AgentSmsAutomationList

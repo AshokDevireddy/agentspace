@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendSMS, isLandlineError } from '@/lib/telnyx';
 import { logMessage } from '@/lib/sms-helpers';
+import { incrementMessageCount } from '@/lib/sms-billing';
 
 export type SmsMessageType =
   | 'welcome'
@@ -148,6 +149,9 @@ export async function sendOrCreateDraft(
 
   try {
     await sendSMS({ from: agencyPhone, to: clientPhone, text: messageText });
+
+    // Tally the message against the agent's monthly billing count
+    await incrementMessageCount(draftParams.senderId);
 
     const message = await logMessage({
       conversationId: draftParams.conversationId,

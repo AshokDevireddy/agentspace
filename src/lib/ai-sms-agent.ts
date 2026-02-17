@@ -6,6 +6,8 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendSMS, normalizePhoneNumber } from '@/lib/telnyx';
 import { logMessage, getDealWithDetails } from '@/lib/sms-helpers';
+import { incrementMessageCount } from '@/lib/sms-billing';
+import { getTierLimits } from '@/lib/subscription-tiers';
 import { Anthropic } from '@anthropic-ai/sdk';
 
 // Types
@@ -320,8 +322,7 @@ export async function processAIMessage(
       },
     });
 
-    // Update SMS message count (AI responses count as SMS messages)
-    await updateSMSUsageCount(agent.id);
+    await incrementMessageCount(agent.id);
 
     return {
       success: true,
@@ -488,12 +489,11 @@ async function flagDealForMoreInfo(dealId: string): Promise<void> {
  * AI responses count as SMS messages, not AI requests
  */
 async function checkSMSUsageLimits(agent: Agent): Promise<boolean> {
-  // Get current SMS usage from database
   const supabase = createAdminClient();
 
   const { data: user, error } = await supabase
     .from('users')
-    .select('messages_sent_count, subscription_tier, billing_cycle_end')
+    .select('messages_sent_count, subscription_tier')
     .eq('id', agent.id)
     .single();
 
@@ -502,104 +502,15 @@ async function checkSMSUsageLimits(agent: Agent): Promise<boolean> {
     return false;
   }
 
-  // Check if billing cycle has reset
-  const now = new Date();
-  const billingCycleEnd = user.billing_cycle_end ? new Date(user.billing_cycle_end) : null;
+  const tierLimits = getTierLimits(user.subscription_tier || 'free');
 
-  if (billingCycleEnd && now > billingCycleEnd) {
-    // Billing cycle has ended, usage should be reset
-    // This will be handled by the SMS sending system
-  }
+  if (tierLimits.messages === 0) return false;
 
-  // SMS tier limits (from subscription-tiers.ts pattern)
-  const tierLimits = {
-    'free': 0,
-    'basic': 50,
-    'pro': 200,
-    'expert': 1000
-  };
-
-  const limit = tierLimits[user.subscription_tier as keyof typeof tierLimits] || 0;
-  const currentUsage = user.messages_sent_count || 0;
-
-  // Pro and Expert tiers allow overage with billing, others are hard limits
+  // Pro and Expert tiers allow overage with metered billing
   if (['pro', 'expert'].includes(user.subscription_tier)) {
-    return true; // Allow overage with billing
+    return true;
   }
 
-  return currentUsage < limit;
+  return (user.messages_sent_count || 0) < tierLimits.messages;
 }
 
-/**
- * Update SMS message count and handle billing
- * AI responses count as SMS messages, not AI requests
- */
-async function updateSMSUsageCount(agentId: string): Promise<void> {
-  const supabase = createAdminClient();
-
-  // Get current SMS count and subscription info
-  const { data: user, error: fetchError } = await supabase
-    .from('users')
-    .select('messages_sent_count, subscription_tier, stripe_subscription_id, billing_cycle_end')
-    .eq('id', agentId)
-    .single();
-
-  if (fetchError || !user) {
-    console.error('Failed to fetch user for SMS billing:', fetchError);
-    return;
-  }
-
-  // Check if billing cycle needs reset
-  const now = new Date();
-  const billingCycleEnd = user.billing_cycle_end ? new Date(user.billing_cycle_end) : null;
-  let currentCount = user.messages_sent_count || 0;
-
-  if (billingCycleEnd && now > billingCycleEnd) {
-    // Reset count for new billing cycle
-    currentCount = 0;
-    console.log(`Resetting SMS count for new billing cycle for user ${agentId}`);
-  }
-
-  const newCount = currentCount + 1;
-
-  // Update the SMS count
-  const { error: updateError } = await supabase
-    .from('users')
-    .update({ messages_sent_count: newCount })
-    .eq('id', agentId);
-
-  if (updateError) {
-    console.error('Failed to update SMS messages count:', updateError);
-    return;
-  }
-
-  // Handle overage billing for Pro and Expert tiers
-  if (['pro', 'expert'].includes(user.subscription_tier) && user.stripe_subscription_id) {
-    const tierLimits = {
-      'pro': 200,
-      'expert': 1000
-    };
-
-    const limit = tierLimits[user.subscription_tier as keyof typeof tierLimits];
-
-    if (newCount > limit) {
-      // Report SMS overage to Stripe
-      try {
-        const { reportMessageUsage } = await import('@/lib/stripe-usage');
-
-        // Get the correct metered price ID for the tier
-        const priceIds = {
-          'pro': process.env.STRIPE_PRO_METERED_MESSAGES_PRICE_ID!,
-          'expert': process.env.STRIPE_EXPERT_METERED_MESSAGES_PRICE_ID!
-        };
-
-        const priceId = priceIds[user.subscription_tier as keyof typeof priceIds];
-        await reportMessageUsage(user.stripe_subscription_id, priceId, 1);
-
-        console.log(`Reported SMS overage for ${user.subscription_tier} user ${agentId}: ${newCount - limit} messages over limit`);
-      } catch (billingError) {
-        console.error('Failed to report SMS overage billing:', billingError);
-      }
-    }
-  }
-}

@@ -13,7 +13,7 @@ import {
   getAgencyPhoneNumber,
 } from '@/lib/sms-helpers';
 import { getTierLimits } from '@/lib/subscription-tiers';
-import { reportMessageUsage, getMeteredSubscriptionItems } from '@/lib/stripe-usage';
+import { incrementMessageCount } from '@/lib/sms-billing';
 
 export async function POST(request: NextRequest) {
   try {
@@ -175,21 +175,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Increment messages_sent_count
-      const adminSupabase = createAdminClient();
-      await adminSupabase
-        .from('users')
-        .update({ messages_sent_count: currentMessagesSent + 1 })
-        .eq('id', userData.id);
-
-      // If user has exceeded their tier limit, report usage to Stripe for metered billing
-      if (isOverLimit && userData.stripe_subscription_id) {
-        const { messagesItemId } = await getMeteredSubscriptionItems(userData.stripe_subscription_id);
-        if (messagesItemId) {
-          await reportMessageUsage(userData.stripe_subscription_id, messagesItemId, 1);
-          console.log(`💰 User ${userData.id} will be charged $${tierLimits.overagePrice} for message overage`);
-        }
-      }
+      await incrementMessageCount(userData.id);
 
       return NextResponse.json({
         success: true,

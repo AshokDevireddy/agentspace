@@ -1,6 +1,7 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendSMS, isLandlineError } from '@/lib/telnyx'
+import { incrementMessageCount } from '@/lib/sms-billing'
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
 
     const { data: draftMessages, error: fetchError } = await supabase
       .from('messages')
-      .select('id, conversation_id, body')
+      .select('id, conversation_id, body, sender_id')
       .in('id', messageIds)
       .eq('status', 'draft')
 
@@ -139,6 +140,11 @@ export async function POST(request: NextRequest) {
 
         if (updateError) {
           throw new Error(`Failed to update message: ${updateError.message}`)
+        }
+
+        // Tally the message against the agent's monthly billing count
+        if (message.sender_id) {
+          await incrementMessageCount(message.sender_id)
         }
 
         results.push({

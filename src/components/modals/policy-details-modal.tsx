@@ -706,7 +706,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         <Calendar className="h-3 w-3" />
                         Date of Birth
                       </label>
-                      <p className="text-lg font-semibold text-foreground">{deal.client_dob ? formatDate(deal.client_dob) : 'N/A'}</p>
+                      <p className="text-lg font-semibold text-foreground">{deal.date_of_birth ? formatDate(deal.date_of_birth) : 'N/A'}</p>
                     </div>
 
                     {deal.client_address && (

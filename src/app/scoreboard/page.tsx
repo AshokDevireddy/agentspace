@@ -328,10 +328,10 @@ export default function Scoreboard() {
   const rawData = rpcResponse?.success ? rpcResponse.data : null
   const error = rpcResponse?.success === false ? rpcResponse.error : queryError?.message
 
-  // Apply "My Team" filter: client-side filter + re-rank
+  // Apply "My Team" filter: client-side filter + re-rank (admins see all agents in every view)
   const data = useMemo(() => {
     if (!rawData) return null
-    if (viewMode === 'agency' || !downlineIdSet) return rawData
+    if (userData?.role === 'admin' || viewMode === 'agency' || !downlineIdSet) return rawData
 
     const filterSet = (selectedDownlineAgentId && selectedAgentDownlineIdSet)
       ? selectedAgentDownlineIdSet
@@ -348,7 +348,7 @@ export default function Scoreboard() {
       },
       dateRange: rawData.dateRange,
     }
-  }, [rawData, viewMode, downlineIdSet, selectedDownlineAgentId, selectedAgentDownlineIdSet])
+  }, [rawData, viewMode, downlineIdSet, selectedDownlineAgentId, selectedAgentDownlineIdSet, userData?.role])
 
   // Include authLoading to show skeletons while auth initializes (prevents "no data" flash)
   const isLoading = authLoading || isDataLoading

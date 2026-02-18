@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
     const effectiveDateSort = searchParams.get("effective_date_sort");
     const billingCycle = searchParams.get("billing_cycle");
     const leadSource = searchParams.get("lead_source");
+    const clientPhone = searchParams.get("client_phone");
     const effectiveDateStart = searchParams.get("effective_date_start");
     const effectiveDateEnd = searchParams.get("effective_date_end");
     const view = searchParams.get("view") || "downlines";
@@ -71,6 +72,7 @@ export async function GET(req: NextRequest) {
         ? billingCycle
         : null,
       lead_source: leadSource && leadSource !== "all" ? leadSource : null,
+      client_phone: clientPhone ? clientPhone.replace(/\D/g, '') : null,
       effective_date_start: effectiveDateStart || null,
       effective_date_end: effectiveDateEnd || null,
     };

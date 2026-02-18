@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { AsyncSearchableSelect } from "@/components/ui/async-searchable-select"
 import { DateRangePicker } from "@/components/ui/date-range-picker"
+import { Input } from "@/components/ui/input"
 import { Loader2, Plus, X } from "lucide-react"
 import { PolicyDetailsModal } from "@/components/modals/policy-details-modal"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
@@ -111,6 +112,7 @@ export default function BookOfBusiness() {
       product: "all",
       client: "all",
       policyNumber: "all",
+      clientPhone: "",
       billingCycle: "all",
       leadSource: "all",
       status: "all",
@@ -249,6 +251,7 @@ export default function BookOfBusiness() {
     if (appliedFilters.product !== 'all') params.append('product_id', appliedFilters.product)
     if (appliedFilters.client !== 'all') params.append('client_id', appliedFilters.client)
     if (appliedFilters.policyNumber !== 'all') params.append('policy_number', appliedFilters.policyNumber)
+    if (appliedFilters.clientPhone) params.append('client_phone', appliedFilters.clientPhone)
     if (appliedFilters.statusMode && appliedFilters.statusMode !== 'all') params.append('status_mode', appliedFilters.statusMode)
     if (appliedFilters.billingCycle !== 'all') params.append('billing_cycle', appliedFilters.billingCycle)
     if (appliedFilters.leadSource !== 'all') params.append('lead_source', appliedFilters.leadSource)
@@ -379,6 +382,7 @@ export default function BookOfBusiness() {
     appliedFilters.product !== 'all' ||
     appliedFilters.client !== 'all' ||
     appliedFilters.policyNumber !== 'all' ||
+    appliedFilters.clientPhone !== '' ||
     appliedFilters.billingCycle !== 'all' ||
     appliedFilters.leadSource !== 'all' ||
     appliedFilters.status !== 'all' ||
@@ -415,6 +419,9 @@ export default function BookOfBusiness() {
       case 'policyNumber':
         setLocalFilters({ policyNumber: 'all' })
         break
+      case 'clientPhone':
+        setLocalFilters({ clientPhone: '' })
+        break
       case 'billingCycle':
         setLocalFilters({ billingCycle: 'all' })
         break
@@ -442,6 +449,7 @@ export default function BookOfBusiness() {
     { id: 'product', label: 'Product' },
     { id: 'client', label: 'Client' },
     { id: 'policyNumber', label: 'Policy #' },
+    { id: 'clientPhone', label: 'Client Phone' },
     { id: 'billingCycle', label: 'Billing Cycle' },
     { id: 'leadSource', label: 'Lead Source' },
     { id: 'status', label: 'Status' },
@@ -608,6 +616,15 @@ export default function BookOfBusiness() {
                   />
                 </Badge>
               )}
+              {visibleFilters.has('clientPhone') && (
+                <Badge variant="outline" className="h-8 px-3">
+                  Client Phone
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('clientPhone')}
+                  />
+                </Badge>
+              )}
               {visibleFilters.has('billingCycle') && (
                 <Badge variant="outline" className="h-8 px-3">
                   Billing Cycle
@@ -760,6 +777,21 @@ export default function BookOfBusiness() {
                       placeholder="All Policy Numbers"
                       searchPlaceholder="Type to search policy numbers..."
                       searchEndpoint="/api/deals/search-policy-numbers"
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('clientPhone') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Client Phone
+                    </label>
+                    <Input
+                      type="tel"
+                      value={localFilters.clientPhone}
+                      onChange={(e) => setLocalFilters({ clientPhone: e.target.value })}
+                      placeholder="Search by phone..."
+                      className="h-9"
                     />
                   </div>
                 )}

@@ -700,6 +700,21 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         <p className="text-lg font-semibold text-foreground">{deal.client_phone || 'N/A'}</p>
                       )}
                     </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        Date of Birth
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">{deal.client_dob ? formatDate(deal.client_dob) : 'N/A'}</p>
+                    </div>
+
+                    {deal.client_address && (
+                      <div className="space-y-1 col-span-2">
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Client Address</label>
+                        <p className="text-lg font-semibold text-foreground">{deal.client_address}</p>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -797,6 +812,62 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
 
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" />
+                        Monthly Premium
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">
+                        {deal.monthly_premium ? `$${Number(deal.monthly_premium).toFixed(2)}` : 'N/A'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" />
+                        Face Value
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">
+                        {deal.face_value ? `$${Number(deal.face_value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Rate Class</label>
+                      <p className="text-lg font-semibold text-foreground">{deal.rate_class || 'N/A'}</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Billing Cycle</label>
+                      <p className="text-lg font-semibold text-foreground capitalize">{deal.billing_cycle || 'N/A'}</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Lead Source</label>
+                      <p className="text-lg font-semibold text-foreground capitalize">{deal.lead_source || 'N/A'}</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        Policy Number
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">{deal.policy_number || 'N/A'}</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Application Number</label>
+                      <p className="text-lg font-semibold text-foreground">{deal.application_number || 'N/A'}</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        Submission Date
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">{deal.submission_date ? formatDate(deal.submission_date) : 'N/A'}</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
                         <User className="h-3 w-3" />
                         Writing Agent
                       </label>
@@ -804,6 +875,16 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         {deal.agent ? `${deal.agent.first_name} ${deal.agent.last_name}` : 'N/A'}
                       </p>
                     </div>
+
+                    {deal.team && (
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                          <Users className="h-3 w-3" />
+                          Team
+                        </label>
+                        <p className="text-lg font-semibold text-foreground">{deal.team}</p>
+                      </div>
+                    )}
 
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
@@ -903,6 +984,13 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                       </>
                     )}
                   </div>
+
+                  {deal.notes && (
+                    <div className="mt-6 space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
+                      <p className="text-sm text-foreground whitespace-pre-wrap bg-muted/30 rounded-lg p-3">{deal.notes}</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

@@ -148,6 +148,7 @@ export default function Scoreboard() {
   })
   const defaultScoreboardStartDate = agencySettings?.default_scoreboard_start_date ?? null
   const issuePaidStatusEnabled = agencySettings?.issue_paid_status ?? true
+  const scoreboardAgentVisibility = agencySettings?.scoreboard_agent_visibility ?? false
 
   // Force filter to 'submitted' when issue_paid_status is disabled
   useEffect(() => {
@@ -791,8 +792,8 @@ export default function Scoreboard() {
         </div>
       )}
 
-      {/* Weekly Stats - Show for admins, or any role when viewing My Team (after hydration to avoid mismatch) */}
-      {isHydrated && (userData?.role === 'admin' || viewMode === 'my_team') && (
+      {/* Weekly Stats - Show for admins, any role viewing My Team, or when agency scoreboard visibility is enabled */}
+      {isHydrated && (userData?.role === 'admin' || viewMode === 'my_team' || scoreboardAgentVisibility) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="professional-card rounded-md">
             <CardContent className="p-6 text-center">

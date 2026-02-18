@@ -200,6 +200,7 @@ export function useAgencyBrandingByDomain(
 interface AgencyScoreboardSettings {
   default_scoreboard_start_date: string | null
   issue_paid_status: boolean | null
+  scoreboard_agent_visibility: boolean | null
 }
 
 interface UseAgencyScoreboardSettingsOptions {
@@ -229,7 +230,7 @@ export function useAgencyScoreboardSettings(
       const supabase = createClient()
       const { data, error } = await supabase
         .from('agencies')
-        .select('default_scoreboard_start_date, issue_paid_status')
+        .select('default_scoreboard_start_date, issue_paid_status, scoreboard_agent_visibility')
         .eq('id', agencyId)
         .maybeSingle()
 

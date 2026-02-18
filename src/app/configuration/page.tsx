@@ -93,6 +93,7 @@ interface Agency {
   sms_quarterly_require_approval?: boolean
   sms_policy_packet_require_approval?: boolean
   sms_holiday_require_approval?: boolean
+  scoreboard_agent_visibility?: boolean
 }
 
 // Types for position data
@@ -118,7 +119,7 @@ interface Commission {
   commission_percentage: number
 }
 
-type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications" | "sms-templates" | "payout-settings" | "automation"
+type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications" | "sms-templates" | "payout-settings" | "automation" | "scoreboard"
 
 // Default primary color schemes for light and dark mode
 const DEFAULT_PRIMARY_COLOR_LIGHT = "0 0% 0%" // Black for light mode
@@ -428,6 +429,8 @@ export default function ConfigurationPage() {
   // Messaging Settings state
   const [messagingEnabled, setMessagingEnabled] = useState<boolean>(false)
   const [savingMessagingEnabled, setSavingMessagingEnabled] = useState(false)
+  const [scoreboardAgentVisibility, setScoreboardAgentVisibility] = useState(false)
+  const [savingScoreboardVisibility, setSavingScoreboardVisibility] = useState(false)
 
   // Discord Settings state
   const [discordWebhookUrl, setDiscordWebhookUrl] = useState<string>("")
@@ -573,7 +576,7 @@ export default function ConfigurationPage() {
 
       const { data: agencyInfo, error } = await supabase
         .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, discord_notification_enabled, discord_notification_template, discord_bot_username, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template, sms_auto_send_enabled, sms_welcome_require_approval, sms_birthday_require_approval, sms_lapse_require_approval, sms_billing_require_approval, sms_quarterly_require_approval, sms_policy_packet_require_approval, sms_holiday_require_approval')
+        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, discord_notification_enabled, discord_notification_template, discord_bot_username, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template, sms_auto_send_enabled, sms_welcome_require_approval, sms_birthday_require_approval, sms_lapse_require_approval, sms_billing_require_approval, sms_quarterly_require_approval, sms_policy_packet_require_approval, sms_holiday_require_approval, scoreboard_agent_visibility')
         .eq('id', userDataLocal.agency_id)
         .single()
 
@@ -917,6 +920,7 @@ export default function ConfigurationPage() {
       setLeadSources(agencyData.lead_sources || [])
       setAgencyPhoneNumber(agencyData.phone_number || "")
       setMessagingEnabled(agencyData.messaging_enabled || false)
+      setScoreboardAgentVisibility(agencyData.scoreboard_agent_visibility ?? false)
       setDiscordWebhookUrl(agencyData.discord_webhook_url || "")
       setDiscordNotificationEnabled(agencyData.discord_notification_enabled ?? false)
       setDiscordNotificationTemplate(agencyData.discord_notification_template || "")
@@ -2101,6 +2105,26 @@ export default function ConfigurationPage() {
     }
   }
 
+  const handleToggleScoreboardVisibility = async (enabled: boolean) => {
+    if (!agency) return
+    try {
+      setSavingScoreboardVisibility(true)
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('agencies')
+        .update({ scoreboard_agent_visibility: enabled })
+        .eq('id', agency.id)
+      if (error) throw error
+      setScoreboardAgentVisibility(enabled)
+    } catch (error) {
+      console.error('Error updating scoreboard visibility:', error)
+      showError('Failed to update scoreboard visibility')
+      setScoreboardAgentVisibility(!enabled)
+    } finally {
+      setSavingScoreboardVisibility(false)
+    }
+  }
+
   // Discord Webhook Management Functions
   const handleEditDiscordWebhook = () => {
     setEditingDiscordWebhook(true)
@@ -2457,6 +2481,7 @@ export default function ConfigurationPage() {
     { id: "sms-templates" as TabType, label: "SMS Templates", icon: MessageCircle },
     { id: "automation" as TabType, label: "Automation", icon: Zap },
     { id: "payout-settings" as TabType, label: "Payout Settings", icon: Calendar },
+    { id: "scoreboard" as TabType, label: "Scoreboard", icon: TrendingUp },
   ]
 
   // Tab metadata with titles and descriptions for page headers
@@ -2474,6 +2499,7 @@ export default function ConfigurationPage() {
     "sms-templates": { title: "SMS Templates", description: "Create and customize SMS message templates" },
     "automation": { title: "Automation", description: "Control whether automated SMS and email messages are sent or require manual review" },
     "payout-settings": { title: "Payout Settings", description: "Configure which date each carrier uses for expected payout calculations" },
+    "scoreboard": { title: "Scoreboard", description: "Configure scoreboard visibility settings for your agents" },
   }
 
   // Get commissions grid data
@@ -4917,6 +4943,47 @@ export default function ConfigurationPage() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+              {/* Scoreboard Tab */}
+              {activeTab === "scoreboard" && (
+                <div className="space-y-6">
+                  <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <h3 className="text-xl font-semibold text-foreground mb-2">Agency Scoreboard Visibility</h3>
+                        <p className="text-sm text-muted-foreground">
+                          When enabled, all agents can view the full agency leaderboard and summary stats on the scoreboard — not just their own downline.
+                          When disabled, agents only see their downline data in the Agency view.
+                        </p>
+                      </div>
+                      <div className="ml-6">
+                        <button
+                          onClick={() => handleToggleScoreboardVisibility(!scoreboardAgentVisibility)}
+                          disabled={savingScoreboardVisibility}
+                          className={cn(
+                            "relative inline-flex h-12 w-24 items-center rounded-full transition-colors duration-200",
+                            scoreboardAgentVisibility ? "bg-green-600" : "bg-gray-300",
+                            savingScoreboardVisibility && "opacity-50 cursor-not-allowed"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "inline-block h-10 w-10 transform rounded-full bg-white shadow-lg transition-transform duration-200",
+                              scoreboardAgentVisibility ? "translate-x-12" : "translate-x-1"
+                            )}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <p className="text-base font-medium text-foreground">
+                        Status: <span className={cn("font-bold", scoreboardAgentVisibility ? "text-green-600" : "text-gray-500")}>
+                          {scoreboardAgentVisibility ? "Enabled" : "Disabled"}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

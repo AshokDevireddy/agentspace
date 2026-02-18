@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
     const { data: userProfile, error: profileError } = await supabase
       .from('users')
-      .select('id, agency_id, role, perm_level')
+      .select('agency_id')
       .eq('auth_user_id', user.id as any)
       .single()
 
@@ -27,8 +27,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const profile = userProfile as any
-    const agency_id = profile.agency_id
+    const agency_id = (userProfile as any).agency_id
 
     if (!agency_id) {
       return NextResponse.json(
@@ -37,94 +36,38 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const isAdmin = profile.role === 'admin'
-
     const searchParams = request.nextUrl.searchParams
     const startDate = searchParams.get('startDate') || getWeekStart()
     const endDate = searchParams.get('endDate') || getWeekEnd()
 
-    let agents: any[]
-    let agentIds: string[]
+    const { data: agentsData, error: agentsError } = await supabase
+      .from('users')
+      .select('id, first_name, last_name, role')
+      .eq('agency_id', agency_id as any)
+      .in('role', ['admin', 'agent'] as any)
+      .eq('is_active', true as any)
 
-    if (isAdmin) {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, role')
-        .eq('agency_id', agency_id as any)
-        .in('role', ['admin', 'agent'] as any)
-        .eq('is_active', true as any)
-
-      if (error) {
-        return NextResponse.json(
-          { success: false, error: 'Failed to fetch agents' },
-          { status: 500 }
-        )
-      }
-
-      agents = data || []
-      agentIds = agents.map(a => a.id as string)
-    } else {
-      // Get downline IDs first (required for non-admin)
-      const { data: downline, error: downlineError } = await supabase.rpc('get_agent_downline', {
-        agent_id: profile.id as any
-      })
-
-      if (downlineError) {
-        return NextResponse.json(
-          { success: false, error: 'Failed to fetch downline' },
-          { status: 500 }
-        )
-      }
-
-      agentIds = [profile.id as string, ...((downline as any[])?.map((u: any) => u.id) || [])]
-
-      // Single query for agent details
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, role')
-        .in('id', agentIds as any)
-
-      if (error) {
-        return NextResponse.json(
-          { success: false, error: 'Failed to fetch agents' },
-          { status: 500 }
-        )
-      }
-
-      agents = data || []
+    if (agentsError) {
+      return NextResponse.json(
+        { success: false, error: 'Failed to fetch agents' },
+        { status: 500 }
+      )
     }
-    let allDeals: any[]
-    let dealsError: any
 
-    // Calculate the earliest possible effective date that could have payments in the range
+    const agents = agentsData || []
+
     // Go back 12 months from the start date to capture all potential recurring payments
     const earliestDate = new Date(startDate + 'T00:00:00')
     earliestDate.setFullYear(earliestDate.getFullYear() - 1)
     const lookbackStartDate = earliestDate.toISOString().split('T')[0]
 
-    if (isAdmin) {
-      const { data, error } = await supabase
-        .from('deals')
-        .select('agent_id, carrier_id, annual_premium, payment_cycle_premium, billing_cycle, policy_effective_date, status')
-        .eq('agency_id', agency_id as any)
-        .gte('policy_effective_date', lookbackStartDate as any)
-        .lte('policy_effective_date', endDate as any)
-        .not('policy_effective_date', 'is', null)
-
-      allDeals = data || []
-      dealsError = error
-    } else {
-      const { data, error } = await supabase
-        .from('deals')
-        .select('agent_id, carrier_id, annual_premium, payment_cycle_premium, billing_cycle, policy_effective_date, status')
-        .in('agent_id', agentIds as any)
-        .gte('policy_effective_date', lookbackStartDate as any)
-        .lte('policy_effective_date', endDate as any)
-        .not('policy_effective_date', 'is', null)
-
-      allDeals = data || []
-      dealsError = error
-    }
+    const { data: allDeals, error: dealsError } = await supabase
+      .from('deals')
+      .select('agent_id, carrier_id, annual_premium, payment_cycle_premium, billing_cycle, policy_effective_date, status')
+      .eq('agency_id', agency_id as any)
+      .gte('policy_effective_date', lookbackStartDate as any)
+      .lte('policy_effective_date', endDate as any)
+      .not('policy_effective_date', 'is', null)
 
     if (dealsError) {
       return NextResponse.json(

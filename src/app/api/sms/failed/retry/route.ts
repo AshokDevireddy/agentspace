@@ -3,8 +3,8 @@ import { sendMessagesByIds } from '@/lib/sms-send-messages'
 
 export async function POST(request: NextRequest) {
   return sendMessagesByIds(request, {
-    sourceStatus: 'draft',
-    resultKey: 'approved',
-    logLabel: 'Draft',
+    sourceStatus: 'failed',
+    resultKey: 'retried',
+    logLabel: 'Failed',
   })
 }

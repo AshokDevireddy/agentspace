@@ -79,6 +79,7 @@ export {
   useApproveDrafts,
   useRejectDrafts,
   useEditDraft,
+  useRetryFailed,
   useResolveNotification,
 } from './useSMSMutations'
 

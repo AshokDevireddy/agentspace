@@ -14,7 +14,7 @@ export type UserData = {
   theme_mode: 'light' | 'dark' | 'system' | null
   is_admin: boolean
   agency_id: string | null
-  subscription_tier: 'free' | 'pro' | 'expert'
+  subscription_tier: 'free' | 'basic' | 'pro' | 'expert'
 }
 
 type AuthContextType = {
@@ -138,7 +138,7 @@ export function AuthProvider({
         theme_mode: data.theme_mode as 'light' | 'dark' | 'system' | null,
         is_admin: data.is_admin || false,
         agency_id: data.agency_id || null,
-        subscription_tier: (data.subscription_tier || 'free') as 'free' | 'pro' | 'expert'
+        subscription_tier: (data.subscription_tier || 'free') as 'free' | 'basic' | 'pro' | 'expert'
       }
     } catch (error) {
       console.error('[AuthProvider] Unexpected error fetching user data:', error)
@@ -413,7 +413,7 @@ export function AuthProvider({
         theme_mode: userProfile.theme_mode as 'light' | 'dark' | 'system' | null,
         is_admin: userProfile.is_admin || false,
         agency_id: userProfile.agency_id || null,
-        subscription_tier: (userProfile.subscription_tier || 'free') as 'free' | 'pro' | 'expert'
+        subscription_tier: (userProfile.subscription_tier || 'free') as 'free' | 'basic' | 'pro' | 'expert'
       })
 
       router.push(userProfile.role === 'client' ? '/client/dashboard' : '/')

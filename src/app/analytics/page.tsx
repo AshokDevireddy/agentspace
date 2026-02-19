@@ -22,6 +22,9 @@ import { useSupabaseRpc } from '@/hooks/useSupabaseQuery'
 import { queryKeys } from '@/hooks/queryKeys'
 import { QueryErrorDisplay } from '@/components/ui/query-error-display'
 import { RefreshingIndicator } from '@/components/ui/refreshing-indicator'
+import { useAuth } from '@/providers/AuthProvider'
+import { getTierLimits } from '@/lib/subscription-tiers'
+import { UpgradePrompt } from '@/components/upgrade-prompt'
 
 // Analytics data type (matches shape returned by get_analytics_split_view RPC)
 type WindowAggregates = {
@@ -354,6 +357,11 @@ const FALLBACK_COLORS = [
 ]
 
 export default function AnalyticsTestPage() {
+	const { userData, loading: authLoading } = useAuth()
+	const hasAnalyticsAccess = userData
+		? (getTierLimits(userData.subscription_tier).analyticsAccess || userData.is_admin)
+		: false
+
 	const [groupBy, setGroupBy] = React.useState("carrier")
 	const [trendMetric, setTrendMetric] = React.useState<"persistency" | "placement" | "submitted" | "active" | "avgprem" | "all">("persistency")
 	const [timeWindow, setTimeWindow] = React.useState<"3" | "6" | "9" | "all">("all")
@@ -434,6 +442,7 @@ export default function AnalyticsTestPage() {
 		},
 		staleTime: 5 * 60 * 1000, // 5 minutes
 		gcTime: 10 * 60 * 1000, // 10 minutes
+		enabled: hasAnalyticsAccess,
 	})
 
 	// Derive state directly from query data (no useState/useEffect sync needed)
@@ -462,7 +471,7 @@ export default function AnalyticsTestPage() {
 		queryKeys.agents,
 		'/api/agents?view=table&page=1&limit=1',
 		{
-			enabled: !!originalUserId,
+			enabled: !!originalUserId && hasAnalyticsAccess,
 			staleTime: 5 * 60 * 1000, // 5 minutes
 		}
 	)
@@ -484,7 +493,7 @@ export default function AnalyticsTestPage() {
 		'get_analytics_split_view',
 		{ p_user_id: targetUserId, p_lead_source: leadSourceParam },
 		{
-			enabled: !!targetUserId,
+			enabled: !!targetUserId && hasAnalyticsAccess,
 			staleTime: 5 * 60 * 1000, // 5 minutes
 		}
 	)
@@ -1233,6 +1242,119 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 
 		return sortedPeriods
 	}, [periods, carrierFilter, trendMetric, _analyticsData?.series])
+
+	if (authLoading) {
+		return (
+			<div className="flex w-full flex-col gap-6 p-6">
+				<div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
+					<div className="h-10 bg-muted animate-pulse rounded w-64" />
+					<div className="flex items-center gap-2">
+						<div className="h-10 bg-muted animate-pulse rounded w-[208px]" />
+						<div className="h-10 bg-muted animate-pulse rounded w-[120px]" />
+					</div>
+				</div>
+				<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+					{Array.from({ length: 6 }).map((_, i) => (
+						<Card key={i} className="rounded-md">
+							<CardContent className="p-6">
+								<div className="h-4 bg-muted animate-pulse rounded w-24 mb-3" />
+								<div className="h-8 bg-muted animate-pulse rounded w-16" />
+							</CardContent>
+						</Card>
+					))}
+				</div>
+			</div>
+		)
+	}
+
+	if (!hasAnalyticsAccess) {
+		return (
+			<div className="relative flex w-full flex-col gap-6 p-6 min-h-screen overflow-hidden">
+				{/* Decorative blurred background - mirrors actual analytics skeleton, no real data */}
+				<div className="pointer-events-none select-none absolute inset-0 p-6 opacity-50 blur-[6px] flex flex-col gap-6" aria-hidden="true">
+					{/* Header Skeleton */}
+					<div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
+						<div className="h-10 bg-muted rounded w-64" />
+						<div className="flex items-center gap-2">
+							<div className="h-10 bg-muted rounded w-[208px]" />
+							<div className="h-10 bg-muted rounded w-[120px]" />
+							<div className="h-10 bg-muted rounded w-[160px]" />
+							<div className="h-10 bg-muted rounded w-[240px]" />
+						</div>
+					</div>
+
+					{/* Info Cards Skeleton */}
+					<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+						{Array.from({ length: 6 }).map((_, i) => (
+							<Card key={i} className="rounded-md">
+								<CardContent className="p-6">
+									<div className="h-4 bg-muted rounded w-24 mb-3" />
+									<div className="h-8 bg-muted rounded w-16" />
+								</CardContent>
+							</Card>
+						))}
+					</div>
+
+					{/* Charts Skeleton */}
+					<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+						<Card className="rounded-md">
+							<CardHeader>
+								<div className="h-6 bg-muted rounded w-48" />
+							</CardHeader>
+							<CardContent>
+								<div className="h-[400px] bg-muted/30 rounded" />
+							</CardContent>
+						</Card>
+						<Card className="rounded-md">
+							<CardHeader>
+								<div className="h-6 bg-muted rounded w-48" />
+							</CardHeader>
+							<CardContent>
+								<div className="h-[400px] bg-muted/30 rounded" />
+							</CardContent>
+						</Card>
+					</div>
+
+					{/* Large Chart Skeleton */}
+					<Card className="rounded-md">
+						<CardHeader>
+							<div className="flex justify-between items-center">
+								<div className="h-6 bg-muted rounded w-64" />
+								<div className="h-8 bg-muted rounded w-32" />
+							</div>
+						</CardHeader>
+						<CardContent>
+							<div className="h-[500px] bg-muted/30 rounded" />
+						</CardContent>
+					</Card>
+
+					{/* Breakdowns Skeleton */}
+					<div className="w-full">
+						<div className="grid w-full grid-cols-3 rounded-md bg-muted/50 p-1 gap-1 mb-4">
+							<div className="h-9 bg-muted rounded" />
+							<div className="h-9 bg-muted rounded" />
+							<div className="h-9 bg-muted rounded" />
+						</div>
+						<Card className="rounded-md">
+							<CardContent className="p-6">
+								<div className="h-[300px] bg-muted/30 rounded" />
+							</CardContent>
+						</Card>
+					</div>
+				</div>
+
+				{/* Upgrade prompt overlay */}
+				<div className="relative z-10 flex items-center justify-center min-h-[80vh]">
+					<UpgradePrompt
+						title="Unlock Analytics Dashboard"
+						message="Upgrade to Pro or Expert tier to access full analytics, performance trends, and detailed breakdowns."
+						requiredTier="Pro"
+						blur={false}
+					/>
+				</div>
+			</div>
+		)
+	}
 
 	return (
 		isLoading ? (
@@ -2412,23 +2534,6 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 					)}
 				</CardContent>
 			</Card>
-			{(subscriptionTier === 'free' || subscriptionTier === 'basic') && (
-				<div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-900/70 backdrop-blur-md rounded-md">
-					<div className="bg-white dark:bg-gray-800 rounded-lg p-8 shadow-xl text-center max-w-md">
-						<div className="text-4xl mb-4">🔒</div>
-						<h3 className="text-xl font-bold mb-2">Upgrade to View Analytics</h3>
-						<p className="text-gray-600 dark:text-gray-400 mb-4">
-							Upgrade to Pro or Expert tier to unlock full analytics and insights
-						</p>
-						<a
-							href="/user/profile"
-							className="inline-block bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
-						>
-							Upgrade Now
-						</a>
-					</div>
-				</div>
-			)}
 			</div>
 
 			{/* Performance Trends */}
@@ -3565,23 +3670,6 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 					)}
 				</CardContent>
 			</Card>
-			{(subscriptionTier === 'free' || subscriptionTier === 'basic') && (
-				<div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-900/70 backdrop-blur-md rounded-md">
-					<div className="bg-white dark:bg-gray-800 rounded-lg p-8 shadow-xl text-center max-w-md">
-						<div className="text-4xl mb-4">🔒</div>
-						<h3 className="text-xl font-bold mb-2">Upgrade to View Analytics</h3>
-						<p className="text-gray-600 dark:text-gray-400 mb-4">
-							Upgrade to Pro or Expert tier to unlock full analytics and insights
-						</p>
-						<a
-							href="/user/profile"
-							className="inline-block bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
-						>
-							Upgrade Now
-						</a>
-					</div>
-				</div>
-			)}
 			</div>
 
 			<Tabs defaultValue="overview" className="hidden">

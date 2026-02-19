@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, createAdminClient } from '@/lib/supabase/server';
-import { sendSMS, isLandlineError } from '@/lib/telnyx';
+import { sendSMS, isLandlineError, isInvalidPhoneError, getPhoneValidationError } from '@/lib/telnyx';
 import {
   getDealWithDetails,
   getOrCreateConversation,
@@ -245,6 +245,30 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json(
           { error: 'This number appears to be a landline and cannot receive SMS messages.' },
+          { status: 422 }
+        );
+      }
+
+      // Check if this is an invalid phone number error (40310)
+      if (isInvalidPhoneError(telnyxError)) {
+        const phoneError = getPhoneValidationError(deal.client_phone) || `Phone number ${deal.client_phone} was rejected by the carrier as undeliverable.`;
+        await logMessage({
+          conversationId: conversation.id,
+          senderId: userData.id,
+          receiverId: userData.id,
+          body: message,
+          direction: 'outbound',
+          status: 'failed',
+          metadata: {
+            error: phoneError,
+            error_code: '40310',
+            client_phone: deal.client_phone,
+            client_name: deal.client_name,
+          },
+        });
+
+        return NextResponse.json(
+          { error: phoneError },
           { status: 422 }
         );
       }

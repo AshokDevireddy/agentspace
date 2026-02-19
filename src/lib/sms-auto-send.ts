@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server';
-import { sendSMS, isLandlineError } from '@/lib/telnyx';
+import { sendSMS, isLandlineError, isInvalidPhoneError, getPhoneValidationError } from '@/lib/telnyx';
 import { logMessage } from '@/lib/sms-helpers';
 import { incrementMessageCount } from '@/lib/sms-billing';
 
@@ -180,6 +180,22 @@ export async function sendOrCreateDraft(
         metadata: { ...metadata, automated: true, type: messageType, error: 'Landline number cannot receive SMS', error_code: '40001' },
       });
       return { success: false, messageId: message.id, status: 'sent' as const, error: 'landline' };
+    }
+
+    // Invalid phone errors: log as failed, not draft — re-sending would just fail again
+    if (isInvalidPhoneError(error)) {
+      const phoneError = getPhoneValidationError(clientPhone) || `Phone number ${clientPhone} was rejected by the carrier as undeliverable.`;
+      console.error(`Telnyx send failed (invalid phone ${clientPhone}): ${errorMessage}`);
+      const message = await logMessage({
+        conversationId: draftParams.conversationId,
+        senderId: draftParams.senderId,
+        receiverId: draftParams.receiverId,
+        body: messageText,
+        direction: 'outbound',
+        status: 'failed',
+        metadata: { ...metadata, automated: true, type: messageType, error: phoneError, error_code: '40310' },
+      });
+      return { success: false, messageId: message.id, status: 'sent' as const, error: 'invalid_phone' };
     }
 
     console.error(`Telnyx send failed, falling back to draft: ${errorMessage}`);

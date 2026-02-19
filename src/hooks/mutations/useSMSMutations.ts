@@ -175,6 +175,41 @@ export function useEditDraft(options?: {
 }
 
 /**
+ * Hook for retrying failed SMS messages
+ */
+export function useRetryFailed(options?: {
+  conversationId?: string
+  onSuccess?: (data: DraftActionResponse, variables: DraftActionInput) => void
+  onError?: (error: Error) => void
+}) {
+  const { invalidateConversationRelated } = useInvalidation()
+
+  return useMutation<DraftActionResponse, Error, DraftActionInput>({
+    mutationFn: async ({ messageIds }) => {
+      const response = await fetch('/api/sms/failed/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ messageIds }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to retry message(s)')
+      }
+
+      return response.json()
+    },
+    onSuccess: async (data, variables) => {
+      // Use centralized invalidation - handles conversations, drafts, and messages
+      await invalidateConversationRelated(options?.conversationId)
+      options?.onSuccess?.(data, variables)
+    },
+    onError: options?.onError,
+  })
+}
+
+/**
  * Hook for resolving deal notifications (removes yellow indicator)
  */
 export function useResolveNotification(options?: {

@@ -12,13 +12,15 @@ interface ProductionProgressCardProps {
   ytdProduction: { individual: number; hierarchy: number }
   mtdProduction: { individual: number; hierarchy: number }
   loading?: boolean
+  isAdmin?: boolean
 }
 
 export function ProductionProgressCard({
   viewMode,
   ytdProduction,
   mtdProduction,
-  loading = false
+  loading = false,
+  isAdmin = false
 }: ProductionProgressCardProps) {
   const [periodMode, setPeriodMode] = useState<'ytd' | 'mtd'>('ytd')
 
@@ -182,7 +184,7 @@ export function ProductionProgressCard({
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Agency Production
+              {isAdmin ? 'Agency Production' : 'Team Production'}
             </p>
           )}
         </div>

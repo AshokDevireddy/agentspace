@@ -51,12 +51,15 @@ export default function Home() {
   const profileUserData = profileData?.success ? profileData.data : null
   const userId = authUserData?.id || profileUserData?.id || null
 
+  const isAdmin = profileUserData?.is_admin || profileUserData?.role === 'admin' || false
+  const scoreboardScope = isAdmin ? 'agency' : 'team'
+
   const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useSupabaseRpc<any>(
-    [...queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate), dateMode],
-    'get_scoreboard_data_updated_lapsed_deals_v2',
-    { p_user_id: user?.id, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate, assumed_months_till_lapse: 5, submitted: true, p_use_submitted_date: dateMode === 'submitted_date' },
+    [...queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate), dateMode, scoreboardScope],
+    'get_scoreboard_data_updated_lapsed_deals_v3',
+    { p_user_id: user?.id, p_start_date: weekRange.startDate, p_end_date: weekRange.endDate, assumed_months_till_lapse: 5, submitted: true, p_use_submitted_date: dateMode === 'submitted_date', p_scope: scoreboardScope },
     {
-      enabled: !!user?.id && isHydrated,
+      enabled: !!user?.id && isHydrated && !!profileUserData,
       staleTime: 60 * 1000,
       placeholderData: (previousData: any) => previousData,
     }
@@ -90,18 +93,19 @@ export default function Home() {
   const topProducersRange = topProducersPeriod === 'ytd' ? productionDateRanges.ytd : productionDateRanges.mtd
 
   const { data: topProducersResult, isLoading: topProducersLoading } = useSupabaseRpc<any>(
-    [...queryKeys.scoreboard(user?.id || '', topProducersRange.start, topProducersRange.end), 'top-producers', topProducersPeriod, dateMode],
-    'get_scoreboard_data_updated_lapsed_deals_v2',
+    [...queryKeys.scoreboard(user?.id || '', topProducersRange.start, topProducersRange.end), 'top-producers', topProducersPeriod, dateMode, scoreboardScope],
+    'get_scoreboard_data_updated_lapsed_deals_v3',
     {
       p_user_id: user?.id,
       p_start_date: topProducersRange.start,
       p_end_date: topProducersRange.end,
       assumed_months_till_lapse: 5,
       submitted: true,
-      p_use_submitted_date: dateMode === 'submitted_date'
+      p_use_submitted_date: dateMode === 'submitted_date',
+      p_scope: scoreboardScope
     },
     {
-      enabled: !!user?.id,
+      enabled: !!user?.id && !!profileUserData,
       staleTime: 60 * 1000,
       placeholderData: (previousData: any) => previousData,
     }
@@ -109,32 +113,34 @@ export default function Home() {
 
   // YTD production - aligned with Scoreboard
   const { data: ytdScoreboardResult, isLoading: ytdProductionLoading } = useSupabaseRpc<any>(
-    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.ytd.start, productionDateRanges.ytd.end), 'production-ytd', dateMode],
-    'get_scoreboard_data_updated_lapsed_deals_v2',
+    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.ytd.start, productionDateRanges.ytd.end), 'production-ytd', dateMode, scoreboardScope],
+    'get_scoreboard_data_updated_lapsed_deals_v3',
     {
       p_user_id: user?.id || '',
       p_start_date: productionDateRanges.ytd.start,
       p_end_date: productionDateRanges.ytd.end,
       assumed_months_till_lapse: 5,
       submitted: true,
-      p_use_submitted_date: dateMode === 'submitted_date'
+      p_use_submitted_date: dateMode === 'submitted_date',
+      p_scope: scoreboardScope
     },
-    { enabled: !!user?.id, staleTime: 5 * 60 * 1000 }
+    { enabled: !!user?.id && !!profileUserData, staleTime: 5 * 60 * 1000 }
   )
 
   // MTD production - aligned with Scoreboard
   const { data: mtdScoreboardResult, isLoading: mtdProductionLoading } = useSupabaseRpc<any>(
-    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.mtd.start, productionDateRanges.mtd.end), 'production-mtd', dateMode],
-    'get_scoreboard_data_updated_lapsed_deals_v2',
+    [...queryKeys.scoreboard(user?.id || '', productionDateRanges.mtd.start, productionDateRanges.mtd.end), 'production-mtd', dateMode, scoreboardScope],
+    'get_scoreboard_data_updated_lapsed_deals_v3',
     {
       p_user_id: user?.id || '',
       p_start_date: productionDateRanges.mtd.start,
       p_end_date: productionDateRanges.mtd.end,
       assumed_months_till_lapse: 5,
       submitted: true,
-      p_use_submitted_date: dateMode === 'submitted_date'
+      p_use_submitted_date: dateMode === 'submitted_date',
+      p_scope: scoreboardScope
     },
-    { enabled: !!user?.id, staleTime: 5 * 60 * 1000 }
+    { enabled: !!user?.id && !!profileUserData, staleTime: 5 * 60 * 1000 }
   )
 
   // Extract production values for ProductionProgressCard
@@ -425,6 +431,7 @@ export default function Home() {
           ytdProduction={ytdProduction}
           mtdProduction={mtdProduction}
           loading={isProductionLoading}
+          isAdmin={isAdmin}
         />
 
         {/* Top Producers */}

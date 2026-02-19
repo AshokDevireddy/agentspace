@@ -183,6 +183,8 @@ export async function GET(req: NextRequest) {
         effectiveDateRaw: deal.policy_effective_date || "",
         annualPremium: `$${Number(deal.annual_premium || 0).toFixed(2)}`,
         annualPremiumRaw: Number(deal.annual_premium || 0),
+        coverageAmount: deal.face_value ? `$${Number(deal.face_value).toLocaleString()}` : "",
+        coverageAmountRaw: Number(deal.face_value || 0),
         billingCycle: deal.billing_cycle || "",
         leadSource: deal.lead_source || "",
         status: deal.status || "draft",

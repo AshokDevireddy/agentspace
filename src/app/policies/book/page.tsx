@@ -43,6 +43,8 @@ interface Deal {
   effectiveDateRaw: string
   annualPremium: string
   annualPremiumRaw: number
+  coverageAmount: string
+  coverageAmountRaw: number
   leadSource: string
   billingCycle: string
   status: string
@@ -910,6 +912,7 @@ export default function BookOfBusiness() {
                 <th>Carrier / Product</th>
                 <th>Policy / App #</th>
                 <th>Client Info</th>
+                <th>Coverage Amount</th>
                 <th>Premium / Effective Date</th>
                 <th>Lead Source</th>
                 <th className="text-center">Status</th>
@@ -941,6 +944,7 @@ export default function BookOfBusiness() {
                         <div className="h-3 w-24 bg-muted rounded" />
                       </div>
                     </td>
+                    <td><div className="h-4 w-24 bg-muted rounded" /></td>
                     <td>
                       <div className="space-y-1">
                         <div className="h-5 w-24 bg-muted rounded" />
@@ -954,13 +958,13 @@ export default function BookOfBusiness() {
                 ))
               ) : error ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-destructive">
+                  <td colSpan={10} className="py-8 text-center text-destructive">
                     Error: {error}
                   </td>
                 </tr>
               ) : deals.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={10} className="py-8 text-center text-muted-foreground">
                     No deals found matching your criteria
                   </td>
                 </tr>
@@ -1006,6 +1010,13 @@ export default function BookOfBusiness() {
                               <span className="text-xs text-muted-foreground">{formatPhoneNumber(deal.clientPhone)}</span>
                             ) : null}
                           </div>
+                        </td>
+                        <td className="whitespace-nowrap">
+                          {deal.coverageAmount ? (
+                            <span className="text-sm font-medium">{deal.coverageAmount}</span>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
                         </td>
                         <td>
                           <div className="flex flex-col gap-1">

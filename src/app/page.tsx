@@ -135,6 +135,7 @@ export default function Home() {
 
   const userData = profileData || null
   const firstName = userData?.firstName || 'User'
+  const isAdmin = userData?.isAdmin || false
 
   useEffect(() => {
     if (userData) {
@@ -409,6 +410,7 @@ export default function Home() {
           ytdProduction={ytdProduction}
           mtdProduction={mtdProduction}
           loading={isProductionLoading}
+          isAdmin={isAdmin}
         />
 
         {/* Top Producers */}

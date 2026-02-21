@@ -791,6 +791,76 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                       )}
                     </div>
 
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        Date of Birth
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">
+                        {deal.date_of_birth ? formatDate(deal.date_of_birth) : 'N/A'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" />
+                        Coverage Amount
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">
+                        {deal.face_value ? `$${Number(deal.face_value).toLocaleString()}` : 'N/A'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Rate Class
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">
+                        {deal.rate_class || 'N/A'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" />
+                        Monthly Premium
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">
+                        {deal.monthly_premium ? `$${Number(deal.monthly_premium).toFixed(2)}` : 'N/A'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Lead Source
+                      </label>
+                      <p className="text-lg font-semibold text-foreground capitalize">
+                        {deal.lead_source || 'N/A'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <Users className="h-3 w-3" />
+                        Team
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">
+                        {deal.team || 'N/A'}
+                      </p>
+                    </div>
+
+                    {deal.notes && (
+                      <div className="space-y-1 col-span-2">
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                          <FileText className="h-3 w-3" />
+                          Notes
+                        </label>
+                        <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                          {deal.notes}
+                        </p>
+                      </div>
+                    )}
+
                     {isEditing && (
                       <>
                         <div className="space-y-1">

@@ -180,7 +180,8 @@ export function useAgencyBrandingByDomain(
 // ============ Agency Scoreboard Settings Query ============
 
 interface AgencyScoreboardSettings {
-  defaultScoreboardStartDate: string | null
+  default_scoreboard_start_date: string | null
+  scoreboard_agent_visibility: boolean | null
 }
 
 interface UseAgencyScoreboardSettingsOptions {

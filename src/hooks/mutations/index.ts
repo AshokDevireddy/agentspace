@@ -80,6 +80,7 @@ export {
   useRejectDrafts,
   useEditDraft,
   useResolveNotification,
+  useRetryFailed,
 } from './useSMSMutations'
 
 // Conversation mutations

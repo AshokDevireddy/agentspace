@@ -18,6 +18,7 @@ import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { useHydrated } from "@/hooks/useHydrated"
 import { useClientDate } from "@/hooks/useClientDate"
 import { useLocalStorage } from "@/hooks/useLocalStorage"
+import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 
 interface AgentScore {
   rank: number
@@ -86,12 +87,30 @@ export default function Scoreboard() {
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
   const [submittedFilter, setSubmittedFilter] = useLocalStorage<'submitted' | 'issue_paid'>('scoreboard_date_mode', 'submitted')
   const [viewMode, setViewMode] = useState<'agency' | 'my_team'>('agency')
+  const [selectedDownlineAgentId, setSelectedDownlineAgentId] = useState<string>('')
 
-  // Fetch downline IDs for My Team filter
+  // Fetch downline IDs and names for My Team filter
   const { data: downlineData } = useQuery({
     queryKey: queryKeys.myDownlineIds(user?.id || ''),
     queryFn: async () => {
       const response = await fetch(`/api/agents/downlines?agentId=${user?.id}`, {
+        credentials: 'include'
+      })
+      if (!response.ok) return { downlineIds: [] as string[], downlineAgents: [] as { id: string; first_name: string; last_name: string }[] }
+      const data = await response.json()
+      const agents: { id: string; first_name: string; last_name: string }[] = data.downlines || data || []
+      const ids: string[] = agents.map((d) => d.id)
+      return { downlineIds: ids, downlineAgents: agents }
+    },
+    enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Fetch sub-tree IDs when a specific downline agent is selected
+  const { data: selectedAgentDownlineData } = useQuery({
+    queryKey: queryKeys.myDownlineIds(selectedDownlineAgentId),
+    queryFn: async () => {
+      const response = await fetch(`/api/agents/downlines?agentId=${selectedDownlineAgentId}`, {
         credentials: 'include'
       })
       if (!response.ok) return { downlineIds: [] as string[] }
@@ -99,7 +118,7 @@ export default function Scoreboard() {
       const ids: string[] = (data.downlines || data || []).map((d: { id: string }) => d.id)
       return { downlineIds: ids }
     },
-    enabled: !!user?.id,
+    enabled: !!selectedDownlineAgentId,
     staleTime: 5 * 60 * 1000,
   })
 
@@ -283,16 +302,32 @@ export default function Scoreboard() {
     }
   }, [data, dateRange])
 
+  // Build dropdown options for agent filter in My Team mode
+  const downlineAgentOptions = useMemo(() => {
+    if (!downlineData?.downlineAgents) return []
+    return downlineData.downlineAgents.map(agent => ({
+      value: agent.id,
+      label: `${agent.first_name || ''} ${agent.last_name || ''}`.trim() || agent.id
+    }))
+  }, [downlineData?.downlineAgents])
+
   // Filter leaderboard based on view mode (agency vs my team)
-  const filteredLeaderboard = useMemo(() => {
+  const filteredLeaderboard = useMemo((): AgentScore[] => {
     if (!data?.leaderboard) return []
     if (viewMode === 'agency') return data.leaderboard
+    // Admins see all agents in My Team unless they've picked a specific agent in the dropdown
+    if (user?.role === 'admin' && !selectedDownlineAgentId) return data.leaderboard
+    // Build filter set: selected agent's sub-tree if one is chosen, otherwise user's downline
+    const selectedAgentDownlineIdSet = selectedDownlineAgentId
+      ? new Set([selectedDownlineAgentId, ...(selectedAgentDownlineData?.downlineIds || [])])
+      : null
     const myDownlineIds = new Set(downlineData?.downlineIds || [])
     if (user?.id) myDownlineIds.add(user.id)
+    const filterSet = selectedAgentDownlineIdSet || myDownlineIds
     return data.leaderboard
-      .filter(agent => myDownlineIds.has(agent.agent_id))
-      .map((agent, index) => ({ ...agent, rank: index + 1 }))
-  }, [data?.leaderboard, viewMode, downlineData?.downlineIds, user?.id])
+      .filter((agent: AgentScore) => filterSet.has(agent.agent_id))
+      .map((agent: AgentScore, index: number) => ({ ...agent, rank: index + 1 }))
+  }, [data?.leaderboard, viewMode, downlineData?.downlineIds, user?.id, user?.role, selectedDownlineAgentId, selectedAgentDownlineData?.downlineIds])
 
   const filteredStats = useMemo(() => {
     if (viewMode === 'agency' || !data?.stats) return data?.stats || null
@@ -494,7 +529,7 @@ export default function Scoreboard() {
                 variant={viewMode === 'agency' ? 'default' : 'ghost'}
                 size="sm"
                 className="rounded-none h-9 text-sm"
-                onClick={() => setViewMode('agency')}
+                onClick={() => { setViewMode('agency'); setSelectedDownlineAgentId('') }}
               >
                 Agency
               </Button>
@@ -507,6 +542,15 @@ export default function Scoreboard() {
                 My Team
               </Button>
             </div>
+            {viewMode === 'my_team' && downlineAgentOptions.length > 0 && (
+              <SimpleSearchableSelect
+                options={downlineAgentOptions}
+                value={selectedDownlineAgentId}
+                onValueChange={setSelectedDownlineAgentId}
+                placeholder="All team members"
+                searchPlaceholder="Search agents..."
+              />
+            )}
             <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeOption)}>
               <SelectTrigger className="w-[160px] rounded-md h-9 text-sm">
                 <SelectValue placeholder="Select timeframe" />
@@ -681,7 +725,7 @@ export default function Scoreboard() {
       )}
 
       {/* Weekly Stats - Only show for admins (after hydration to avoid mismatch) */}
-      {isHydrated && user?.role === 'admin' && (
+      {isHydrated && (user?.role === 'admin' || viewMode === 'my_team') && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="professional-card rounded-md">
             <CardContent className="p-6 text-center">

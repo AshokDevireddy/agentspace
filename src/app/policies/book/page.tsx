@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { AsyncSearchableSelect } from "@/components/ui/async-searchable-select"
 import { DateRangePicker } from "@/components/ui/date-range-picker"
@@ -49,6 +50,7 @@ interface Deal {
   ssnBenefit: boolean
   billingDayOfMonth: string | null
   billingWeekday: string | null
+  face_value?: number | null
 }
 
 interface EditableDeal extends Deal {
@@ -117,6 +119,7 @@ export default function BookOfBusiness() {
       effectiveDateSort: "all",
       effectiveDateStart: "",
       effectiveDateEnd: "",
+      clientPhone: "",
       statusMode: 'all' as 'all' | 'active' | 'pending' | 'inactive',
       viewMode: 'downlines' as 'downlines' | 'self'
     },
@@ -240,6 +243,7 @@ export default function BookOfBusiness() {
     if (appliedFilters.effectiveDateSort !== 'all') params.append('effective_date_sort', appliedFilters.effectiveDateSort)
     if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
     if (appliedFilters.effectiveDateEnd) params.append('effective_date_end', appliedFilters.effectiveDateEnd)
+    if (appliedFilters.clientPhone) params.append('client_phone', appliedFilters.clientPhone)
     if (appliedFilters.viewMode) params.append('view', appliedFilters.viewMode)
     params.append('limit', '50')
     if (cursor) {
@@ -400,6 +404,9 @@ export default function BookOfBusiness() {
       case 'dateRange':
         setLocalFilters({ effectiveDateStart: '', effectiveDateEnd: '' })
         break
+      case 'clientPhone':
+        setLocalFilters({ clientPhone: '' })
+        break
       case 'persistencyPlacement':
         setStatusMode('all')
         break
@@ -412,6 +419,7 @@ export default function BookOfBusiness() {
     { id: 'product', label: 'Product' },
     { id: 'client', label: 'Client' },
     { id: 'policyNumber', label: 'Policy #' },
+    { id: 'clientPhone', label: 'Phone' },
     { id: 'billingCycle', label: 'Billing Cycle' },
     { id: 'leadSource', label: 'Lead Source' },
     { id: 'status', label: 'Status' },
@@ -578,6 +586,15 @@ export default function BookOfBusiness() {
                   />
                 </Badge>
               )}
+              {visibleFilters.has('clientPhone') && (
+                <Badge variant="outline" className="h-8 px-3">
+                  Phone
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('clientPhone')}
+                  />
+                </Badge>
+              )}
               {visibleFilters.has('billingCycle') && (
                 <Badge variant="outline" className="h-8 px-3">
                   Billing Cycle
@@ -734,6 +751,21 @@ export default function BookOfBusiness() {
                   </div>
                 )}
 
+                {visibleFilters.has('clientPhone') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Phone
+                    </label>
+                    <Input
+                      type="tel"
+                      value={localFilters.clientPhone || ''}
+                      onChange={(e) => setLocalFilters({ clientPhone: e.target.value })}
+                      placeholder="Search by phone..."
+                      className="h-9"
+                    />
+                  </div>
+                )}
+
                 {visibleFilters.has('billingCycle') && (
                   <div>
                     <label className="block text-[10px] font-medium text-muted-foreground mb-1">
@@ -848,6 +880,7 @@ export default function BookOfBusiness() {
                 <th>Policy / App #</th>
                 <th>Client Info</th>
                 <th>Premium / Effective Date</th>
+                <th>Coverage</th>
                 <th>Lead Source</th>
                 <th className="text-center">Status</th>
               </tr>
@@ -884,19 +917,20 @@ export default function BookOfBusiness() {
                         <div className="h-5 w-20 bg-muted rounded" />
                       </div>
                     </td>
+                    <td><div className="h-4 w-24 bg-muted rounded" /></td>
                     <td><div className="h-6 w-24 bg-muted rounded" /></td>
                     <td className="text-center"><div className="h-6 w-20 bg-muted rounded mx-auto" /></td>
                   </tr>
                 ))
               ) : error ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-destructive">
+                  <td colSpan={9} className="py-8 text-center text-destructive">
                     Error: {error}
                   </td>
                 </tr>
               ) : deals.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={9} className="py-8 text-center text-muted-foreground">
                     No deals found matching your criteria
                   </td>
                 </tr>
@@ -979,6 +1013,9 @@ export default function BookOfBusiness() {
                               </Badge>
                             ) : null}
                           </div>
+                        </td>
+                        <td className="whitespace-nowrap">
+                          {deal.face_value ? `$${Number(deal.face_value).toLocaleString()}` : '—'}
                         </td>
                         <td>
                           {deal.leadSource ? (

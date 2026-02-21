@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Switch } from "@/components/ui/switch"
 import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft, Mail, MessageCircle, User, LogOut, ChevronLeft } from "lucide-react"
 import Link from "next/link"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
@@ -90,7 +91,7 @@ interface Commission {
   commission_percentage: number
 }
 
-type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "automation" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications" | "sms-templates"
+type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "automation" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications" | "sms-templates" | "scoreboard"
 
 // Default primary color schemes for light and dark mode
 const DEFAULT_PRIMARY_COLOR_LIGHT = "0 0% 0%" // Black for light mode
@@ -2149,6 +2150,7 @@ export default function ConfigurationPage() {
     { id: "carrier-logins" as TabType, label: "Carrier Logins", icon: Lock },
     { id: "discord" as TabType, label: "Discord Notifications", icon: Bell },
     { id: "sms-templates" as TabType, label: "SMS Templates", icon: MessageCircle },
+    { id: "scoreboard" as TabType, label: "Scoreboard", icon: TrendingUp },
   ]
 
   // Tab metadata with titles and descriptions for page headers
@@ -2165,6 +2167,7 @@ export default function ConfigurationPage() {
     "carrier-logins": { title: "Carrier Logins", description: "Store carrier portal credentials securely" },
     "discord": { title: "Discord Notifications", description: "Connect Discord webhooks for team alerts" },
     "sms-templates": { title: "SMS Templates", description: "Create and customize SMS message templates" },
+    "scoreboard": { title: "Scoreboard", description: "Configure scoreboard visibility settings for your agents" },
   }
 
   // Get commissions grid data
@@ -4535,6 +4538,46 @@ export default function ConfigurationPage() {
                       showSuccess={showSuccess}
                       showError={showError}
                     />
+                  </div>
+                </div>
+              )}
+
+              {/* Scoreboard Tab */}
+              {activeTab === "scoreboard" && (
+                <div>
+                  <div className="mb-6">
+                    <h2 className="text-xl font-semibold text-foreground mb-1">Scoreboard Settings</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Configure scoreboard visibility settings for your agents
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-card p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-foreground">Agent Scoreboard Visibility</h3>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          When enabled, all agents can see the full agency scoreboard stats (production, policies, active agents). When disabled, non-admin agents only see stats when viewing their own team.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={agencyData?.scoreboard_agent_visibility ?? false}
+                        onCheckedChange={async (enabled) => {
+                          if (!agencyData?.id) return
+                          try {
+                            await fetch(`/api/agencies/${agencyData.id}/settings`, {
+                              method: 'PATCH',
+                              credentials: 'include',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ scoreboard_agent_visibility: enabled }),
+                            })
+                            queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+                            showSuccess(`Scoreboard visibility ${enabled ? 'enabled' : 'disabled'} for all agents`)
+                          } catch {
+                            showError('Failed to update scoreboard visibility setting')
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               )}

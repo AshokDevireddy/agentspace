@@ -470,9 +470,9 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       const limitedDigits = digitsOnly.slice(0, 10)
 
       // Store only digits in state (database format)
-      setFormData({ ...formData, [field]: limitedDigits })
+      setFormData(prev => ({ ...prev, [field]: limitedDigits }))
     } else {
-      setFormData({ ...formData, [field]: value })
+      setFormData(prev => ({ ...prev, [field]: value }))
     }
   }
 
@@ -490,7 +490,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
   // Handle upline agent selection
   const handleUplineAgentChange = (agentId: string) => {
-    setFormData({ ...formData, uplineAgentId: agentId })
+    setFormData(prev => ({ ...prev, uplineAgentId: agentId }))
   }
 
   const applyUplineSelection = (option: SearchOption) => {
@@ -571,24 +571,29 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setSelectedPreInviteUserLabel(selectedOption.label)
       setNameSearchTerm(selectedOption.label)
 
-      // Set form data
-      setFormData({
+      // Set form data - preserve existing upline if user doesn't have one
+      setFormData(prev => ({
+        ...prev,
         firstName: user.first_name || "",
         lastName: user.last_name || "",
         email: user.email || "",
         phoneNumber: user.phone_number || "",
         permissionLevel: user.perm_level || "",
-        uplineAgentId: user.upline_id || "",
+        uplineAgentId: user.upline_id || prev.uplineAgentId,
         positionId: user.position_id || ""
-      })
+      }))
 
       // Set selected ID and clear loading state
       setSelectedPreInviteUserId(userId)
       setIsLoadingPreInviteUser(false)
       setLoading(false)
 
-      // If there's an upline, set the search term for upline field
+      // If there's an upline from the user data, update the upline display
       if (user.upline_id) {
+        setUplineInputValue("")
+        setSelectedUplineLabel("")
+        setPauseUplineSearch(false)
+        setUplineSearchTerm("")
         const uplineOption = uplineSearchResults.find(r => r.value === user.upline_id)
         if (uplineOption) {
           applyUplineSelection(uplineOption)
@@ -654,7 +659,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                   if (selectedPreInviteUserId) {
                     setSelectedPreInviteUserId(null)
                     setSelectedPreInviteUserLabel("")
-                    setFormData({
+                    setFormData(prev => ({
+                      ...prev,
                       firstName: "",
                       lastName: "",
                       email: "",
@@ -662,7 +668,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                       permissionLevel: "",
                       uplineAgentId: "",
                       positionId: ""
-                    })
+                    }))
                   }
                 }}
                 onFocus={() => {
@@ -742,7 +748,8 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                         setPauseNameSearch(false)
                         setShowNameDropdown(false)
                         setIsLoadingPreInviteUser(false)
-                        setFormData({
+                        setFormData(prev => ({
+                          ...prev,
                           firstName: "",
                           lastName: "",
                           email: "",
@@ -750,7 +757,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
                           permissionLevel: "",
                           uplineAgentId: "",
                           positionId: ""
-                        })
+                        }))
                         clearUplineSelection()
                       }}
                       className="text-destructive hover:text-destructive/80 text-sm transition-colors"

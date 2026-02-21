@@ -40,6 +40,7 @@ export interface AgencySettings {
   sms_policy_packet_template: string | null
   default_scoreboard_start_date: string | null
   sms_auto_send_enabled: boolean
+  scoreboard_agent_visibility: boolean
 }
 
 /**

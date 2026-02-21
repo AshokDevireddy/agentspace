@@ -192,3 +192,38 @@ export function containsUrgentKeywords(messageBody: string): boolean {
   return urgentKeywords.some(keyword => lowerBody.includes(keyword));
 }
 
+/**
+ * Check if a phone number is valid (10 digits when normalized)
+ */
+export function isValidPhoneNumber(phone: string): boolean {
+  const digits = phone.replace(/\D/g, '')
+  return digits.length === 10
+}
+
+/**
+ * Get a human-readable validation error for a phone number
+ */
+export function getPhoneValidationError(phone: string): string | null {
+  if (!phone || phone.trim() === '') return 'Phone number is required'
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length < 10) return 'Phone number must be 10 digits'
+  if (digits.length > 10) return 'Phone number must be 10 digits'
+  return null
+}
+
+/**
+ * Check if an error message indicates an invalid phone number (from Telnyx)
+ */
+export function isInvalidPhoneError(errorMessage: string): boolean {
+  const invalidPhonePatterns = [
+    'invalid phone',
+    'invalid number',
+    'not a valid phone',
+    'could not be routed',
+    'unroutable',
+    'invalid destination',
+  ]
+  const lowerMessage = errorMessage.toLowerCase()
+  return invalidPhonePatterns.some(pattern => lowerMessage.includes(pattern))
+}
+

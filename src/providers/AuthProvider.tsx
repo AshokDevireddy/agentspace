@@ -13,7 +13,7 @@ export type UserData = {
   theme_mode: 'light' | 'dark' | 'system' | null
   is_admin: boolean
   agency_id: string | null
-  subscription_tier: 'free' | 'pro' | 'expert'
+  subscription_tier: 'free' | 'basic' | 'pro' | 'expert'
 }
 
 type AuthContextType = {

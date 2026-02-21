@@ -16,6 +16,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select"
 import { Info } from "lucide-react"
+import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
@@ -551,6 +552,7 @@ export default function AnalyticsTestPage() {
 	const originalUserId = user?.id || null
 	const subscriptionTier = user?.subscription_tier || 'free'
 	const userRole = user?.role || null
+	const hasAnalyticsAccess = subscriptionTier === 'pro' || subscriptionTier === 'expert'
 
 	// 1. Main analytics fetch - Get analytics data only (user data comes from AuthProvider)
 	const { data: mainAnalyticsData, isPending: isMainAnalyticsLoading, isFetching: isMainAnalyticsFetching, error: mainAnalyticsError } = useQuery({
@@ -573,7 +575,7 @@ export default function AnalyticsTestPage() {
 				analyticsFullData: rpcData as {yourDeals: AnalyticsTestValue | null, downlineProduction: AnalyticsTestValue | null},
 			}
 		},
-		enabled: !!user?.id,
+		enabled: !!user?.id && hasAnalyticsAccess,
 		staleTime: 5 * 60 * 1000, // 5 minutes
 		gcTime: 10 * 60 * 1000, // 10 minutes
 	})
@@ -586,7 +588,7 @@ export default function AnalyticsTestPage() {
 		queryKeys.agents,
 		'/api/agents?view=table&page=1&limit=1',
 		{
-			enabled: !!originalUserId,
+			enabled: !!originalUserId && hasAnalyticsAccess,
 			staleTime: 5 * 60 * 1000, // 5 minutes
 		}
 	)
@@ -616,7 +618,7 @@ export default function AnalyticsTestPage() {
 			}
 			return response.json() as Promise<{yourDeals: AnalyticsTestValue | null, downlineProduction: AnalyticsTestValue | null}>
 		},
-		enabled: !!targetUserId,
+		enabled: !!targetUserId && hasAnalyticsAccess,
 		staleTime: 5 * 60 * 1000, // 5 minutes
 	})
 
@@ -1338,6 +1340,22 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 
 		return sortedPeriods
 	}, [periods, carrierFilter, trendMetric])
+
+	if (!hasAnalyticsAccess) {
+		return (
+			<div className="space-y-8">
+				<div>
+					<h1 className="text-4xl font-bold text-foreground mb-2">Analytics</h1>
+					<p className="text-muted-foreground">Advanced analytics and insights</p>
+				</div>
+				<UpgradePrompt
+					title="Analytics Requires an Upgrade"
+					message="Upgrade to Pro or Expert to access advanced analytics, performance insights, and detailed reporting."
+					requiredTier="Pro"
+				/>
+			</div>
+		)
+	}
 
 	return (
 		isLoading ? (
@@ -2513,24 +2531,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 					)}
 				</CardContent>
 			</Card>
-			{(subscriptionTier === 'free' || subscriptionTier === 'basic') && (
-				<div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-900/70 backdrop-blur-md rounded-md">
-					<div className="bg-white dark:bg-gray-800 rounded-lg p-8 shadow-xl text-center max-w-md">
-						<div className="text-4xl mb-4">🔒</div>
-						<h3 className="text-xl font-bold mb-2">Upgrade to View Analytics</h3>
-						<p className="text-gray-600 dark:text-gray-400 mb-4">
-							Upgrade to Pro or Expert tier to unlock full analytics and insights
-						</p>
-						<a
-							href="/user/profile"
-							className="inline-block bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
-						>
-							Upgrade Now
-						</a>
-					</div>
 				</div>
-			)}
-			</div>
 
 			{/* Performance Trends */}
 			<div className="relative">
@@ -3683,24 +3684,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 					)}
 				</CardContent>
 			</Card>
-			{(subscriptionTier === 'free' || subscriptionTier === 'basic') && (
-				<div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-900/70 backdrop-blur-md rounded-md">
-					<div className="bg-white dark:bg-gray-800 rounded-lg p-8 shadow-xl text-center max-w-md">
-						<div className="text-4xl mb-4">🔒</div>
-						<h3 className="text-xl font-bold mb-2">Upgrade to View Analytics</h3>
-						<p className="text-gray-600 dark:text-gray-400 mb-4">
-							Upgrade to Pro or Expert tier to unlock full analytics and insights
-						</p>
-						<a
-							href="/user/profile"
-							className="inline-block bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors"
-						>
-							Upgrade Now
-						</a>
-					</div>
 				</div>
-			)}
-			</div>
 
 			<Tabs defaultValue="overview" className="hidden">
 				<TabsList>

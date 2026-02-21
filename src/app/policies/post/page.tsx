@@ -28,7 +28,8 @@ const initialFormData = {
   monthlyPremium: "",
   billingCycle: "",
   leadSource: "",
-  clientName: "",
+  clientFirstName: "",
+  clientLastName: "",
   clientEmail: "",
   clientPhone: "",
   clientDateOfBirth: "",
@@ -39,6 +40,7 @@ const initialFormData = {
   notes: "",
   rateClass: "",
   coverageAmount: "",
+  submittedDate: "",
 };
 
 type Beneficiary = {
@@ -61,6 +63,8 @@ export default function PostDeal() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { showSuccess, showError, showWarning } = useNotification()
+
+  const today = useMemo(() => new Date().toISOString().split('T')[0], [])
 
   const [error, setError] = useState<string | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
@@ -122,6 +126,11 @@ export default function PostDeal() {
       errorRef.current.scrollIntoView({ behavior: "smooth", block: "start" })
     }
   }, [error])
+
+  // Initialize submitted date to today
+  useEffect(() => {
+    setFormData(prev => ({ ...prev, submittedDate: prev.submittedDate || today }))
+  }, [today])
 
   // Query: Check if user and upline have positions assigned
   const { data: positionCheckData, isLoading: positionCheckLoading } = useQuery({
@@ -211,7 +220,7 @@ export default function PostDeal() {
     const baseFields: FormField[] = [
       "carrierId", "productId", "policyEffectiveDate", "ssnBenefit", "monthlyPremium",
       "billingCycle", "leadSource",
-      "clientName", "clientEmail", "clientPhone", "clientDateOfBirth",
+      "clientFirstName", "clientLastName", "clientEmail", "clientPhone", "clientDateOfBirth",
       "clientAddress", "policyNumber"
     ]
     if (hasTeams) {
@@ -273,7 +282,7 @@ export default function PostDeal() {
             product_name: productName,
             monthly_premium: monthlyPremium.toFixed(2),
             annual_premium: annualPremium,
-            client_name: formData.clientName,
+            client_name: `${formData.clientFirstName} ${formData.clientLastName}`.trim(),
             policy_number: formData.policyNumber,
             effective_date: formData.policyEffectiveDate,
           },
@@ -349,8 +358,8 @@ export default function PostDeal() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 email: formData.clientEmail,
-                firstName: formData.clientName.split(' ')[0] || formData.clientName,
-                lastName: formData.clientName.split(' ').slice(1).join(' ') || 'Client',
+                firstName: formData.clientFirstName,
+                lastName: formData.clientLastName || 'Client',
                 phoneNumber: cleanPhoneForInvite
               }),
               signal: inviteController.signal
@@ -419,7 +428,7 @@ export default function PostDeal() {
         product_id,
         client_id,
         agency_id: agencyId,
-        client_name: formData.clientName,
+        client_name: `${formData.clientFirstName} ${formData.clientLastName}`.trim(),
         client_email: formData.clientEmail || null,
         client_phone: cleanPhoneNumber,
         date_of_birth: formData.clientDateOfBirth || null,
@@ -439,7 +448,7 @@ export default function PostDeal() {
         team: formData.team || null,
         notes: formData.notes || null,
         rate_class: formData.rateClass || null,
-        submission_date: new Date().toISOString().split('T')[0],
+        submission_date: formData.submittedDate || today,
         face_value: formData.coverageAmount ? parseFloat(formData.coverageAmount) : null,
         post_a_deal: true,
       }
@@ -472,7 +481,14 @@ export default function PostDeal() {
         throw new Error("Network error. Please check your connection and try again.")
       }
 
-      const data = await res.json()
+      let data: any
+      try {
+        const responseText = await res.text()
+        data = JSON.parse(responseText)
+      } catch {
+        console.error('[PostDeal] Non-JSON response from server')
+        throw new Error(res.status >= 500 ? "Server error. Please try again in a moment." : `Unexpected response (${res.status})`)
+      }
 
       if (!res.ok) {
         console.error('[PostDeal] Response not OK, throwing error')
@@ -762,8 +778,12 @@ export default function PostDeal() {
       }
     } else if (step === 2) {
       // Client Information validation
-      if (!formData.clientName) {
-        setError("Please enter the client's full name (first and last).")
+      if (!formData.clientFirstName) {
+        setError("Please enter the client's first name.")
+        return false
+      }
+      if (!formData.clientLastName) {
+        setError("Please enter the client's last name.")
         return false
       }
       if (!formData.clientEmail) {
@@ -1256,17 +1276,32 @@ export default function PostDeal() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
-                      Full Name (First and Last) <span className="text-destructive">*</span>
+                      First Name <span className="text-destructive">*</span>
                     </label>
                     <Input
                       type="text"
-                      value={formData.clientName}
-                      onChange={(e) => handleInputChange("clientName", e.target.value)}
+                      value={formData.clientFirstName}
+                      onChange={(e) => handleInputChange("clientFirstName", e.target.value)}
                       className="h-12"
-                      placeholder="Enter client's full name"
+                      placeholder="Enter client's first name"
                     />
                   </div>
 
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Last Name <span className="text-destructive">*</span>
+                    </label>
+                    <Input
+                      type="text"
+                      value={formData.clientLastName}
+                      onChange={(e) => handleInputChange("clientLastName", e.target.value)}
+                      className="h-12"
+                      placeholder="Enter client's last name"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
                       Client Email <span className="text-destructive">*</span>
@@ -1312,6 +1347,24 @@ export default function PostDeal() {
                       onChange={(e) => handleInputChange("clientDateOfBirth", e.target.value)}
                       className="h-12"
                     />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Submitted Date
+                    </label>
+                    <Input
+                      type="date"
+                      value={formData.submittedDate}
+                      onChange={(e) => handleInputChange("submittedDate", e.target.value)}
+                      max={today}
+                      className="h-12"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Defaults to today. Change if the deal was submitted on a different date.
+                    </p>
                   </div>
                 </div>
 
@@ -1456,6 +1509,10 @@ export default function PostDeal() {
                       <p className="font-medium text-foreground mt-1">{formData.policyEffectiveDate}</p>
                     </div>
                     <div>
+                      <span className="text-muted-foreground">Submitted Date:</span>
+                      <p className="font-medium text-foreground mt-1">{formData.submittedDate || 'Today'}</p>
+                    </div>
+                    <div>
                       <span className="text-muted-foreground">SSN Benefit:</span>
                       <p className="font-medium text-foreground mt-1">{formData.ssnBenefit === "yes" ? "Yes" : "No"}</p>
                     </div>
@@ -1503,7 +1560,7 @@ export default function PostDeal() {
                       <div>
                         <span className="text-muted-foreground">Team:</span>
                         <p className="font-medium text-foreground mt-1">
-                          {teamsOptions.find(t => t.value === formData.team)?.label || formData.team}
+                          {teamsOptions.find((t: { value: string; label: string }) => t.value === formData.team)?.label || formData.team}
                         </p>
                       </div>
                     )}
@@ -1525,7 +1582,7 @@ export default function PostDeal() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-muted-foreground">Name:</span>
-                      <p className="font-medium text-foreground mt-1">{formData.clientName}</p>
+                      <p className="font-medium text-foreground mt-1">{`${formData.clientFirstName} ${formData.clientLastName}`.trim()}</p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Email:</span>

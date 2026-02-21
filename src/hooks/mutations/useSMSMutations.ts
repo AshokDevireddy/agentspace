@@ -3,7 +3,7 @@
  * Handles message sending, draft approval/rejection, and notification resolution
  */
 
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useInvalidation } from '../useInvalidation'
 
 interface SendMessageInput {
@@ -206,5 +206,38 @@ export function useResolveNotification(options?: {
       options?.onSuccess?.(data, dealId)
     },
     onError: options?.onError,
+  })
+}
+
+/**
+ * Hook for retrying failed SMS messages
+ */
+export function useRetryFailed(options?: { onSuccess?: () => void; onError?: (error: Error) => void }) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (messageIds: string[]) => {
+      const response = await fetch('/api/sms/failed/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ message_ids: messageIds }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to retry messages')
+      }
+
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      options?.onSuccess?.()
+    },
+    onError: (error: Error) => {
+      options?.onError?.(error)
+    },
   })
 }

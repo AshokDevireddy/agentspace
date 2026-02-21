@@ -49,32 +49,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ unreadCount: countData || 0 });
     }
 
-    // Fetch conversations using optimized RPC functions based on view mode
-    let conversations;
-    let convError;
+    // Downgrade 'all' to 'downlines' for non-admins (defense in depth)
+    const effectiveView = (view === 'all' && !(userData as any).is_admin) ? 'downlines' : view;
 
-    if (view === 'all' && (userData as any).is_admin) {
-      // Admin viewing all conversations in agency
-      const result = await supabase
-        .rpc('get_sms_conversations_all', { p_user_id: (userData as any).id });
-
-      conversations = result.data;
-      convError = result.error;
-    } else if (view === 'self') {
-      // Show only conversations where current user is the agent
-      const result = await supabase
-        .rpc('get_sms_conversations_self', { p_user_id: (userData as any).id });
-
-      conversations = result.data;
-      convError = result.error;
-    } else {
-      // Downlines only (default)
-      const result = await supabase
-        .rpc('get_sms_conversations_downlines', { p_user_id: (userData as any).id });
-
-      conversations = result.data;
-      convError = result.error;
-    }
+    const { data: conversations, error: convError } = await supabase
+      .rpc('get_sms_conversations', {
+        p_user_id: (userData as any).id,
+        p_view: effectiveView,
+      });
 
     if (convError) {
       console.error('RPC error:', convError);

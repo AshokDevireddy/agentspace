@@ -33,55 +33,20 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    let drafts
+    // Downgrade 'all' to 'downlines' for non-admins (defense in depth)
+    const effectiveView = (viewMode === 'all' && !userData.is_admin) ? 'downlines' : viewMode
 
-    if (viewMode === 'all' && userData.is_admin) {
-      // Admin viewing all drafts
-      const { data, error } = await supabase.rpc('get_draft_messages_all', {
-        p_user_id: userData.id
-      })
+    const { data: drafts, error } = await supabase.rpc('get_draft_messages', {
+      p_user_id: userData.id,
+      p_view: effectiveView,
+    })
 
-      if (error) {
-        console.error('Error fetching all drafts:', error)
-        return NextResponse.json(
-          { error: 'Failed to fetch drafts' },
-          { status: 500 }
-        )
-      }
-
-      drafts = data
-
-    } else if (viewMode === 'self') {
-      // User viewing only their own drafts
-      const { data, error } = await supabase.rpc('get_draft_messages_self', {
-        p_user_id: userData.id
-      })
-
-      if (error) {
-        console.error('Error fetching self drafts:', error)
-        return NextResponse.json(
-          { error: 'Failed to fetch drafts' },
-          { status: 500 }
-        )
-      }
-
-      drafts = data
-
-    } else {
-      // Default: view drafts for user and their downlines
-      const { data, error } = await supabase.rpc('get_draft_messages_downlines', {
-        p_user_id: userData.id
-      })
-
-      if (error) {
-        console.error('Error fetching downlines drafts:', error)
-        return NextResponse.json(
-          { error: 'Failed to fetch drafts' },
-          { status: 500 }
-        )
-      }
-
-      drafts = data
+    if (error) {
+      console.error('Error fetching drafts:', error)
+      return NextResponse.json(
+        { error: 'Failed to fetch drafts' },
+        { status: 500 }
+      )
     }
 
     // Group drafts by conversation

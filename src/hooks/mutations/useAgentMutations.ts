@@ -236,8 +236,8 @@ interface SaveAgentInput {
   editedData: {
     email: string
     phone_number?: string
-    role: string
-    status: string
+    role?: string
+    status?: string
     upline_id?: string
     is_active?: boolean
   }

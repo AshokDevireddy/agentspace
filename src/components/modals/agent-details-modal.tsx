@@ -321,14 +321,19 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
     if (!agent) return
     console.log('[AgentDetailsModal] Agent object when editing:', agent)
     console.log('[AgentDetailsModal] Agent is_active value:', agent.is_active)
-    setEditedData({
+    const baseData: Record<string, unknown> = {
       email: agent.email || '',
       phone_number: agent.phone_number || '',
-      role: agent.role || '',
-      status: agent.status || 'pre-invite',
       upline_id: agent.upline_id || '',
-      is_active: agent.is_active !== undefined ? agent.is_active : true
-    })
+    }
+    // Only include admin-only fields when user is admin, so non-admins
+    // don't accidentally send role/status and trigger a 403
+    if (isAdmin) {
+      baseData.role = agent.role || ''
+      baseData.status = agent.status || 'pre-invite'
+      baseData.is_active = agent.is_active !== undefined ? agent.is_active : true
+    }
+    setEditedData(baseData)
     setIsEditing(true)
   }
 
@@ -580,7 +585,7 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Role</label>
-                  {isEditing ? (
+                  {isEditing && isAdmin ? (
                     <SimpleSearchableSelect
                       options={[
                         { value: 'agent', label: 'Agent' },
@@ -645,7 +650,7 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
                   </label>
                   <p className="text-lg font-semibold text-foreground">{agent.downlines || 0}</p>
                 </div>
-                {isEditing && (
+                {isEditing && isAdmin && (
                   <>
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">

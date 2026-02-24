@@ -16,19 +16,19 @@ import { getClientAccessToken } from '@/lib/auth/client'
 
 interface UserData {
   id: string
-  first_name: string
-  last_name: string
+  firstName: string
+  lastName: string
   email: string
-  phone_number: string
+  phoneNumber: string
   role: 'admin' | 'agent' | 'client'
-  perm_level: string
-  is_admin: boolean
+  permLevel: string
+  isAdmin: boolean
   status: 'pre-invite' | 'invited' | 'onboarding' | 'active' | 'inactive'
-  agency_id?: string
+  agencyId?: string
 }
 
 interface AgencyData {
-  display_name: string
+  displayName: string
   name: string
 }
 
@@ -190,23 +190,23 @@ export default function SetupAccount() {
       console.log(`[setup-account] SUCCESS: Setting user data at +${Date.now() - startTime}ms`)
       setUserData(userRecord)
       setFormData({
-        firstName: userRecord.first_name || "",
-        lastName: userRecord.last_name || "",
-        phoneNumber: userRecord.phone_number || "",
+        firstName: userRecord.firstName || "",
+        lastName: userRecord.lastName || "",
+        phoneNumber: userRecord.phoneNumber || "",
         password: "",
         confirmPassword: ""
       })
 
       // Fetch agency data via Django API
-      if (userRecord.agency_id && accessToken) {
+      if (userRecord.agencyId && accessToken) {
         try {
-          const agencyData = await fetchApi<{ display_name: string | null; name: string }>(
-            `/api/agencies/${userRecord.agency_id}`,
+          const agencyData = await fetchApi<AgencyData>(
+            `/api/agencies/${userRecord.agencyId}`,
             accessToken,
             'Failed to load agency data'
           )
           if (agencyData) {
-            setAgencyName(agencyData.display_name || agencyData.name || "AgentSpace")
+            setAgencyName(agencyData.displayName || agencyData.name || "AgentSpace")
           }
         } catch {
           // Agency fetch failed, keep default name

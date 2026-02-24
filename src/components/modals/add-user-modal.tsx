@@ -147,7 +147,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
 
   // Get user data from AuthProvider
   const { user: authUser } = useAuth()
-  const isCurrentUserAdmin = authUser?.is_admin || false
+  const isCurrentUserAdmin = authUser?.isAdmin || false
 
   // Query: Fetch positions when modal opens
   const { data: positionsData, isLoading: positionsLoading } = useQuery({

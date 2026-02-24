@@ -154,11 +154,7 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
 
   // Get admin status from AuthProvider
   const { user: authUser } = useAuth()
-  const isAdmin = authUser?.is_admin || authUser?.role === 'admin'
-
-  // Can edit: admin can edit anyone, non-admin can edit their downline
-  // canEdit flag comes from Django (camelCased by proxy)
-  const canEditAgent = agent?.canEdit || isAdmin
+  const isAdmin = authUser?.isAdmin || authUser?.role === 'admin'
 
   // Fetch agent details
   const { data: agent, isLoading: loading, error: agentError, refetch: refetchAgent } = useQuery({
@@ -195,6 +191,10 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
     enabled: open && !!agentId,
     staleTime: 30 * 1000, // 30 seconds
   })
+
+  // Can edit: admin can edit anyone, non-admin can edit their downline
+  // canEdit flag comes from Django (camelCased by proxy)
+  const canEditAgent = agent?.canEdit || isAdmin
 
   // Fetch downlines
   const { data: downlines = [], isLoading: loadingDownlines } = useQuery({

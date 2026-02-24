@@ -42,7 +42,7 @@ interface NiprRunResponse {
   analysis?: {
     success: boolean
     carriers: string[]
-    unique_carriers?: string[]
+    uniqueCarriers?: string[]
     licensedStates: { resident: string[]; nonResident: string[] }
     analyzedAt: string
   }

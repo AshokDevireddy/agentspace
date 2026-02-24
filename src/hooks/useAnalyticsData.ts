@@ -14,22 +14,22 @@ import { shouldRetry, getRetryDelay } from './useQueryRetry'
 // ============ Types ============
 
 export interface AgentSplitEntry {
-  agent_id: string
-  agent_name: string
-  position_name: string | null
-  individual_production: number
-  individual_count: number
-  hierarchy_production: number
-  hierarchy_count: number
-  percentage_of_total: number
+  agentId: string
+  agentName: string
+  positionName: string | null
+  individualProduction: number
+  individualCount: number
+  hierarchyProduction: number
+  hierarchyCount: number
+  percentageOfTotal: number
 }
 
 export interface DownlineDistributionEntry {
-  agent_id: string
-  agent_name: string
-  position_name: string | null
+  agentId: string
+  agentName: string
+  positionName: string | null
   production: number
-  deal_count: number
+  dealCount: number
   percentage: number
 }
 
@@ -39,58 +39,59 @@ export interface AnalyticsFilters extends Record<string, unknown> {
   endDate?: string
   view?: string
   groupBy?: string
+  leadSource?: string
 }
 
 export interface AnalyticsSplitResponse {
   entries: AgentSplitEntry[]
   totals: {
-    total_production: number
-    total_deals: number
-    total_agents: number
+    totalProduction: number
+    totalDeals: number
+    totalAgents: number
   }
-  date_range: {
-    start_date: string
-    end_date: string
+  dateRange: {
+    startDate: string
+    endDate: string
   }
 }
 
 export interface DownlineDistributionResponse {
   entries: DownlineDistributionEntry[]
-  total_production: number
-  total_deals: number
+  totalProduction: number
+  totalDeals: number
 }
 
 export interface DealsAnalyticsResponse {
-  by_status: Array<{
+  byStatus: Array<{
     status: string
     count: number
-    total_premium: number
+    totalPremium: number
   }>
-  by_carrier: Array<{
-    carrier_name: string
+  byCarrier: Array<{
+    carrierName: string
     count: number
-    total_premium: number
+    totalPremium: number
   }>
-  by_month: Array<{
+  byMonth: Array<{
     month: string
     count: number
-    total_premium: number
+    totalPremium: number
   }>
 }
 
 export interface PersistencyResponse {
-  overall_persistency: number
-  by_carrier: Array<{
-    carrier_name: string
-    total_policies: number
-    active_policies: number
-    persistency_rate: number
+  overallPersistency: number
+  byCarrier: Array<{
+    carrierName: string
+    totalPolicies: number
+    activePolicies: number
+    persistencyRate: number
   }>
-  by_agent: Array<{
-    agent_name: string
-    total_policies: number
-    active_policies: number
-    persistency_rate: number
+  byAgent: Array<{
+    agentName: string
+    totalPolicies: number
+    activePolicies: number
+    persistencyRate: number
   }>
 }
 
@@ -101,6 +102,7 @@ function buildAnalyticsFilterParams(filters: AnalyticsFilters, params: URLSearch
   if (filters.startDate) params.set('start_date', filters.startDate)
   if (filters.endDate) params.set('end_date', filters.endDate)
   if (filters.groupBy) params.set('group_by', filters.groupBy)
+  if (filters.leadSource) params.set('lead_source', filters.leadSource)
 }
 
 // ============ Hooks ============

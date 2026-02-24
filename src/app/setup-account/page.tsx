@@ -56,8 +56,8 @@ export default function SetupAccount() {
 
   useEffect(() => {
     if (!brandingLoading) {
-      if (isWhiteLabel && branding?.theme_mode) {
-        setTheme(branding.theme_mode)
+      if (isWhiteLabel && branding?.themeMode) {
+        setTheme(branding.themeMode)
       } else {
         setTheme('light')
       }
@@ -136,8 +136,8 @@ export default function SetupAccount() {
             const sessionResponse = await fetch('/api/auth/session', { credentials: 'include' })
             if (sessionResponse.ok) {
               const sessionData = await sessionResponse.json()
-              if (sessionData.authenticated && sessionData.user?.auth_user_id) {
-                authUserId = sessionData.user.auth_user_id
+              if (sessionData.authenticated && sessionData.user?.authUserId) {
+                authUserId = sessionData.user.authUserId
                 accessToken = sessionToken
                 console.log(`[setup-account] PRIORITY 2: Got authUserId from Django session`)
               }
@@ -233,8 +233,8 @@ export default function SetupAccount() {
       newErrorFields.phoneNumber = "Invalid phone format"
     }
 
-    if (formData.password.length < 6) {
-      newErrors.push("Password must be at least 6 characters")
+    if (formData.password.length < 8) {
+      newErrors.push("Password must be at least 8 characters")
       newErrorFields.password = "Password too short"
     }
 

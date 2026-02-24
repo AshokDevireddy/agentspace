@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar as CalendarIcon, Info } from "lucide-react"
+import { Calendar as CalendarIcon, Info, Trophy, Medal, Award } from "lucide-react"
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
 import { useScoreboardBillingCycleData } from "@/hooks/useDashboardData"
@@ -22,7 +22,7 @@ import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select
 
 interface AgentScore {
   rank: number
-  agent_id: string
+  agentId: string
   name: string
   total: number
   dailyBreakdown: { [date: string]: number }
@@ -96,9 +96,9 @@ export default function Scoreboard() {
       const response = await fetch(`/api/agents/downlines?agentId=${user?.id}`, {
         credentials: 'include'
       })
-      if (!response.ok) return { downlineIds: [] as string[], downlineAgents: [] as { id: string; first_name: string; last_name: string }[] }
+      if (!response.ok) return { downlineIds: [] as string[], downlineAgents: [] as { id: string; firstName: string; lastName: string }[] }
       const data = await response.json()
-      const agents: { id: string; first_name: string; last_name: string }[] = data.downlines || data || []
+      const agents: { id: string; firstName: string; lastName: string }[] = data.downlines || data || []
       const ids: string[] = agents.map((d) => d.id)
       return { downlineIds: ids, downlineAgents: agents }
     },
@@ -131,8 +131,8 @@ export default function Scoreboard() {
   }, [isHydrated, clientDate.month, clientDate.year])
 
   // Fetch agency default scoreboard start date using TanStack Query
-  const { data: agencySettings } = useAgencyScoreboardSettings(user?.agency_id)
-  const defaultScoreboardStartDate = agencySettings?.default_scoreboard_start_date ?? null
+  const { data: agencySettings } = useAgencyScoreboardSettings(user?.agencyId)
+  const defaultScoreboardStartDate = agencySettings?.defaultScoreboardStartDate ?? null
 
   // Calculate date range based on timeframe - SSR-safe using clientDate
   const getDateRange = useCallback((selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
@@ -244,7 +244,7 @@ export default function Scoreboard() {
   const dateRange = useMemo(() => {
     if (timeframe === 'custom') {
       // For custom dates, always use the user-selected dates directly
-      // Never apply default_scoreboard_start_date to custom selections
+      // Never apply defaultScoreboardStartDate to custom selections
       return {
         startDate: customStartDate || clientDate.isoDate,
         endDate: customEndDate || clientDate.isoDate
@@ -279,11 +279,12 @@ export default function Scoreboard() {
       staleTime: 1000 * 60 * 5, // 5 minutes
     },
     dateMode,
+    assumedMonthsTillLapse,
   )
 
   // Extract data and error from response
-  const data = rpcResponse?.success ? rpcResponse.data : null
-  const error = rpcResponse?.success === false ? rpcResponse.error : queryError?.message
+  const data = rpcResponse ?? null
+  const error = queryError?.message ?? null
 
   // Include authLoading to show skeletons while auth initializes (prevents "no data" flash)
   const isLoading = authLoading || isDataLoading
@@ -307,7 +308,7 @@ export default function Scoreboard() {
     if (!downlineData?.downlineAgents) return []
     return downlineData.downlineAgents.map(agent => ({
       value: agent.id,
-      label: `${agent.first_name || ''} ${agent.last_name || ''}`.trim() || agent.id
+      label: `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || agent.id
     }))
   }, [downlineData?.downlineAgents])
 
@@ -325,7 +326,7 @@ export default function Scoreboard() {
     if (user?.id) myDownlineIds.add(user.id)
     const filterSet = selectedAgentDownlineIdSet || myDownlineIds
     return data.leaderboard
-      .filter((agent: AgentScore) => filterSet.has(agent.agent_id))
+      .filter((agent: AgentScore) => filterSet.has(agent.agentId))
       .map((agent: AgentScore, index: number) => ({ ...agent, rank: index + 1 }))
   }, [data?.leaderboard, viewMode, downlineData?.downlineIds, user?.id, user?.role, selectedDownlineAgentId, selectedAgentDownlineData?.downlineIds])
 
@@ -774,10 +775,14 @@ export default function Scoreboard() {
           {[0, 1, 2].map((index) => (
             <Card key={index} className="professional-card rounded-md relative overflow-hidden">
               <CardContent className="p-6 text-center">
-                <div className="mb-4">
-                  <span className="text-4xl">
-                    {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
-                  </span>
+                <div className="mb-4 flex justify-center">
+                  {index === 0 ? (
+                    <Trophy className="h-10 w-10 text-yellow-500" />
+                  ) : index === 1 ? (
+                    <Medal className="h-10 w-10 text-slate-400" />
+                  ) : (
+                    <Award className="h-10 w-10 text-amber-600" />
+                  )}
                 </div>
                 <div className="h-6 w-32 bg-muted animate-pulse rounded mx-auto mb-2" />
                 <div className="h-8 w-40 bg-muted animate-pulse rounded mx-auto mb-2" />
@@ -789,12 +794,16 @@ export default function Scoreboard() {
       ) : topAgents.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {topAgents.map((agent, index) => (
-            <Card key={agent.agent_id} className="professional-card rounded-md relative overflow-hidden">
+            <Card key={agent.agentId} className="professional-card rounded-md relative overflow-hidden">
               <CardContent className="p-6 text-center">
-                <div className="mb-4">
-                  <span className="text-4xl">
-                    {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
-                  </span>
+                <div className="mb-4 flex justify-center">
+                  {index === 0 ? (
+                    <Trophy className="h-10 w-10 text-yellow-500" />
+                  ) : index === 1 ? (
+                    <Medal className="h-10 w-10 text-slate-400" />
+                  ) : (
+                    <Award className="h-10 w-10 text-amber-600" />
+                  )}
                 </div>
                 <h3 className="text-xl font-bold text-foreground mb-2">{agent.name}</h3>
                 <p className="text-2xl font-bold text-foreground">{formatCurrency(agent.total)}</p>
@@ -889,14 +898,18 @@ export default function Scoreboard() {
                   {filteredLeaderboard.map((agent, index) => {
                     const rowBgClass = index < 3 ? 'bg-primary/10' : 'bg-card'
                     return (
-                      <tr key={agent.agent_id} className={`border-b border-border hover:bg-accent/50 transition-colors ${index < 3 ? 'bg-primary/10' : ''}`}>
+                      <tr key={agent.agentId} className={`border-b border-border hover:bg-accent/50 transition-colors ${index < 3 ? 'bg-primary/10' : ''}`}>
                         <td className={`py-3 px-4 sticky left-0 z-10 w-20 min-w-[80px] ${rowBgClass}`} style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>
                           <div className="flex items-center space-x-2">
                             <span className="font-semibold text-foreground">{agent.rank}</span>
                             {index < 3 && (
-                              <span className={`text-lg ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-gray-400' : 'text-orange-500'}`}>
-                                {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
-                              </span>
+                              index === 0 ? (
+                                <Trophy className="h-4 w-4 text-yellow-500" />
+                              ) : index === 1 ? (
+                                <Medal className="h-4 w-4 text-slate-400" />
+                              ) : (
+                                <Award className="h-4 w-4 text-amber-600" />
+                              )
                             )}
                           </div>
                         </td>

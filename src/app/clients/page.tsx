@@ -98,7 +98,7 @@ export default function Clients() {
 
   // Check if user is admin using centralized hook
   const { data: adminData, isPending: isAdminLoading } = useAdminStatus(user?.id)
-  const isAdmin = adminData?.is_admin || false
+  const isAdmin = adminData?.isAdmin || false
   // Wait for both loading to complete AND data to be available to prevent race conditions
   const isAdminChecked = !isAdminLoading && adminData !== undefined
 

@@ -78,9 +78,9 @@ export default function Navigation() {
   const updateAgencyColorMutation = useUpdateAgencyColor()
 
   // Derive admin status and subscription tier from AuthProvider context
-  const isAdmin = user?.is_admin || false
-  const subscriptionTier = user?.subscription_tier || 'free'
-  const agencyId = user?.agency_id || null
+  const isAdmin = user?.isAdmin || false
+  const subscriptionTier = user?.subscriptionTier || 'free'
+  const agencyId = user?.agencyId || null
 
   // Fetch agency branding with TanStack Query via Django API
   const { data: agencyData, isLoading: isLoadingAgency } = useQuery({

@@ -59,7 +59,7 @@ export default function AIChat() {
   const { data: adminData, isSuccess: isAdminChecked } = useAdminStatus(user?.id, {
     enabled: !loading && !!user,
   });
-  const isAdmin = adminData?.is_admin || false;
+  const isAdmin = adminData?.isAdmin || false;
 
   // Handle auth and admin redirects
   useEffect(() => {

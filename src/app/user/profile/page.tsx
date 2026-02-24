@@ -45,11 +45,11 @@ interface ProfileData {
 }
 
 interface Position {
-  position_id: string;
+  positionId: string;
   name: string;
   level: number;
   description: string | null;
-  is_active: boolean;
+  isActive: boolean;
 }
 
 interface ProfileApiResponse {
@@ -189,13 +189,13 @@ export default function ProfilePage() {
 
   const handlePositionUpdate = () => {
     if (!selectedPositionId) return;
-    updatePositionMutation.mutate({ position_id: selectedPositionId });
+    updatePositionMutation.mutate({ positionId: selectedPositionId });
   };
 
   const handleSmsAutoSendChange = (selectValue: string) => {
     const dbValue = selectValue === "default" ? null : selectValue === "on" ? true : false;
     setSmsAutoSendValue(selectValue as "default" | "on" | "off");
-    updateSmsAutoSendMutation.mutate({ sms_auto_send_enabled: dbValue });
+    updateSmsAutoSendMutation.mutate({ smsAutoSendEnabled: dbValue });
   }
 
   const handleThemeChange = async (newTheme: ThemeMode) => {
@@ -383,7 +383,7 @@ export default function ProfilePage() {
               >
                 <option value="">Select Position</option>
                 {positions.map((position) => (
-                  <option key={position.position_id} value={position.position_id}>
+                  <option key={position.positionId} value={position.positionId}>
                     {position.name} (Level {position.level})
                   </option>
                 ))}
@@ -418,7 +418,7 @@ export default function ProfilePage() {
               disabled={savingTheme}
               className={cn(
                 "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (user?.theme_mode || 'system') === 'light'
+                (user?.themeMode || 'system') === 'light'
                   ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
                   : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
               )}
@@ -426,12 +426,12 @@ export default function ProfilePage() {
               <div className="flex flex-col items-center gap-3">
                 <Sun className={cn(
                   "h-10 w-10",
-                  (user?.theme_mode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                  (user?.themeMode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                 )} />
                 <div className="text-center">
                   <p className={cn(
                     "font-semibold text-lg",
-                    (user?.theme_mode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                    (user?.themeMode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                   )}>
                     Light
                   </p>
@@ -439,7 +439,7 @@ export default function ProfilePage() {
                     Bright, clean interface
                   </p>
                 </div>
-                {(user?.theme_mode || 'system') === 'light' && (
+                {(user?.themeMode || 'system') === 'light' && (
                   <div className="absolute top-3 right-3">
                     <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
@@ -453,7 +453,7 @@ export default function ProfilePage() {
               disabled={savingTheme}
               className={cn(
                 "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (user?.theme_mode || 'system') === 'dark'
+                (user?.themeMode || 'system') === 'dark'
                   ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
                   : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
               )}
@@ -461,12 +461,12 @@ export default function ProfilePage() {
               <div className="flex flex-col items-center gap-3">
                 <Moon className={cn(
                   "h-10 w-10",
-                  (user?.theme_mode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                  (user?.themeMode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                 )} />
                 <div className="text-center">
                   <p className={cn(
                     "font-semibold text-lg",
-                    (user?.theme_mode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                    (user?.themeMode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                   )}>
                     Dark
                   </p>
@@ -474,7 +474,7 @@ export default function ProfilePage() {
                     Easy on the eyes
                   </p>
                 </div>
-                {(user?.theme_mode || 'system') === 'dark' && (
+                {(user?.themeMode || 'system') === 'dark' && (
                   <div className="absolute top-3 right-3">
                     <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
@@ -488,7 +488,7 @@ export default function ProfilePage() {
               disabled={savingTheme}
               className={cn(
                 "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (user?.theme_mode || 'system') === 'system'
+                (user?.themeMode || 'system') === 'system'
                   ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
                   : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
               )}
@@ -496,12 +496,12 @@ export default function ProfilePage() {
               <div className="flex flex-col items-center gap-3">
                 <Monitor className={cn(
                   "h-10 w-10",
-                  (user?.theme_mode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                  (user?.themeMode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                 )} />
                 <div className="text-center">
                   <p className={cn(
                     "font-semibold text-lg",
-                    (user?.theme_mode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                    (user?.themeMode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
                   )}>
                     System
                   </p>
@@ -509,7 +509,7 @@ export default function ProfilePage() {
                     Follow device settings
                   </p>
                 </div>
-                {(user?.theme_mode || 'system') === 'system' && (
+                {(user?.themeMode || 'system') === 'system' && (
                   <div className="absolute top-3 right-3">
                     <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>

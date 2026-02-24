@@ -11,11 +11,11 @@ import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 
 // Types for the RPC response
 interface DownlineProductionData {
-  agent_id: string
-  agent_name: string
-  total_production: number
-  is_clickable: boolean
-  has_downlines: boolean
+  agentId: string
+  agentName: string
+  totalProduction: number
+  isClickable: boolean
+  hasDownlines: boolean
 }
 
 interface BreadcrumbItem {
@@ -146,24 +146,20 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
 
       console.log('[DownlineProductionChart] API Response:', apiData)
 
-      // Transform camelCase response to snake_case for component compatibility
-      const transformedData = (apiData.distribution || apiData || []).map((item: {
+      // api-proxy transforms snake_case to camelCase automatically
+      // Django returns { entries: [...], totalProduction, totalDeals, agentId }
+      const transformedData = (apiData.entries || []).map((item: {
         agentId?: string
-        agent_id?: string
         agentName?: string
-        agent_name?: string
         totalProduction?: number
-        total_production?: number
         isClickable?: boolean
-        is_clickable?: boolean
         hasDownlines?: boolean
-        has_downlines?: boolean
       }) => ({
-        agent_id: item.agentId || item.agent_id,
-        agent_name: item.agentName || item.agent_name,
-        total_production: item.totalProduction || item.total_production,
-        is_clickable: item.isClickable ?? item.is_clickable,
-        has_downlines: item.hasDownlines ?? item.has_downlines,
+        agentId: item.agentId,
+        agentName: item.agentName,
+        totalProduction: item.totalProduction,
+        isClickable: item.isClickable,
+        hasDownlines: item.hasDownlines,
       }))
 
       console.log('[DownlineProductionChart] Successfully fetched data:', transformedData)
@@ -225,21 +221,21 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
   const wedges = React.useMemo(() => {
     if (data.length === 0) return []
 
-    const total = data.reduce((sum, item) => sum + Number(item.total_production), 0)
+    const total = data.reduce((sum, item) => sum + Number(item.totalProduction), 0)
 
     if (total === 0) return []
 
     let currentAngle = 0
     return data.map((item, idx) => {
-      const percentage = (Number(item.total_production) / total) * 100
+      const percentage = (Number(item.totalProduction) / total) * 100
       const angle = (percentage / 100) * 360
       const wedge = {
-        agentId: item.agent_id,
-        agentName: item.agent_name,
-        production: Number(item.total_production),
+        agentId: item.agentId,
+        agentName: item.agentName,
+        production: Number(item.totalProduction),
         percentage: Math.round(percentage * 10) / 10,
-        isClickable: item.is_clickable && item.has_downlines, // Only clickable if in downline AND has downlines
-        hasDownlines: item.has_downlines,
+        isClickable: item.isClickable && item.hasDownlines, // Only clickable if in downline AND has downlines
+        hasDownlines: item.hasDownlines,
         color: COLORS[idx % COLORS.length],
         startAngle: currentAngle,
         endAngle: currentAngle + angle

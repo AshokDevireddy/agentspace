@@ -10,9 +10,9 @@ import { queryKeys } from '../queryKeys'
 interface Carrier {
   id: string
   name: string
-  display_name: string
-  is_active: boolean
-  created_at?: string
+  displayName: string
+  isActive: boolean
+  createdAt?: string
 }
 
 /**
@@ -28,7 +28,7 @@ export function useRefreshCarriers() {
 
 // Carrier login types
 interface SaveCarrierLoginInput {
-  carrier_name: string
+  carrierName: string
   login: string
   password: string
 }

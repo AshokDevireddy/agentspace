@@ -6,6 +6,7 @@
 import { sendSMS, normalizePhoneNumber } from '@/lib/telnyx';
 import { logMessage, getDealWithDetails, type ConversationResult } from '@/lib/sms-helpers';
 import { Anthropic } from '@anthropic-ai/sdk';
+import camelcaseKeys from 'camelcase-keys';
 
 // Types
 interface AIProcessingResult {
@@ -184,27 +185,32 @@ function layer3DealEntityCheck(messageText: string, dealData: any): boolean {
 
 interface Agent {
   id: string;
-  subscription_tier: string;
-  agency_id: string;
-  phone_number?: string;
-  first_name: string;
-  last_name: string;
+  subscriptionTier: string;
+  agencyId: string;
+  phoneNumber?: string;
+  firstName: string;
+  lastName: string;
 }
 
 interface Agency {
   id: string;
-  messaging_enabled: boolean;
+  messagingEnabled: boolean;
   name: string;
-  phone_number: string;
+  phoneNumber: string;
 }
 
 interface Deal {
   id: string;
-  client_name: string;
-  client_phone: string;
-  agent_id: string;
-  agency_id: string;
-  status_standardized: string;
+  clientName?: string;
+  client_name?: string;
+  clientPhone?: string;
+  client_phone?: string;
+  agentId?: string;
+  agent_id?: string;
+  agencyId?: string;
+  agency_id?: string;
+  statusStandardized?: string;
+  status_standardized?: string;
 }
 
 // Initialize Anthropic client
@@ -225,7 +231,7 @@ export async function processAIMessage(
 
   try {
     // Check if AI processing should be activated
-    const agency = await getAgencyDetails(agent.agency_id);
+    const agency = await getAgencyDetails(agent.agencyId);
     if (!agency) {
       return {
         success: false,
@@ -287,12 +293,12 @@ export async function processAIMessage(
     const aiResponse = await generateAIResponse(messageText, dealDetails);
 
     // Send the response via SMS
-    const agencyPhoneNumber = agency.phone_number;
+    const agencyPhoneNumber = agency.phoneNumber;
     if (!agencyPhoneNumber) {
       throw new Error('Agency phone number not configured');
     }
 
-    const clientPhone = conversation.client_phone;
+    const clientPhone = conversation.client_phone || conversation.phoneNumber;
     if (!clientPhone) {
       throw new Error('Client phone number not available');
     }
@@ -314,7 +320,7 @@ export async function processAIMessage(
       metadata: {
         automated: true,
         type: 'ai_response',
-        client_phone: conversation.client_phone,
+        client_phone: conversation.client_phone || conversation.phoneNumber,
         question_type: questionType,
         processing_time_ms: Date.now() - startTime,
       },
@@ -350,17 +356,17 @@ export async function shouldProcessWithAI(
   conversation: ConversationResult
 ): Promise<boolean> {
   // Check agency-wide messaging enabled
-  if (!agency.messaging_enabled) {
+  if (!agency.messagingEnabled) {
     return false;
   }
 
   // Check agent subscription tier (Pro or Expert only)
-  if (!['pro', 'expert'].includes(agent.subscription_tier)) {
+  if (!['pro', 'expert'].includes(agent.subscriptionTier)) {
     return false;
   }
 
   // Check opt-in status
-  if (conversation.sms_opt_in_status !== 'opted_in') {
+  if ((conversation.sms_opt_in_status || conversation.smsOptInStatus) !== 'opted_in') {
     return false;
   }
 
@@ -472,12 +478,13 @@ async function getAgencyDetails(agencyId: string): Promise<Agency | null> {
       return null;
     }
 
-    const agency = await response.json();
+    const rawAgency = await response.json();
+    const agency = camelcaseKeys(rawAgency, { deep: true });
     return {
       id: agency.id,
-      messaging_enabled: agency.messaging_enabled,
+      messagingEnabled: agency.messagingEnabled,
       name: agency.name,
-      phone_number: agency.phone_number,
+      phoneNumber: agency.phoneNumber,
     };
   } catch (error) {
     console.error('Error fetching agency details:', error);
@@ -531,11 +538,12 @@ async function checkSMSUsageLimits(agent: Agent): Promise<boolean> {
       return false;
     }
 
-    const user = await response.json();
+    const rawUser = await response.json();
+    const user = camelcaseKeys(rawUser, { deep: true });
 
     // Check if billing cycle has reset
     const now = new Date();
-    const billingCycleEnd = user.billing_cycle_end ? new Date(user.billing_cycle_end) : null;
+    const billingCycleEnd = user.billingCycleEnd ? new Date(user.billingCycleEnd) : null;
 
     if (billingCycleEnd && now > billingCycleEnd) {
       // Billing cycle has ended, usage should be reset
@@ -550,11 +558,11 @@ async function checkSMSUsageLimits(agent: Agent): Promise<boolean> {
       'expert': 1000
     };
 
-    const limit = tierLimits[user.subscription_tier as keyof typeof tierLimits] || 0;
-    const currentUsage = user.messages_sent_count || 0;
+    const limit = tierLimits[user.subscriptionTier as keyof typeof tierLimits] || 0;
+    const currentUsage = user.messagesSentCount || 0;
 
     // Pro and Expert tiers allow overage with billing, others are hard limits
-    if (['pro', 'expert'].includes(user.subscription_tier)) {
+    if (['pro', 'expert'].includes(user.subscriptionTier)) {
       return true; // Allow overage with billing
     }
 

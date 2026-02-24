@@ -4,6 +4,7 @@
 // Supports ?filter=nipr to filter carriers by NIPR unique_carriers fuzzy matching
 
 import { NextRequest, NextResponse } from 'next/server'
+import camelcaseKeys from 'camelcase-keys'
 import { getApiBaseUrl } from '@/lib/api-config'
 import { getAccessToken } from '@/lib/session'
 import { findMatchingCarriers, type ActiveCarrier } from '@/lib/nipr/fuzzy-match'
@@ -12,11 +13,8 @@ type Carrier = {
   id: string
   name: string
   displayName?: string | null
-  display_name?: string | null
   isActive?: boolean
-  is_active?: boolean
   createdAt?: string | null
-  created_at?: string | null
 }
 
 export async function GET(request: NextRequest) {
@@ -46,7 +44,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(errorData, { status: response.status })
     }
 
-    const carriers: Carrier[] = await response.json()
+    const rawCarriers = await response.json()
+    const carriers: Carrier[] = rawCarriers ? camelcaseKeys(rawCarriers, { deep: true }) : []
 
     // If no NIPR filter requested, return all carriers
     if (!filterByNipr) {
@@ -80,7 +79,7 @@ export async function GET(request: NextRequest) {
     const activeCarriers: ActiveCarrier[] = (carriers || []).map(c => ({
       id: c.id,
       name: c.name,
-      display_name: c.displayName || c.display_name || c.name
+      display_name: c.displayName || c.name
     }))
 
     const matchedCarriers = findMatchingCarriers(uniqueCarriers, activeCarriers, 0.8)

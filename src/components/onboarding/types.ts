@@ -48,7 +48,7 @@ export interface NiprForm {
 export interface NiprAnalysis {
   success: boolean
   carriers: string[]
-  unique_carriers?: string[]
+  uniqueCarriers?: string[]
   licensedStates: { resident: string[]; nonResident: string[] }
   analyzedAt: string
 }

@@ -40,11 +40,24 @@ import { useSendMessage, useResolveNotification, useApproveDrafts, useRejectDraf
 
 interface Conversation {
   id: string
-  dealId: string
-  agentId: string
-  clientName: string
-  clientPhone: string
-  lastMessage: string
+  dealId: string | null
+  // Agent info comes as a nested object from Django
+  agent: {
+    id: string | null
+    firstName: string | null
+    lastName: string | null
+    name: string
+  } | null
+  // Client info comes as a nested object from Django (sourced from deal)
+  client: {
+    name: string
+    firstName: string | null
+    lastName: string | null
+    email: string | null
+  } | null
+  // phoneNumber is the conversation phone field (client_phone in Django)
+  phoneNumber: string | null
+  lastMessage: string | null
   lastMessageAt: string | null
   unreadCount: number
   smsOptInStatus?: string
@@ -56,47 +69,56 @@ interface Conversation {
 
 interface Message {
   id: string
-  conversation_id: string
-  sender_id: string
-  receiver_id: string
-  body: string
+  conversationId: string
+  // Django returns 'content', not 'body'
+  content: string
   direction: 'inbound' | 'outbound'
-  sent_at: string | null
+  // sentAt may be null for drafts; createdAt is always set
+  sentAt: string | null
+  createdAt: string | null
   status: string
   metadata: any
 }
 
+// Django GET /api/deals/{id} returns the deal object directly (no wrapper)
+// After camelCase transform the shape is:
 interface DealDetails {
   id: string
-  client_name: string
-  client_phone: string | null
-  client_email: string | null
-  client_address: string | null
-  state: string | null
-  zipcode: string | null
-  policy_number: string | null
-  annual_premium: number
-  monthly_premium: number
-  policy_effective_date: string | null
-  billing_day_of_month: string | null
-  billing_weekday: string | null
-  billing_cycle: string | null
-  lead_source: string | null
+  // Client info is nested under client object from the clients table JOIN
+  client: {
+    id: string | null
+    firstName: string | null
+    lastName: string | null
+    email: string | null
+    phone: string | null
+    name: string
+  } | null
+  // Deal-level client fields (stored on the deal itself, not the client FK)
+  // These are from d.client_name, d.client_phone, d.client_email, d.client_address
+  // but get_deal_by_id does NOT select them — they are only in the clients FK JOIN above
+  policyNumber: string | null
+  annualPremium: number | null
+  monthlyPremium: number | null
+  policyEffectiveDate: string | null
+  billingCycle: string | null
+  leadSource: string | null
   status: string
-  status_standardized: string | null
+  statusStandardized: string | null
   agent: {
-    id: string
-    first_name: string
-    last_name: string
-    email: string
-  }
+    id: string | null
+    firstName: string | null
+    lastName: string | null
+    email: string | null
+    name: string
+  } | null
   carrier: {
-    id: string
-    name: string
-  }
+    id: string | null
+    name: string | null
+    displayName: string | null
+  } | null
   product: {
-    id: string
-    name: string
+    id: string | null
+    name: string | null
   } | null
 }
 
@@ -193,8 +215,8 @@ function SMSMessagingPageContent() {
       // Handle both wrapped and unwrapped response formats
       const userData = profileData.data || profileData
 
-      const isAdmin = userData?.is_admin || false
-      const userTier = userData?.subscription_tier || 'free'
+      const isAdmin = userData?.isAdmin || false
+      const userTier = userData?.subscriptionTier || 'free'
       const currentUserId = userData?.id || null
 
       return { isAdmin, userTier, currentUserId }
@@ -241,16 +263,17 @@ function SMSMessagingPageContent() {
     }
   )
 
-  // Sort messages: sent messages by sent_at, drafts (sent_at=null) always at bottom
+  // Sort messages: sent messages by sentAt (falling back to createdAt), drafts (sentAt=null) always at bottom
   const messages = (messagesData?.messages || []).sort((a: Message, b: Message) => {
-    if (!a.sent_at && !b.sent_at) return 0
-    if (!a.sent_at) return 1
-    if (!b.sent_at) return -1
-    return new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
+    if (!a.sentAt && !b.sentAt) return 0
+    if (!a.sentAt) return 1
+    if (!b.sentAt) return -1
+    return new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
   })
 
   // Deal details query - migrated to useApiFetch
-  const { data: dealData, isPending: dealLoading } = useApiFetch<{ deal: DealDetails }>(
+  // Django GET /api/deals/{id} returns the deal object directly (not wrapped in { deal: ... })
+  const { data: dealDetails, isPending: dealLoading } = useApiFetch<DealDetails>(
     queryKeys.dealDetail(selectedConversation?.dealId || ''),
     `/api/deals/${selectedConversation?.dealId}`,
     {
@@ -258,8 +281,6 @@ function SMSMessagingPageContent() {
       staleTime: 60 * 1000, // 1 minute
     }
   )
-
-  const dealDetails = dealData?.deal || null
 
   // Update showDrafts based on filter selection
   const shouldShowDrafts = notificationFilter === 'drafts'
@@ -292,8 +313,10 @@ function SMSMessagingPageContent() {
   }, [conversations, selectedConversation, isHydrated, persistedConversationId, isAdminChecked])
 
   const filteredConversations = conversations.filter(conv => {
-    const matchesSearch = conv.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      conv.clientPhone.includes(searchQuery);
+    const clientName = conv.client?.name || ''
+    const clientPhone = conv.phoneNumber || ''
+    const matchesSearch = clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      clientPhone.includes(searchQuery);
 
     if (!matchesSearch) return false;
 
@@ -309,7 +332,7 @@ function SMSMessagingPageContent() {
     return true; // 'all' shows everything
   })
 
-  const totalUnreadCount = conversations.reduce((sum, conv) => sum + conv.unreadCount, 0)
+  const totalUnreadCount = conversations.reduce((sum, conv) => sum + (conv.unreadCount || 0), 0)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -537,6 +560,12 @@ function SMSMessagingPageContent() {
     // Reset textarea height after sending
     if (messageInputRef.current) {
       messageInputRef.current.style.height = 'auto'
+    }
+
+    if (!selectedConversation.dealId) {
+      showError('No deal associated with this conversation')
+      setMessageInput(messageText)
+      return
     }
 
     try {
@@ -936,7 +965,7 @@ function SMSMessagingPageContent() {
               >
                 <div className="flex items-center space-x-3">
                   <div className="relative">
-                    <InitialsAvatar name={conversation.clientName} size="md" />
+                    <InitialsAvatar name={conversation.client?.name || ''} size="md" />
                     {conversation.unreadCount > 0 && (
                       <div className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
                         {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
@@ -952,7 +981,7 @@ function SMSMessagingPageContent() {
                       <h3 className={cn(
                         "font-medium truncate",
                         conversation.unreadCount > 0 ? "text-foreground font-semibold" : "text-foreground"
-                      )}>{conversation.clientName}</h3>
+                      )}>{conversation.client?.name || 'Unknown'}</h3>
                       <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
                         {conversation.lastMessageAt ? formatTimestamp(conversation.lastMessageAt) : ''}
                       </span>
@@ -963,7 +992,7 @@ function SMSMessagingPageContent() {
                     )}>
                       {conversation.lastMessage || 'No messages yet'}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">{conversation.clientPhone}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{conversation.phoneNumber}</p>
                   </div>
                 </div>
               </div>
@@ -994,10 +1023,10 @@ function SMSMessagingPageContent() {
             <div className="p-4 bg-card border-b border-border">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <InitialsAvatar name={selectedConversation.clientName} size="sm" />
+                  <InitialsAvatar name={selectedConversation.client?.name || ''} size="sm" />
                   <div>
-                    <h2 className="font-semibold text-foreground">{selectedConversation.clientName}</h2>
-                    <p className="text-sm text-muted-foreground">{selectedConversation.clientPhone}</p>
+                    <h2 className="font-semibold text-foreground">{selectedConversation.client?.name || 'Unknown'}</h2>
+                    <p className="text-sm text-muted-foreground">{selectedConversation.phoneNumber}</p>
                   </div>
                 </div>
               </div>
@@ -1083,7 +1112,7 @@ function SMSMessagingPageContent() {
                             </div>
                           ) : (
                             <>
-                              <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p>
+                              <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
 
                               {isDraft && (
                                 <div className="mt-3 pt-2 border-t border-yellow-300 dark:border-yellow-700 -mx-4 px-4 overflow-x-auto">
@@ -1103,7 +1132,7 @@ function SMSMessagingPageContent() {
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      onClick={() => handleStartEditDraft(message.id, message.body)}
+                                      onClick={() => handleStartEditDraft(message.id, message.content)}
                                       disabled={isDraftMutationPending}
                                       className="text-xs min-w-[60px] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
                                     >
@@ -1132,7 +1161,7 @@ function SMSMessagingPageContent() {
                                     "text-xs",
                                     isOutbound ? "opacity-75" : "text-gray-500"
                                   )}>
-                                    {message.sent_at ? formatMessageTime(message.sent_at) : 'Pending'}
+                                    {message.sentAt ? formatMessageTime(message.sentAt) : 'Pending'}
                                   </span>
                                   {isOutbound && (
                                     <CheckCheck className={cn(
@@ -1155,7 +1184,7 @@ function SMSMessagingPageContent() {
 
             {/* Message Input */}
             <div className="p-4 bg-card border-t border-border">
-              {currentUserId && selectedConversation.agentId !== currentUserId ? (
+              {currentUserId && selectedConversation.agent?.id !== currentUserId ? (
                 <div className="flex items-center justify-center p-4 bg-muted/50 rounded-lg border border-border">
                   <p className="text-sm text-muted-foreground text-center">
                     This is not your conversation. You can only send messages in conversations where you are the agent.
@@ -1258,7 +1287,7 @@ function SMSMessagingPageContent() {
           ) : dealDetails ? (
             <div className="p-5 space-y-7">
               {/* Notification Alert */}
-              {dealDetails.status_standardized === 'lapse_notified' && (
+              {dealDetails.statusStandardized === 'lapse_notified' && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1277,7 +1306,7 @@ function SMSMessagingPageContent() {
                 </div>
               )}
 
-              {dealDetails.status_standardized === 'needs_more_info_notified' && (
+              {dealDetails.statusStandardized === 'needs_more_info_notified' && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1315,14 +1344,10 @@ function SMSMessagingPageContent() {
                   Client Information
                 </h3>
                 <div className="space-y-3">
-                  <DetailRow label="Name" value={dealDetails.client_name} />
-                  <DetailRow label="Phone" value={dealDetails.client_phone} />
-                  <DetailRow label="Email" value={dealDetails.client_email} />
-                  <DetailRow label="Address" value={dealDetails.client_address} />
-                  <div className="grid grid-cols-2 gap-3">
-                    <DetailRow label="State" value={dealDetails.state} />
-                    <DetailRow label="Zip" value={dealDetails.zipcode} />
-                  </div>
+                  {/* Client info comes from the nested client object (clients table JOIN) */}
+                  <DetailRow label="Name" value={dealDetails.client?.name || null} />
+                  <DetailRow label="Phone" value={dealDetails.client?.phone || selectedConversation?.phoneNumber || null} />
+                  <DetailRow label="Email" value={dealDetails.client?.email || null} />
                 </div>
               </div>
 
@@ -1330,47 +1355,41 @@ function SMSMessagingPageContent() {
               <div>
                 <h3 className="text-base font-bold text-foreground mb-4 pb-2 border-b border-border">Policy Details</h3>
                 <div className="space-y-3">
-                  <DetailRow label="Policy Number" value={dealDetails.policy_number} />
+                  <DetailRow label="Policy Number" value={dealDetails.policyNumber} />
                   <DetailRow
                     label="Annual Premium"
-                    value={`$${dealDetails.annual_premium.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    value={dealDetails.annualPremium != null ? `$${dealDetails.annualPremium.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null}
                   />
                   <DetailRow
                     label="Monthly Premium"
-                    value={`$${dealDetails.monthly_premium.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    value={dealDetails.monthlyPremium != null ? `$${dealDetails.monthlyPremium.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null}
                   />
                   <DetailRow
                     label="Effective Date"
-                    value={dealDetails.policy_effective_date ? (() => {
+                    value={dealDetails.policyEffectiveDate ? (() => {
                       // Parse date as local time to avoid timezone shifts
-                      const [year, month, day] = dealDetails.policy_effective_date.split('T')[0].split('-')
+                      const [year, month, day] = dealDetails.policyEffectiveDate.split('T')[0].split('-')
                       const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
                       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                     })() : 'N/A'}
                   />
-                  {dealDetails.billing_day_of_month && dealDetails.billing_weekday && (
-                    <DetailRow
-                      label="Billing Pattern"
-                      value={`${dealDetails.billing_day_of_month} ${dealDetails.billing_weekday}`}
-                    />
-                  )}
                   <DetailRow
                     label="Next Billing Date"
                     value={calculateNextBillingDate(
-                      dealDetails.policy_effective_date,
-                      dealDetails.billing_cycle,
-                      dealDetails.billing_day_of_month,
-                      dealDetails.billing_weekday
+                      dealDetails.policyEffectiveDate,
+                      dealDetails.billingCycle,
+                      null,
+                      null
                     )}
                     highlight
                   />
                   <DetailRow
                     label="Billing Cycle"
-                    value={dealDetails.billing_cycle ? dealDetails.billing_cycle.charAt(0).toUpperCase() + dealDetails.billing_cycle.slice(1) : 'N/A'}
+                    value={dealDetails.billingCycle ? dealDetails.billingCycle.charAt(0).toUpperCase() + dealDetails.billingCycle.slice(1) : 'N/A'}
                   />
                   <DetailRow
                     label="Status"
-                    value={dealDetails.status.charAt(0).toUpperCase() + dealDetails.status.slice(1)}
+                    value={dealDetails.status ? dealDetails.status.charAt(0).toUpperCase() + dealDetails.status.slice(1) : 'N/A'}
                   />
                 </div>
               </div>
@@ -1381,10 +1400,10 @@ function SMSMessagingPageContent() {
                 <div className="space-y-3">
                   <DetailRow
                     label="Agent"
-                    value={`${dealDetails.agent.first_name} ${dealDetails.agent.last_name}`}
+                    value={dealDetails.agent ? `${dealDetails.agent.firstName || ''} ${dealDetails.agent.lastName || ''}`.trim() || null : null}
                   />
-                  <DetailRow label="Carrier" value={dealDetails.carrier.name} />
-                  <DetailRow label="Product" value={dealDetails.product?.name || 'N/A'} />
+                  <DetailRow label="Carrier" value={dealDetails.carrier?.name || null} />
+                  <DetailRow label="Product" value={dealDetails.product?.name || null} />
                 </div>
               </div>
 
@@ -1392,7 +1411,7 @@ function SMSMessagingPageContent() {
               <div>
                 <h3 className="text-base font-bold text-foreground mb-4 pb-2 border-b border-border">Additional Details</h3>
                 <div className="space-y-3">
-                  <DetailRow label="Lead Source" value={dealDetails.lead_source} />
+                  <DetailRow label="Lead Source" value={dealDetails.leadSource} />
                 </div>
               </div>
             </div>

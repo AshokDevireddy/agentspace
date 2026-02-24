@@ -221,7 +221,7 @@ export function useRetryFailed(options?: { onSuccess?: () => void; onError?: (er
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ message_ids: messageIds }),
+        body: JSON.stringify({ messageIds }),
       })
 
       if (!response.ok) {

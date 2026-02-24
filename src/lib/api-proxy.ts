@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server'
 import camelcaseKeys from 'camelcase-keys'
+import snakecaseKeys from 'snakecase-keys'
 import { getApiBaseUrl } from './api-config'
 import { getAccessToken } from './session'
 
@@ -46,13 +47,15 @@ export async function proxyToBackend(
     ...extraHeaders,
   }
 
-  // Get auth token from httpOnly session cookie
+  // Get auth token from httpOnly session cookie, or fallback to incoming Authorization header
   if (!skipAuth) {
     const accessToken = await getAccessToken()
-    if (!accessToken) {
+    const incomingAuth = request.headers.get('Authorization')
+    const token = accessToken || (incomingAuth?.startsWith('Bearer ') ? incomingAuth.slice(7) : null)
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    headers['Authorization'] = `Bearer ${accessToken}`
+    headers['Authorization'] = `Bearer ${token}`
   }
 
   // Build URL with query params
@@ -73,7 +76,7 @@ export async function proxyToBackend(
     const response = await fetch(url, {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
+      body: body ? JSON.stringify(snakecaseKeys(body as Record<string, unknown>, { deep: true })) : undefined,
       cache: 'no-store',
     })
 

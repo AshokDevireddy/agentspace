@@ -89,14 +89,14 @@ export default function LoginPage() {
 
       if (!isLocalhost) {
         if (isWhiteLabel && branding) {
-          if (userData.agency_id !== branding.id) {
+          if (userData.agencyId !== branding.id) {
             setError('No account found with these credentials')
             setIsLoading(false)
             return
           }
         }
 
-        if (!isWhiteLabel && userAgency?.whitelabel_domain) {
+        if (!isWhiteLabel && userAgency?.whitelabelDomain) {
           setError('No account found with these credentials')
           setIsLoading(false)
           return
@@ -112,8 +112,8 @@ export default function LoginPage() {
     }
   }
 
-  const displayName = isWhiteLabel && branding ? branding.display_name : 'AgentSpace'
-  const logoUrl = isWhiteLabel && branding ? branding.logo_url : null
+  const displayName = isWhiteLabel && branding ? branding.displayName : 'AgentSpace'
+  const logoUrl = isWhiteLabel && branding ? branding.logoUrl : null
 
   return (
     <div className="flex flex-col min-h-screen bg-background">

@@ -146,14 +146,14 @@ export default function PostDeal() {
       if (response.ok) {
         const data = await response.json()
         return {
-          has_all_positions: data.has_all_positions,
-          missing_positions: data.missing_positions || []
+          hasAllPositions: data.hasAllPositions,
+          missingPositions: data.missingPositions || []
         }
       } else {
         console.error('Failed to check positions')
         return {
-          has_all_positions: false,
-          missing_positions: []
+          hasAllPositions: false,
+          missingPositions: []
         }
       }
     },
@@ -161,8 +161,8 @@ export default function PostDeal() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
-  const hasAllPositions = positionCheckData?.has_all_positions ?? false
-  const missingPositions = positionCheckData?.missing_positions ?? []
+  const hasAllPositions = positionCheckData?.hasAllPositions ?? false
+  const missingPositions = positionCheckData?.missingPositions ?? []
 
   // Query: Load user's agency and initial options via Django API
   const { data: agencyData } = useQuery({
@@ -185,17 +185,35 @@ export default function PostDeal() {
 
       const data = await response.json()
 
+      // Django returns carriers/products as {id, name, displayName} objects.
+      // After camelcaseKeys transform they become {id, name, displayName}.
+      // Map them to {value, label} as required by SimpleSearchableSelect.
+      const rawCarriers: Array<{ id: string; name: string; displayName?: string }> = data.carriers || []
+      const rawLeadSources: Array<{ value?: string; label?: string; id?: string; name?: string }> = data.leadSources || []
+      const rawTeams: Array<{ value?: string; label?: string; id?: string; name?: string }> = data.teams || []
+
       return {
-        userId: data.user_id,
-        agencyId: data.agency_id,
-        isAdminUser: data.is_admin,
-        leadSourceOptions: data.lead_sources || [],
-        carriersOptions: data.carriers || [],
-        userFirstName: data.user_first_name,
-        userLastName: data.user_last_name,
-        deactivatedPostADeal: data.deactivated_post_a_deal || false,
-        teamsOptions: data.teams || [],
-        beneficiariesRequired: data.beneficiaries_required ?? false
+        userId: data.userId,
+        agencyId: data.agencyId,
+        isAdminUser: data.isAdmin,
+        leadSourceOptions: rawLeadSources.map(ls =>
+          ls.value !== undefined
+            ? { value: ls.value, label: ls.label ?? ls.name ?? String(ls.value) }
+            : { value: String(ls.id), label: ls.name ?? String(ls.id) }
+        ),
+        carriersOptions: rawCarriers.map(c => ({
+          value: String(c.id),
+          label: c.displayName || c.name,
+        })),
+        userFirstName: data.userFirstName,
+        userLastName: data.userLastName,
+        deactivatedPostADeal: data.deactivatedPostADeal || false,
+        teamsOptions: rawTeams.map(t =>
+          t.value !== undefined
+            ? { value: t.value, label: t.label ?? t.name ?? String(t.value) }
+            : { value: String(t.id), label: t.name ?? String(t.id) }
+        ),
+        beneficiariesRequired: data.beneficiariesRequired ?? false
       }
     },
     enabled: !!user?.id,
@@ -247,7 +265,14 @@ export default function PostDeal() {
         return []
       }
 
-      return response.json()
+      const products: Array<{ id: string; name: string; displayName?: string }> = await response.json()
+      // Django returns products as {id, name, displayName} objects.
+      // After camelcaseKeys transform they become {id, name, displayName}.
+      // Map them to {value, label} as required by SimpleSearchableSelect.
+      return products.map(p => ({
+        value: String(p.id),
+        label: p.displayName || p.name,
+      }))
     },
     enabled: !!agencyId && !!formData.carrierId,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -325,14 +350,14 @@ export default function PostDeal() {
         throw new Error("User information not loaded. Please refresh the page and try again.")
       }
 
-      const agent_id = userId
+      const agentId = userId
 
       // SECTION 2: Use selected IDs directly
-      const carrier_id = formData.carrierId
-      const product_id = formData.productId
+      const carrierId = formData.carrierId
+      const productId = formData.productId
 
       // SECTION 3: Invite client if email is provided
-      let client_id = null
+      let clientId = null
       let invitationMessage = ''
 
       if (formData.clientEmail) {
@@ -382,7 +407,7 @@ export default function PostDeal() {
             const inviteData = await inviteResponse.json()
 
             if (inviteResponse.ok && inviteData.success) {
-              client_id = inviteData.userId
+              clientId = inviteData.userId
               invitationMessage = inviteData.alreadyExists
                 ? 'Client invitation was previously sent.'
                 : '✓ Invitation email sent to client successfully!'
@@ -410,7 +435,7 @@ export default function PostDeal() {
           return {
             name: b.name.trim(),
             relationship: b.relationship.trim() || null,
-            allocation_percentage: null,
+            allocationPercentage: null,
           }
         })
 
@@ -423,34 +448,34 @@ export default function PostDeal() {
         : null
 
       const payload = {
-        agent_id,
-        carrier_id,
-        product_id,
-        client_id,
-        agency_id: agencyId,
-        client_name: `${formData.clientFirstName} ${formData.clientLastName}`.trim(),
-        client_email: formData.clientEmail || null,
-        client_phone: cleanPhoneNumber,
-        date_of_birth: formData.clientDateOfBirth || null,
-        ssn_last_4: null,
-        client_address: formData.clientAddress || null,
-        policy_number: formData.policyNumber,
-        application_number: formData.applicationNumber || null,
-        monthly_premium: monthlyPremium,
-        annual_premium: monthlyPremium * 12,
-        policy_effective_date: formData.policyEffectiveDate,
-        ssn_benefit: formData.ssnBenefit === "yes",
-        billing_day_of_month: formData.ssnBenefit === "yes" ? formData.billingDayOfMonth : null,
-        billing_weekday: formData.ssnBenefit === "yes" ? formData.billingWeekday : null,
-        billing_cycle: formData.billingCycle || null,
-        lead_source: formData.leadSource || null,
+        agentId,
+        carrierId,
+        productId,
+        clientId,
+        agencyId: agencyId,
+        clientName: `${formData.clientFirstName} ${formData.clientLastName}`.trim(),
+        clientEmail: formData.clientEmail || null,
+        clientPhone: cleanPhoneNumber,
+        dateOfBirth: formData.clientDateOfBirth || null,
+        ssnLast4: null,
+        clientAddress: formData.clientAddress || null,
+        policyNumber: formData.policyNumber,
+        applicationNumber: formData.applicationNumber || null,
+        monthlyPremium: monthlyPremium,
+        annualPremium: monthlyPremium * 12,
+        policyEffectiveDate: formData.policyEffectiveDate,
+        ssnBenefit: formData.ssnBenefit === "yes",
+        billingDayOfMonth: formData.ssnBenefit === "yes" ? formData.billingDayOfMonth : null,
+        billingWeekday: formData.ssnBenefit === "yes" ? formData.billingWeekday : null,
+        billingCycle: formData.billingCycle || null,
+        leadSource: formData.leadSource || null,
         beneficiaries: normalizedBeneficiaries,
         team: formData.team || null,
         notes: formData.notes || null,
-        rate_class: formData.rateClass || null,
-        submission_date: formData.submittedDate || today,
-        face_value: formData.coverageAmount ? parseFloat(formData.coverageAmount) : null,
-        post_a_deal: true,
+        rateClass: formData.rateClass || null,
+        submissionDate: formData.submittedDate || today,
+        faceValue: formData.coverageAmount ? parseFloat(formData.coverageAmount) : null,
+        postADeal: true,
       }
 
 
@@ -510,7 +535,7 @@ export default function PostDeal() {
 
 
       // Send Discord notification (don't block on this - fire and forget)
-      sendDiscordNotification(agencyId, agent_id, userFirstName, userLastName, formData, monthlyPremium)
+      sendDiscordNotification(agencyId, agentId, userFirstName, userLastName, formData, monthlyPremium)
 
       return successMessage
     },
@@ -919,8 +944,8 @@ export default function PostDeal() {
                 </p>
                 <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
                   {missingPositions.map((agent: any) => (
-                    <li key={agent.agent_id}>
-                      {agent.first_name} {agent.last_name} ({agent.email})
+                    <li key={agent.agentId}>
+                      {agent.firstName} {agent.lastName} ({agent.email})
                     </li>
                   ))}
                 </ul>

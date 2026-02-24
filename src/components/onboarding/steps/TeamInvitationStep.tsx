@@ -87,7 +87,7 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
             setAgentSearchResults(
               agents.map((agent) => ({
                 value: agent.id,
-                label: `${agent.first_name} ${agent.last_name} - ${agent.email}`,
+                label: `${agent.firstName} ${agent.lastName} - ${agent.email}`,
               }))
             )
           }
@@ -127,7 +127,7 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
             setNameSearchResults(
               agents.map((agent) => ({
                 value: agent.id,
-                label: `${agent.first_name} ${agent.last_name}${
+                label: `${agent.firstName} ${agent.lastName}${
                   agent.email ? ' - ' + agent.email : ''
                 }${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
                 status: agent.status,
@@ -245,12 +245,12 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
       const user = await response.json()
 
       setCurrentAgentForm({
-        firstName: user.first_name || '',
-        lastName: user.last_name || '',
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
         email: user.email || '',
-        phoneNumber: user.phone_number || '',
-        permissionLevel: user.perm_level || '',
-        uplineAgentId: user.upline_id || '',
+        phoneNumber: user.phoneNumber || '',
+        permissionLevel: user.permLevel || '',
+        uplineAgentId: user.uplineId || '',
       })
 
       setSelectedPreInviteUserId(userId)

@@ -33,11 +33,11 @@ import { badgeColors, statusColors } from "@/lib/badge-colors"
 // Types imported from useAgentsData
 
 interface Position {
-  position_id: string
+  positionId: string
   name: string
   level: number
   description: string | null
-  is_active: boolean
+  isActive: boolean
 }
 
 // Position colors based on hierarchy level (top 10 positions get distinct colors, rest are gray)
@@ -441,11 +441,11 @@ export default function Agents() {
       if (profileResponse.ok) {
         const profileData = await profileResponse.json()
         if (profileData.data) {
-          userPositionLevel = profileData.data.position_level ?? null
-          isAdmin = profileData.data.is_admin || profileData.data.role === 'admin'
+          userPositionLevel = profileData.data.positionLevel ?? null
+          isAdmin = profileData.data.isAdmin || profileData.data.role === 'admin'
         } else {
-          userPositionLevel = profileData.position_level ?? null
-          isAdmin = profileData.is_admin || profileData.role === 'admin'
+          userPositionLevel = profileData.positionLevel ?? null
+          isAdmin = profileData.isAdmin || profileData.role === 'admin'
         }
       }
 
@@ -522,7 +522,7 @@ export default function Agents() {
 
   // Derived pending positions data
   const pendingAgents = pendingPositionsData?.agents || []
-  const pendingCount = pendingAgents.filter((a: PendingAgent) => !a.has_position).length
+  const pendingCount = pendingAgents.filter((a: PendingAgent) => !a.hasPosition).length
 
   // Compute view-specific loading state
   // Only block on agent data - positions loading shouldn't block the main UI
@@ -682,8 +682,8 @@ export default function Agents() {
 
     // Get the agent's name parts (fallback to parsing full name if first/last not available)
     const nameParts = (agent.name || '').trim().split(/\s+/).filter(Boolean)
-    const firstName = agent.first_name || nameParts[0] || ''
-    const lastName = agent.last_name || nameParts.slice(1).join(' ') || ''
+    const firstName = agent.firstName || nameParts[0] || ''
+    const lastName = agent.lastName || nameParts.slice(1).join(' ') || ''
 
     sendInviteMutation.mutate(
       {
@@ -693,7 +693,7 @@ export default function Agents() {
         phoneNumber: null,
         permissionLevel: 'agent',
         uplineAgentId: null,
-        positionId: agent.position_id || null,
+        positionId: agent.positionId || null,
         preInviteUserId: agent.id,
       },
       {
@@ -742,7 +742,7 @@ export default function Agents() {
   const positionOptions = [
     { value: "all", label: "All Positions" },
     { value: "not_set", label: "Not Set" },
-    ...filterPositions.map((p: Position) => ({ value: p.position_id, label: p.name }))
+    ...filterPositions.map((p: Position) => ({ value: p.positionId, label: p.name }))
   ]
 
   // Generate status options
@@ -759,7 +759,7 @@ export default function Agents() {
   const normalizedPendingSearch = pendingSearchTerm.trim().toLowerCase()
   const visiblePendingAgents = normalizedPendingSearch
     ? pendingAgents.filter((agent: PendingAgent) => {
-        const fullName = `${agent.first_name} ${agent.last_name}`.toLowerCase()
+        const fullName = `${agent.firstName} ${agent.lastName}`.toLowerCase()
         const email = (agent.email || "").toLowerCase()
         return fullName.includes(normalizedPendingSearch) || email.includes(normalizedPendingSearch)
       })
@@ -1246,12 +1246,12 @@ export default function Agents() {
                         </div>
                       </td>
                       <td>
-                        {agent.position_name ? (
+                        {agent.positionName ? (
                           <Badge
-                            className={`${getPositionColorByLevel(agent.position_level, positionColorMap)} border font-semibold text-xs`}
+                            className={`${getPositionColorByLevel(agent.positionLevel, positionColorMap)} border font-semibold text-xs`}
                             variant="outline"
                           >
-                            {agent.position_name}
+                            {agent.positionName}
                           </Badge>
                         ) : (
                           <span className="text-muted-foreground text-sm italic">Not Set</span>
@@ -1277,10 +1277,10 @@ export default function Agents() {
                       <td className="text-right">
                         <div className="flex flex-col items-end">
                           <span className="font-semibold text-sm text-green-500">
-                            {formatCurrency(agent.individual_production)}
+                            {formatCurrency(agent.individualProduction)}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {agent.individual_production_count} {agent.individual_production_count === 1 ? 'deal' : 'deals'}
+                            {agent.individualProductionCount} {agent.individualProductionCount === 1 ? 'deal' : 'deals'}
                           </span>
                         </div>
                       </td>
@@ -1288,43 +1288,43 @@ export default function Agents() {
                       <td className="text-right">
                         <div className="flex flex-col items-end">
                           <span className="font-semibold text-sm text-green-500">
-                            {formatCurrency(agent.hierarchy_production)}
+                            {formatCurrency(agent.hierarchyProduction)}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {agent.hierarchy_production_count} {agent.hierarchy_production_count === 1 ? 'deal' : 'deals'}
+                            {agent.hierarchyProductionCount} {agent.hierarchyProductionCount === 1 ? 'deal' : 'deals'}
                           </span>
                         </div>
                       </td>
                       {/* Debt (Own) */}
                       <td className="text-right">
                         <div className="flex flex-col items-end">
-                          <span className={`font-semibold text-sm ${agent.individual_debt > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
-                            {formatCurrency(agent.individual_debt)}
+                          <span className={`font-semibold text-sm ${agent.individualDebt > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                            {formatCurrency(agent.individualDebt)}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {agent.individual_debt_count} lapsed
+                            {agent.individualDebtCount} lapsed
                           </span>
                         </div>
                       </td>
                       {/* Debt (Team) */}
                       <td className="text-right">
                         <div className="flex flex-col items-end">
-                          <span className={`font-semibold text-sm ${agent.hierarchy_debt > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
-                            {formatCurrency(agent.hierarchy_debt)}
+                          <span className={`font-semibold text-sm ${agent.hierarchyDebt > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                            {formatCurrency(agent.hierarchyDebt)}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {agent.hierarchy_debt_count} lapsed
+                            {agent.hierarchyDebtCount} lapsed
                           </span>
                         </div>
                       </td>
                       {/* D/P Ratio */}
                       <td className="text-center">
                         <Badge
-                          className={`${getRatioBadgeColor(agent.debt_to_production_ratio)} border font-semibold text-xs`}
+                          className={`${getRatioBadgeColor(agent.debtToProductionRatio)} border font-semibold text-xs`}
                           variant="outline"
                         >
-                          {agent.debt_to_production_ratio !== null
-                            ? `${(agent.debt_to_production_ratio * 100).toFixed(1)}%`
+                          {agent.debtToProductionRatio !== null
+                            ? `${(agent.debtToProductionRatio * 100).toFixed(1)}%`
                             : 'N/A'}
                         </Badge>
                       </td>
@@ -1580,53 +1580,53 @@ export default function Agents() {
                   <>
                     {visiblePendingAgents.map((agent: PendingAgent) => (
                   <div
-                    key={agent.agent_id}
+                    key={agent.agentId}
                     className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <div className="font-medium text-foreground">
-                          {agent.first_name}{agent.last_name ? ` ${agent.last_name}` : ''}
+                          {agent.firstName}{agent.lastName ? ` ${agent.lastName}` : ''}
                         </div>
-                        {agent.has_position && agent.position_name && (
+                        {agent.hasPosition && agent.positionName && (
                           <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs">
-                            Current: {agent.position_name}
+                            Current: {agent.positionName}
                           </Badge>
                         )}
-                        {!agent.has_position && (
+                        {!agent.hasPosition && (
                           <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
                             No Position
                           </Badge>
                         )}
                       </div>
                       <div className="text-sm text-muted-foreground mt-1">
-                        {agent.email} {agent.phone_number && `• ${agent.phone_number}`}
+                        {agent.email} {agent.phoneNumber && `• ${agent.phoneNumber}`}
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
-                        Upline: {formatUplineLabel(agent.upline_name)}
+                        Upline: {formatUplineLabel(agent.uplineName)}
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         Created: {(() => {
-                          console.log('[Agent Display] Agent:', agent.agent_id, 'created_at:', agent.created_at, 'Type:', typeof agent.created_at)
-                          return formatDate(agent.created_at)
+                          console.log('[Agent Display] Agent:', agent.agentId, 'createdAt:', agent.createdAt, 'Type:', typeof agent.createdAt)
+                          return formatDate(agent.createdAt)
                         })()}
                       </div>
                     </div>
                     <div className="flex items-center gap-3 ml-4">
                       <SimpleSearchableSelect
                         options={positions
-                          .filter((p: Position) => p.is_active)
+                          .filter((p: Position) => p.isActive)
                           .sort((a: Position, b: Position) => b.level - a.level)
                           .map((p: Position) => ({
-                            value: p.position_id,
+                            value: p.positionId,
                             label: `${p.name} (Level ${p.level})`
                           }))}
-                        value={selectedAgentId === agent.agent_id ? (selectedPositionId || agent.position_id || "") : (agent.position_id || "")}
+                        value={selectedAgentId === agent.agentId ? (selectedPositionId || agent.positionId || "") : (agent.positionId || "")}
                         onValueChange={(value) => {
-                          setSelectedAgentId(agent.agent_id)
+                          setSelectedAgentId(agent.agentId)
                           setSelectedPositionId(value)
                         }}
-                        placeholder={!positionsReady ? "Loading positions..." : agent.position_name ? `Current: ${agent.position_name}` : "Select position..."}
+                        placeholder={!positionsReady ? "Loading positions..." : agent.positionName ? `Current: ${agent.positionName}` : "Select position..."}
                         searchPlaceholder="Search positions..."
                         disabled={!positionsReady}
                       />
@@ -1638,29 +1638,29 @@ export default function Agents() {
                           }
 
                           // Must be working on this agent and have a selected position
-                          if (selectedAgentId !== agent.agent_id || !selectedPositionId) {
+                          if (selectedAgentId !== agent.agentId || !selectedPositionId) {
                             return
                           }
 
                           // If agent has position, only allow if the selected position is different
-                          if (agent.has_position && selectedPositionId === agent.position_id) {
+                          if (agent.hasPosition && selectedPositionId === agent.positionId) {
                             return
                           }
 
-                          handleAssignPosition(agent.agent_id, selectedPositionId)
+                          handleAssignPosition(agent.agentId, selectedPositionId)
                         }}
                         disabled={
                           // Disable if currently assigning
                           assignPositionMutation.isPending ||
                           // For agents with position: enable only if working on this agent AND selected a DIFFERENT position
-                          (agent.has_position && (
-                            selectedAgentId !== agent.agent_id ||
+                          (agent.hasPosition && (
+                            selectedAgentId !== agent.agentId ||
                             !selectedPositionId ||
-                            selectedPositionId === agent.position_id
+                            selectedPositionId === agent.positionId
                           )) ||
                           // For agents without position: enable only if working on this agent AND selected a position
-                          (!agent.has_position && (
-                            selectedAgentId !== agent.agent_id ||
+                          (!agent.hasPosition && (
+                            selectedAgentId !== agent.agentId ||
                             !selectedPositionId
                           ))
                         }
@@ -1669,9 +1669,9 @@ export default function Agents() {
                       >
                         {assignPositionMutation.isPending
                           ? 'Assigning...'
-                          : agent.has_position && selectedAgentId === agent.agent_id && selectedPositionId && selectedPositionId !== agent.position_id
+                          : agent.hasPosition && selectedAgentId === agent.agentId && selectedPositionId && selectedPositionId !== agent.positionId
                           ? 'Update Position'
-                          : !agent.has_position && selectedAgentId === agent.agent_id && selectedPositionId
+                          : !agent.hasPosition && selectedAgentId === agent.agentId && selectedPositionId
                           ? 'Assign Position'
                           : 'Select Position'}
                       </Button>

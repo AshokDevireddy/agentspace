@@ -32,8 +32,8 @@ export default function RegisterPage() {
   // Force light mode for non-white-labeled sites, use agency theme for white-labeled sites
   useEffect(() => {
     if (!brandingLoading) {
-      if (isWhiteLabel && branding?.theme_mode) {
-        setTheme(branding.theme_mode)
+      if (isWhiteLabel && branding?.themeMode) {
+        setTheme(branding.themeMode)
       } else {
         setTheme('light')
       }

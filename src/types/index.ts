@@ -119,8 +119,9 @@ export type PositionType = typeof POSITIONS[number]
 
 // Dashboard and Analytics Types
 export interface CarrierActive {
+  carrierId?: string
   carrier: string
-  active_policies: number
+  activePolicies: number
 }
 
 export interface PieChartEntry {
@@ -139,11 +140,11 @@ export interface PieChartEntry {
 
 export interface LeaderboardProducer {
   rank: number
-  agent_id: string
-  agent_name: string
+  agentId: string
+  agentName: string
   position: string | null
   production: string
-  deals_count: number
+  dealsCount: number
 }
 
 // API Response Types
@@ -177,29 +178,29 @@ export interface UserProfile {
 }
 
 export interface DealsSummary {
-  active_policies: number
-  total_clients: number
-  carriers_active: CarrierActive[]
-  monthly_commissions?: number
-  new_policies?: number
+  activePolicies: number
+  totalClients: number
+  carriersActive: CarrierActive[]
+  monthlyCommissions?: number
+  newPolicies?: number
 }
 
 export interface DashboardData {
-  your_deals?: DealsSummary
-  downline_production?: DealsSummary
+  yourDeals?: DealsSummary
+  downlineProduction?: DealsSummary
   totals?: {
-    pending_positions?: number
+    pendingPositions?: number
   }
-  pending_positions?: number
-  active_policies?: number
-  total_clients?: number
-  carriers_active?: CarrierActive[]
+  pendingPositions?: number
+  activePolicies?: number
+  totalClients?: number
+  carriersActive?: CarrierActive[]
 }
 
 export interface ScoreboardData {
   entries: LeaderboardProducer[]
-  user_rank: number | null
-  user_production: string | null
+  userRank: number | null
+  userProduction: string | null
 }
 
 // Deal Hierarchy Snapshot - matches backend DealHierarchySnapshotSerializer

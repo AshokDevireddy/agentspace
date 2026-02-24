@@ -125,17 +125,21 @@ export default async function RootLayout({
         if (data.authenticated && data.user) {
           initialUser = {
             id: data.user.id,
-            auth_user_id: data.user.auth_user_id,
+            authUserId: data.user.auth_user_id,
             email: data.user.email,
             role: data.user.role,
             status: data.user.status,
-            theme_mode: data.user.theme_mode,
-            is_admin: data.user.is_admin,
-            agency_id: data.user.agency_id,
-            subscription_tier: data.user.subscription_tier || 'free',
+            themeMode: data.user.theme_mode,
+            isAdmin: data.user.is_admin,
+            agencyId: data.user.agency_id,
+            subscriptionTier: data.user.subscription_tier || 'free',
           };
 
-          agencyData = data.agency;
+          agencyData = data.agency ? {
+            displayName: data.agency.display_name,
+            whitelabelDomain: data.agency.whitelabel_domain,
+            logoUrl: data.agency.logo_url,
+          } : null;
         }
       } else if (response.status === 401) {
         // Token is invalid - user needs to re-authenticate

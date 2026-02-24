@@ -1,6 +1,8 @@
 import { getBackendUrl } from '@/lib/api-config';
+import camelcaseKeys from 'camelcase-keys';
 
 // Helper to call Django API with authentication
+// Transforms snake_case responses to camelCase for consistency
 async function fetchDjangoApi<T>(
   endpoint: string,
   accessToken: string,
@@ -35,7 +37,8 @@ async function fetchDjangoApi<T>(
     throw new Error(`Django API error: ${response.status}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  return camelcaseKeys(data, { deep: true }) as T;
 }
 
 // Get deals/policies data
@@ -72,10 +75,10 @@ export async function getDeals(params: any, agencyId: string, accessToken?: stri
     const deals = Array.isArray(data) ? data : (data.deals || data.results || []);
 
     // Calculate aggregates
-    const totalPremium = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annual_premium) || 0), 0);
+    const totalPremium = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annualPremium) || 0), 0);
     const avgPremium = deals.length > 0 ? totalPremium / deals.length : 0;
     const statusCounts = deals.reduce((acc: any, deal: any) => {
-      const status = deal.status_standardized || deal.status || 'unknown';
+      const status = deal.statusStandardized || deal.status || 'unknown';
       acc[status] = (acc[status] || 0) + 1;
       return acc;
     }, {});
@@ -85,9 +88,9 @@ export async function getDeals(params: any, agencyId: string, accessToken?: stri
       deals: deals.slice(0, 20),
       count: deals.length,
       summary: {
-        total_annual_premium: totalPremium,
-        average_premium: avgPremium,
-        status_breakdown: statusCounts
+        totalAnnualPremium: totalPremium,
+        averagePremium: avgPremium,
+        statusBreakdown: statusCounts
       },
       note: deals.length > 20 ? `Showing 20 of ${deals.length} deals. Summary statistics include all deals.` : undefined
     };
@@ -138,8 +141,8 @@ export async function getAgents(params: any, agencyId: string, accessToken?: str
     }
 
     // Calculate summary
-    const totalProduction = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_prod) || 0), 0);
-    const totalPolicies = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_policies_sold) || 0), 0);
+    const totalProduction = agents.reduce((sum: number, agent: any) => sum + (Number(agent.totalProd) || 0), 0);
+    const totalPolicies = agents.reduce((sum: number, agent: any) => sum + (Number(agent.totalPoliciesSold) || 0), 0);
     const avgProduction = agents.length > 0 ? totalProduction / agents.length : 0;
 
     // Limit data to prevent token overflow - only return top 25 agents for context
@@ -149,10 +152,10 @@ export async function getAgents(params: any, agencyId: string, accessToken?: str
       agents: limitedAgents,
       count: agents.length,
       summary: {
-        total_production: totalProduction,
-        total_policies: totalPolicies,
-        average_production: avgProduction,
-        active_agents: agents.filter((a: any) => a.is_active).length
+        totalProduction: totalProduction,
+        totalPolicies: totalPolicies,
+        averageProduction: avgProduction,
+        activeAgents: agents.filter((a: any) => a.isActive).length
       },
       note: agents.length > 25 ? `Showing top 25 of ${agents.length} agents. Summary statistics include all agents.` : undefined
     };
@@ -212,8 +215,8 @@ export async function getConversationsData(params: any, agencyId: string, access
 
     // Calculate summary
     const totalConversations = data.total || conversations.length;
-    const activeConversations = conversations.filter((c: any) => c.is_active).length;
-    const optedInCount = conversations.filter((c: any) => c.sms_opt_in_status === 'opted_in').length;
+    const activeConversations = conversations.filter((c: any) => c.isActive).length;
+    const optedInCount = conversations.filter((c: any) => c.smsOptInStatus === 'opted_in').length;
 
     // Limit data to prevent token overflow
     const limitedConversations = conversations.slice(0, 15);
@@ -222,10 +225,10 @@ export async function getConversationsData(params: any, agencyId: string, access
       conversations: limitedConversations,
       messages: messagesData,
       summary: {
-        total_conversations: totalConversations,
-        active_conversations: activeConversations,
-        opted_in_clients: optedInCount,
-        date_range_days: dateRangeDays
+        totalConversations: totalConversations,
+        activeConversations: activeConversations,
+        optedInClients: optedInCount,
+        dateRangeDays: dateRangeDays
       },
       note: totalConversations > 15 ? `Showing 15 of ${totalConversations} conversations.` : undefined
     };
@@ -256,15 +259,15 @@ export async function getCarriersAndProducts(params: any, agencyId: string, acce
 
     // Filter by active_only if specified
     if (params.active_only !== false) {
-      filteredCarriers = filteredCarriers.filter((c: any) => c.is_active);
+      filteredCarriers = filteredCarriers.filter((c: any) => c.isActive);
     }
 
     // Extract carriers (without products for cleaner data)
     const carriers = filteredCarriers.map((c: any) => ({
       id: c.id,
       name: c.name,
-      display_name: c.display_name,
-      is_active: c.is_active
+      displayName: c.displayName,
+      isActive: c.isActive
     }));
 
     // Flatten products from all carriers
@@ -276,10 +279,10 @@ export async function getCarriersAndProducts(params: any, agencyId: string, acce
       productsByCarrier[carrier.id] = carrierProducts;
 
       for (const product of carrierProducts) {
-        if (params.active_only !== false && !product.is_active) continue;
+        if (params.active_only !== false && !product.isActive) continue;
         products.push({
           ...product,
-          carrier: { id: carrier.id, name: carrier.name, display_name: carrier.display_name }
+          carrier: { id: carrier.id, name: carrier.name, displayName: carrier.displayName }
         });
       }
     }
@@ -287,10 +290,10 @@ export async function getCarriersAndProducts(params: any, agencyId: string, acce
     return {
       carriers: carriers,
       products: products,
-      products_by_carrier: productsByCarrier,
+      productsByCarrier: productsByCarrier,
       summary: {
-        total_carriers: carriers.length,
-        total_products: products.length
+        totalCarriers: carriers.length,
+        totalProducts: products.length
       }
     };
   } catch (error) {
@@ -348,49 +351,49 @@ export async function getAgencySummary(params: any, agencyId: string, accessToke
 
     // Extract agents
     const agents = Array.isArray(agentsData) ? agentsData : (agentsData.agents || agentsData.results || []);
-    const activeAgents = agents.filter((a: any) => a.is_active && a.role !== 'client');
+    const activeAgents = agents.filter((a: any) => a.isActive && a.role !== 'client');
 
     // Extract deals
     const deals = Array.isArray(dealsData) ? dealsData : (dealsData.deals || dealsData.results || []);
 
     // Calculate metrics
-    const totalProduction = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annual_premium) || 0), 0);
+    const totalProduction = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annualPremium) || 0), 0);
     const totalPolicies = deals.length;
-    const activePolicies = deals.filter((d: any) => d.status_standardized === 'active').length;
+    const activePolicies = deals.filter((d: any) => d.statusStandardized === 'active').length;
 
     // Get top agents by production
     const topAgents = activeAgents
-      .sort((a: any, b: any) => (Number(b.total_prod) || 0) - (Number(a.total_prod) || 0))
+      .sort((a: any, b: any) => (Number(b.totalProd) || 0) - (Number(a.totalProd) || 0))
       .slice(0, 5)
       .map((a: any) => ({
         id: a.id,
-        first_name: a.first_name,
-        last_name: a.last_name,
-        total_prod: a.total_prod,
-        total_policies_sold: a.total_policies_sold
+        firstName: a.firstName,
+        lastName: a.lastName,
+        totalProd: a.totalProd,
+        totalPoliciesSold: a.totalPoliciesSold
       }));
 
     // Get recent deals
     const recentDeals = deals
-      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 5);
 
     return {
       agency: {
         name: agencyData?.name,
-        display_name: agencyData?.display_name,
+        displayName: agencyData?.displayName,
         code: agencyData?.code,
-        is_active: agencyData?.is_active
+        isActive: agencyData?.isActive
       },
       metrics: {
-        total_production: totalProduction,
-        total_policies: totalPolicies,
-        active_policies: activePolicies,
-        agent_count: activeAgents.length,
-        time_period: params.time_period || 'all'
+        totalProduction: totalProduction,
+        totalPolicies: totalPolicies,
+        activePolicies: activePolicies,
+        agentCount: activeAgents.length,
+        timePeriod: params.time_period || 'all'
       },
-      top_agents: topAgents,
-      recent_activity: recentDeals,
+      topAgents: topAgents,
+      recentActivity: recentDeals,
       note: 'Recent activity limited to 5 most recent deals'
     };
   } catch (error) {
@@ -422,8 +425,8 @@ export async function getPersistencyAnalytics(params: any, agencyId: string, acc
         meta: null,
         series: [],
         totals: null,
-        windows_by_carrier: null,
-        breakdowns_over_time: null
+        windowsByCarrier: null,
+        breakdownsOverTime: null
       };
     }
 
@@ -572,12 +575,12 @@ export async function getAgentHierarchy(params: any, agencyId: string, accessTok
 
     const rootAgent = {
       id: agentData.id,
-      first_name: agentData.first_name,
-      last_name: agentData.last_name,
+      firstName: agentData.firstName,
+      lastName: agentData.lastName,
       email: agentData.email,
-      total_prod: agentData.total_prod,
-      total_policies_sold: agentData.total_policies_sold,
-      upline_id: agentData.upline_id,
+      totalProd: agentData.totalProd,
+      totalPoliciesSold: agentData.totalPoliciesSold,
+      uplineId: agentData.uplineId,
       status: agentData.status
     };
 
@@ -586,28 +589,28 @@ export async function getAgentHierarchy(params: any, agencyId: string, accessTok
     // Combine root agent with downlines
     const allAgents = [rootAgent, ...downlines.map((d: any) => ({
       id: d.id,
-      first_name: d.first_name,
-      last_name: d.last_name,
+      firstName: d.firstName,
+      lastName: d.lastName,
       email: d.email,
-      total_prod: d.total_prod || 0,
-      total_policies_sold: d.total_policies_sold || 0,
-      upline_id: d.upline_id,
+      totalProd: d.totalProd || 0,
+      totalPoliciesSold: d.totalPoliciesSold || 0,
+      uplineId: d.uplineId,
       status: d.status
     }))];
 
     // Calculate aggregate metrics
-    const totalProduction = allAgents.reduce((sum, agent) => sum + (Number(agent.total_prod) || 0), 0);
-    const totalPolicies = allAgents.reduce((sum, agent) => sum + (Number(agent.total_policies_sold) || 0), 0);
+    const totalProduction = allAgents.reduce((sum, agent) => sum + (Number(agent.totalProd) || 0), 0);
+    const totalPolicies = allAgents.reduce((sum, agent) => sum + (Number(agent.totalPoliciesSold) || 0), 0);
     const activeAgents = allAgents.filter(a => a.status === 'active').length;
 
     return {
-      root_agent: rootAgent,
+      rootAgent: rootAgent,
       hierarchy: {
-        total_agents: allAgents.length,
-        total_production: totalProduction,
-        total_policies: totalPolicies,
-        active_agents: activeAgents,
-        average_production: allAgents.length > 0 ? totalProduction / allAgents.length : 0
+        totalAgents: allAgents.length,
+        totalProduction: totalProduction,
+        totalPolicies: totalPolicies,
+        activeAgents: activeAgents,
+        averageProduction: allAgents.length > 0 ? totalProduction / allAgents.length : 0
       },
       agents: allAgents,
       note: 'Use compare_hierarchies tool to compare multiple hierarchies'
@@ -635,12 +638,12 @@ export async function compareHierarchies(params: any, agencyId: string, accessTo
       agentIds.map(async (agentId: string) => {
         const hierarchy = await getAgentHierarchy({ agent_id: agentId }, agencyId, accessToken);
         if (hierarchy.error) {
-          return { agent_id: agentId, error: hierarchy.error };
+          return { agentId: agentId, error: hierarchy.error };
         }
 
         return {
-          agent_id: agentId,
-          root_agent: hierarchy.root_agent,
+          agentId: agentId,
+          rootAgent: hierarchy.rootAgent,
           metrics: hierarchy.hierarchy
         };
       })
@@ -648,28 +651,28 @@ export async function compareHierarchies(params: any, agencyId: string, accessTo
 
     // Calculate comparison metrics
     const totalProduction = comparisons.reduce((sum, comp) =>
-      sum + (comp.metrics?.total_production || 0), 0);
+      sum + (comp.metrics?.totalProduction || 0), 0);
     const totalPolicies = comparisons.reduce((sum, comp) =>
-      sum + (comp.metrics?.total_policies || 0), 0);
+      sum + (comp.metrics?.totalPolicies || 0), 0);
     const totalAgents = comparisons.reduce((sum, comp) =>
-      sum + (comp.metrics?.total_agents || 0), 0);
+      sum + (comp.metrics?.totalAgents || 0), 0);
 
     // Find best performing hierarchy
     const bestProduction = comparisons.reduce((best, comp) =>
-      (comp.metrics?.total_production || 0) > (best.metrics?.total_production || 0) ? comp : best,
-      comparisons[0] || { metrics: { total_production: 0 } });
+      (comp.metrics?.totalProduction || 0) > (best.metrics?.totalProduction || 0) ? comp : best,
+      comparisons[0] || { metrics: { totalProduction: 0 } });
 
     return {
       comparisons: comparisons,
       summary: {
-        total_hierarchies: comparisons.length,
-        total_production: totalProduction,
-        total_policies: totalPolicies,
-        total_agents: totalAgents,
-        average_production_per_hierarchy: comparisons.length > 0 ? totalProduction / comparisons.length : 0
+        totalHierarchies: comparisons.length,
+        totalProduction: totalProduction,
+        totalPolicies: totalPolicies,
+        totalAgents: totalAgents,
+        averageProductionPerHierarchy: comparisons.length > 0 ? totalProduction / comparisons.length : 0
       },
-      best_performing: bestProduction,
-      note: 'Compare hierarchies by total_production, total_policies, or total_agents'
+      bestPerforming: bestProduction,
+      note: 'Compare hierarchies by totalProduction, totalPolicies, or totalAgents'
     };
   } catch (error) {
     console.error('Compare hierarchies error:', error);
@@ -720,25 +723,25 @@ export async function getDealsPaginated(params: any, agencyId: string, cursor?: 
     const deals = Array.isArray(data) ? data : (data.deals || data.results || []);
 
     // Calculate aggregates for this page
-    const totalPremium = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annual_premium) || 0), 0);
+    const totalPremium = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annualPremium) || 0), 0);
     const statusCounts = deals.reduce((acc: any, deal: any) => {
-      const status = deal.status_standardized || deal.status || 'unknown';
+      const status = deal.statusStandardized || deal.status || 'unknown';
       acc[status] = (acc[status] || 0) + 1;
       return acc;
     }, {});
 
     // Provide next cursor
     const last = deals.length > 0 ? deals[deals.length - 1] : null;
-    const nextCursor = last ? { cursor_created_at: last.created_at, cursor_id: last.id } : null;
+    const nextCursor = last ? { cursorCreatedAt: last.createdAt, cursorId: last.id } : null;
 
     return {
       deals: deals,
       count: deals.length,
-      has_more: deals.length === limit,
-      next_cursor: nextCursor,
-      page_summary: {
-        total_premium: totalPremium,
-        status_breakdown: statusCounts
+      hasMore: deals.length === limit,
+      nextCursor: nextCursor,
+      pageSummary: {
+        totalPremium: totalPremium,
+        statusBreakdown: statusCounts
       }
     };
   } catch (error) {
@@ -780,24 +783,24 @@ export async function getAgentsPaginated(params: any, agencyId: string, cursor?:
     const agents = Array.isArray(data) ? data : (data.agents || data.results || []);
 
     // Calculate aggregates for this page
-    const totalProduction = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_prod) || 0), 0);
-    const totalPolicies = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_policies_sold) || 0), 0);
-    const activeAgents = agents.filter((a: any) => a.is_active).length;
+    const totalProduction = agents.reduce((sum: number, agent: any) => sum + (Number(agent.totalProd) || 0), 0);
+    const totalPolicies = agents.reduce((sum: number, agent: any) => sum + (Number(agent.totalPoliciesSold) || 0), 0);
+    const activeAgents = agents.filter((a: any) => a.isActive).length;
 
     // Provide next cursor
     const last = agents.length > 0 ? agents[agents.length - 1] : null;
-    const nextCursor = last ? { cursor_id: last.id } : null;
+    const nextCursor = last ? { cursorId: last.id } : null;
 
     return {
       agents: agents,
       count: agents.length,
-      has_more: agents.length === limit,
-      next_cursor: nextCursor,
-      page_summary: {
-        total_production: totalProduction,
-        total_policies: totalPolicies,
-        active_agents: activeAgents,
-        average_production: agents.length > 0 ? totalProduction / agents.length : 0
+      hasMore: agents.length === limit,
+      nextCursor: nextCursor,
+      pageSummary: {
+        totalProduction: totalProduction,
+        totalPolicies: totalPolicies,
+        activeAgents: activeAgents,
+        averageProduction: agents.length > 0 ? totalProduction / agents.length : 0
       }
     };
   } catch (error) {
@@ -842,9 +845,9 @@ export async function getDataSummary(params: any, agencyId: string, accessToken?
       const deals = Array.isArray(data) ? data : (data.deals || data.results || []);
       const totalCount = data.total || deals.length;
 
-      const totalPremium = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annual_premium) || 0), 0);
+      const totalPremium = deals.reduce((sum: number, deal: any) => sum + (Number(deal.annualPremium) || 0), 0);
       const statusCounts = deals.reduce((acc: any, deal: any) => {
-        const status = deal.status_standardized || 'unknown';
+        const status = deal.statusStandardized || 'unknown';
         acc[status] = (acc[status] || 0) + 1;
         return acc;
       }, {});
@@ -852,26 +855,26 @@ export async function getDataSummary(params: any, agencyId: string, accessToken?
       // If we got a sample, estimate totals
       if (totalCount > deals.length) {
         return {
-          data_type: 'deals',
-          total_count: totalCount,
-          summary_only: true,
+          dataType: 'deals',
+          totalCount: totalCount,
+          summaryOnly: true,
           note: `Dataset exceeds ${deals.length} entries. Showing summary based on sample. Use get_deals_paginated for detailed data.`,
           summary: {
-            estimated_total_premium: totalPremium * (totalCount / deals.length),
-            status_breakdown: statusCounts,
-            sample_size: deals.length
+            estimatedTotalPremium: totalPremium * (totalCount / deals.length),
+            statusBreakdown: statusCounts,
+            sampleSize: deals.length
           }
         };
       }
 
       return {
-        data_type: 'deals',
-        total_count: totalCount,
-        summary_only: false,
+        dataType: 'deals',
+        totalCount: totalCount,
+        summaryOnly: false,
         summary: {
-          total_premium: totalPremium,
-          average_premium: totalCount > 0 ? totalPremium / totalCount : 0,
-          status_breakdown: statusCounts
+          totalPremium: totalPremium,
+          averagePremium: totalCount > 0 ? totalPremium / totalCount : 0,
+          statusBreakdown: statusCounts
         }
       };
     } else if (dataType === 'agents') {
@@ -891,35 +894,35 @@ export async function getDataSummary(params: any, agencyId: string, accessToken?
       const agents = Array.isArray(data) ? data : (data.agents || data.results || []);
       const totalCount = data.total || agents.length;
 
-      const totalProduction = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_prod) || 0), 0);
-      const totalPolicies = agents.reduce((sum: number, agent: any) => sum + (Number(agent.total_policies_sold) || 0), 0);
-      const activeAgents = agents.filter((a: any) => a.is_active).length;
+      const totalProduction = agents.reduce((sum: number, agent: any) => sum + (Number(agent.totalProd) || 0), 0);
+      const totalPolicies = agents.reduce((sum: number, agent: any) => sum + (Number(agent.totalPoliciesSold) || 0), 0);
+      const activeAgents = agents.filter((a: any) => a.isActive).length;
 
       // If we got a sample, estimate totals
       if (totalCount > agents.length) {
         return {
-          data_type: 'agents',
-          total_count: totalCount,
-          summary_only: true,
+          dataType: 'agents',
+          totalCount: totalCount,
+          summaryOnly: true,
           note: `Dataset exceeds ${agents.length} entries. Showing summary based on sample. Use get_agents_paginated for detailed data.`,
           summary: {
-            estimated_total_production: totalProduction * (totalCount / agents.length),
-            estimated_total_policies: totalPolicies * (totalCount / agents.length),
-            active_agents: activeAgents,
-            sample_size: agents.length
+            estimatedTotalProduction: totalProduction * (totalCount / agents.length),
+            estimatedTotalPolicies: totalPolicies * (totalCount / agents.length),
+            activeAgents: activeAgents,
+            sampleSize: agents.length
           }
         };
       }
 
       return {
-        data_type: 'agents',
-        total_count: totalCount,
-        summary_only: false,
+        dataType: 'agents',
+        totalCount: totalCount,
+        summaryOnly: false,
         summary: {
-          total_production: totalProduction,
-          total_policies: totalPolicies,
-          active_agents: activeAgents,
-          average_production: totalCount > 0 ? totalProduction / totalCount : 0
+          totalProduction: totalProduction,
+          totalPolicies: totalPolicies,
+          activeAgents: activeAgents,
+          averageProduction: totalCount > 0 ? totalProduction / totalCount : 0
         }
       };
     }
@@ -969,7 +972,7 @@ export async function executeToolCall(toolName: string, input: any, agencyId: st
         type: input.type,
         title: input.title,
         description: input.description,
-        data_source: input.data_source,
+        dataSource: input.data_source,
         config: input.config
       };
     default:

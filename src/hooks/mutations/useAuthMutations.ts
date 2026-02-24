@@ -20,8 +20,8 @@ interface RegisterInput {
 interface RegisterResponse {
   success: boolean
   message?: string
-  user_id?: string
-  agency_id?: string
+  userId?: string
+  agencyId?: string
 }
 
 /**
@@ -44,8 +44,8 @@ export function useRegister(options?: {
         return {
           success: true,
           message: result.message,
-          user_id: result.user_id,
-          agency_id: result.agency_id,
+          userId: result.user_id,
+          agencyId: result.agency_id,
         }
       } catch (err) {
         if (err instanceof AuthApiError) {
@@ -147,11 +147,11 @@ interface SignInUserData {
   id: string
   role: string
   status: string
-  agency_id: string
+  agencyId: string
 }
 
 interface SignInAgencyData {
-  whitelabel_domain: string | null
+  whitelabelDomain: string | null
 }
 
 interface SignInResponse {
@@ -170,20 +170,20 @@ const withAuthTimeout = <T>(promise: Promise<T>, ms = 15000): Promise<T> => {
 // ============ Sign In Mutation ============
 
 interface SignInApiResponse {
-  access_token: string
-  refresh_token: string
-  expires_in: number
-  token_type: string
+  accessToken: string
+  refreshToken: string
+  expiresIn: number
+  tokenType: string
   user: {
     id: string
     email: string
-    first_name: string
-    last_name: string
-    agency_id: string | null
+    firstName: string
+    lastName: string
+    agencyId: string | null
     role: string
-    is_admin: boolean
+    isAdmin: boolean
     status: string
-    subscription_tier: string | null
+    subscriptionTier: string | null
   }
 }
 
@@ -218,7 +218,7 @@ export function useSignIn(options?: {
 
       // Fetch agency whitelabel data via Django API
       const agencyResponse = await withAuthTimeout(
-        fetch(`/api/agencies/${data.user.agency_id}/whitelabel`, {
+        fetch(`/api/agencies/${data.user.agencyId}/whitelabel`, {
           credentials: 'include',
         })
       )
@@ -234,10 +234,10 @@ export function useSignIn(options?: {
           id: data.user.id,
           role: data.user.role,
           status: data.user.status,
-          agency_id: data.user.agency_id || '',
+          agencyId: data.user.agencyId || '',
         },
         agency: {
-          whitelabel_domain: agencyData.whitelabel_domain,
+          whitelabelDomain: agencyData.whitelabel_domain ?? agencyData.whitelabelDomain,
         },
       }
     },
@@ -338,9 +338,9 @@ export function useSetupAccount(options?: {
 
 interface UpdateUserProfileInput {
   data: {
-    first_name?: string
-    last_name?: string
-    phone_number?: string
+    firstName?: string
+    lastName?: string
+    phoneNumber?: string
     status?: string
   }
 }

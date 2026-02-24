@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import camelcaseKeys from 'camelcase-keys'
 import { getSession } from '@/lib/session'
 import { getApiBaseUrl, authEndpoints } from '@/lib/api-config'
 
@@ -25,7 +26,7 @@ export async function GET() {
     }
 
     const data = await response.json()
-    return NextResponse.json(data)
+    return NextResponse.json(camelcaseKeys(data, { deep: true }))
   } catch (error) {
     console.error('[API/auth/session] Error:', error)
     return NextResponse.json({ authenticated: false })

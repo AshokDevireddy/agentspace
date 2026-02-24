@@ -6,21 +6,21 @@ import { useQueryClient } from '@tanstack/react-query'
 
 export type UserData = {
   id: string
-  auth_user_id: string
+  authUserId: string
   email: string
   role: 'admin' | 'agent' | 'client'
   status: 'active' | 'onboarding' | 'invited' | 'inactive'
-  theme_mode: 'light' | 'dark' | 'system' | null
-  is_admin: boolean
-  agency_id: string | null
-  subscription_tier: 'free' | 'basic' | 'pro' | 'expert'
+  themeMode: 'light' | 'dark' | 'system' | null
+  isAdmin: boolean
+  agencyId: string | null
+  subscriptionTier: 'free' | 'basic' | 'pro' | 'expert'
 }
 
 type AuthContextType = {
   user: UserData | null
   loading: boolean
   isHydrated: boolean
-  signIn: (email: string, password: string) => Promise<{ user: UserData; agency: { whitelabel_domain: string | null } }>
+  signIn: (email: string, password: string) => Promise<{ user: UserData; agency: { whitelabelDomain: string | null } }>
   signOut: () => Promise<void>
   refreshUser: () => Promise<void>
 }
@@ -99,14 +99,14 @@ export function AuthProvider({
       if (data.authenticated && data.user) {
         setUser({
           id: data.user.id,
-          auth_user_id: data.user.auth_user_id,
+          authUserId: data.user.authUserId,
           email: data.user.email,
           role: data.user.role,
           status: data.user.status,
-          theme_mode: data.user.theme_mode,
-          is_admin: data.user.is_admin,
-          agency_id: data.user.agency_id,
-          subscription_tier: data.user.subscription_tier || 'free',
+          themeMode: data.user.themeMode,
+          isAdmin: data.user.isAdmin,
+          agencyId: data.user.agencyId,
+          subscriptionTier: data.user.subscriptionTier || 'free',
         })
       } else {
         setUser(null)
@@ -151,14 +151,14 @@ export function AuthProvider({
 
     setUser({
       id: data.user.id,
-      auth_user_id: data.user.auth_user_id,
+      authUserId: data.user.authUserId,
       email: data.user.email,
       role: data.user.role,
       status: data.user.status,
-      theme_mode: null,
-      is_admin: data.user.is_admin,
-      agency_id: data.user.agency_id,
-      subscription_tier: data.user.subscription_tier || 'free',
+      themeMode: null,
+      isAdmin: data.user.isAdmin,
+      agencyId: data.user.agencyId,
+      subscriptionTier: data.user.subscriptionTier || 'free',
     })
 
     return data

@@ -12,12 +12,12 @@ import { useCreateProduct } from '@/hooks/mutations/useProductMutations'
 
 interface Product {
   id: string
-  carrier_id: string
-  agency_id?: string
+  carrierId: string
+  agencyId?: string
   name: string
-  product_code?: string
-  is_active: boolean
-  created_at?: string
+  productCode?: string
+  isActive: boolean
+  createdAt?: string
 }
 
 interface AddProductModalProps {
@@ -73,10 +73,10 @@ export default function AddProductModal({ trigger, carrierId, onProductCreated }
     // Use mutation for proper TanStack Query integration
     createProductMutation.mutate(
       {
-        carrier_id: carrierId,
+        carrierId: carrierId,
         name: formData.name,
-        product_code: formData.productCode || null,
-        is_active: formData.status
+        productCode: formData.productCode || null,
+        isActive: formData.status
       },
       {
         onSuccess: (data) => {

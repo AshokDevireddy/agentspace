@@ -180,7 +180,7 @@ export function useUpdateAgencyColor(options?: {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ primary_color: primaryColor }),
+        body: JSON.stringify({ primaryColor }),
       })
 
       const result = await response.json()
@@ -208,7 +208,7 @@ interface UploadAgencyLogoInput {
 
 interface UploadAgencyLogoResponse {
   success: boolean
-  logo_url: string
+  logoUrl: string
   message?: string
 }
 

@@ -79,7 +79,7 @@ export function NiprVerificationStep({
         analysis: {
           success: true,
           carriers: data.result_carriers,
-          unique_carriers: data.result_carriers,
+          uniqueCarriers: data.result_carriers,
           licensedStates: { resident: [], nonResident: [] },
           analyzedAt: data.completed_at,
         },
@@ -197,8 +197,8 @@ export function NiprVerificationStep({
         }
 
         // Job completed immediately
-        if (result.success && result.analysis?.unique_carriers) {
-          await storeCarriers(result.analysis.unique_carriers)
+        if (result.success && result.analysis?.uniqueCarriers) {
+          await storeCarriers(result.analysis.uniqueCarriers)
         }
 
         setNiprResult({
@@ -259,7 +259,7 @@ export function NiprVerificationStep({
           analysis: {
             success: true,
             carriers: result.analysis?.carriers || [],
-            unique_carriers: result.analysis?.carriers || [],
+            uniqueCarriers: result.analysis?.carriers || [],
             licensedStates: result.analysis?.licensedStates || { resident: [], nonResident: [] },
             analyzedAt: result.analysis?.analyzedAt || new Date().toISOString(),
           },

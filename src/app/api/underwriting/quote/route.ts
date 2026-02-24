@@ -1,37 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getApiBaseUrl } from '@/lib/api-config'
-import { getAccessToken } from '@/lib/session'
+import { getUserContext } from '@/lib/auth/get-user-context'
 
 // Compulife API endpoint
 const COMPULIFE_API_URL = 'https://www.compulifeapi.com/api/request/'
 
 export async function POST(request: NextRequest) {
   try {
-    // Authenticate user via Django backend
-    const accessToken = await getAccessToken()
-    if (!accessToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Authenticate user and get context (including subscription tier) from Django backend
+    const userContextResult = await getUserContext()
+    if (!userContextResult.success) {
+      return NextResponse.json({ error: userContextResult.error }, { status: userContextResult.status })
     }
 
-    // Get user profile from Django to check subscription tier
-    const apiUrl = getApiBaseUrl()
-    const profileResponse = await fetch(`${apiUrl}/api/user/profile/`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      cache: 'no-store',
-    })
-
-    if (!profileResponse.ok) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    const userData = await profileResponse.json()
+    const userContext = userContextResult.context
 
     // Check if user has Pro or Expert tier
-    const tier = userData.subscription_tier || userData.subscriptionTier || 'free'
+    const tier = userContext.subscriptionTier ?? 'free'
     if (tier !== 'pro' && tier !== 'expert') {
       return NextResponse.json(
         {
@@ -266,7 +250,7 @@ export async function POST(request: NextRequest) {
 
     // Log successful request
     console.log('Compulife API response received:', {
-      userId: userData.id,
+      userId: userContext.userId,
       tier: tier,
       env: compulifeEnv,
       hasResults: !!data

@@ -17,27 +17,28 @@ export interface Agent {
   id: string
   name: string
   email: string | null
-  first_name: string | null
-  last_name: string | null
+  firstName: string | null
+  lastName: string | null
   position: string | null
-  position_id: string | null
-  position_name: string | null
-  position_level: number | null
+  positionId: string | null
+  positionName: string | null
+  positionLevel: number | null
   upline: string | null
   status: string
   badge: string
   created: string
   earnings: string
   downlines: number
-  individual_debt: string
-  individual_debt_count: number
-  individual_production: string
-  individual_production_count: number
-  hierarchy_debt: string
-  hierarchy_debt_count: number
-  hierarchy_production: string
-  hierarchy_production_count: number
-  debt_to_production_ratio: string | null
+  individualDebt: number
+  individualDebtCount: number
+  individualProduction: number
+  individualProductionCount: number
+  hierarchyDebt: number
+  hierarchyDebtCount: number
+  hierarchyProduction: number
+  hierarchyProductionCount: number
+  debtToProductionRatio: number | null
+  lastLogin: string | null
 }
 
 export interface TreeNode {
@@ -47,17 +48,17 @@ export interface TreeNode {
 }
 
 export interface PendingAgent {
-  agent_id: string
-  first_name: string
-  last_name: string
+  agentId: string
+  firstName: string
+  lastName: string
   email: string
-  phone_number: string | null
+  phoneNumber: string | null
   role: string
-  upline_name: string | null
-  created_at: string
-  position_id?: string | null
-  position_name?: string | null
-  has_position?: boolean
+  uplineName: string | null
+  createdAt: string
+  positionId?: string | null
+  positionName?: string | null
+  hasPosition?: boolean
 }
 
 export interface AgentsListResponse {
@@ -93,19 +94,19 @@ export interface AgentDownlinesResponse {
     id: string
     name: string
     position: string | null
-    position_level: number | null
+    positionLevel: number | null
     badge: string
     status: string
-    created_at: string
-    individual_debt: number
-    individual_debt_count: number
-    individual_production: number
-    individual_production_count: number
-    hierarchy_debt: number
-    hierarchy_debt_count: number
-    hierarchy_production: number
-    hierarchy_production_count: number
-    debt_to_production_ratio: number | null
+    createdAt: string
+    individualDebt: number
+    individualDebtCount: number
+    individualProduction: number
+    individualProductionCount: number
+    hierarchyDebt: number
+    hierarchyDebtCount: number
+    hierarchyProduction: number
+    hierarchyProductionCount: number
+    debtToProductionRatio: number | null
   }>
   downlineCount: number
 }

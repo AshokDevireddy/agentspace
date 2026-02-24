@@ -41,9 +41,9 @@ export function ThemeCoordinator({ children }: { children: React.ReactNode }) {
     let newTheme: string | null = null
 
     if (isAuthPage) {
-      newTheme = (isWhiteLabel && branding?.theme_mode) ? branding.theme_mode : DEFAULT_AUTH_THEME
+      newTheme = (isWhiteLabel && branding?.themeMode) ? branding.themeMode : DEFAULT_AUTH_THEME
     } else if (user) {
-      newTheme = user.role === 'client' ? CLIENT_THEME : (user.theme_mode || DEFAULT_USER_THEME)
+      newTheme = user.role === 'client' ? CLIENT_THEME : (user.themeMode || DEFAULT_USER_THEME)
     }
 
     if (!newTheme || lastAppliedTheme.current === newTheme) return

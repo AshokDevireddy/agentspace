@@ -7,11 +7,11 @@ import { isWhiteLabelDomain } from '@/lib/whitelabel'
 interface AgencyBranding {
   id: string
   name: string
-  display_name: string | null
-  logo_url: string | null
-  primary_color: string | null
-  theme_mode: string | null
-  whitelabel_domain: string | null
+  displayName: string | null
+  logoUrl: string | null
+  primaryColor: string | null
+  themeMode: string | null
+  whitelabelDomain: string | null
 }
 
 interface AgencyBrandingContextType {
@@ -37,9 +37,9 @@ const getServerHostname = () => null
 
 // Initial agency data from Django session (optional)
 interface InitialAgencyData {
-  display_name: string | null
-  whitelabel_domain: string | null
-  logo_url: string | null
+  displayName: string | null
+  whitelabelDomain: string | null
+  logoUrl: string | null
 }
 
 interface AgencyBrandingProviderProps {
@@ -57,7 +57,7 @@ export function AgencyBrandingProvider({ children, initialAgency }: AgencyBrandi
   // Use TanStack Query for fetching branding data (only if we don't have initial data)
   const { data: fetchedBranding, isLoading } = useAgencyBrandingByDomain(
     isWhiteLabel ? hostname : null,
-    { enabled: isWhiteLabel && !!hostname && !initialAgency?.whitelabel_domain }
+    { enabled: isWhiteLabel && !!hostname && !initialAgency?.whitelabelDomain }
   )
 
   // Use fetched branding or construct from initialAgency
@@ -65,16 +65,16 @@ export function AgencyBrandingProvider({ children, initialAgency }: AgencyBrandi
     if (fetchedBranding) {
       return fetchedBranding
     }
-    if (initialAgency?.whitelabel_domain) {
+    if (initialAgency?.whitelabelDomain) {
       // Partial branding from Django session
       return {
         id: '',  // Not available from session
-        name: initialAgency.display_name || '',
-        display_name: initialAgency.display_name,
-        logo_url: initialAgency.logo_url,
-        primary_color: null,  // Not available from session
-        theme_mode: null,  // Not available from session
-        whitelabel_domain: initialAgency.whitelabel_domain,
+        name: initialAgency.displayName || '',
+        displayName: initialAgency.displayName,
+        logoUrl: initialAgency.logoUrl,
+        primaryColor: null,  // Not available from session
+        themeMode: null,  // Not available from session
+        whitelabelDomain: initialAgency.whitelabelDomain,
       }
     }
     return null
@@ -83,7 +83,7 @@ export function AgencyBrandingProvider({ children, initialAgency }: AgencyBrandi
   // Loading is true until hostname is detected and (if whitelabel) data is loaded
   // If we have initialAgency data, we're not loading
   const loading = hostname === null ||
-    (isWhiteLabel && isLoading && !initialAgency?.whitelabel_domain)
+    (isWhiteLabel && isLoading && !initialAgency?.whitelabelDomain)
 
   const contextValue = useMemo(() => ({
     branding,

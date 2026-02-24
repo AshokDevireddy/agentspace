@@ -79,6 +79,10 @@ export interface DealResult {
   agent?: DealAgent;
   agent_id?: string;
   agentId?: string;
+  agency_id?: string;
+  agencyId?: string;
+  status_standardized?: string;
+  statusStandardized?: string;
 }
 
 /**

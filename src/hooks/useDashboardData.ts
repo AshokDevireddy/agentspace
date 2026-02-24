@@ -27,48 +27,70 @@ async function fetchWithCookies<T>(url: string, errorMessage: string): Promise<T
 // ============ Types ============
 
 interface CarrierActive {
-  carrier_id: string
+  carrierId: string
   carrier: string
-  active_policies: number
+  activePolicies: number
 }
 
 interface DealsSummary {
-  active_policies: number
-  monthly_commissions: number
-  new_policies: number
-  total_clients: number
-  carriers_active: CarrierActive[]
+  activePolicies: number
+  monthlyCommissions: number
+  newPolicies: number
+  totalClients: number
+  carriersActive: CarrierActive[]
 }
 
 interface DashboardSummary {
-  your_deals: DealsSummary
-  downline_production: DealsSummary
+  yourDeals: DealsSummary
+  downlineProduction: DealsSummary
   totals: {
-    pending_positions: number
+    pendingPositions: number
   }
 }
 
 interface LeaderboardEntry {
   rank: number
-  agent_id: string
-  agent_name: string
+  agentId: string
+  agentName: string
   position: string | null
   production: string
-  deals_count: number
+  dealsCount: number
 }
 
 interface ScoreboardData {
   entries: LeaderboardEntry[]
-  user_rank: number | null
-  user_production: string | null
+  userRank: number | null
+  userProduction: string | null
+}
+
+interface BillingCycleAgentScore {
+  rank: number
+  agentId: string
+  name: string
+  total: number
+  dailyBreakdown: { [date: string]: number }
+  dealCount: number
+}
+
+export interface BillingCycleScoreboardData {
+  leaderboard: BillingCycleAgentScore[]
+  stats: {
+    totalProduction: number
+    totalDeals: number
+    activeAgents: number
+  }
+  dateRange: {
+    startDate: string
+    endDate: string
+  }
 }
 
 interface ProductionEntry {
-  agent_id: string
-  individual_production: number
-  individual_production_count: number
-  hierarchy_production: number
-  hierarchy_production_count: number
+  agentId: string
+  individualProduction: number
+  individualProductionCount: number
+  hierarchyProduction: number
+  hierarchyProductionCount: number
 }
 
 // ============ Hooks ============
@@ -143,9 +165,10 @@ export function useScoreboardBillingCycleData(
   scope: 'agency' | 'downline' = 'agency',
   options?: { enabled?: boolean; staleTime?: number },
   dateMode?: string,
+  assumedMonthsTillLapse?: number,
 ) {
-  return useQuery<ScoreboardData, Error>({
-    queryKey: queryKeys.scoreboardBillingCycle(userId || '', startDate, endDate, scope, dateMode),
+  return useQuery<BillingCycleScoreboardData, Error>({
+    queryKey: queryKeys.scoreboardBillingCycle(userId || '', startDate, endDate, scope, dateMode, assumedMonthsTillLapse),
     queryFn: async () => {
       const url = new URL('/api/dashboard/scoreboard-billing-cycle', window.location.origin)
       url.searchParams.set('start_date', startDate)
@@ -153,6 +176,9 @@ export function useScoreboardBillingCycleData(
       url.searchParams.set('scope', scope)
       if (dateMode) {
         url.searchParams.set('date_mode', dateMode)
+      }
+      if (assumedMonthsTillLapse !== undefined) {
+        url.searchParams.set('assumed_months_till_lapse', String(assumedMonthsTillLapse))
       }
 
       return fetchWithCookies(url.toString(), 'Failed to fetch scoreboard billing cycle data')

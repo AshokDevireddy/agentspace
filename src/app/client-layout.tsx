@@ -44,8 +44,8 @@ export default function ClientLayout({
   // On auth pages, show a simple layout with just the logo
   if (isAuthPage) {
     // Determine display based on white-label status
-    const displayName = isWhiteLabel && branding ? branding.display_name : 'AgentSpace'
-    const logoUrl = isWhiteLabel && branding ? branding.logo_url : null
+    const displayName = isWhiteLabel && branding ? branding.displayName : 'AgentSpace'
+    const logoUrl = isWhiteLabel && branding ? branding.logoUrl : null
 
     return (
       <div className="min-h-screen bg-background">

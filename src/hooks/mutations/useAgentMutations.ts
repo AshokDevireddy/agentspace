@@ -40,8 +40,8 @@ export function useAssignPosition(options?: {
           'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          agent_id: agentId,
-          position_id: positionId,
+          agentId,
+          positionId,
         }),
       })
 
@@ -165,20 +165,20 @@ export function useSendInvite(options?: {
 
 interface UpdateAgentInput {
   agentId: string
-  first_name: string
-  last_name: string
+  firstName: string
+  lastName: string
   email: string
-  phone_number: string
-  position_id?: string | null
+  phoneNumber: string
+  positionId?: string | null
 }
 
 interface Agent {
   id: string
-  first_name: string
-  last_name: string
+  firstName: string
+  lastName: string
   email: string
-  phone_number: string
-  position_id?: string | null
+  phoneNumber: string
+  positionId?: string | null
 }
 
 /**
@@ -223,10 +223,10 @@ interface SaveAgentInput {
   agentName: string
   editedData: {
     email: string
-    phone_number?: string
+    phoneNumber?: string
     role: string
     status: string
-    upline_id?: string
+    uplineId?: string
   }
   positionId?: string | null
   shouldSendInvite: boolean
@@ -265,9 +265,9 @@ export function useSaveAgent(options?: {
             email: editedData.email,
             firstName,
             lastName,
-            phoneNumber: editedData.phone_number || null,
+            phoneNumber: editedData.phoneNumber || null,
             permissionLevel,
-            uplineAgentId: editedData.upline_id && editedData.upline_id !== 'all' ? editedData.upline_id : null,
+            uplineAgentId: editedData.uplineId && editedData.uplineId !== 'all' ? editedData.uplineId : null,
             positionId: positionId || null,
             preInviteUserId: agentId,
           }),

@@ -17,16 +17,16 @@ interface UpdatePositionInput {
   name: string
   level: number
   description?: string | null
-  is_active: boolean
+  isActive: boolean
 }
 
 interface Position {
-  position_id: string
+  positionId: string
   name: string
   level: number
   description?: string
-  is_active: boolean
-  created_at?: string
+  isActive: boolean
+  createdAt?: string
 }
 
 /**

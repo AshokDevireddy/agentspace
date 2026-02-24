@@ -9,38 +9,38 @@ import { queryKeys } from './queryKeys'
 export interface AgencySettings {
   id: string
   name: string
-  display_name: string | null
-  logo_url: string | null
-  primary_color: string | null
-  whitelabel_domain: string | null
-  phone_number: string | null
-  messaging_enabled: boolean
-  lead_sources: string[]
-  discord_webhook_url: string | null
-  discord_notification_enabled: boolean
-  discord_notification_template: string | null
-  discord_bot_username: string | null
-  theme_mode: string | null
-  lapse_email_notifications_enabled: boolean
-  lapse_email_subject: string | null
-  lapse_email_body: string | null
-  sms_welcome_enabled: boolean
-  sms_welcome_template: string | null
-  sms_billing_reminder_enabled: boolean
-  sms_billing_reminder_template: string | null
-  sms_lapse_reminder_enabled: boolean
-  sms_lapse_reminder_template: string | null
-  sms_birthday_enabled: boolean
-  sms_birthday_template: string | null
-  sms_holiday_enabled: boolean
-  sms_holiday_template: string | null
-  sms_quarterly_enabled: boolean
-  sms_quarterly_template: string | null
-  sms_policy_packet_enabled: boolean
-  sms_policy_packet_template: string | null
-  default_scoreboard_start_date: string | null
-  sms_auto_send_enabled: boolean
-  scoreboard_agent_visibility: boolean
+  displayName: string | null
+  logoUrl: string | null
+  primaryColor: string | null
+  whitelabelDomain: string | null
+  phoneNumber: string | null
+  messagingEnabled: boolean
+  leadSources: string[]
+  discordWebhookUrl: string | null
+  discordNotificationEnabled: boolean
+  discordNotificationTemplate: string | null
+  discordBotUsername: string | null
+  themeMode: string | null
+  lapseEmailNotificationsEnabled: boolean
+  lapseEmailSubject: string | null
+  lapseEmailBody: string | null
+  smsWelcomeEnabled: boolean
+  smsWelcomeTemplate: string | null
+  smsBillingReminderEnabled: boolean
+  smsBillingReminderTemplate: string | null
+  smsLapseReminderEnabled: boolean
+  smsLapseReminderTemplate: string | null
+  smsBirthdayEnabled: boolean
+  smsBirthdayTemplate: string | null
+  smsHolidayEnabled: boolean
+  smsHolidayTemplate: string | null
+  smsQuarterlyEnabled: boolean
+  smsQuarterlyTemplate: string | null
+  smsPolicyPacketEnabled: boolean
+  smsPolicyPacketTemplate: string | null
+  defaultScoreboardStartDate: string | null
+  smsAutoSendEnabled: boolean
+  scoreboardAgentVisibility: boolean
 }
 
 /**
@@ -52,7 +52,7 @@ export function useAgencySettings(agencyId?: string | null) {
   return useQuery<AgencySettings>({
     queryKey: queryKeys.configurationAgency(),
     queryFn: async () => {
-      const id = agencyId || user?.agency_id
+      const id = agencyId || user?.agencyId
       if (!id) {
         throw new Error('No agency ID available')
       }
@@ -69,7 +69,7 @@ export function useAgencySettings(agencyId?: string | null) {
 
       return response.json()
     },
-    enabled: !!(agencyId || user?.agency_id),
+    enabled: !!(agencyId || user?.agencyId),
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 }

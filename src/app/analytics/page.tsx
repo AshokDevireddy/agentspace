@@ -34,148 +34,148 @@ import {
 // analytics_test_value: static data for the test analytics page
 const analytics_test_value = {
   "meta": {
-    "window": "all_time",
+    "window": "allTime",
     "grain": "month",
-    "as_of": "2025-10-30",
+    "asOf": "2025-10-30",
     "carriers": ["American Amicable", "Allstate", "Acme Life"],
-    "include_window_slices_12": false,
+    "includeWindowSlices12": false,
     "definitions": {
-      "active_count_eom": "Policies active at month end",
-      "inactive_count_eom": "Policies lapsed/terminated by month end",
-      "submitted_count": "Policies submitted during the calendar month",
-      "avg_premium_submitted": "Average written premium of policies submitted during the month (USD)",
-      "persistency_formula": "active / (active + inactive)"
+      "activeCountEom": "Policies active at month end",
+      "inactiveCountEom": "Policies lapsed/terminated by month end",
+      "submittedCount": "Policies submitted during the calendar month",
+      "avgPremiumSubmitted": "Average written premium of policies submitted during the month (USD)",
+      "persistencyFormula": "active / (active + inactive)"
     },
-    "period_start": "2024-11",
-    "period_end": "2025-10"
+    "periodStart": "2024-11",
+    "periodEnd": "2025-10"
   },
 
   "series": [
-    {"period":"2024-11","carrier":"American Amicable","active":122,"inactive":30,"submitted":82,"avg_premium_submitted":92.0,"persistency":0.8026},
-    {"period":"2024-12","carrier":"American Amicable","active":123,"inactive":31,"submitted":83,"avg_premium_submitted":92.6,"persistency":0.7987},
-    {"period":"2025-01","carrier":"American Amicable","active":125,"inactive":31,"submitted":83,"avg_premium_submitted":93.2,"persistency":0.8013},
-    {"period":"2025-02","carrier":"American Amicable","active":128,"inactive":32,"submitted":84,"avg_premium_submitted":93.8,"persistency":0.8000},
-    {"period":"2025-03","carrier":"American Amicable","active":132,"inactive":33,"submitted":86,"avg_premium_submitted":94.4,"persistency":0.8000},
-    {"period":"2025-04","carrier":"American Amicable","active":134,"inactive":34,"submitted":87,"avg_premium_submitted":95.0,"persistency":0.7976},
-    {"period":"2025-05","carrier":"American Amicable","active":137,"inactive":35,"submitted":89,"avg_premium_submitted":95.6,"persistency":0.7966},
-    {"period":"2025-06","carrier":"American Amicable","active":140,"inactive":35,"submitted":90,"avg_premium_submitted":96.2,"persistency":0.8000},
-    {"period":"2025-07","carrier":"American Amicable","active":144,"inactive":36,"submitted":92,"avg_premium_submitted":96.8,"persistency":0.8000},
-    {"period":"2025-08","carrier":"American Amicable","active":146,"inactive":37,"submitted":93,"avg_premium_submitted":97.4,"persistency":0.7986},
-    {"period":"2025-09","carrier":"American Amicable","active":149,"inactive":37,"submitted":95,"avg_premium_submitted":98.0,"persistency":0.8016},
-    {"period":"2025-10","carrier":"American Amicable","active":152,"inactive":38,"submitted":96,"avg_premium_submitted":98.6,"persistency":0.8000},
+    {"period":"2024-11","carrier":"American Amicable","active":122,"inactive":30,"submitted":82,"avgPremiumSubmitted":92.0,"persistency":0.8026},
+    {"period":"2024-12","carrier":"American Amicable","active":123,"inactive":31,"submitted":83,"avgPremiumSubmitted":92.6,"persistency":0.7987},
+    {"period":"2025-01","carrier":"American Amicable","active":125,"inactive":31,"submitted":83,"avgPremiumSubmitted":93.2,"persistency":0.8013},
+    {"period":"2025-02","carrier":"American Amicable","active":128,"inactive":32,"submitted":84,"avgPremiumSubmitted":93.8,"persistency":0.8000},
+    {"period":"2025-03","carrier":"American Amicable","active":132,"inactive":33,"submitted":86,"avgPremiumSubmitted":94.4,"persistency":0.8000},
+    {"period":"2025-04","carrier":"American Amicable","active":134,"inactive":34,"submitted":87,"avgPremiumSubmitted":95.0,"persistency":0.7976},
+    {"period":"2025-05","carrier":"American Amicable","active":137,"inactive":35,"submitted":89,"avgPremiumSubmitted":95.6,"persistency":0.7966},
+    {"period":"2025-06","carrier":"American Amicable","active":140,"inactive":35,"submitted":90,"avgPremiumSubmitted":96.2,"persistency":0.8000},
+    {"period":"2025-07","carrier":"American Amicable","active":144,"inactive":36,"submitted":92,"avgPremiumSubmitted":96.8,"persistency":0.8000},
+    {"period":"2025-08","carrier":"American Amicable","active":146,"inactive":37,"submitted":93,"avgPremiumSubmitted":97.4,"persistency":0.7986},
+    {"period":"2025-09","carrier":"American Amicable","active":149,"inactive":37,"submitted":95,"avgPremiumSubmitted":98.0,"persistency":0.8016},
+    {"period":"2025-10","carrier":"American Amicable","active":152,"inactive":38,"submitted":96,"avgPremiumSubmitted":98.6,"persistency":0.8000},
 
-    {"period":"2024-11","carrier":"Allstate","active":202,"inactive":50,"submitted":118,"avg_premium_submitted":106.0,"persistency":0.8016},
-    {"period":"2024-12","carrier":"Allstate","active":204,"inactive":51,"submitted":121,"avg_premium_submitted":106.6,"persistency":0.8000},
-    {"period":"2025-01","carrier":"Allstate","active":206,"inactive":51,"submitted":122,"avg_premium_submitted":107.2,"persistency":0.8016},
-    {"period":"2025-02","carrier":"Allstate","active":208,"inactive":52,"submitted":124,"avg_premium_submitted":107.8,"persistency":0.8000},
-    {"period":"2025-03","carrier":"Allstate","active":210,"inactive":53,"submitted":126,"avg_premium_submitted":108.4,"persistency":0.7985},
-    {"period":"2025-04","carrier":"Allstate","active":212,"inactive":54,"submitted":127,"avg_premium_submitted":109.0,"persistency":0.7970},
-    {"period":"2025-05","carrier":"Allstate","active":214,"inactive":55,"submitted":129,"avg_premium_submitted":109.6,"persistency":0.7957},
-    {"period":"2025-06","carrier":"Allstate","active":216,"inactive":55,"submitted":131,"avg_premium_submitted":110.2,"persistency":0.7963},
-    {"period":"2025-07","carrier":"Allstate","active":218,"inactive":56,"submitted":133,"avg_premium_submitted":110.8,"persistency":0.7956},
-    {"period":"2025-08","carrier":"Allstate","active":220,"inactive":57,"submitted":135,"avg_premium_submitted":111.4,"persistency":0.7948},
-    {"period":"2025-09","carrier":"Allstate","active":222,"inactive":58,"submitted":137,"avg_premium_submitted":112.0,"persistency":0.7938},
-    {"period":"2025-10","carrier":"Allstate","active":224,"inactive":58,"submitted":139,"avg_premium_submitted":112.6,"persistency":0.7946},
+    {"period":"2024-11","carrier":"Allstate","active":202,"inactive":50,"submitted":118,"avgPremiumSubmitted":106.0,"persistency":0.8016},
+    {"period":"2024-12","carrier":"Allstate","active":204,"inactive":51,"submitted":121,"avgPremiumSubmitted":106.6,"persistency":0.8000},
+    {"period":"2025-01","carrier":"Allstate","active":206,"inactive":51,"submitted":122,"avgPremiumSubmitted":107.2,"persistency":0.8016},
+    {"period":"2025-02","carrier":"Allstate","active":208,"inactive":52,"submitted":124,"avgPremiumSubmitted":107.8,"persistency":0.8000},
+    {"period":"2025-03","carrier":"Allstate","active":210,"inactive":53,"submitted":126,"avgPremiumSubmitted":108.4,"persistency":0.7985},
+    {"period":"2025-04","carrier":"Allstate","active":212,"inactive":54,"submitted":127,"avgPremiumSubmitted":109.0,"persistency":0.7970},
+    {"period":"2025-05","carrier":"Allstate","active":214,"inactive":55,"submitted":129,"avgPremiumSubmitted":109.6,"persistency":0.7957},
+    {"period":"2025-06","carrier":"Allstate","active":216,"inactive":55,"submitted":131,"avgPremiumSubmitted":110.2,"persistency":0.7963},
+    {"period":"2025-07","carrier":"Allstate","active":218,"inactive":56,"submitted":133,"avgPremiumSubmitted":110.8,"persistency":0.7956},
+    {"period":"2025-08","carrier":"Allstate","active":220,"inactive":57,"submitted":135,"avgPremiumSubmitted":111.4,"persistency":0.7948},
+    {"period":"2025-09","carrier":"Allstate","active":222,"inactive":58,"submitted":137,"avgPremiumSubmitted":112.0,"persistency":0.7938},
+    {"period":"2025-10","carrier":"Allstate","active":224,"inactive":58,"submitted":139,"avgPremiumSubmitted":112.6,"persistency":0.7946},
 
-    {"period":"2024-11","carrier":"Acme Life","active":92,"inactive":25,"submitted":61,"avg_premium_submitted":82.0,"persistency":0.7863},
-    {"period":"2024-12","carrier":"Acme Life","active":93,"inactive":26,"submitted":62,"avg_premium_submitted":82.6,"persistency":0.7815},
-    {"period":"2025-01","carrier":"Acme Life","active":94,"inactive":26,"submitted":64,"avg_premium_submitted":83.2,"persistency":0.7832},
-    {"period":"2025-02","carrier":"Acme Life","active":95,"inactive":27,"submitted":65,"avg_premium_submitted":83.8,"persistency":0.7787},
-    {"period":"2025-03","carrier":"Acme Life","active":96,"inactive":27,"submitted":67,"avg_premium_submitted":84.4,"persistency":0.7805},
-    {"period":"2025-04","carrier":"Acme Life","active":97,"inactive":28,"submitted":68,"avg_premium_submitted":85.0,"persistency":0.7760},
-    {"period":"2025-05","carrier":"Acme Life","active":98,"inactive":29,"submitted":70,"avg_premium_submitted":85.6,"persistency":0.7714},
-    {"period":"2025-06","carrier":"Acme Life","active":99,"inactive":29,"submitted":71,"avg_premium_submitted":86.2,"persistency":0.7733},
-    {"period":"2025-07","carrier":"Acme Life","active":100,"inactive":30,"submitted":73,"avg_premium_submitted":86.8,"persistency":0.7692},
-    {"period":"2025-08","carrier":"Acme Life","active":101,"inactive":31,"submitted":74,"avg_premium_submitted":87.4,"persistency":0.7652},
-    {"period":"2025-09","carrier":"Acme Life","active":102,"inactive":31,"submitted":76,"avg_premium_submitted":88.0,"persistency":0.7672},
-    {"period":"2025-10","carrier":"Acme Life","active":103,"inactive":32,"submitted":77,"avg_premium_submitted":88.6,"persistency":0.7630}
+    {"period":"2024-11","carrier":"Acme Life","active":92,"inactive":25,"submitted":61,"avgPremiumSubmitted":82.0,"persistency":0.7863},
+    {"period":"2024-12","carrier":"Acme Life","active":93,"inactive":26,"submitted":62,"avgPremiumSubmitted":82.6,"persistency":0.7815},
+    {"period":"2025-01","carrier":"Acme Life","active":94,"inactive":26,"submitted":64,"avgPremiumSubmitted":83.2,"persistency":0.7832},
+    {"period":"2025-02","carrier":"Acme Life","active":95,"inactive":27,"submitted":65,"avgPremiumSubmitted":83.8,"persistency":0.7787},
+    {"period":"2025-03","carrier":"Acme Life","active":96,"inactive":27,"submitted":67,"avgPremiumSubmitted":84.4,"persistency":0.7805},
+    {"period":"2025-04","carrier":"Acme Life","active":97,"inactive":28,"submitted":68,"avgPremiumSubmitted":85.0,"persistency":0.7760},
+    {"period":"2025-05","carrier":"Acme Life","active":98,"inactive":29,"submitted":70,"avgPremiumSubmitted":85.6,"persistency":0.7714},
+    {"period":"2025-06","carrier":"Acme Life","active":99,"inactive":29,"submitted":71,"avgPremiumSubmitted":86.2,"persistency":0.7733},
+    {"period":"2025-07","carrier":"Acme Life","active":100,"inactive":30,"submitted":73,"avgPremiumSubmitted":86.8,"persistency":0.7692},
+    {"period":"2025-08","carrier":"Acme Life","active":101,"inactive":31,"submitted":74,"avgPremiumSubmitted":87.4,"persistency":0.7652},
+    {"period":"2025-09","carrier":"Acme Life","active":102,"inactive":31,"submitted":76,"avgPremiumSubmitted":88.0,"persistency":0.7672},
+    {"period":"2025-10","carrier":"Acme Life","active":103,"inactive":32,"submitted":77,"avgPremiumSubmitted":88.6,"persistency":0.7630}
   ],
 
-  "windows_by_carrier": {
+  "windowsByCarrier": {
     "American Amicable": {
-      "3m":  { "active": 447,  "inactive": 112, "submitted": 284,  "avg_premium_submitted": 98.01, "persistency": 0.7996 },
-      "6m":  { "active": 868,  "inactive": 218, "submitted": 555,  "avg_premium_submitted": 97.13, "persistency": 0.7993 },
-      "9m":  { "active": 1262, "inactive": 317, "submitted": 812,  "avg_premium_submitted": 96.27, "persistency": 0.7992 },
-      "all_time": { "active": 1632, "inactive": 409, "submitted": 1060, "avg_premium_submitted": 95.41, "persistency": 0.7996 }
+      "3m":  { "active": 447,  "inactive": 112, "submitted": 284,  "avgPremiumSubmitted": 98.01, "persistency": 0.7996 },
+      "6m":  { "active": 868,  "inactive": 218, "submitted": 555,  "avgPremiumSubmitted": 97.13, "persistency": 0.7993 },
+      "9m":  { "active": 1262, "inactive": 317, "submitted": 812,  "avgPremiumSubmitted": 96.27, "persistency": 0.7992 },
+      "allTime": { "active": 1632, "inactive": 409, "submitted": 1060, "avgPremiumSubmitted": 95.41, "persistency": 0.7996 }
     },
     "Allstate": {
-      "3m":  { "active": 666,  "inactive": 173, "submitted": 411,  "avg_premium_submitted": 112.01, "persistency": 0.7938 },
-      "6m":  { "active": 1314, "inactive": 339, "submitted": 804,  "avg_premium_submitted": 111.13, "persistency": 0.7949 },
-      "9m":  { "active": 1944, "inactive": 498, "submitted": 1181, "avg_premium_submitted": 110.26, "persistency": 0.7961 },
-      "all_time": { "active": 2556, "inactive": 650, "submitted": 1542, "avg_premium_submitted": 109.40, "persistency": 0.7973 }
+      "3m":  { "active": 666,  "inactive": 173, "submitted": 411,  "avgPremiumSubmitted": 112.01, "persistency": 0.7938 },
+      "6m":  { "active": 1314, "inactive": 339, "submitted": 804,  "avgPremiumSubmitted": 111.13, "persistency": 0.7949 },
+      "9m":  { "active": 1944, "inactive": 498, "submitted": 1181, "avgPremiumSubmitted": 110.26, "persistency": 0.7961 },
+      "allTime": { "active": 2556, "inactive": 650, "submitted": 1542, "avgPremiumSubmitted": 109.40, "persistency": 0.7973 }
     },
     "Acme Life": {
-      "3m":  { "active": 306,  "inactive": 94,  "submitted": 227,  "avg_premium_submitted": 88.01, "persistency": 0.7650 },
-      "6m":  { "active": 603,  "inactive": 182, "submitted": 441,  "avg_premium_submitted": 87.13, "persistency": 0.7682 },
-      "9m":  { "active": 891,  "inactive": 264, "submitted": 641,  "avg_premium_submitted": 86.28, "persistency": 0.7714 },
-      "all_time": { "active": 1170, "inactive": 341, "submitted": 828,  "avg_premium_submitted": 85.45, "persistency": 0.7743 }
+      "3m":  { "active": 306,  "inactive": 94,  "submitted": 227,  "avgPremiumSubmitted": 88.01, "persistency": 0.7650 },
+      "6m":  { "active": 603,  "inactive": 182, "submitted": 441,  "avgPremiumSubmitted": 87.13, "persistency": 0.7682 },
+      "9m":  { "active": 891,  "inactive": 264, "submitted": 641,  "avgPremiumSubmitted": 86.28, "persistency": 0.7714 },
+      "allTime": { "active": 1170, "inactive": 341, "submitted": 828,  "avgPremiumSubmitted": 85.45, "persistency": 0.7743 }
     }
   },
 
   "totals": {
-    "by_carrier": [
-      {"window":"all_time","carrier":"American Amicable","active":1632,"inactive":409,"submitted":1060,"avg_premium_submitted":95.41,"persistency":0.7996},
-      {"window":"all_time","carrier":"Allstate","active":2556,"inactive":650,"submitted":1542,"avg_premium_submitted":109.40,"persistency":0.7973},
-      {"window":"all_time","carrier":"Acme Life","active":1170,"inactive":341,"submitted":828,"avg_premium_submitted":85.45,"persistency":0.7743}
+    "byCarrier": [
+      {"window":"allTime","carrier":"American Amicable","active":1632,"inactive":409,"submitted":1060,"avgPremiumSubmitted":95.41,"persistency":0.7996},
+      {"window":"allTime","carrier":"Allstate","active":2556,"inactive":650,"submitted":1542,"avgPremiumSubmitted":109.40,"persistency":0.7973},
+      {"window":"allTime","carrier":"Acme Life","active":1170,"inactive":341,"submitted":828,"avgPremiumSubmitted":85.45,"persistency":0.7743}
     ],
-    "all": {"window":"all_time","carrier":"ALL","active":5358,"inactive":1400,"submitted":3430,"avg_premium_submitted":99.30,"persistency":0.7928}
+    "all": {"window":"allTime","carrier":"ALL","active":5358,"inactive":1400,"submitted":3430,"avgPremiumSubmitted":99.30,"persistency":0.7928}
   },
 
-  "breakdowns_over_time": {
-    "by_carrier": {
+  "breakdownsOverTime": {
+    "byCarrier": {
       "American Amicable": {
         "status": {
           "3m":  {"Lapsed": 78, "Terminated": 22, "Pending": 12},
           "6m":  {"Lapsed": 153, "Terminated": 44, "Pending": 21},
           "9m":  {"Lapsed": 222, "Terminated": 63, "Pending": 32},
-          "all_time": {"Lapsed": 286, "Terminated": 82, "Pending": 41}
+          "allTime": {"Lapsed": 286, "Terminated": 82, "Pending": 41}
         },
         "state": {
           "3m":  [
-            {"state":"CA","active":210,"inactive":54,"submitted":135,"avg_premium_submitted":99.8},
-            {"state":"TX","active":126,"inactive":35,"submitted":85,"avg_premium_submitted":93.9},
-            {"state":"FL","active":111,"inactive":28,"submitted":64,"avg_premium_submitted":87.5}
+            {"state":"CA","active":210,"inactive":54,"submitted":135,"avgPremiumSubmitted":99.8},
+            {"state":"TX","active":126,"inactive":35,"submitted":85,"avgPremiumSubmitted":93.9},
+            {"state":"FL","active":111,"inactive":28,"submitted":64,"avgPremiumSubmitted":87.5}
           ],
           "6m":  [
-            {"state":"CA","active":415,"inactive":106,"submitted":270,"avg_premium_submitted":99.5},
-            {"state":"TX","active":249,"inactive":70,"submitted":170,"avg_premium_submitted":93.7},
-            {"state":"FL","active":204,"inactive":52,"submitted":115,"avg_premium_submitted":87.3}
+            {"state":"CA","active":415,"inactive":106,"submitted":270,"avgPremiumSubmitted":99.5},
+            {"state":"TX","active":249,"inactive":70,"submitted":170,"avgPremiumSubmitted":93.7},
+            {"state":"FL","active":204,"inactive":52,"submitted":115,"avgPremiumSubmitted":87.3}
           ],
           "9m":  [
-            {"state":"CA","active":603,"inactive":153,"submitted":400,"avg_premium_submitted":99.1},
-            {"state":"TX","active":364,"inactive":99,"submitted":250,"avg_premium_submitted":93.6},
-            {"state":"FL","active":295,"inactive":75,"submitted":162,"avg_premium_submitted":87.1}
+            {"state":"CA","active":603,"inactive":153,"submitted":400,"avgPremiumSubmitted":99.1},
+            {"state":"TX","active":364,"inactive":99,"submitted":250,"avgPremiumSubmitted":93.6},
+            {"state":"FL","active":295,"inactive":75,"submitted":162,"avgPremiumSubmitted":87.1}
           ],
-          "all_time": [
-            {"state":"CA","active":823,"inactive":200,"submitted":530,"avg_premium_submitted":100.76},
-            {"state":"TX","active":494,"inactive":129,"submitted":318,"avg_premium_submitted":94.04},
-            {"state":"FL","active":329,"inactive":80,"submitted":212,"avg_premium_submitted":88.29}
+          "allTime": [
+            {"state":"CA","active":823,"inactive":200,"submitted":530,"avgPremiumSubmitted":100.76},
+            {"state":"TX","active":494,"inactive":129,"submitted":318,"avgPremiumSubmitted":94.04},
+            {"state":"FL","active":329,"inactive":80,"submitted":212,"avgPremiumSubmitted":88.29}
           ]
         },
-        "age_band": {
+        "ageBand": {
           "3m":  [
-            {"age_band":"18-29","active":82,"inactive":19,"submitted":54,"avg_premium_submitted":81.9},
-            {"age_band":"30-44","active":165,"inactive":40,"submitted":106,"avg_premium_submitted":91.3},
-            {"age_band":"45-64","active":153,"inactive":38,"submitted":98,"avg_premium_submitted":103.8},
-            {"age_band":"65+","active":47,"inactive":11,"submitted":26,"avg_premium_submitted":115.3}
+            {"ageBand":"18-29","active":82,"inactive":19,"submitted":54,"avgPremiumSubmitted":81.9},
+            {"ageBand":"30-44","active":165,"inactive":40,"submitted":106,"avgPremiumSubmitted":91.3},
+            {"ageBand":"45-64","active":153,"inactive":38,"submitted":98,"avgPremiumSubmitted":103.8},
+            {"ageBand":"65+","active":47,"inactive":11,"submitted":26,"avgPremiumSubmitted":115.3}
           ],
           "6m":  [
-            {"age_band":"18-29","active":164,"inactive":38,"submitted":106,"avg_premium_submitted":81.7},
-            {"age_band":"30-44","active":329,"inactive":76,"submitted":213,"avg_premium_submitted":91.2},
-            {"age_band":"45-64","active":312,"inactive":72,"submitted":194,"avg_premium_submitted":103.7},
-            {"age_band":"65+","active":107,"inactive":24,"submitted":61,"avg_premium_submitted":115.2}
+            {"ageBand":"18-29","active":164,"inactive":38,"submitted":106,"avgPremiumSubmitted":81.7},
+            {"ageBand":"30-44","active":329,"inactive":76,"submitted":213,"avgPremiumSubmitted":91.2},
+            {"ageBand":"45-64","active":312,"inactive":72,"submitted":194,"avgPremiumSubmitted":103.7},
+            {"ageBand":"65+","active":107,"inactive":24,"submitted":61,"avgPremiumSubmitted":115.2}
           ],
           "9m":  [
-            {"age_band":"18-29","active":248,"inactive":57,"submitted":160,"avg_premium_submitted":81.6},
-            {"age_band":"30-44","active":497,"inactive":115,"submitted":320,"avg_premium_submitted":91.2},
-            {"age_band":"45-64","active":471,"inactive":109,"submitted":295,"avg_premium_submitted":103.6},
-            {"age_band":"65+","active":161,"inactive":36,"submitted":98,"avg_premium_submitted":115.2}
+            {"ageBand":"18-29","active":248,"inactive":57,"submitted":160,"avgPremiumSubmitted":81.6},
+            {"ageBand":"30-44","active":497,"inactive":115,"submitted":320,"avgPremiumSubmitted":91.2},
+            {"ageBand":"45-64","active":471,"inactive":109,"submitted":295,"avgPremiumSubmitted":103.6},
+            {"ageBand":"65+","active":161,"inactive":36,"submitted":98,"avgPremiumSubmitted":115.2}
           ],
-          "all_time": [
-            {"age_band":"18-29","active":296,"inactive":72,"submitted":191,"avg_premium_submitted":81.57},
-            {"age_band":"30-44","active":592,"inactive":144,"submitted":382,"avg_premium_submitted":91.16},
-            {"age_band":"45-64","active":560,"inactive":136,"submitted":360,"avg_premium_submitted":103.64},
-            {"age_band":"65+","active":198,"inactive":47,"submitted":127,"avg_premium_submitted":115.15}
+          "allTime": [
+            {"ageBand":"18-29","active":296,"inactive":72,"submitted":191,"avgPremiumSubmitted":81.57},
+            {"ageBand":"30-44","active":592,"inactive":144,"submitted":382,"avgPremiumSubmitted":91.16},
+            {"ageBand":"45-64","active":560,"inactive":136,"submitted":360,"avgPremiumSubmitted":103.64},
+            {"ageBand":"65+","active":198,"inactive":47,"submitted":127,"avgPremiumSubmitted":115.15}
           ]
         }
       },
@@ -185,54 +185,54 @@ const analytics_test_value = {
           "3m":  {"Lapsed": 121, "Terminated": 35, "Pending": 17},
           "6m":  {"Lapsed": 237, "Terminated": 68, "Pending": 34},
           "9m":  {"Lapsed": 349, "Terminated": 100, "Pending": 49},
-          "all_time": {"Lapsed": 455, "Terminated": 130, "Pending": 65}
+          "allTime": {"Lapsed": 455, "Terminated": 130, "Pending": 65}
         },
         "state": {
           "3m":  [
-            {"state":"CA","active":634,"inactive":158,"submitted":391,"avg_premium_submitted":115.7},
-            {"state":"TX","active":380,"inactive":93,"submitted":230,"avg_premium_submitted":108.2},
-            {"state":"FL","active":259,"inactive":65,"submitted":150,"avg_premium_submitted":101.5}
+            {"state":"CA","active":634,"inactive":158,"submitted":391,"avgPremiumSubmitted":115.7},
+            {"state":"TX","active":380,"inactive":93,"submitted":230,"avgPremiumSubmitted":108.2},
+            {"state":"FL","active":259,"inactive":65,"submitted":150,"avgPremiumSubmitted":101.5}
           ],
           "6m":  [
-            {"state":"CA","active":900,"inactive":231,"submitted":540,"avg_premium_submitted":115.5},
-            {"state":"TX","active":540,"inactive":131,"submitted":335,"avg_premium_submitted":108.0},
-            {"state":"FL","active":374,"inactive":100,"submitted":219,"avg_premium_submitted":101.2}
+            {"state":"CA","active":900,"inactive":231,"submitted":540,"avgPremiumSubmitted":115.5},
+            {"state":"TX","active":540,"inactive":131,"submitted":335,"avgPremiumSubmitted":108.0},
+            {"state":"FL","active":374,"inactive":100,"submitted":219,"avgPremiumSubmitted":101.2}
           ],
           "9m":  [
-            {"state":"CA","active":1100,"inactive":282,"submitted":675,"avg_premium_submitted":115.4},
-            {"state":"TX","active":660,"inactive":161,"submitted":420,"avg_premium_submitted":107.8},
-            {"state":"FL","active":484,"inactive":127,"submitted":281,"avg_premium_submitted":100.9}
+            {"state":"CA","active":1100,"inactive":282,"submitted":675,"avgPremiumSubmitted":115.4},
+            {"state":"TX","active":660,"inactive":161,"submitted":420,"avgPremiumSubmitted":107.8},
+            {"state":"FL","active":484,"inactive":127,"submitted":281,"avgPremiumSubmitted":100.9}
           ],
-          "all_time": [
-            {"state":"CA","active":1278,"inactive":325,"submitted":765,"avg_premium_submitted":115.44},
-            {"state":"TX","active":767,"inactive":195,"submitted":467,"avg_premium_submitted":107.74},
-            {"state":"FL","active":511,"inactive":130,"submitted":310,"avg_premium_submitted":101.15}
+          "allTime": [
+            {"state":"CA","active":1278,"inactive":325,"submitted":765,"avgPremiumSubmitted":115.44},
+            {"state":"TX","active":767,"inactive":195,"submitted":467,"avgPremiumSubmitted":107.74},
+            {"state":"FL","active":511,"inactive":130,"submitted":310,"avgPremiumSubmitted":101.15}
           ]
         },
-        "age_band": {
+        "ageBand": {
           "3m":  [
-            {"age_band":"18-29","active":215,"inactive":52,"submitted":132,"avg_premium_submitted":93.6},
-            {"age_band":"30-44","active":435,"inactive":108,"submitted":264,"avg_premium_submitted":104.5},
-            {"age_band":"45-64","active":411,"inactive":103,"submitted":247,"avg_premium_submitted":118.8},
-            {"age_band":"65+","active":145,"inactive":36,"submitted":83,"avg_premium_submitted":132.1}
+            {"ageBand":"18-29","active":215,"inactive":52,"submitted":132,"avgPremiumSubmitted":93.6},
+            {"ageBand":"30-44","active":435,"inactive":108,"submitted":264,"avgPremiumSubmitted":104.5},
+            {"ageBand":"45-64","active":411,"inactive":103,"submitted":247,"avgPremiumSubmitted":118.8},
+            {"ageBand":"65+","active":145,"inactive":36,"submitted":83,"avgPremiumSubmitted":132.1}
           ],
           "6m":  [
-            {"age_band":"18-29","active":430,"inactive":104,"submitted":263,"avg_premium_submitted":93.5},
-            {"age_band":"30-44","active":870,"inactive":209,"submitted":527,"avg_premium_submitted":104.4},
-            {"age_band":"45-64","active":822,"inactive":206,"submitted":494,"avg_premium_submitted":118.7},
-            {"age_band":"65+","active":285,"inactive":67,"submitted":154,"avg_premium_submitted":131.9}
+            {"ageBand":"18-29","active":430,"inactive":104,"submitted":263,"avgPremiumSubmitted":93.5},
+            {"ageBand":"30-44","active":870,"inactive":209,"submitted":527,"avgPremiumSubmitted":104.4},
+            {"ageBand":"45-64","active":822,"inactive":206,"submitted":494,"avgPremiumSubmitted":118.7},
+            {"ageBand":"65+","active":285,"inactive":67,"submitted":154,"avgPremiumSubmitted":131.9}
           ],
           "9m":  [
-            {"age_band":"18-29","active":665,"inactive":160,"submitted":400,"avg_premium_submitted":93.5},
-            {"age_band":"30-44","active":1340,"inactive":322,"submitted":812,"avg_premium_submitted":104.4},
-            {"age_band":"45-64","active":1268,"inactive":319,"submitted":765,"avg_premium_submitted":118.7},
-            {"age_band":"65+","active":450,"inactive":107,"submitted":240,"avg_premium_submitted":131.9}
+            {"ageBand":"18-29","active":665,"inactive":160,"submitted":400,"avgPremiumSubmitted":93.5},
+            {"ageBand":"30-44","active":1340,"inactive":322,"submitted":812,"avgPremiumSubmitted":104.4},
+            {"ageBand":"45-64","active":1268,"inactive":319,"submitted":765,"avgPremiumSubmitted":118.7},
+            {"ageBand":"65+","active":450,"inactive":107,"submitted":240,"avgPremiumSubmitted":131.9}
           ],
-          "all_time": [
-            {"age_band":"18-29","active":460,"inactive":119,"submitted":302,"avg_premium_submitted":93.45},
-            {"age_band":"30-44","active":920,"inactive":234,"submitted":561,"avg_premium_submitted":104.44},
-            {"age_band":"45-64","active":869,"inactive":221,"submitted":530,"avg_premium_submitted":118.73},
-            {"age_band":"65+","active":307,"inactive":76,"submitted":163,"avg_premium_submitted":131.93}
+          "allTime": [
+            {"ageBand":"18-29","active":460,"inactive":119,"submitted":302,"avgPremiumSubmitted":93.45},
+            {"ageBand":"30-44","active":920,"inactive":234,"submitted":561,"avgPremiumSubmitted":104.44},
+            {"ageBand":"45-64","active":869,"inactive":221,"submitted":530,"avgPremiumSubmitted":118.73},
+            {"ageBand":"65+","active":307,"inactive":76,"submitted":163,"avgPremiumSubmitted":131.93}
           ]
         }
       },
@@ -242,54 +242,54 @@ const analytics_test_value = {
           "3m":  {"Lapsed": 66, "Terminated": 19, "Pending": 9},
           "6m":  {"Lapsed": 127, "Terminated": 36, "Pending": 19},
           "9m":  {"Lapsed": 185, "Terminated": 53, "Pending": 26},
-          "all_time": {"Lapsed": 239, "Terminated": 68, "Pending": 34}
+          "allTime": {"Lapsed": 239, "Terminated": 68, "Pending": 34}
         },
         "state": {
           "3m":  [
-            {"state":"CA","active":150,"inactive":43,"submitted":100,"avg_premium_submitted":90.3},
-            {"state":"TX","active":89,"inactive":25,"submitted":60,"avg_premium_submitted":84.2},
-            {"state":"FL","active":67,"inactive":19,"submitted":43,"avg_premium_submitted":77.5}
+            {"state":"CA","active":150,"inactive":43,"submitted":100,"avgPremiumSubmitted":90.3},
+            {"state":"TX","active":89,"inactive":25,"submitted":60,"avgPremiumSubmitted":84.2},
+            {"state":"FL","active":67,"inactive":19,"submitted":43,"avgPremiumSubmitted":77.5}
           ],
           "6m":  [
-            {"state":"CA","active":299,"inactive":85,"submitted":201,"avg_premium_submitted":90.2},
-            {"state":"TX","active":178,"inactive":49,"submitted":120,"avg_premium_submitted":84.2},
-            {"state":"FL","active":134,"inactive":38,"submitted":80,"avg_premium_submitted":77.4}
+            {"state":"CA","active":299,"inactive":85,"submitted":201,"avgPremiumSubmitted":90.2},
+            {"state":"TX","active":178,"inactive":49,"submitted":120,"avgPremiumSubmitted":84.2},
+            {"state":"FL","active":134,"inactive":38,"submitted":80,"avgPremiumSubmitted":77.4}
           ],
           "9m":  [
-            {"state":"CA","active":434,"inactive":123,"submitted":302,"avg_premium_submitted":90.2},
-            {"state":"TX","active":259,"inactive":73,"submitted":182,"avg_premium_submitted":84.2},
-            {"state":"FL","active":197,"inactive":55,"submitted":117,"avg_premium_submitted":77.4}
+            {"state":"CA","active":434,"inactive":123,"submitted":302,"avgPremiumSubmitted":90.2},
+            {"state":"TX","active":259,"inactive":73,"submitted":182,"avgPremiumSubmitted":84.2},
+            {"state":"FL","active":197,"inactive":55,"submitted":117,"avgPremiumSubmitted":77.4}
           ],
-          "all_time": [
-            {"state":"CA","active":569,"inactive":161,"submitted":402,"avg_premium_submitted":90.2},
-            {"state":"TX","active":341,"inactive":97,"submitted":241,"avg_premium_submitted":84.19},
-            {"state":"FL","active":228,"inactive":64,"submitted":158,"avg_premium_submitted":77.41}
+          "allTime": [
+            {"state":"CA","active":569,"inactive":161,"submitted":402,"avgPremiumSubmitted":90.2},
+            {"state":"TX","active":341,"inactive":97,"submitted":241,"avgPremiumSubmitted":84.19},
+            {"state":"FL","active":228,"inactive":64,"submitted":158,"avgPremiumSubmitted":77.41}
           ]
         },
-        "age_band": {
+        "ageBand": {
           "3m":  [
-            {"age_band":"18-29","active":60,"inactive":18,"submitted":40,"avg_premium_submitted":73.1},
-            {"age_band":"30-44","active":121,"inactive":34,"submitted":78,"avg_premium_submitted":85.7},
-            {"age_band":"45-64","active":115,"inactive":32,"submitted":74,"avg_premium_submitted":96.4},
-            {"age_band":"65+","active":40,"inactive":10,"submitted":35,"avg_premium_submitted":103.1}
+            {"ageBand":"18-29","active":60,"inactive":18,"submitted":40,"avgPremiumSubmitted":73.1},
+            {"ageBand":"30-44","active":121,"inactive":34,"submitted":78,"avgPremiumSubmitted":85.7},
+            {"ageBand":"45-64","active":115,"inactive":32,"submitted":74,"avgPremiumSubmitted":96.4},
+            {"ageBand":"65+","active":40,"inactive":10,"submitted":35,"avgPremiumSubmitted":103.1}
           ],
           "6m":  [
-            {"age_band":"18-29","active":120,"inactive":34,"submitted":80,"avg_premium_submitted":73.1},
-            {"age_band":"30-44","active":240,"inactive":68,"submitted":156,"avg_premium_submitted":85.6},
-            {"age_band":"45-64","active":230,"inactive":66,"submitted":148,"avg_premium_submitted":96.3},
-            {"age_band":"65+","active":80,"inactive":20,"submitted":70,"avg_premium_submitted":103.1}
+            {"ageBand":"18-29","active":120,"inactive":34,"submitted":80,"avgPremiumSubmitted":73.1},
+            {"ageBand":"30-44","active":240,"inactive":68,"submitted":156,"avgPremiumSubmitted":85.6},
+            {"ageBand":"45-64","active":230,"inactive":66,"submitted":148,"avgPremiumSubmitted":96.3},
+            {"ageBand":"65+","active":80,"inactive":20,"submitted":70,"avgPremiumSubmitted":103.1}
           ],
           "9m":  [
-            {"age_band":"18-29","active":180,"inactive":52,"submitted":120,"avg_premium_submitted":73.1},
-            {"age_band":"30-44","active":360,"inactive":102,"submitted":234,"avg_premium_submitted":85.6},
-            {"age_band":"45-64","active":345,"inactive":98,"submitted":222,"avg_premium_submitted":96.3},
-            {"age_band":"65+","active":120,"inactive":33,"submitted":90,"avg_premium_submitted":103.1}
+            {"ageBand":"18-29","active":180,"inactive":52,"submitted":120,"avgPremiumSubmitted":73.1},
+            {"ageBand":"30-44","active":360,"inactive":102,"submitted":234,"avgPremiumSubmitted":85.6},
+            {"ageBand":"45-64","active":345,"inactive":98,"submitted":222,"avgPremiumSubmitted":96.3},
+            {"ageBand":"65+","active":120,"inactive":33,"submitted":90,"avgPremiumSubmitted":103.1}
           ],
-          "all_time": [
-            {"age_band":"18-29","active":205,"inactive":56,"submitted":122,"avg_premium_submitted":73.03},
-            {"age_band":"30-44","active":410,"inactive":116,"submitted":287,"avg_premium_submitted":85.61},
-            {"age_band":"45-64","active":387,"inactive":110,"submitted":272,"avg_premium_submitted":96.32},
-            {"age_band":"65+","active":136,"inactive":40,"submitted":120,"avg_premium_submitted":103.09}
+          "allTime": [
+            {"ageBand":"18-29","active":205,"inactive":56,"submitted":122,"avgPremiumSubmitted":73.03},
+            {"ageBand":"30-44","active":410,"inactive":116,"submitted":287,"avgPremiumSubmitted":85.61},
+            {"ageBand":"45-64","active":387,"inactive":110,"submitted":272,"avgPremiumSubmitted":96.32},
+            {"ageBand":"65+","active":136,"inactive":40,"submitted":120,"avgPremiumSubmitted":103.09}
           ]
         }
       }
@@ -550,7 +550,7 @@ export default function AnalyticsTestPage() {
 
 	// Get user data from AuthProvider (already loaded on app mount)
 	const originalUserId = user?.id || null
-	const subscriptionTier = user?.subscription_tier || 'free'
+	const subscriptionTier = user?.subscriptionTier || 'free'
 	const userRole = user?.role || null
 	const hasAnalyticsAccess = subscriptionTier === 'pro' || subscriptionTier === 'expert'
 
@@ -572,7 +572,7 @@ export default function AnalyticsTestPage() {
 			if (!rpcData) throw new Error('No analytics data returned')
 
 			return {
-				analyticsFullData: rpcData as {yourDeals: AnalyticsTestValue | null, downlineProduction: AnalyticsTestValue | null},
+				analyticsFullData: rpcData as {yourDeals: AnalyticsTestValue | null, downline: AnalyticsTestValue | null},
 			}
 		},
 		enabled: !!user?.id && hasAnalyticsAccess,
@@ -616,7 +616,7 @@ export default function AnalyticsTestPage() {
 				const errorData = await response.json().catch(() => ({}))
 				throw new Error(errorData.error || 'Failed to fetch analytics')
 			}
-			return response.json() as Promise<{yourDeals: AnalyticsTestValue | null, downlineProduction: AnalyticsTestValue | null}>
+			return response.json() as Promise<{yourDeals: AnalyticsTestValue | null, downline: AnalyticsTestValue | null}>
 		},
 		enabled: !!targetUserId && hasAnalyticsAccess,
 		staleTime: 5 * 60 * 1000, // 5 minutes
@@ -629,7 +629,7 @@ export default function AnalyticsTestPage() {
 		if (viewMode === 'just_me') {
 			return _analyticsFullData.yourDeals as AnalyticsTestValue
 		} else {
-			return _analyticsFullData.downlineProduction as AnalyticsTestValue
+			return _analyticsFullData.downline as AnalyticsTestValue
 		}
 	}, [viewMode, _analyticsFullData])
 
@@ -645,7 +645,7 @@ export default function AnalyticsTestPage() {
 	const n: number | "all" = timeWindow === "all" ? "all" : Number(timeWindow)
 	const periods = React.useMemo(() => {
 		if (!_analyticsData) return [] as string[]
-		return getLastNPeriods(_analyticsData.series, _analyticsData.meta.period_end, n)
+		return getLastNPeriods(_analyticsData.series, _analyticsData.meta.periodEnd, n)
 	}, [_analyticsData, timeWindow])
 
 	// Aggregations per carrier for current window
@@ -680,9 +680,9 @@ export default function AnalyticsTestPage() {
 			totalSubmittedValue += row.submitted || 0
 		}
 
-		// Calculate placement from windows_by_carrier data
-		const windowKey = timeWindow === "all" ? "all_time" : `${timeWindow}m` as "3m" | "6m" | "9m" | "all_time"
-		const windowsByCarrier = _analyticsData?.windows_by_carrier
+		// Calculate placement from windowsByCarrier data
+		const windowKey = timeWindow === "all" ? "allTime" : `${timeWindow}m` as "3m" | "6m" | "9m" | "allTime"
+		const windowsByCarrier = _analyticsData?.windowsByCarrier
 		
 		if (carrierFilter === "ALL") {
 			// Sum across all carriers
@@ -693,7 +693,7 @@ export default function AnalyticsTestPage() {
 				const windowData = carrierData[windowKey]
 				if (!windowData) continue
 				totalPlaced += (windowData as any).placed || 0
-				totalNotPlaced += (windowData as any).not_placed || 0
+				totalNotPlaced += (windowData as any).notPlaced || 0
 			}
 		} else {
 			// Single carrier
@@ -703,7 +703,7 @@ export default function AnalyticsTestPage() {
 					const windowData = carrierData[windowKey]
 					if (windowData) {
 						totalPlaced = (windowData as any).placed || 0
-						totalNotPlaced = (windowData as any).not_placed || 0
+						totalNotPlaced = (windowData as any).notPlaced || 0
 					}
 				}
 			}
@@ -821,12 +821,12 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 	}, [selectedCarrier, carrierFilter, groupBy])
 
 	// Helper to get window key
-	const windowKey = React.useMemo(() => timeWindow === "all" ? "all_time" : `${timeWindow}m` as "3m" | "6m" | "9m" | "all_time", [timeWindow])
+	const windowKey = React.useMemo(() => timeWindow === "all" ? "allTime" : `${timeWindow}m` as "3m" | "6m" | "9m" | "allTime", [timeWindow])
 
 	// Status breakdown for detail view (when groupBy === "carrier")
 	const statusBreakdown = React.useMemo(() => {
 		if (!detailCarrier || groupBy !== "carrier") return null
-		const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
+		const byCarrier = _analyticsData?.breakdownsOverTime?.byCarrier
 		if (!byCarrier || !(detailCarrier in byCarrier)) return null
 		const carrierData = byCarrier[detailCarrier as keyof typeof byCarrier]?.status?.[windowKey]
 		if (!carrierData) return null
@@ -834,10 +834,10 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		// Use large palette with deterministic mapping so we have many distinct colors
 		const colorForStatus = (status: string) => colorForLabel(status)
 
-		// Only include statuses that exist in the breakdowns_status_over_time data for this carrier
+		// Only include statuses that exist in the breakdownsStatusOverTime data for this carrier
 		const entries: { status: string; count: number; color: string }[] = []
 
-		// Add statuses from breakdowns_status_over_time - only if they exist as keys in carrierData
+		// Add statuses from breakdownsStatusOverTime - only if they exist as keys in carrierData
 		Object.keys(carrierData).forEach((status) => {
 			const count = carrierData[status as keyof typeof carrierData] as number | undefined
 			if (count !== undefined && count >= 0) {
@@ -896,7 +896,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			const stateTotals: Record<string, { submitted: number }> = {}
 
 			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
-				const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
+				const byCarrier = _analyticsData?.breakdownsOverTime?.byCarrier
 				if (!byCarrier || !(carrier in byCarrier)) continue
 				const carrierData = byCarrier[carrier as keyof typeof byCarrier]
 				if (!carrierData) continue
@@ -923,7 +923,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			})
 		} else {
 			// Single carrier
-			const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
+			const byCarrier = _analyticsData?.breakdownsOverTime?.byCarrier
 			if (!byCarrier || !(carrierFilter in byCarrier)) return { wedges: [], total: 0, isFullyUnknown: true, groupedStates: {} }
 			const carrierData = byCarrier[carrierFilter as keyof typeof byCarrier]
 			if (!carrierData) return { wedges: [], total: 0, isFullyUnknown: true, groupedStates: {} }
@@ -1024,16 +1024,16 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		if (carrierFilter === "ALL") {
 			// Sum across all carriers
 			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
-				const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
+				const byCarrier = _analyticsData?.breakdownsOverTime?.byCarrier
 				if (!byCarrier || !(carrier in byCarrier)) continue
 				const carrierData = byCarrier[carrier as keyof typeof byCarrier]
 				if (!carrierData) continue
-				const ageData = carrierData.age_band?.[windowKey]
+				const ageData = carrierData.ageBand?.[windowKey]
 				if (!ageData) continue
 
 				for (const ageEntry of ageData) {
 					// Map old age band to new standardized ranges
-					const mappings = mapAgeBandToStandardRanges(ageEntry.age_band)
+					const mappings = mapAgeBandToStandardRanges(ageEntry.ageBand)
 					for (const mapping of mappings) {
 						if (standardizedRanges[mapping.range] !== undefined) {
 							standardizedRanges[mapping.range] += ageEntry.submitted * mapping.proportion
@@ -1043,16 +1043,16 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			}
 		} else {
 			// Single carrier
-			const byCarrier = _analyticsData?.breakdowns_over_time?.by_carrier
+			const byCarrier = _analyticsData?.breakdownsOverTime?.byCarrier
 			if (!byCarrier || !(carrierFilter in byCarrier)) return { wedges: [], total: 0, isFullyUnknown: true }
 			const carrierData = byCarrier[carrierFilter as keyof typeof byCarrier]
 			if (!carrierData) return { wedges: [], total: 0, isFullyUnknown: true }
-			const ageData = carrierData.age_band?.[windowKey]
+			const ageData = carrierData.ageBand?.[windowKey]
 			if (!ageData) return { wedges: [], total: 0, isFullyUnknown: true }
 
 			for (const entry of ageData) {
 				// Map old age band to new standardized ranges
-				const mappings = mapAgeBandToStandardRanges(entry.age_band)
+				const mappings = mapAgeBandToStandardRanges(entry.ageBand)
 				for (const mapping of mappings) {
 					if (standardizedRanges[mapping.range] !== undefined) {
 						standardizedRanges[mapping.range] += entry.submitted * mapping.proportion
@@ -1114,7 +1114,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		if (carrierFilter === "ALL") {
 			// Sum across all carriers
 			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
-				const windowsByCarrier = _analyticsData?.windows_by_carrier
+				const windowsByCarrier = _analyticsData?.windowsByCarrier
 				if (!windowsByCarrier || !(carrier in windowsByCarrier)) continue
 				const carrierData = windowsByCarrier[carrier as keyof typeof windowsByCarrier]
 				if (!carrierData) continue
@@ -1125,7 +1125,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			}
 		} else {
 			// Single carrier
-			const windowsByCarrier = _analyticsData?.windows_by_carrier
+			const windowsByCarrier = _analyticsData?.windowsByCarrier
 			if (!windowsByCarrier || !(carrierFilter in windowsByCarrier)) return null
 			const carrierData = windowsByCarrier[carrierFilter as keyof typeof windowsByCarrier]
 			if (!carrierData) return null
@@ -1170,38 +1170,38 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		}
 
 		let placed = 0
-		let not_placed = 0
+		let notPlaced = 0
 
 		if (carrierFilter === "ALL") {
 			// Sum across all carriers
 			for (const carrier of (_analyticsData?.meta.carriers ?? [])) {
-				const windowsByCarrier = _analyticsData?.windows_by_carrier
+				const windowsByCarrier = _analyticsData?.windowsByCarrier
 				if (!windowsByCarrier || !(carrier in windowsByCarrier)) continue
 				const carrierData = windowsByCarrier[carrier as keyof typeof windowsByCarrier]
 				if (!carrierData) continue
 				const windowData = carrierData[windowKey]
 				if (!windowData) continue
 				placed += (windowData as any).placed || 0
-				not_placed += (windowData as any).not_placed || 0
+				notPlaced += (windowData as any).notPlaced || 0
 			}
 		} else {
 			// Single carrier
-			const windowsByCarrier = _analyticsData?.windows_by_carrier
+			const windowsByCarrier = _analyticsData?.windowsByCarrier
 			if (!windowsByCarrier || !(carrierFilter in windowsByCarrier)) return null
 			const carrierData = windowsByCarrier[carrierFilter as keyof typeof windowsByCarrier]
 			if (!carrierData) return null
 			const windowData = carrierData[windowKey]
 			if (!windowData) return null
 			placed = (windowData as any).placed || 0
-			not_placed = (windowData as any).not_placed || 0
+			notPlaced = (windowData as any).notPlaced || 0
 		}
 
 		const entries: { label: string; count: number; color: string }[] = [
 			{ label: "Placed", count: placed, color: placementColors["Placed"] },
-			{ label: "Not Placed", count: not_placed, color: placementColors["Not Placed"] },
+			{ label: "Not Placed", count: notPlaced, color: placementColors["Not Placed"] },
 		]
 
-		const total = placed + not_placed
+		const total = placed + notPlaced
 
 		// Always include both entries, even if one has count 0, to ensure pie chart renders correctly
 		let cursor = 0
@@ -1218,7 +1218,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			return piece
 		}).filter(e => e.count > 0) // Filter after calculating angles to ensure proper rendering
 
-		return { wedges, total, placed, not_placed }
+		return { wedges, total, placed, notPlaced }
 	}, [carrierFilter, windowKey, groupBy, _analyticsData])
 
 	// Calculate trend data for line chart
@@ -1284,7 +1284,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		})
 
 		// Determine which field to extract based on metric
-		const getValue = (row: { persistency: number; placement?: number; submitted: number; active: number; avg_premium_submitted: number }) => {
+		const getValue = (row: { persistency: number; placement?: number; submitted: number; active: number; avgPremiumSubmitted: number }) => {
 			switch (trendMetric) {
 				case "persistency":
 					return row.persistency
@@ -1295,7 +1295,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 				case "active":
 					return row.active
 				case "avgprem":
-					return row.avg_premium_submitted
+					return row.avgPremiumSubmitted
 				default:
 					return 0
 			}
@@ -1428,7 +1428,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 						<TabsTrigger value="state" className="rounded-md">
 							<div className="h-4 bg-muted animate-pulse rounded w-16" />
 						</TabsTrigger>
-						<TabsTrigger value="age_band" className="rounded-md">
+						<TabsTrigger value="ageBand" className="rounded-md">
 							<div className="h-4 bg-muted animate-pulse rounded w-16" />
 						</TabsTrigger>
 					</TabsList>
@@ -2760,7 +2760,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 															totalInactive += row.inactive || 0
 															const submitted = row.submitted || 0
 															totalSubmitted += submitted
-															totalPremium += (row.avg_premium_submitted || 0) * submitted
+															totalPremium += (row.avgPremiumSubmitted || 0) * submitted
 															if ((row as any).placement !== undefined && (row as any).placement !== null) {
 																totalPlacement += (row as any).placement
 																placementCount++
@@ -2845,7 +2845,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 															totalSubmitted += submitted
 															totalActive += row.active || 0
 															totalInactive += row.inactive || 0
-															totalPremium += (row.avg_premium_submitted || 0) * submitted
+															totalPremium += (row.avgPremiumSubmitted || 0) * submitted
 															if ((row as any).placement !== undefined && (row as any).placement !== null) {
 																totalPlacement += (row as any).placement
 																placementCount++

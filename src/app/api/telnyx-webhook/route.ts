@@ -353,11 +353,11 @@ export async function POST(request: NextRequest) {
               messageText,
               {
                 id: fullAgent.id,
-                subscription_tier: fullAgent.subscription_tier || 'free',
-                agency_id: fullAgent.agency_id,
-                phone_number: fullAgent.phone_number,
-                first_name: fullAgent.first_name,
-                last_name: fullAgent.last_name
+                subscriptionTier: fullAgent.subscription_tier || 'free',
+                agencyId: fullAgent.agency_id,
+                phoneNumber: fullAgent.phone_number,
+                firstName: fullAgent.first_name,
+                lastName: fullAgent.last_name
               },
               deal
             );

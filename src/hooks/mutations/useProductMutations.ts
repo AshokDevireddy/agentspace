@@ -8,10 +8,10 @@ import { queryKeys } from '../queryKeys'
 
 // Types
 interface CreateProductInput {
-  carrier_id: string
+  carrierId: string
   name: string
-  product_code?: string | null
-  is_active: boolean
+  productCode?: string | null
+  isActive: boolean
 }
 
 interface CreateProductResponse {
@@ -22,8 +22,8 @@ interface CreateProductResponse {
 interface UpdateProductInput {
   productId: string
   name: string
-  product_code?: string | null
-  is_active: boolean
+  productCode?: string | null
+  isActive: boolean
 }
 
 interface DeleteProductInput {
@@ -32,12 +32,12 @@ interface DeleteProductInput {
 
 interface Product {
   id: string
-  carrier_id: string
-  agency_id?: string
+  carrierId: string
+  agencyId?: string
   name: string
-  product_code?: string
-  is_active: boolean
-  created_at?: string
+  productCode?: string
+  isActive: boolean
+  createdAt?: string
 }
 
 /**
@@ -86,9 +86,9 @@ export function useDeleteProduct() {
 
 // Commission-related types
 interface CommissionEntry {
-  position_id: string
-  product_id: string
-  commission_percentage: number
+  positionId: string
+  productId: string
+  commissionPercentage: number
 }
 
 interface SaveCommissionsInput {

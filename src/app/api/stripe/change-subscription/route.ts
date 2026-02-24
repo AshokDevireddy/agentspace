@@ -48,21 +48,8 @@ export async function POST(request: NextRequest) {
 
     // Check if user is trying to change to Expert tier
     if (newTier === 'expert') {
-      // Verify user is admin
-      const { data: userCheckData, error: userCheckError } = await adminSupabase
-        .from('users')
-        .select('is_admin, role')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (userCheckError || !userCheckData) {
-        return NextResponse.json(
-          { error: 'Failed to verify user permissions' },
-          { status: 500 }
-        );
-      }
-
-      const isAdmin = userCheckData.role === 'admin';
+      // Verify user is admin using data from Django profile
+      const isAdmin = userData.is_admin || userData.role === 'admin';
 
       if (!isAdmin) {
         return NextResponse.json(

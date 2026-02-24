@@ -49,20 +49,20 @@ import { useAgencySettings, type AgencySettings } from '@/hooks/useAgencySetting
 interface Carrier {
   id: string
   name: string
-  display_name: string
-  is_active: boolean
-  created_at?: string
+  displayName: string
+  isActive: boolean
+  createdAt?: string
 }
 
 // Types for product data
 interface Product {
   id: string
-  carrier_id: string
-  agency_id?: string
+  carrierId: string
+  agencyId?: string
   name: string
-  product_code?: string
-  is_active: boolean
-  created_at?: string
+  productCode?: string
+  isActive: boolean
+  createdAt?: string
 }
 
 // Use AgencySettings type from hook for agency data
@@ -70,25 +70,25 @@ type Agency = AgencySettings
 
 // Types for position data
 interface Position {
-  position_id: string
+  positionId: string
   name: string
   level: number
   description?: string
-  is_active: boolean
-  created_at?: string
+  isActive: boolean
+  createdAt?: string
 }
 
 // Types for commission data
 interface Commission {
-  commission_id: string
-  position_id: string
-  position_name: string
-  position_level: number
-  product_id: string
-  product_name: string
-  carrier_id: string
-  carrier_name: string
-  commission_percentage: number
+  commissionId: string
+  positionId: string
+  positionName: string
+  positionLevel: number
+  productId: string
+  productName: string
+  carrierId: string
+  carrierName: string
+  commissionPercentage: number
 }
 
 type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "automation" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications" | "sms-templates" | "scoreboard"
@@ -258,27 +258,27 @@ export default function ConfigurationPage() {
 
       // Save color if changed
       if (pendingColor) {
-        updates.primary_color = pendingColor
+        updates.primaryColor = pendingColor
       }
 
       // Save display name if changed
-      if (displayName !== (agency.display_name || agency.name)) {
-        updates.display_name = displayName
+      if (displayName !== (agency.displayName || agency.name)) {
+        updates.displayName = displayName
       }
 
       // Save theme if changed
-      if (agencyThemeMode !== agency.theme_mode) {
-        updates.theme_mode = agencyThemeMode
+      if (agencyThemeMode !== agency.themeMode) {
+        updates.themeMode = agencyThemeMode
       }
 
       // Save whitelabel domain if changed
-      if (whitelabelDomain !== (agency.whitelabel_domain || '')) {
-        updates.whitelabel_domain = whitelabelDomain || null
+      if (whitelabelDomain !== (agency.whitelabelDomain || '')) {
+        updates.whitelabelDomain = whitelabelDomain || null
       }
 
       // Save logo if changed
       if (pendingLogo !== null) {
-        updates.logo_url = pendingLogo || null
+        updates.logoUrl = pendingLogo || null
       }
 
       if (Object.keys(updates).length === 0) {
@@ -304,7 +304,7 @@ export default function ConfigurationPage() {
       setAgency({ ...agency, ...updates })
 
       // Update theme if changed
-      if (updates.theme_mode) {
+      if (updates.themeMode) {
         setTheme(agencyThemeMode)
       }
 
@@ -320,7 +320,7 @@ export default function ConfigurationPage() {
   // Check if there are unsaved changes
   const hasUnsavedChanges = () => {
     if (!agency) return false
-    const currentLogo = agency.logo_url || null
+    const currentLogo = agency.logoUrl || null
     // Logo is changed if pendingLogo is not null and different from current
     // Empty string means removal, so it's a change if current logo exists
     const logoChanged = pendingLogo !== null && (
@@ -328,9 +328,9 @@ export default function ConfigurationPage() {
     )
     return (
       pendingColor !== null ||
-      displayName !== (agency.display_name || agency.name) ||
-      agencyThemeMode !== agency.theme_mode ||
-      whitelabelDomain !== (agency.whitelabel_domain || '') ||
+      displayName !== (agency.displayName || agency.name) ||
+      agencyThemeMode !== agency.themeMode ||
+      whitelabelDomain !== (agency.whitelabelDomain || '') ||
       logoChanged
     )
   }
@@ -346,12 +346,12 @@ export default function ConfigurationPage() {
     setLightness(parseHSL(primaryColor).l)
     
     // Reset display name
-    setDisplayName(agency.display_name || agency.name)
-    setDisplayNameValue(agency.display_name || agency.name)
-    
+    setDisplayName(agency.displayName || agency.name)
+    setDisplayNameValue(agency.displayName || agency.name)
+
     // Reset whitelabel domain
-    setWhitelabelDomain(agency.whitelabel_domain || '')
-    setWhitelabelDomainValue(agency.whitelabel_domain || '')
+    setWhitelabelDomain(agency.whitelabelDomain || '')
+    setWhitelabelDomainValue(agency.whitelabelDomain || '')
     
     // Reset logo
     setPendingLogo(null)
@@ -478,13 +478,13 @@ export default function ConfigurationPage() {
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [editProductFormData, setEditProductFormData] = useState<{
     name: string
-    product_code: string
-    is_active: boolean
-  }>({ name: "", product_code: "", is_active: true })
+    productCode: string
+    isActive: boolean
+  }>({ name: "", productCode: "", isActive: true })
   const [originalProductData, setOriginalProductData] = useState<{
     name: string
-    product_code: string
-    is_active: boolean
+    productCode: string
+    isActive: boolean
   } | null>(null)
   const [deleteProductConfirmOpen, setDeleteProductConfirmOpen] = useState(false)
   const [productToDelete, setProductToDelete] = useState<Product | null>(null)
@@ -497,15 +497,15 @@ export default function ConfigurationPage() {
     name: string
     level: number
     description: string
-    is_active: boolean
-  }>({ name: "", level: 0, description: "", is_active: true })
+    isActive: boolean
+  }>({ name: "", level: 0, description: "", isActive: true })
   const [deletePositionConfirmOpen, setDeletePositionConfirmOpen] = useState(false)
   const [positionToDelete, setPositionToDelete] = useState<Position | null>(null)
 
   // Commissions state
   const [commissions, setCommissions] = useState<Commission[]>([])
   const [selectedCommissionCarrier, setSelectedCommissionCarrier] = useState<string>("")
-  const [commissionEdits, setCommissionEdits] = useState<Array<{ position_id: string; product_id: string; commission_percentage: number }>>([])
+  const [commissionEdits, setCommissionEdits] = useState<Array<{ positionId: string; productId: string; commissionPercentage: number }>>([])
   const [focusedInputKey, setFocusedInputKey] = useState<string | null>(null)
   const [commissionsCarriers, setCommissionsCarriers] = useState<Carrier[]>([])
 
@@ -658,7 +658,7 @@ export default function ConfigurationPage() {
           onSuccess: () => {
             // Update local state
             if (agency) {
-              setAgency({ ...agency, primary_color: color })
+              setAgency({ ...agency, primaryColor: color })
             }
           },
           onError: (error) => {
@@ -701,33 +701,33 @@ export default function ConfigurationPage() {
   useEffect(() => {
     if (agencyData) {
       console.log('[Config Page] Loading agency data into state')
-      console.log('[Config Page] Discord notification enabled:', agencyData.discord_notification_enabled)
-      console.log('[Config Page] Discord notification template:', agencyData.discord_notification_template)
+      console.log('[Config Page] Discord notification enabled:', agencyData.discordNotificationEnabled)
+      console.log('[Config Page] Discord notification template:', agencyData.discordNotificationTemplate)
 
       setAgency(agencyData)
-      setDisplayName(agencyData.display_name || agencyData.name)
-      setPrimaryColor(agencyData.primary_color || "217 91% 60%")
-      setLeadSources(agencyData.lead_sources || [])
-      setAgencyPhoneNumber(agencyData.phone_number || "")
-      setMessagingEnabled(agencyData.messaging_enabled || false)
-      setDiscordWebhookUrl(agencyData.discord_webhook_url || "")
-      setDiscordNotificationEnabled(agencyData.discord_notification_enabled ?? false)
-      setDiscordNotificationTemplate(agencyData.discord_notification_template || "")
-      setDiscordBotUsername(agencyData.discord_bot_username || "AgentSpace Deal Bot")
-      setWhitelabelDomain(agencyData.whitelabel_domain || "")
-      setSmsWelcomeEnabled(agencyData.sms_welcome_enabled ?? true)
-      setSmsWelcomeTemplate(agencyData.sms_welcome_template || "")
-      setSmsBillingReminderEnabled(agencyData.sms_billing_reminder_enabled ?? true)
-      setSmsBillingReminderTemplate(agencyData.sms_billing_reminder_template || "")
-      setSmsLapseReminderEnabled(agencyData.sms_lapse_reminder_enabled ?? true)
-      setSmsLapseReminderTemplate(agencyData.sms_lapse_reminder_template || "")
-      setSmsBirthdayEnabled(agencyData.sms_birthday_enabled ?? true)
-      setSmsBirthdayTemplate(agencyData.sms_birthday_template || "")
-      setLapseEmailEnabled(agencyData.lapse_email_notifications_enabled || false)
-      setLapseEmailSubject(agencyData.lapse_email_subject || "Policy Lapse Alert: {{client_name}}")
-      setLapseEmailBody(agencyData.lapse_email_body || "")
-      setLapseSubjectValue(agencyData.lapse_email_subject || "Policy Lapse Alert: {{client_name}}")
-      setLapseBodyValue(agencyData.lapse_email_body || "")
+      setDisplayName(agencyData.displayName || agencyData.name)
+      setPrimaryColor(agencyData.primaryColor || "217 91% 60%")
+      setLeadSources(agencyData.leadSources || [])
+      setAgencyPhoneNumber(agencyData.phoneNumber || "")
+      setMessagingEnabled(agencyData.messagingEnabled || false)
+      setDiscordWebhookUrl(agencyData.discordWebhookUrl || "")
+      setDiscordNotificationEnabled(agencyData.discordNotificationEnabled ?? false)
+      setDiscordNotificationTemplate(agencyData.discordNotificationTemplate || "")
+      setDiscordBotUsername(agencyData.discordBotUsername || "AgentSpace Deal Bot")
+      setWhitelabelDomain(agencyData.whitelabelDomain || "")
+      setSmsWelcomeEnabled(agencyData.smsWelcomeEnabled ?? true)
+      setSmsWelcomeTemplate(agencyData.smsWelcomeTemplate || "")
+      setSmsBillingReminderEnabled(agencyData.smsBillingReminderEnabled ?? true)
+      setSmsBillingReminderTemplate(agencyData.smsBillingReminderTemplate || "")
+      setSmsLapseReminderEnabled(agencyData.smsLapseReminderEnabled ?? true)
+      setSmsLapseReminderTemplate(agencyData.smsLapseReminderTemplate || "")
+      setSmsBirthdayEnabled(agencyData.smsBirthdayEnabled ?? true)
+      setSmsBirthdayTemplate(agencyData.smsBirthdayTemplate || "")
+      setLapseEmailEnabled(agencyData.lapseEmailNotificationsEnabled || false)
+      setLapseEmailSubject(agencyData.lapseEmailSubject || "Policy Lapse Alert: {{client_name}}")
+      setLapseEmailBody(agencyData.lapseEmailBody || "")
+      setLapseSubjectValue(agencyData.lapseEmailSubject || "Policy Lapse Alert: {{client_name}}")
+      setLapseBodyValue(agencyData.lapseEmailBody || "")
     }
   }, [agencyData])
 
@@ -786,10 +786,10 @@ export default function ConfigurationPage() {
 
   // Sync theme state when user changes (e.g., after login or theme update)
   useEffect(() => {
-    if (user?.theme_mode) {
-      setAgencyThemeMode(user.theme_mode)
+    if (user?.themeMode) {
+      setAgencyThemeMode(user.themeMode)
     }
-  }, [user?.theme_mode])
+  }, [user?.themeMode])
 
   // Close carrier dropdown when clicking outside
   useEffect(() => {
@@ -813,7 +813,7 @@ export default function ConfigurationPage() {
   // Filter products when carrier is selected
   useEffect(() => {
     if (selectedCarrier && allProducts.length > 0) {
-      const filteredProducts = allProducts.filter(product => product.carrier_id === selectedCarrier)
+      const filteredProducts = allProducts.filter(product => product.carrierId === selectedCarrier)
       setProducts(filteredProducts)
     } else {
       setProducts([])
@@ -836,7 +836,7 @@ export default function ConfigurationPage() {
         agencyId: agency.id,
         data: {
           name: displayNameValue.trim(),
-          display_name: displayNameValue.trim()
+          displayName: displayNameValue.trim()
         },
       })
 
@@ -895,7 +895,7 @@ export default function ConfigurationPage() {
       console.log('Upload successful:', result)
 
       // Add timestamp query parameter to bust browser and CDN cache
-      const cacheBustedUrl = `${result.logo_url}?t=${Date.now()}`
+      const cacheBustedUrl = `${result.logoUrl}?t=${Date.now()}`
 
       console.log('Public URL generated:', cacheBustedUrl)
 
@@ -903,7 +903,7 @@ export default function ConfigurationPage() {
       setPendingLogo(cacheBustedUrl)
 
       // Extract dominant color from the uploaded image (use original URL without cache param)
-      await extractDominantColor(result.logo_url)
+      await extractDominantColor(result.logoUrl)
     } catch (error) {
       console.error('Error uploading logo:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
@@ -1041,7 +1041,7 @@ export default function ConfigurationPage() {
       const newColor = getDefaultPrimaryColor(newResolved as 'light' | 'dark')
       setPrimaryColor(newColor)
       setPendingColor(null)
-      setAgency({ ...agency, primary_color: newColor })
+      setAgency({ ...agency, primaryColor: newColor })
       document.documentElement.style.setProperty('--primary', newColor)
       const textColor = getContrastTextColor(newColor)
       document.documentElement.style.setProperty('--primary-foreground', textColor === 'white' ? '0 0% 100%' : '0 0% 0%')
@@ -1082,11 +1082,11 @@ export default function ConfigurationPage() {
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { whitelabel_domain: whitelabelDomainValue.trim() || null },
+        data: { whitelabelDomain: whitelabelDomainValue.trim() || null },
       })
 
       setWhitelabelDomain(whitelabelDomainValue.trim())
-      setAgency({ ...agency, whitelabel_domain: whitelabelDomainValue.trim() || null })
+      setAgency({ ...agency, whitelabelDomain: whitelabelDomainValue.trim() || null })
       setEditingWhitelabelDomain(false)
     } catch (error) {
       console.error('Error updating whitelabel domain:', error)
@@ -1198,16 +1198,16 @@ export default function ConfigurationPage() {
     name: string
     level: number
     description: string
-    is_active: boolean
+    isActive: boolean
   } | null>(null)
 
   const handleEditPosition = (position: Position) => {
-    setEditingPositionId(position.position_id)
+    setEditingPositionId(position.positionId)
     const formData = {
       name: position.name,
       level: position.level,
       description: position.description || "",
-      is_active: position.is_active
+      isActive: position.isActive
     }
     setEditPositionFormData(formData)
     setOriginalPositionData(formData)
@@ -1238,14 +1238,14 @@ export default function ConfigurationPage() {
       return
     }
 
-    const shouldSyncCommissions = originalPositionData && editPositionFormData.is_active !== originalPositionData.is_active
+    const shouldSyncCommissions = originalPositionData && editPositionFormData.isActive !== originalPositionData.isActive
 
     console.log('[Position Update] Saving position:', {
       positionId: editingPositionId,
       positionIdLength: editingPositionId.length,
       name: editPositionFormData.name.trim(),
       level: editPositionFormData.level,
-      is_active: editPositionFormData.is_active,
+      isActive: editPositionFormData.isActive,
     })
 
     updatePositionMutation.mutate(
@@ -1254,7 +1254,7 @@ export default function ConfigurationPage() {
         name: editPositionFormData.name.trim(),
         level: editPositionFormData.level,
         description: editPositionFormData.description || null,
-        is_active: editPositionFormData.is_active,
+        isActive: editPositionFormData.isActive,
       },
       {
         onSuccess: async () => {
@@ -1284,7 +1284,7 @@ export default function ConfigurationPage() {
     if (!positionToDelete) return
 
     deletePositionMutation.mutate(
-      { positionId: positionToDelete.position_id },
+      { positionId: positionToDelete.positionId },
       {
         onSuccess: () => {
           setDeletePositionConfirmOpen(false)
@@ -1302,7 +1302,7 @@ export default function ConfigurationPage() {
   const handleCommissionChange = (positionId: string, productId: string, value: string, originalValue?: number) => {
     // Allow empty string while typing
     if (value === '') {
-      setCommissionEdits(prev => prev.filter(edit => !(edit.position_id === positionId && edit.product_id === productId)))
+      setCommissionEdits(prev => prev.filter(edit => !(edit.positionId === positionId && edit.productId === productId)))
       return
     }
 
@@ -1319,13 +1319,13 @@ export default function ConfigurationPage() {
       if (numValue !== original) {
         setCommissionEdits(prev => {
           // Remove existing edit for this position/product combo if it exists
-          const filtered = prev.filter(edit => !(edit.position_id === positionId && edit.product_id === productId))
+          const filtered = prev.filter(edit => !(edit.positionId === positionId && edit.productId === productId))
           // Add the new edit
-          return [...filtered, { position_id: positionId, product_id: productId, commission_percentage: numValue }]
+          return [...filtered, { positionId: positionId, productId: productId, commissionPercentage: numValue }]
         })
       } else {
         // Value matches original, remove from edits
-        setCommissionEdits(prev => prev.filter(edit => !(edit.position_id === positionId && edit.product_id === productId)))
+        setCommissionEdits(prev => prev.filter(edit => !(edit.positionId === positionId && edit.productId === productId)))
       }
     }
   }
@@ -1390,7 +1390,7 @@ export default function ConfigurationPage() {
       console.log('Auto-syncing commissions for all active carriers...')
 
       // Sync for all active carriers
-      const activeCarriers = carriers.filter(c => c.is_active)
+      const activeCarriers = carriers.filter(c => c.isActive)
       for (const carrier of activeCarriers) {
         await syncCommissionsForCarrier(carrier.id, false)
       }
@@ -1439,11 +1439,11 @@ export default function ConfigurationPage() {
   const handleProductCreated = async (newProduct: Product) => {
     setAllProducts(prev => [...prev, newProduct])
 
-    if (newProduct.carrier_id === selectedCarrier) {
+    if (newProduct.carrierId === selectedCarrier) {
       setProducts(prev => [...prev, newProduct])
     }
 
-    const existingCarrier = carriers.find(carrier => carrier.id === newProduct.carrier_id)
+    const existingCarrier = carriers.find(carrier => carrier.id === newProduct.carrierId)
     if (!existingCarrier) {
       try {
         const response = await fetch('/api/carriers', {
@@ -1464,15 +1464,15 @@ export default function ConfigurationPage() {
     }
 
     // Auto-sync commissions for this product's carrier (always sync, even if inactive)
-    console.log(`Product created/updated for carrier ${newProduct.carrier_id}, auto-syncing commissions...`)
-    await syncCommissionsForCarrier(newProduct.carrier_id, false)
+    console.log(`Product created/updated for carrier ${newProduct.carrierId}, auto-syncing commissions...`)
+    await syncCommissionsForCarrier(newProduct.carrierId, false)
   }
 
   const handleEditProduct = (product: Product) => {
     const formData = {
       name: product.name,
-      product_code: product.product_code || "",
-      is_active: product.is_active
+      productCode: product.productCode || "",
+      isActive: product.isActive
     }
     setEditingProductId(product.id)
     setEditProductFormData(formData)
@@ -1481,7 +1481,7 @@ export default function ConfigurationPage() {
 
   const handleCancelProductEdit = () => {
     setEditingProductId(null)
-    setEditProductFormData({ name: "", product_code: "", is_active: true })
+    setEditProductFormData({ name: "", productCode: "", isActive: true })
     setOriginalProductData(null)
   }
 
@@ -1490,34 +1490,34 @@ export default function ConfigurationPage() {
 
     const hasChanges = (
       editProductFormData.name !== originalProductData.name ||
-      editProductFormData.product_code !== originalProductData.product_code ||
-      editProductFormData.is_active !== originalProductData.is_active
+      editProductFormData.productCode !== originalProductData.productCode ||
+      editProductFormData.isActive !== originalProductData.isActive
     )
 
     if (!hasChanges) {
       setEditingProductId(null)
-      setEditProductFormData({ name: "", product_code: "", is_active: true })
+      setEditProductFormData({ name: "", productCode: "", isActive: true })
       setOriginalProductData(null)
       return
     }
 
-    const wasActivationChange = editProductFormData.is_active !== originalProductData.is_active
-    const productCarrierId = allProducts.find(p => p.id === editingProductId)?.carrier_id
+    const wasActivationChange = editProductFormData.isActive !== originalProductData.isActive
+    const productCarrierId = allProducts.find(p => p.id === editingProductId)?.carrierId
     const productIdToUpdate = editingProductId
 
     updateProductMutation.mutate(
       {
         productId: editingProductId,
         name: editProductFormData.name,
-        product_code: editProductFormData.product_code || null,
-        is_active: editProductFormData.is_active,
+        productCode: editProductFormData.productCode || null,
+        isActive: editProductFormData.isActive,
       },
       {
         onSuccess: async () => {
           const updatedProduct = {
             name: editProductFormData.name,
-            product_code: editProductFormData.product_code || undefined,
-            is_active: editProductFormData.is_active,
+            productCode: editProductFormData.productCode || undefined,
+            isActive: editProductFormData.isActive,
           }
 
           setAllProducts(prev =>
@@ -1537,7 +1537,7 @@ export default function ConfigurationPage() {
           )
 
           setEditingProductId(null)
-          setEditProductFormData({ name: "", product_code: "", is_active: true })
+          setEditProductFormData({ name: "", productCode: "", isActive: true })
           setOriginalProductData(null)
 
           // Auto-sync commissions if product was activated/deactivated
@@ -1563,7 +1563,7 @@ export default function ConfigurationPage() {
     if (!productToDelete) return
 
     const productId = productToDelete.id
-    const productCarrierId = productToDelete.carrier_id
+    const productCarrierId = productToDelete.carrierId
 
     deleteProductMutation.mutate(
       { productId },
@@ -1573,7 +1573,7 @@ export default function ConfigurationPage() {
           setProducts(prev => prev.filter(product => product.id !== productId))
 
           const remainingProductsForCarrier = allProducts.filter(
-            product => product.id !== productId && product.carrier_id === productCarrierId
+            product => product.id !== productId && product.carrierId === productCarrierId
           )
 
           // If no remaining products for carrier, invalidate carriers query to refresh
@@ -1610,7 +1610,7 @@ export default function ConfigurationPage() {
   const handleCloseProductsModal = () => {
     setProductsModalOpen(false)
     setEditingProductId(null)
-    setEditProductFormData({ name: "", product_code: "", is_active: true })
+    setEditProductFormData({ name: "", productCode: "", isActive: true })
     setOriginalProductData(null)
   }
 
@@ -1625,7 +1625,7 @@ export default function ConfigurationPage() {
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { lead_sources: updatedLeadSources },
+        data: { leadSources: updatedLeadSources },
       })
 
       setLeadSources(updatedLeadSources)
@@ -1654,7 +1654,7 @@ export default function ConfigurationPage() {
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { lead_sources: updatedLeadSources },
+        data: { leadSources: updatedLeadSources },
       })
 
       setLeadSources(updatedLeadSources)
@@ -1686,7 +1686,7 @@ export default function ConfigurationPage() {
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { lead_sources: updatedLeadSources },
+        data: { leadSources: updatedLeadSources },
       })
 
       setLeadSources(updatedLeadSources)
@@ -1712,7 +1712,7 @@ export default function ConfigurationPage() {
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { phone_number: phoneNumberValue.trim() || null },
+        data: { phoneNumber: phoneNumberValue.trim() || null },
       })
 
       setAgencyPhoneNumber(phoneNumberValue.trim())
@@ -1740,7 +1740,7 @@ export default function ConfigurationPage() {
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { messaging_enabled: enabled },
+        data: { messagingEnabled: enabled },
       })
 
       setMessagingEnabled(enabled)
@@ -1767,7 +1767,7 @@ export default function ConfigurationPage() {
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { discord_webhook_url: discordWebhookValue.trim() || null },
+        data: { discordWebhookUrl: discordWebhookValue.trim() || null },
       })
 
       setDiscordWebhookUrl(discordWebhookValue.trim())
@@ -1795,7 +1795,7 @@ export default function ConfigurationPage() {
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { lapse_email_notifications_enabled: enabled },
+        data: { lapseEmailNotificationsEnabled: enabled },
       })
 
       setLapseEmailEnabled(enabled)
@@ -1822,7 +1822,7 @@ export default function ConfigurationPage() {
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { lapse_email_subject: lapseSubjectValue.trim() },
+        data: { lapseEmailSubject: lapseSubjectValue.trim() },
       })
 
       setLapseEmailSubject(lapseSubjectValue.trim())
@@ -1855,7 +1855,7 @@ export default function ConfigurationPage() {
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { lapse_email_body: lapseBodyValue },
+        data: { lapseEmailBody: lapseBodyValue },
       })
 
       setLapseEmailBody(lapseBodyValue)
@@ -1925,14 +1925,14 @@ export default function ConfigurationPage() {
     try {
       setSavingLapseEmail(true)
 
-      const updates: { lapse_email_subject?: string; lapse_email_body?: string } = {}
+      const updates: { lapseEmailSubject?: string; lapseEmailBody?: string } = {}
 
       if (lapseSubjectValue.trim() && lapseSubjectValue.trim() !== lapseEmailSubject) {
-        updates.lapse_email_subject = lapseSubjectValue.trim()
+        updates.lapseEmailSubject = lapseSubjectValue.trim()
       }
 
       if (lapseBodyValue !== lapseEmailBody) {
-        updates.lapse_email_body = lapseBodyValue
+        updates.lapseEmailBody = lapseBodyValue
       }
 
       if (Object.keys(updates).length === 0) {
@@ -1945,11 +1945,11 @@ export default function ConfigurationPage() {
         data: updates,
       })
 
-      if (updates.lapse_email_subject) {
-        setLapseEmailSubject(updates.lapse_email_subject)
+      if (updates.lapseEmailSubject) {
+        setLapseEmailSubject(updates.lapseEmailSubject)
       }
-      if (updates.lapse_email_body !== undefined) {
-        setLapseEmailBody(updates.lapse_email_body)
+      if (updates.lapseEmailBody !== undefined) {
+        setLapseEmailBody(updates.lapseEmailBody)
       }
 
       setHasUnsavedEmailChanges(false)
@@ -2048,7 +2048,7 @@ export default function ConfigurationPage() {
       const clientJobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
       // Resolve agencyId from current user context
-      const agencyId = user?.agency_id
+      const agencyId = user?.agencyId
 
       if (!agencyId) {
         showError('Could not resolve your agency. Please refresh and try again.')
@@ -2175,43 +2175,43 @@ export default function ConfigurationPage() {
     if (!selectedCommissionCarrier || commissions.length === 0) return null
 
     // Filter commissions for selected carrier
-    const carrierCommissions = commissions.filter(c => c.carrier_id === selectedCommissionCarrier)
+    const carrierCommissions = commissions.filter(c => c.carrierId === selectedCommissionCarrier)
 
     if (carrierCommissions.length === 0) return null
 
     console.log('[Commission Grid] Building grid from commissions:', {
       totalCommissions: carrierCommissions.length,
       sampleCommission: carrierCommissions[0] ? {
-        commission_id: carrierCommissions[0].commission_id,
-        position_id: carrierCommissions[0].position_id,
-        position_id_length: carrierCommissions[0].position_id?.length,
-        position_id_type: typeof carrierCommissions[0].position_id,
-        product_id: carrierCommissions[0].product_id,
-        product_id_length: carrierCommissions[0].product_id?.length,
-        product_id_type: typeof carrierCommissions[0].product_id,
+        commissionId: carrierCommissions[0].commissionId,
+        positionId: carrierCommissions[0].positionId,
+        positionIdLength: carrierCommissions[0].positionId?.length,
+        positionIdType: typeof carrierCommissions[0].positionId,
+        productId: carrierCommissions[0].productId,
+        productIdLength: carrierCommissions[0].productId?.length,
+        productIdType: typeof carrierCommissions[0].productId,
       } : null,
       allPositionIds: carrierCommissions.map(c => ({
-        id: c.position_id,
-        length: c.position_id?.length
+        id: c.positionId,
+        length: c.positionId?.length
       })),
       allProductIds: carrierCommissions.map(c => ({
-        id: c.product_id,
-        length: c.product_id?.length
+        id: c.productId,
+        length: c.productId?.length
       })),
     })
 
     // Get unique positions and products
-    const uniquePositions = Array.from(new Set(carrierCommissions.map(c => c.position_id)))
+    const uniquePositions = Array.from(new Set(carrierCommissions.map(c => c.positionId)))
       .map(posId => {
-        const comm = carrierCommissions.find(c => c.position_id === posId)!
-        return { id: posId, name: comm.position_name, level: comm.position_level }
+        const comm = carrierCommissions.find(c => c.positionId === posId)!
+        return { id: posId, name: comm.positionName, level: comm.positionLevel }
       })
       .sort((a, b) => b.level - a.level) // Sort by level descending
 
-    const uniqueProducts = Array.from(new Set(carrierCommissions.map(c => c.product_id)))
+    const uniqueProducts = Array.from(new Set(carrierCommissions.map(c => c.productId)))
       .map(prodId => {
-        const comm = carrierCommissions.find(c => c.product_id === prodId)!
-        return { id: prodId, name: comm.product_name }
+        const comm = carrierCommissions.find(c => c.productId === prodId)!
+        return { id: prodId, name: comm.productName }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
 
@@ -2220,12 +2220,12 @@ export default function ConfigurationPage() {
       productsCount: uniqueProducts.length,
       samplePosition: uniquePositions[0] ? {
         id: uniquePositions[0].id,
-        id_length: uniquePositions[0].id?.length,
+        idLength: uniquePositions[0].id?.length,
         name: uniquePositions[0].name,
       } : null,
       sampleProduct: uniqueProducts[0] ? {
         id: uniqueProducts[0].id,
-        id_length: uniqueProducts[0].id?.length,
+        idLength: uniqueProducts[0].id?.length,
         name: uniqueProducts[0].name,
       } : null,
     })
@@ -2519,15 +2519,15 @@ export default function ConfigurationPage() {
                               uploadingLogo && "opacity-50 cursor-not-allowed"
                             )}
                           >
-                            {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) ? (
+                            {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logoUrl) ? (
                               <div className="relative w-full h-full flex items-center justify-center">
                                 <img
-                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url || undefined}
+                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logoUrl || undefined}
                                   alt="Agency Logo"
                                   className="max-w-full max-h-full object-contain p-2"
                                   crossOrigin="anonymous"
                                   onError={(e) => {
-                                    console.error('Error loading logo:', pendingLogo || agency?.logo_url)
+                                    console.error('Error loading logo:', pendingLogo || agency?.logoUrl)
                                     e.currentTarget.style.display = 'none'
                                   }}
                                 />
@@ -2567,7 +2567,7 @@ export default function ConfigurationPage() {
                               ) : (
                                 <>
                                   <Upload className="h-4 w-4 mr-2" />
-                                  {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) ? 'Replace Logo' : 'Upload Logo'}
+                                  {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logoUrl) ? 'Replace Logo' : 'Upload Logo'}
                                 </>
                               )}
                             </label>
@@ -2926,9 +2926,9 @@ export default function ConfigurationPage() {
                           </p>
                           <div className="bg-sidebar-background rounded-lg p-6 border-2 border-sidebar-border">
                             <div className="flex items-center space-x-3">
-                              {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url) ? (
+                              {(pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logoUrl) ? (
                                 <img
-                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logo_url || undefined}
+                                  src={pendingLogo && pendingLogo !== '' ? pendingLogo : agency?.logoUrl || undefined}
                                   alt="Logo Preview"
                                   className="w-10 h-10 rounded-xl object-contain"
                                   crossOrigin="anonymous"
@@ -3072,7 +3072,7 @@ export default function ConfigurationPage() {
                         >
                           <div className="flex items-center justify-center h-24">
                             <span className="text-lg font-semibold text-foreground dark:text-gray-200 group-hover:text-primary dark:group-hover:text-gray-200 text-center">
-                              {carrier.display_name}
+                              {carrier.displayName}
                             </span>
                           </div>
                         </button>
@@ -3157,9 +3157,9 @@ export default function ConfigurationPage() {
                           </tr>
                         ) : (
                           positions.map((position) => (
-                            <tr key={position.position_id} className="border-b border-border hover:bg-accent/30 dark:hover:bg-accent/20 transition-colors">
+                            <tr key={position.positionId} className="border-b border-border hover:bg-accent/30 dark:hover:bg-accent/20 transition-colors">
                               <td className="py-5 px-6">
-                                {editingPositionId === position.position_id ? (
+                                {editingPositionId === position.positionId ? (
                                   <Input
                                     type="text"
                                     value={editPositionFormData.name}
@@ -3171,7 +3171,7 @@ export default function ConfigurationPage() {
                                 )}
                               </td>
                               <td className="py-5 px-6">
-                                {editingPositionId === position.position_id ? (
+                                {editingPositionId === position.positionId ? (
                                   <Input
                                     type="number"
                                     value={editPositionFormData.level}
@@ -3183,7 +3183,7 @@ export default function ConfigurationPage() {
                                 )}
                               </td>
                               <td className="py-5 px-6">
-                                {editingPositionId === position.position_id ? (
+                                {editingPositionId === position.positionId ? (
                                   <Input
                                     type="text"
                                     value={editPositionFormData.description}
@@ -3196,27 +3196,27 @@ export default function ConfigurationPage() {
                                 )}
                               </td>
                               <td className="py-5 px-6">
-                                {editingPositionId === position.position_id ? (
+                                {editingPositionId === position.positionId ? (
                                   <div className="flex items-center space-x-2">
                                     <Checkbox
-                                      checked={editPositionFormData.is_active}
-                                      onCheckedChange={(checked) => setEditPositionFormData(prev => ({ ...prev, is_active: checked as boolean }))}
+                                      checked={editPositionFormData.isActive}
+                                      onCheckedChange={(checked) => setEditPositionFormData(prev => ({ ...prev, isActive: checked as boolean }))}
                                     />
-                                    <span className="text-sm">{editPositionFormData.is_active ? "Active" : "Inactive"}</span>
+                                    <span className="text-sm">{editPositionFormData.isActive ? "Active" : "Inactive"}</span>
                                   </div>
                                 ) : (
                                   <span className={`px-3 py-1 rounded-full text-sm font-bold ${
-                                    position.is_active
+                                    position.isActive
                                       ? "bg-green-100 text-green-800 border border-green-300"
                                       : "bg-red-100 text-red-800 border border-red-300"
                                   }`}>
-                                    {position.is_active ? "Active" : "Inactive"}
+                                    {position.isActive ? "Active" : "Inactive"}
                                   </span>
                                 )}
                               </td>
                               <td className="py-5 px-6">
                                 <div className="flex items-center justify-end space-x-2 relative z-10">
-                                  {editingPositionId === position.position_id ? (
+                                  {editingPositionId === position.positionId ? (
                                     <>
                                       <button
                                         onClick={(e) => {
@@ -3316,7 +3316,7 @@ export default function ConfigurationPage() {
                           ) : (
                             commissionsCarriers.map((carrier) => (
                               <option key={carrier.id} value={carrier.id}>
-                                {carrier.display_name}
+                                {carrier.displayName}
                               </option>
                             ))
                           )}
@@ -3400,30 +3400,30 @@ export default function ConfigurationPage() {
                                   </td>
                                   {gridData.products.map((product) => {
                                     const commission = gridData.commissions.find(
-                                      c => c.position_id === position.id && c.product_id === product.id
+                                      c => c.positionId === position.id && c.productId === product.id
                                     )
                                     
                                     // Log first entry to see what IDs look like when creating keys
                                     if (position.id === gridData.positions[0]?.id && product.id === gridData.products[0]?.id) {
                                       console.log('[Commission Table] Creating key for first cell:', {
-                                        position_id: position.id,
-                                        position_id_length: position.id?.length,
-                                        position_id_type: typeof position.id,
-                                        product_id: product.id,
-                                        product_id_length: product.id?.length,
-                                        product_id_type: typeof product.id,
-                                        commission_position_id: commission?.position_id,
-                                        commission_position_id_length: commission?.position_id?.length,
-                                        commission_product_id: commission?.product_id,
-                                        commission_product_id_length: commission?.product_id?.length,
+                                        positionId: position.id,
+                                        positionIdLength: position.id?.length,
+                                        positionIdType: typeof position.id,
+                                        productId: product.id,
+                                        productIdLength: product.id?.length,
+                                        productIdType: typeof product.id,
+                                        commissionPositionId: commission?.positionId,
+                                        commissionPositionIdLength: commission?.positionId?.length,
+                                        commissionProductId: commission?.productId,
+                                        commissionProductIdLength: commission?.productId?.length,
                                       })
                                     }
                                     
                                     const key = `${position.id}-${product.id}`
                                     const editedValue = commissionEdits.find(
-                                      edit => edit.position_id === position.id && edit.product_id === product.id
-                                    )?.commission_percentage
-                                    const originalValue = commission?.commission_percentage
+                                      edit => edit.positionId === position.id && edit.productId === product.id
+                                    )?.commissionPercentage
+                                    const originalValue = commission?.commissionPercentage
                                     const currentValue = editedValue !== undefined ? editedValue : originalValue
                                     const isFocused = focusedInputKey === key
                                     const isZero = currentValue === 0 || currentValue === undefined || currentValue === null
@@ -3795,7 +3795,7 @@ export default function ConfigurationPage() {
                     </p>
                   </div>
                   <SmsAutomationSettings
-                    smsAutoSendEnabled={agencyData?.sms_auto_send_enabled ?? true}
+                    smsAutoSendEnabled={agencyData?.smsAutoSendEnabled ?? true}
                     onAutoSendEnabledChange={async (enabled) => {
                       if (!agencyData?.id) return
                       try {
@@ -3803,7 +3803,7 @@ export default function ConfigurationPage() {
                           method: 'PATCH',
                           credentials: 'include',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ sms_auto_send_enabled: enabled }),
+                          body: JSON.stringify({ smsAutoSendEnabled: enabled }),
                         })
                         queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
                         showSuccess(`SMS auto-send ${enabled ? 'enabled' : 'disabled'}`)
@@ -3823,7 +3823,7 @@ export default function ConfigurationPage() {
                           method: 'PATCH',
                           credentials: 'include',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ agent_id: agentId, sms_auto_send_enabled: value }),
+                          body: JSON.stringify({ agentId: agentId, smsAutoSendEnabled: value }),
                         })
                         queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgentAutoSend() })
                       } catch {
@@ -4427,7 +4427,7 @@ export default function ConfigurationPage() {
 
                             saveCarrierLoginMutation.mutate(
                               {
-                                carrier_name: selectedCarrierLogin,
+                                carrierName: selectedCarrierLogin,
                                 login: carrierLoginUsername,
                                 password: carrierLoginPassword,
                               },
@@ -4482,8 +4482,8 @@ export default function ConfigurationPage() {
                       enabled={smsWelcomeEnabled}
                       template={smsWelcomeTemplate}
                       defaultTemplate={DEFAULT_SMS_TEMPLATES.welcome}
-                      dbFieldEnabled="sms_welcome_enabled"
-                      dbFieldTemplate="sms_welcome_template"
+                      dbFieldEnabled="smsWelcomeEnabled"
+                      dbFieldTemplate="smsWelcomeTemplate"
                       agencyId={agency?.id}
                       onEnabledChange={setSmsWelcomeEnabled}
                       onTemplateChange={setSmsWelcomeTemplate}
@@ -4498,8 +4498,8 @@ export default function ConfigurationPage() {
                       enabled={smsBillingReminderEnabled}
                       template={smsBillingReminderTemplate}
                       defaultTemplate={DEFAULT_SMS_TEMPLATES.billing_reminder}
-                      dbFieldEnabled="sms_billing_reminder_enabled"
-                      dbFieldTemplate="sms_billing_reminder_template"
+                      dbFieldEnabled="smsBillingReminderEnabled"
+                      dbFieldTemplate="smsBillingReminderTemplate"
                       agencyId={agency?.id}
                       onEnabledChange={setSmsBillingReminderEnabled}
                       onTemplateChange={setSmsBillingReminderTemplate}
@@ -4514,8 +4514,8 @@ export default function ConfigurationPage() {
                       enabled={smsLapseReminderEnabled}
                       template={smsLapseReminderTemplate}
                       defaultTemplate={DEFAULT_SMS_TEMPLATES.lapse_reminder}
-                      dbFieldEnabled="sms_lapse_reminder_enabled"
-                      dbFieldTemplate="sms_lapse_reminder_template"
+                      dbFieldEnabled="smsLapseReminderEnabled"
+                      dbFieldTemplate="smsLapseReminderTemplate"
                       agencyId={agency?.id}
                       onEnabledChange={setSmsLapseReminderEnabled}
                       onTemplateChange={setSmsLapseReminderTemplate}
@@ -4530,8 +4530,8 @@ export default function ConfigurationPage() {
                       enabled={smsBirthdayEnabled}
                       template={smsBirthdayTemplate}
                       defaultTemplate={DEFAULT_SMS_TEMPLATES.birthday}
-                      dbFieldEnabled="sms_birthday_enabled"
-                      dbFieldTemplate="sms_birthday_template"
+                      dbFieldEnabled="smsBirthdayEnabled"
+                      dbFieldTemplate="smsBirthdayTemplate"
                       agencyId={agency?.id}
                       onEnabledChange={setSmsBirthdayEnabled}
                       onTemplateChange={setSmsBirthdayTemplate}
@@ -4560,7 +4560,7 @@ export default function ConfigurationPage() {
                         </p>
                       </div>
                       <Switch
-                        checked={agencyData?.scoreboard_agent_visibility ?? false}
+                        checked={agencyData?.scoreboardAgentVisibility ?? false}
                         onCheckedChange={async (enabled) => {
                           if (!agencyData?.id) return
                           try {
@@ -4568,7 +4568,7 @@ export default function ConfigurationPage() {
                               method: 'PATCH',
                               credentials: 'include',
                               headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ scoreboard_agent_visibility: enabled }),
+                              body: JSON.stringify({ scoreboardAgentVisibility: enabled }),
                             })
                             queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
                             showSuccess(`Scoreboard visibility ${enabled ? 'enabled' : 'disabled'} for all agents`)
@@ -4590,7 +4590,7 @@ export default function ConfigurationPage() {
             <DialogHeader>
               <div className="flex items-center justify-between pr-8">
                 <DialogTitle className="text-3xl font-bold text-foreground">
-                  Products for {carriers.find(c => c.id === selectedCarrier)?.display_name}
+                  Products for {carriers.find(c => c.id === selectedCarrier)?.displayName}
                 </DialogTitle>
                 <AddProductModal
                   carrierId={selectedCarrier}
@@ -4646,33 +4646,33 @@ export default function ConfigurationPage() {
                               {editingProductId === product.id ? (
                                 <Input
                                   type="text"
-                                  value={editProductFormData.product_code}
-                                  onChange={(e) => setEditProductFormData(prev => ({ ...prev, product_code: e.target.value }))}
+                                  value={editProductFormData.productCode}
+                                  onChange={(e) => setEditProductFormData(prev => ({ ...prev, productCode: e.target.value }))}
                                   className="h-10 text-lg"
                                   placeholder="N/A"
                                 />
                               ) : (
-                                product.product_code || "N/A"
+                                product.productCode || "N/A"
                               )}
                             </td>
                             <td className="py-5 px-6">
                               {editingProductId === product.id ? (
                                 <div className="flex items-center space-x-3">
                                   <Checkbox
-                                    checked={editProductFormData.is_active}
-                                    onCheckedChange={(checked) => setEditProductFormData(prev => ({ ...prev, is_active: checked as boolean }))}
+                                    checked={editProductFormData.isActive}
+                                    onCheckedChange={(checked) => setEditProductFormData(prev => ({ ...prev, isActive: checked as boolean }))}
                                   />
                                   <span className="text-lg text-muted-foreground font-medium">
-                                    {editProductFormData.is_active ? "Active" : "Inactive"}
+                                    {editProductFormData.isActive ? "Active" : "Inactive"}
                                   </span>
                                 </div>
                               ) : (
                                 <span className={`px-3 py-2 rounded-full text-sm font-bold ${
-                                  product.is_active
+                                  product.isActive
                                     ? "bg-green-100 text-green-800 border border-green-300"
                                     : "bg-red-100 text-red-800 border border-red-300"
                                 }`}>
-                                  {product.is_active ? "Active" : "Inactive"}
+                                  {product.isActive ? "Active" : "Inactive"}
                                 </span>
                               )}
                             </td>

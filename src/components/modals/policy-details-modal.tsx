@@ -24,21 +24,21 @@ interface PolicyDetailsModalProps {
 
 interface Message {
   id: string
-  conversation_id: string
+  conversationId: string
   body: string
   direction: 'inbound' | 'outbound'
-  sent_at: string | null
+  sentAt: string | null
   status: string
   metadata: any
 }
 
 interface Conversation {
   id: string
-  agent_id: string
-  deal_id: string
-  client_phone: string | null
-  last_message_at: string
-  created_at: string
+  agentId: string
+  dealId: string
+  clientPhone: string | null
+  lastMessageAt: string
+  createdAt: string
 }
 
 interface StatusOption {
@@ -112,7 +112,8 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
       }
 
       const data = await response.json()
-      return data.deal
+      // The api-proxy returns the deal object at the top level (not nested under data.deal)
+      return data
     },
     enabled: open && !!dealId,
   })
@@ -230,16 +231,16 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          client_name: data.client_name,
-          client_email: data.client_email,
-          client_phone: data.client_phone,
-          policy_effective_date: data.policy_effective_date,
-          annual_premium: parseFloat(data.annual_premium),
-          monthly_premium: parseFloat(data.annual_premium) / 12,
+          clientName: data.clientName,
+          clientEmail: data.clientEmail,
+          clientPhone: data.clientPhone,
+          policyEffectiveDate: data.policyEffectiveDate,
+          annualPremium: parseFloat(data.annualPremium),
+          monthlyPremium: parseFloat(data.annualPremium) / 12,
           status: data.status,
-          ssn_benefit: data.ssn_benefit,
-          billing_day_of_month: data.ssn_benefit ? data.billing_day_of_month : null,
-          billing_weekday: data.ssn_benefit ? data.billing_weekday : null
+          ssnBenefit: data.ssnBenefit,
+          billingDayOfMonth: data.ssnBenefit ? data.billingDayOfMonth : null,
+          billingWeekday: data.ssnBenefit ? data.billingWeekday : null
         })
       })
 
@@ -305,7 +306,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   // Mutation for sending invite
   const sendInviteMutation = useMutation({
     mutationFn: async () => {
-      if (!deal || !deal.client_email) {
+      if (!deal || !deal.clientEmail) {
         throw new Error('Client email is required to send an invitation')
       }
 
@@ -314,10 +315,10 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          email: deal.client_email,
-          firstName: deal.client_name?.split(' ')[0] || 'Client',
-          lastName: deal.client_name?.split(' ').slice(1).join(' ') || '',
-          phoneNumber: deal.client_phone || null
+          email: deal.clientEmail,
+          firstName: deal.clientName?.split(' ')[0] || 'Client',
+          lastName: deal.clientName?.split(' ').slice(1).join(' ') || '',
+          phoneNumber: deal.clientPhone || null
         })
       })
 
@@ -351,7 +352,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   // Mutation for resending client invite
   const resendInviteMutation = useMutation({
     mutationFn: async () => {
-      if (!deal || !deal.client_email) {
+      if (!deal || !deal.clientEmail) {
         throw new Error('Client email is required to resend invitation')
       }
 
@@ -360,7 +361,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          email: deal.client_email
+          email: deal.clientEmail
         })
       })
 
@@ -384,15 +385,15 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   const handleEdit = () => {
     if (!deal) return
     setEditedData({
-      client_name: deal.client_name,
-      client_email: deal.client_email,
-      client_phone: deal.client_phone,
-      policy_effective_date: deal.policy_effective_date,
-      annual_premium: deal.annual_premium,
+      clientName: deal.clientName,
+      clientEmail: deal.clientEmail,
+      clientPhone: deal.clientPhone,
+      policyEffectiveDate: deal.policyEffectiveDate,
+      annualPremium: deal.annualPremium,
       status: deal.status,
-      ssn_benefit: deal.ssn_benefit || false,
-      billing_day_of_month: deal.billing_day_of_month || null,
-      billing_weekday: deal.billing_weekday || null
+      ssnBenefit: deal.ssnBenefit || false,
+      billingDayOfMonth: deal.billingDayOfMonth || null,
+      billingWeekday: deal.billingWeekday || null
     })
     setIsEditing(true)
   }
@@ -413,7 +414,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   }
 
   const handleSendInvite = async () => {
-    if (!deal || !deal.client_email) {
+    if (!deal || !deal.clientEmail) {
       showWarning('Client email is required to send an invitation')
       return
     }
@@ -421,7 +422,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   }
 
   const handleResendClientInvite = async () => {
-    if (!deal || !deal.client_email) {
+    if (!deal || !deal.clientEmail) {
       showWarning('Client email is required to resend invitation')
       return
     }
@@ -509,7 +510,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                       {deal.carrier?.name || 'N/A'}
                     </h2>
                     <p className="text-muted-foreground text-sm mt-1">
-                      Policy #{deal.policy_number || 'N/A'}
+                      Policy #{deal.policyNumber || 'N/A'}
                     </p>
                   </div>
                 </div>
@@ -520,7 +521,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                   </Badge>
                   <div className="flex items-center text-2xl font-bold text-primary">
                     <DollarSign className="h-6 w-6" />
-                    {deal.annual_premium?.toFixed(2) || '0.00'}
+                    {deal.annualPremium?.toFixed(2) || '0.00'}
                     <span className="text-sm text-muted-foreground font-normal ml-2">/ year</span>
                   </div>
                 </div>
@@ -566,23 +567,23 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         <User className="h-5 w-5 text-primary" />
                         <h3 className="text-xl font-bold text-foreground">Client Information</h3>
                       </div>
-                      {!isEditing && deal.client_email && deal.client_status !== 'active' && (
+                      {!isEditing && deal.clientEmail && deal.clientStatus !== 'active' && (
                         <Button
-                          onClick={deal.client_status === 'invited' || deal.client_status === 'onboarding' ? handleResendClientInvite : handleSendInvite}
+                          onClick={deal.clientStatus === 'invited' || deal.clientStatus === 'onboarding' ? handleResendClientInvite : handleSendInvite}
                           disabled={sendingInvite}
                           size="sm"
-                          variant={deal.client_status === 'invited' || deal.client_status === 'onboarding' ? 'outline' : 'default'}
-                          className={deal.client_status === 'invited' || deal.client_status === 'onboarding' ? 'gap-1.5' : 'gap-1.5 btn-gradient'}
+                          variant={deal.clientStatus === 'invited' || deal.clientStatus === 'onboarding' ? 'outline' : 'default'}
+                          className={deal.clientStatus === 'invited' || deal.clientStatus === 'onboarding' ? 'gap-1.5' : 'gap-1.5 btn-gradient'}
                         >
                           <Mail className="h-3.5 w-3.5" />
-                          {sendingInvite ? 'Sending...' : (deal.client_status === 'invited' || deal.client_status === 'onboarding' ? 'Resend Invite' : 'Send Invite')}
+                          {sendingInvite ? 'Sending...' : (deal.clientStatus === 'invited' || deal.clientStatus === 'onboarding' ? 'Resend Invite' : 'Send Invite')}
                         </Button>
                       )}
                     </div>
 
                     {/* Client Status Timeline */}
                     <div className="flex items-center gap-2 py-2 px-3 bg-muted/30 rounded-lg">
-                      {getClientStatusSteps(deal.client_status).map((step, index) => (
+                      {getClientStatusSteps(deal.clientStatus).map((step, index) => (
                         <div key={step.key} className="flex items-center gap-2">
                           <div className="flex items-center gap-1.5">
                             {step.completed ? (
@@ -597,7 +598,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                               {step.label}
                             </span>
                           </div>
-                          {index < getClientStatusSteps(deal.client_status).length - 1 && (
+                          {index < getClientStatusSteps(deal.clientStatus).length - 1 && (
                             <div className={cn(
                               "h-px w-4",
                               step.completed ? "bg-green-600" : "bg-gray-300"
@@ -613,12 +614,12 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                       {isEditing ? (
                         <Input
                           type="text"
-                          value={editedData?.client_name || ''}
-                          onChange={(e) => setEditedData({ ...editedData, client_name: e.target.value })}
+                          value={editedData?.clientName || ''}
+                          onChange={(e) => setEditedData({ ...editedData, clientName: e.target.value })}
                           className="mt-1"
                         />
                       ) : (
-                        <p className="text-lg font-semibold text-foreground">{deal.client_name}</p>
+                        <p className="text-lg font-semibold text-foreground">{deal.clientName}</p>
                       )}
                     </div>
 
@@ -630,13 +631,13 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                       {isEditing ? (
                         <Input
                           type="email"
-                          value={editedData?.client_email || ''}
-                          onChange={(e) => setEditedData({ ...editedData, client_email: e.target.value })}
+                          value={editedData?.clientEmail || ''}
+                          onChange={(e) => setEditedData({ ...editedData, clientEmail: e.target.value })}
                           className="mt-1"
                           placeholder="client@example.com"
                         />
                       ) : (
-                        <p className="text-lg font-semibold text-foreground">{deal.client_email || 'N/A'}</p>
+                        <p className="text-lg font-semibold text-foreground">{deal.clientEmail || 'N/A'}</p>
                       )}
                     </div>
 
@@ -646,24 +647,24 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         Client Phone
                       </label>
                       {isEditing ? (
-                        deal.phone_hidden ? (
+                        deal.phoneHidden ? (
                           <Badge className="bg-yellow-500/20 text-yellow-600 border-yellow-500/30">
                             Hidden
                           </Badge>
                         ) : (
                           <Input
                             type="text"
-                            value={editedData?.client_phone || ''}
-                            onChange={(e) => setEditedData({ ...editedData, client_phone: e.target.value })}
+                            value={editedData?.clientPhone || ''}
+                            onChange={(e) => setEditedData({ ...editedData, clientPhone: e.target.value })}
                             className="mt-1"
                           />
                         )
-                      ) : deal.phone_hidden ? (
+                      ) : deal.phoneHidden ? (
                         <Badge className="bg-yellow-500/20 text-yellow-600 border-yellow-500/30">
                           Hidden
                         </Badge>
                       ) : (
-                        <p className="text-lg font-semibold text-foreground">{deal.client_phone || 'N/A'}</p>
+                        <p className="text-lg font-semibold text-foreground">{deal.clientPhone || 'N/A'}</p>
                       )}
                     </div>
                   </div>
@@ -686,12 +687,12 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                       {isEditing ? (
                         <Input
                           type="date"
-                          value={editedData?.policy_effective_date || ''}
-                          onChange={(e) => setEditedData({ ...editedData, policy_effective_date: e.target.value })}
+                          value={editedData?.policyEffectiveDate || ''}
+                          onChange={(e) => setEditedData({ ...editedData, policyEffectiveDate: e.target.value })}
                           className="mt-1"
                         />
                       ) : (
-                        <p className="text-lg font-semibold text-foreground">{formatDate(deal.policy_effective_date)}</p>
+                        <p className="text-lg font-semibold text-foreground">{formatDate(deal.policyEffectiveDate)}</p>
                       )}
                     </div>
 
@@ -704,12 +705,12 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         <Input
                           type="number"
                           step="0.01"
-                          value={editedData?.annual_premium || ''}
-                          onChange={(e) => setEditedData({ ...editedData, annual_premium: e.target.value })}
+                          value={editedData?.annualPremium || ''}
+                          onChange={(e) => setEditedData({ ...editedData, annualPremium: e.target.value })}
                           className="mt-1"
                         />
                       ) : (
-                        <p className="text-lg font-bold text-primary">${deal.annual_premium?.toFixed(2) || '0.00'}</p>
+                        <p className="text-lg font-bold text-primary">${deal.annualPremium?.toFixed(2) || '0.00'}</p>
                       )}
                     </div>
 
@@ -758,7 +759,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         Writing Agent
                       </label>
                       <p className="text-lg font-semibold text-foreground">
-                        {deal.agent ? `${deal.agent.first_name} ${deal.agent.last_name}` : 'N/A'}
+                        {deal.agent ? `${deal.agent.firstName} ${deal.agent.lastName}` : 'N/A'}
                       </p>
                     </div>
 
@@ -767,22 +768,22 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         <Calendar className="h-3 w-3" />
                         Next Billing Date
                       </label>
-                      {deal.ssn_benefit && deal.billing_day_of_month && deal.billing_weekday ? (
+                      {deal.ssnBenefit && deal.billingDayOfMonth && deal.billingWeekday ? (
                         <div>
                           <p className="text-lg font-semibold text-foreground">
                             {(() => {
-                              const nextBilling = calculateNextCustomBillingDate(deal.billing_day_of_month, deal.billing_weekday)
+                              const nextBilling = calculateNextCustomBillingDate(deal.billingDayOfMonth, deal.billingWeekday)
                               return nextBilling ? nextBilling.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A'
                             })()}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {formatBillingPattern(deal.billing_day_of_month, deal.billing_weekday)} of each month
+                            {formatBillingPattern(deal.billingDayOfMonth, deal.billingWeekday)} of each month
                           </p>
                         </div>
-                      ) : deal.policy_effective_date && deal.billing_cycle ? (
+                      ) : deal.policyEffectiveDate && deal.billingCycle ? (
                         <p className="text-lg font-semibold text-foreground">
                           {(() => {
-                            const nextDraft = calculateNextDraftDate(deal.policy_effective_date, deal.billing_cycle)
+                            const nextDraft = calculateNextDraftDate(deal.policyEffectiveDate, deal.billingCycle)
                             return nextDraft ? nextDraft.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A'
                           })()}
                         </p>
@@ -797,7 +798,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         Date of Birth
                       </label>
                       <p className="text-lg font-semibold text-foreground">
-                        {deal.date_of_birth ? formatDate(deal.date_of_birth) : 'N/A'}
+                        {deal.dateOfBirth ? formatDate(deal.dateOfBirth) : 'N/A'}
                       </p>
                     </div>
 
@@ -807,7 +808,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         Coverage Amount
                       </label>
                       <p className="text-lg font-semibold text-foreground">
-                        {deal.face_value ? `$${Number(deal.face_value).toLocaleString()}` : 'N/A'}
+                        {deal.faceValue ? `$${Number(deal.faceValue).toLocaleString()}` : 'N/A'}
                       </p>
                     </div>
 
@@ -816,7 +817,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         Rate Class
                       </label>
                       <p className="text-lg font-semibold text-foreground">
-                        {deal.rate_class || 'N/A'}
+                        {deal.rateClass || 'N/A'}
                       </p>
                     </div>
 
@@ -826,7 +827,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         Monthly Premium
                       </label>
                       <p className="text-lg font-semibold text-foreground">
-                        {deal.monthly_premium ? `$${Number(deal.monthly_premium).toFixed(2)}` : 'N/A'}
+                        {deal.monthlyPremium ? `$${Number(deal.monthlyPremium).toFixed(2)}` : 'N/A'}
                       </p>
                     </div>
 
@@ -835,7 +836,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         Lead Source
                       </label>
                       <p className="text-lg font-semibold text-foreground capitalize">
-                        {deal.lead_source || 'N/A'}
+                        {deal.leadSource || 'N/A'}
                       </p>
                     </div>
 
@@ -872,12 +873,12 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                               { value: 'yes', label: 'Yes' },
                               { value: 'no', label: 'No' }
                             ]}
-                            value={editedData?.ssn_benefit ? 'yes' : 'no'}
+                            value={editedData?.ssnBenefit ? 'yes' : 'no'}
                             onValueChange={(value) => setEditedData({
                               ...editedData,
-                              ssn_benefit: value === 'yes',
-                              billing_day_of_month: value === 'no' ? null : editedData?.billing_day_of_month,
-                              billing_weekday: value === 'no' ? null : editedData?.billing_weekday
+                              ssnBenefit: value === 'yes',
+                              billingDayOfMonth: value === 'no' ? null : editedData?.billingDayOfMonth,
+                              billingWeekday: value === 'no' ? null : editedData?.billingWeekday
                             })}
                             placeholder="Select..."
                             searchPlaceholder="Search..."
@@ -885,7 +886,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                           />
                         </div>
 
-                        {editedData?.ssn_benefit && (
+                        {editedData?.ssnBenefit && (
                           <>
                             <div className="space-y-1">
                               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -898,8 +899,8 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                                   { value: '3rd', label: '3rd' },
                                   { value: '4th', label: '4th' }
                                 ]}
-                                value={editedData?.billing_day_of_month || ''}
-                                onValueChange={(value) => setEditedData({ ...editedData, billing_day_of_month: value })}
+                                value={editedData?.billingDayOfMonth || ''}
+                                onValueChange={(value) => setEditedData({ ...editedData, billingDayOfMonth: value })}
                                 placeholder="Select week..."
                                 searchPlaceholder="Search..."
                                 portal={true}
@@ -918,8 +919,8 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                                   { value: 'Thursday', label: 'Thursday' },
                                   { value: 'Friday', label: 'Friday' }
                                 ]}
-                                value={editedData?.billing_weekday || ''}
-                                onValueChange={(value) => setEditedData({ ...editedData, billing_weekday: value })}
+                                value={editedData?.billingWeekday || ''}
+                                onValueChange={(value) => setEditedData({ ...editedData, billingWeekday: value })}
                                 placeholder="Select day..."
                                 searchPlaceholder="Search..."
                                 portal={true}
@@ -954,7 +955,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                     </button>
                     {beneficiariesExpanded && (
                       <div className="mt-4 space-y-3">
-                        {deal.beneficiaries.map((beneficiary: { id: string; first_name: string; last_name: string; relationship: string }) => (
+                        {deal.beneficiaries.map((beneficiary: { id: string; firstName: string; lastName: string; relationship: string }) => (
                           <div key={beneficiary.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-950/30 flex items-center justify-center">
@@ -962,7 +963,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                               </div>
                               <div>
                                 <p className="font-semibold text-foreground">
-                                  {beneficiary.first_name} {beneficiary.last_name}
+                                  {beneficiary.firstName} {beneficiary.lastName}
                                 </p>
                                 {beneficiary.relationship && (
                                   <p className="text-sm text-muted-foreground capitalize">
@@ -998,7 +999,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                 ) : conversation || existingConversation ? (
                   <div className="space-y-3 flex-1 flex flex-col min-h-0">
                     <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                      Active since {new Date((conversation || existingConversation)!.created_at).toLocaleDateString('en-US', {
+                      Active since {new Date((conversation || existingConversation)!.createdAt).toLocaleDateString('en-US', {
                         month: 'short',
                         day: 'numeric',
                         year: 'numeric'
@@ -1050,7 +1051,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                                         "text-xs",
                                         isOutbound ? "opacity-75" : "text-gray-500"
                                       )}>
-                                        {message.sent_at ? formatMessageTime(message.sent_at) : 'Pending'}
+                                        {message.sentAt ? formatMessageTime(message.sentAt) : 'Pending'}
                                       </span>
                                     </div>
                                   )}
@@ -1085,7 +1086,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                   </div>
                 ) : (
                   <div className="text-center py-12">
-                    {deal.client_phone ? (
+                    {deal.clientPhone ? (
                       existingConversation ? (
                         <div>
                           <div className="w-20 h-20 bg-blue-100 dark:bg-blue-950/30 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1168,7 +1169,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
               </p>
             </div>
             <p className="text-sm text-muted-foreground mt-4">
-              Client Phone: <span className="font-semibold text-foreground">{deal.client_phone}</span>
+              Client Phone: <span className="font-semibold text-foreground">{deal.clientPhone}</span>
             </p>
           </div>
           <div className="flex justify-end gap-2">

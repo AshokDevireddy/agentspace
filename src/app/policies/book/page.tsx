@@ -26,19 +26,37 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { formatPhoneForDisplay } from "@/lib/telnyx"
 
 // Types for the API responses
+interface DealAgent {
+  id: string
+  firstName: string
+  lastName: string
+}
+
+interface DealClient {
+  name: string
+  phone: string | null
+  email: string | null
+}
+
+interface DealCarrier {
+  name: string
+  displayName: string | null
+}
+
+interface DealProduct {
+  name: string
+}
+
 interface Deal {
   id: string
-  carrierId: string
   date: string
-  agent: string
-  carrier: string
-  product: string
+  agent: DealAgent | null
+  carrier: DealCarrier | null
+  client: DealClient | null
+  product: DealProduct | string | null
   policyNumber: string
   appNumber: string
-  clientName: string
-  clientPhone: string
   phoneHidden?: boolean
-  agentId?: string
   effectiveDate: string
   effectiveDateRaw: string
   annualPremium: string
@@ -50,7 +68,7 @@ interface Deal {
   ssnBenefit: boolean
   billingDayOfMonth: string | null
   billingWeekday: string | null
-  face_value?: number | null
+  faceValue?: number | null
 }
 
 interface EditableDeal extends Deal {
@@ -171,8 +189,8 @@ export default function BookOfBusiness() {
 
   // State for load-more pagination
   const [deals, setDeals] = useState<Deal[]>([])
-  const [nextCursor, setNextCursor] = useState<{ cursor_created_at: string; cursor_id: string } | null>(null)
-  const nextCursorRef = useRef<{ cursor_created_at: string; cursor_id: string } | null>(null)
+  const [nextCursor, setNextCursor] = useState<{ cursorCreatedAt: string; cursorId: string } | null>(null)
+  const nextCursorRef = useRef<{ cursorCreatedAt: string; cursorId: string } | null>(null)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
 
   // Update ref when nextCursor changes
@@ -182,7 +200,7 @@ export default function BookOfBusiness() {
 
   // Get user subscription tier from AuthProvider (already loaded on app mount)
   const { user: authUser } = useAuth()
-  const userTier = authUser?.subscription_tier || 'free'
+  const userTier = authUser?.subscriptionTier || 'free'
 
   // Fetch filter options using parallel queries
   const { data: filterOptionsData } = useApiFetch<{
@@ -201,7 +219,7 @@ export default function BookOfBusiness() {
     }
   )
 
-  const { data: niprCarriers } = useApiFetch<Array<{ id: string; display_name: string }>>(
+  const { data: niprCarriers } = useApiFetch<Array<{ id: string; displayName: string }>>(
     queryKeys.carriersList('nipr'),
     '/api/carriers?filter=nipr',
     {
@@ -217,7 +235,7 @@ export default function BookOfBusiness() {
           { value: "all", label: "All Carriers" },
           ...niprCarriers.map((c) => ({
             value: c.id,
-            label: c.display_name
+            label: c.displayName
           }))
         ]
       : filterOptionsData?.carriers || [{ value: "all", label: "All Carriers" }],
@@ -229,7 +247,7 @@ export default function BookOfBusiness() {
   }
 
   // Build query params for deals API
-  const buildDealsParams = useCallback((cursor?: { cursor_created_at: string; cursor_id: string }) => {
+  const buildDealsParams = useCallback((cursor?: { cursorCreatedAt: string; cursorId: string }) => {
     const params = new URLSearchParams()
     if (appliedFilters.agent !== 'all') params.append('agent_id', appliedFilters.agent)
     if (appliedFilters.carrier !== 'all') params.append('carrier_id', appliedFilters.carrier)
@@ -247,8 +265,8 @@ export default function BookOfBusiness() {
     if (appliedFilters.viewMode) params.append('view', appliedFilters.viewMode)
     params.append('limit', '50')
     if (cursor) {
-      params.append('cursor_created_at', cursor.cursor_created_at)
-      params.append('cursor_id', cursor.cursor_id)
+      params.append('cursor_created_at', cursor.cursorCreatedAt)
+      params.append('cursor_id', cursor.cursorId)
     }
     return params.toString()
   }, [appliedFilters])
@@ -262,7 +280,7 @@ export default function BookOfBusiness() {
       if (!response.ok) {
         throw new Error('Failed to fetch deals')
       }
-      return response.json() as Promise<{ deals: Deal[]; nextCursor?: { cursor_created_at: string; cursor_id: string } }>
+      return response.json() as Promise<{ deals: Deal[]; nextCursor?: { cursorCreatedAt: string; cursorId: string } }>
     },
     staleTime: 30 * 1000, // 30 seconds
     placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
@@ -942,11 +960,21 @@ export default function BookOfBusiness() {
                       onClick={() => handleRowClick(deal)}
                     >
                         <td className="whitespace-nowrap">{deal.date}</td>
-                        <td className="whitespace-nowrap">{deal.agent}</td>
+                        <td className="whitespace-nowrap">
+                          {deal.agent
+                            ? `${deal.agent.firstName} ${deal.agent.lastName}`.trim()
+                            : '—'}
+                        </td>
                         <td>
                           <div className="flex flex-col gap-0.5">
-                            <span className="font-semibold text-sm">{deal.carrier}</span>
-                            <span className="text-xs text-muted-foreground">{deal.product}</span>
+                            <span className="font-semibold text-sm">
+                              {deal.carrier?.displayName || deal.carrier?.name || '—'}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {typeof deal.product === 'object' && deal.product !== null
+                                ? deal.product.name
+                                : deal.product || '—'}
+                            </span>
                           </div>
                         </td>
                         <td>
@@ -963,7 +991,7 @@ export default function BookOfBusiness() {
                         </td>
                         <td>
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-sm font-medium">{deal.clientName}</span>
+                            <span className="text-sm font-medium">{deal.client?.name || '—'}</span>
                             {deal.phoneHidden ? (
                               <Badge
                                 className="bg-yellow-500/20 text-yellow-600 border-yellow-500/30 text-xs w-fit"
@@ -971,8 +999,8 @@ export default function BookOfBusiness() {
                               >
                                 Hidden
                               </Badge>
-                            ) : deal.clientPhone ? (
-                              <span className="text-xs text-muted-foreground">{formatPhoneNumber(deal.clientPhone)}</span>
+                            ) : deal.client?.phone ? (
+                              <span className="text-xs text-muted-foreground">{formatPhoneNumber(deal.client.phone)}</span>
                             ) : null}
                           </div>
                         </td>
@@ -1015,7 +1043,7 @@ export default function BookOfBusiness() {
                           </div>
                         </td>
                         <td className="whitespace-nowrap">
-                          {deal.face_value ? `$${Number(deal.face_value).toLocaleString()}` : '—'}
+                          {deal.faceValue ? `$${Number(deal.faceValue).toLocaleString()}` : '—'}
                         </td>
                         <td>
                           {deal.leadSource ? (

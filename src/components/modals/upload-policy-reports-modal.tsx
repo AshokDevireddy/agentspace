@@ -40,7 +40,7 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
 
   // Use centralized mutation hooks
   const createJobMutation = useCreatePolicyReportJob()
-  const signFilesMutation = useSignPolicyReportFiles({ agencyId: user?.agency_id ?? undefined })
+  const signFilesMutation = useSignPolicyReportFiles({ agencyId: user?.agencyId ?? undefined })
 
   // Drag and drop handlers
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
@@ -116,8 +116,8 @@ export default function UploadPolicyReportsModal({ isOpen, onClose }: { isOpen: 
   // Combined upload mutation using centralized hooks
   const uploadMutation = useMutation({
     mutationFn: async (files: PolicyReportFile[]) => {
-      // Use agency_id from AuthProvider (already cached)
-      const agencyId = user?.agency_id
+      // Use agencyId from AuthProvider (already cached)
+      const agencyId = user?.agencyId
 
       if (!agencyId) {
         throw new Error('Could not resolve your agency. Please refresh and try again.')

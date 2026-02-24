@@ -115,16 +115,16 @@ export default function Home() {
   const ytdProduction = useMemo(() => {
     const data = ytdProductionResult?.[0]
     return {
-      individual: data?.individual_production || 0,
-      hierarchy: data?.hierarchy_production || 0
+      individual: data?.individualProduction || 0,
+      hierarchy: data?.hierarchyProduction || 0
     }
   }, [ytdProductionResult])
 
   const mtdProduction = useMemo(() => {
     const data = mtdProductionResult?.[0]
     return {
-      individual: data?.individual_production || 0,
-      hierarchy: data?.hierarchy_production || 0
+      individual: data?.individualProduction || 0,
+      hierarchy: data?.hierarchyProduction || 0
     }
   }, [mtdProductionResult])
 
@@ -145,21 +145,18 @@ export default function Home() {
     }
   }, [userData, setUserRole])
 
-  // Weekly scoreboard for date display
-  const scoreboardData = scoreboardResult?.success ? scoreboardResult.data : null
-
   // Top producers from YTD/MTD query
-  const topProducersData = topProducersResult?.success ? topProducersResult.data : null
+  const topProducersData = topProducersResult ?? null
   const topProducers: { rank: number; name: string; amount: string }[] = useMemo(() => {
-    if (!topProducersData?.leaderboard) return []
-    return topProducersData.leaderboard.slice(0, 5).map((producer: LeaderboardProducer) => ({
+    if (!topProducersData?.entries) return []
+    return topProducersData.entries.slice(0, 5).map((producer: LeaderboardProducer) => ({
       rank: producer.rank,
-      name: producer.name,
-      amount: `$${producer.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      name: producer.agentName,
+      amount: `$${parseFloat(producer.production).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     }))
   }, [topProducersData])
 
-  const dateRange = scoreboardData?.dateRange || { startDate: weekRange.startDate, endDate: weekRange.endDate }
+  const dateRange = { startDate: weekRange.startDate, endDate: weekRange.endDate }
 
   const dashboardData = dashboardResult
 
@@ -218,24 +215,24 @@ export default function Home() {
   }, [dateRange])
 
   const currentData = useMemo((): DealsSummary | DashboardData | null => {
-    if (dashboardData?.your_deals || dashboardData?.downline_production) {
-      return viewMode === 'just_me' ? dashboardData?.your_deals : dashboardData?.downline_production
+    if (dashboardData?.yourDeals || dashboardData?.downlineProduction) {
+      return viewMode === 'just_me' ? dashboardData?.yourDeals : dashboardData?.downlineProduction
     }
     return dashboardData || null
   }, [dashboardData, viewMode])
 
   const pieChartData = useMemo(() => {
-    if (!currentData?.carriers_active) return []
-    const totalPolicies = currentData.carriers_active.reduce((sum: number, carrier: CarrierActive) => sum + carrier.active_policies, 0)
+    if (!currentData?.carriersActive) return []
+    const totalPolicies = currentData.carriersActive.reduce((sum: number, carrier: CarrierActive) => sum + carrier.activePolicies, 0)
 
     const largeCarriers: PieChartEntry[] = []
     const smallCarriers: PieChartEntry[] = []
 
-    currentData.carriers_active.forEach((carrier: CarrierActive, index: number) => {
-      const percentage = (carrier.active_policies / totalPolicies) * 100
+    currentData.carriersActive.forEach((carrier: CarrierActive, index: number) => {
+      const percentage = (carrier.activePolicies / totalPolicies) * 100
       const carrierData: PieChartEntry = {
         name: carrier.carrier,
-        value: carrier.active_policies,
+        value: carrier.activePolicies,
         percentage: percentage.toFixed(1),
         fill: PIE_CHART_COLORS[index % PIE_CHART_COLORS.length],
         showLabel: true
@@ -351,7 +348,7 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {(dashboardData?.totals?.pending_positions || 0) > 0 && (
+            {(dashboardData?.totals?.pendingPositions || 0) > 0 && (
               <Link href="/agents?tab=pending-positions" className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
                 <AlertCircle className="h-5 w-5" />
                 <span className="font-semibold">Pending Positions</span>
@@ -387,7 +384,7 @@ export default function Home() {
                 <BarChart3 className="h-4 w-4 text-muted-foreground" />
                 <p className="text-sm font-medium text-muted-foreground">Active Policies</p>
               </div>
-              <p className="font-bold text-foreground text-xl">{(currentData?.active_policies ?? 0).toLocaleString()}</p>
+              <p className="font-bold text-foreground text-xl">{(currentData?.activePolicies ?? 0).toLocaleString()}</p>
             </CardContent>
           </Card>
           <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
@@ -396,7 +393,7 @@ export default function Home() {
                 <Briefcase className="h-4 w-4 text-muted-foreground" />
                 <p className="text-sm font-medium text-muted-foreground">Total Clients</p>
               </div>
-              <p className="font-bold text-foreground text-xl">{(currentData?.total_clients ?? 0).toLocaleString()}</p>
+              <p className="font-bold text-foreground text-xl">{(currentData?.totalClients ?? 0).toLocaleString()}</p>
             </CardContent>
           </Card>
         </div>
@@ -521,7 +518,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
-        ) : currentData?.carriers_active && (
+        ) : currentData?.carriersActive && (
           <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg" key={`pie-${viewMode}`}>
             <CardHeader>
               <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">

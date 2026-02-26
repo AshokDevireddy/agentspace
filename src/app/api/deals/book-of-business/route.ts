@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, createServerClient } from "@/lib/supabase/server";
+import { buildBookFilters } from "./_shared";
 
 export async function GET(req: NextRequest) {
   const admin = createAdminClient();
@@ -29,22 +30,9 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Check if user is admin
     // Get query parameters for filtering + pagination (keyset)
     const { searchParams } = new URL(req.url);
-    const agentId = searchParams.get("agent_id");
-    const carrierId = searchParams.get("carrier_id");
-    const productId = searchParams.get("product_id");
-    const clientId = searchParams.get("client_id");
-    const policyNumber = searchParams.get("policy_number");
-    const statusMode = searchParams.get("status_mode");
-    const statusStandardized = searchParams.get("status_standardized");
     const effectiveDateSort = searchParams.get("effective_date_sort");
-    const billingCycle = searchParams.get("billing_cycle");
-    const leadSource = searchParams.get("lead_source");
-    const clientPhone = searchParams.get("client_phone");
-    const effectiveDateStart = searchParams.get("effective_date_start");
-    const effectiveDateEnd = searchParams.get("effective_date_end");
     const view = searchParams.get("view") || "downlines";
     const limit = Math.min(
       parseInt(searchParams.get("limit") || "50", 10),
@@ -54,27 +42,10 @@ export async function GET(req: NextRequest) {
     const cursorId = searchParams.get("cursor_id");
 
     const filters = {
-      agent_id: agentId && agentId !== "all" ? agentId : null,
-      carrier_id: carrierId && carrierId !== "all" ? carrierId : null,
-      product_id: productId && productId !== "all" ? productId : null,
-      client_id: clientId && clientId !== "all" ? clientId : null,
-      policy_number: policyNumber && policyNumber !== "all"
-        ? policyNumber.trim()
-        : null,
-      status_mode: statusMode || null,
-      status_standardized: statusStandardized && statusStandardized !== "all"
-        ? statusStandardized
-        : null,
+      ...buildBookFilters(searchParams),
       effective_date_sort: effectiveDateSort && effectiveDateSort !== "all"
         ? effectiveDateSort
         : null,
-      billing_cycle: billingCycle && billingCycle !== "all"
-        ? billingCycle
-        : null,
-      lead_source: leadSource && leadSource !== "all" ? leadSource : null,
-      client_phone: clientPhone ? clientPhone.replace(/\D/g, '') : null,
-      effective_date_start: effectiveDateStart || null,
-      effective_date_end: effectiveDateEnd || null,
     };
 
     const { data: deals, error: rpcError } = await admin.rpc(

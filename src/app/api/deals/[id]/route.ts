@@ -80,8 +80,8 @@ export async function GET(
     const isAdmin = currentUser.perm_level === 'admin' || currentUser.role === 'admin' || currentUser.is_admin;
     const isWritingAgent = deal.agent_id === currentUser.id;
     const statusImpact = statusMapping?.impact;
-    const isActiveOrPending = statusImpact === 'positive' || statusImpact === 'neutral';
-    const shouldHidePhone = view === 'downlines' && !isAdmin && !isWritingAgent && isActiveOrPending;
+    const isInactive = statusImpact === 'negative';
+    const shouldHidePhone = view === 'downlines' && !isAdmin && !isWritingAgent && !isInactive;
 
     // Mask phone if needed and add client email and status from client record
     const dealWithMaskedPhone = {

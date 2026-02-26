@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     // Map auth user to `users` row
     const { data: currentUser, error: currentUserError } = await admin
       .from("users")
-      .select("id, agency_id, perm_level, role")
+      .select("id, agency_id, perm_level, role, is_admin")
       .eq("auth_user_id", user.id)
       .single();
 
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
 
     // Check if user is admin
     const isAdmin = currentUser.perm_level === "admin" ||
-      currentUser.role === "admin";
+      currentUser.role === "admin" || currentUser.is_admin;
 
     // Sort deals by created_at timestamp (descending - newest first)
     // NOTE: This client-side sort ensures data is ordered by created_at.
@@ -81,12 +81,11 @@ export async function GET(req: NextRequest) {
 
     const transformedDeals = sortedDeals.map((deal: any) => {
       // Determine if phone should be hidden
-      // Hide if: view is 'downlines' AND user is not admin AND user is not the writing agent AND deal is active/pending
+      // Hide if: view is 'downlines' AND user is not admin AND user is not the writing agent AND deal is NOT explicitly inactive
       const isWritingAgent = deal.agent_id === currentUser.id;
-      const isActiveOrPending = deal.status_impact === "positive" ||
-        deal.status_impact === "neutral";
+      const isInactive = deal.status_impact === "negative";
       const shouldHidePhone = view === "downlines" && !isAdmin &&
-        !isWritingAgent && isActiveOrPending;
+        !isWritingAgent && !isInactive;
 
       // Helper function to parse and format date safely
       const parseAndFormatDate = (

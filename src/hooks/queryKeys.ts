@@ -42,6 +42,8 @@ export const queryKeys = {
   dealsFilterOptions: () => ['deals', 'filter-options'] as const,
   dealsBookOfBusiness: (filters?: Record<string, unknown>) =>
     ['deals', 'book-of-business', stableFilterKey(filters)] as const,
+  dealsBookOfBusinessSummary: (filters?: Record<string, unknown>) =>
+    ['deals', 'book-of-business-summary', stableFilterKey(filters)] as const,
 
   // Clients
   clients: ['clients'] as const,

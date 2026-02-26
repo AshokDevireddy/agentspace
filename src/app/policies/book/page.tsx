@@ -75,6 +75,12 @@ interface EditableDeal extends Deal {
   originalData?: Deal // Store original data for cancel functionality
 }
 
+interface BookSummary {
+  totalAnnualPremium: number
+  totalFaceValue: number
+  totalPolicies: number
+}
+
 interface FilterOption {
   value: string
   label: string
@@ -286,6 +292,19 @@ export default function BookOfBusiness() {
     placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
   })
 
+  // Fetch summary totals (separate query for independent caching)
+  const { data: summaryData, isPending: summaryLoading } = useQuery<BookSummary>({
+    queryKey: queryKeys.dealsBookOfBusinessSummary(appliedFilters),
+    queryFn: async () => {
+      const params = buildDealsParams()
+      const response = await fetch(`/api/deals/book-of-business/summary?${params}`)
+      if (!response.ok) throw new Error('Failed to fetch summary')
+      return response.json()
+    },
+    staleTime: 30 * 1000,
+    placeholderData: (previousData) => previousData,
+  })
+
   const isRefreshing = dealsFetching && !loading // Background refetch with stale data shown
 
   // Update deals and cursor when data changes
@@ -346,9 +365,10 @@ export default function BookOfBusiness() {
   }
 
   const handlePolicyUpdate = () => {
-    // Refresh the deals list after update by invalidating the query
-    // Use partial key prefix ['deals', 'book-of-business'] to match all filter variations
+    // Refresh the deals list and summary after update by invalidating the queries
+    // Use partial key prefix to match all filter variations
     queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business'] })
+    queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business-summary'] })
   }
 
   const getLeadSourceColor = (leadSource: string) => {
@@ -882,6 +902,49 @@ export default function BookOfBusiness() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Summary Cards */}
+      <div className={cn(
+        "grid grid-cols-1 sm:grid-cols-3 gap-4",
+        userTier === 'basic' && viewMode === 'downlines' && "blur-sm pointer-events-none"
+      )}>
+        <Card className="professional-card !rounded-md">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-muted-foreground mb-1">Total Annual Premium</p>
+            {summaryLoading ? (
+              <div className="h-7 w-28 bg-muted rounded animate-pulse" />
+            ) : (
+              <p className="text-2xl font-bold text-foreground">
+                ${(summaryData?.totalAnnualPremium ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+        <Card className="professional-card !rounded-md">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-muted-foreground mb-1">Total Coverage Amount</p>
+            {summaryLoading ? (
+              <div className="h-7 w-28 bg-muted rounded animate-pulse" />
+            ) : (
+              <p className="text-2xl font-bold text-foreground">
+                ${(summaryData?.totalFaceValue ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+        <Card className="professional-card !rounded-md">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-muted-foreground mb-1">Total Policies</p>
+            {summaryLoading ? (
+              <div className="h-7 w-20 bg-muted rounded animate-pulse" />
+            ) : (
+              <p className="text-2xl font-bold text-foreground">
+                {(summaryData?.totalPolicies ?? 0).toLocaleString()}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Policies Table */}
       <div className={cn(

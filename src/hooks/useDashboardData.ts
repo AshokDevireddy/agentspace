@@ -166,7 +166,9 @@ export function useScoreboardBillingCycleData(
         params.assumed_months_till_lapse = assumedMonthsTillLapse
       }
 
-      return apiClient.get<BillingCycleScoreboardData>('/api/dashboard/scoreboard-billing-cycle/', { params })
+      const raw = await apiClient.get<{ success: boolean; data: BillingCycleScoreboardData } | BillingCycleScoreboardData>('/api/dashboard/scoreboard-billing-cycle/', { params })
+      // Backend wraps response in { success, data } — unwrap it
+      return ('data' in raw && raw.data && typeof raw.data === 'object' ? raw.data : raw) as BillingCycleScoreboardData
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,

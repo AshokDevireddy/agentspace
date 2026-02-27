@@ -173,7 +173,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       const data = await response.json()
 
       interface PositionData {
-        position_id: string
+        positionId: string
         name: string
         level: number
       }
@@ -181,7 +181,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       // Note: Position-level filtering now handled by API based on user context
       return {
         positions: data.map((pos: PositionData) => ({
-          value: pos.position_id,
+          value: pos.positionId,
           label: `${pos.name} (Level ${pos.level})`,
           level: pos.level
         })) as SearchOption[],

@@ -42,7 +42,7 @@ export default function Home() {
 
   const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useApiFetch<UserProfile>(
     queryKeys.userProfile(user?.id),
-    `/api/user/profile?user_id=${user?.id}`,
+    '/api/user/profile/',
     {
       enabled: !!user?.id,
       placeholderData: (previousData) => previousData,

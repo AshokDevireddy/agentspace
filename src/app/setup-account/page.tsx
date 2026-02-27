@@ -12,7 +12,7 @@ import { decodeAndValidateJwt } from '@/lib/auth/jwt'
 import { getInviteTokens, clearInviteTokens } from '@/lib/auth/constants'
 import { authApi, AuthApiError } from '@/lib/api/auth'
 import { apiClient } from '@/lib/api-client'
-import { getClientAccessToken } from '@/lib/auth/client'
+import { getAccessToken } from '@/lib/auth/token-store'
 
 interface UserData {
   id: string
@@ -130,17 +130,18 @@ export default function SetupAccount() {
       if (!authUserId) {
         console.log(`[setup-account] PRIORITY 2: Checking Django session at +${Date.now() - startTime}ms`)
         try {
-          const sessionToken = await getClientAccessToken()
+          const sessionToken = getAccessToken()
           if (sessionToken) {
-            // Get user info from Django session
-            const sessionResponse = await fetch('/api/auth/session', { credentials: 'include' })
-            if (sessionResponse.ok) {
-              const sessionData = await sessionResponse.json()
+            // Get user info from Django session directly
+            try {
+              const sessionData = await apiClient.get<{ authenticated: boolean; user: { authUserId?: string } | null }>('/api/auth/session/')
               if (sessionData.authenticated && sessionData.user?.authUserId) {
                 authUserId = sessionData.user.authUserId
                 accessToken = sessionToken
                 console.log(`[setup-account] PRIORITY 2: Got authUserId from Django session`)
               }
+            } catch {
+              console.error(`[setup-account] PRIORITY 2: Django session check FAILED`)
             }
           }
         } catch (sessionError) {
@@ -268,7 +269,7 @@ export default function SetupAccount() {
 
       // First, try to get token from Django session (most reliable)
       try {
-        accessToken = await getClientAccessToken()
+        accessToken = getAccessToken()
       } catch {
         // Continue to fallback
       }

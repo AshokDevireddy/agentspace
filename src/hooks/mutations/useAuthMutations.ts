@@ -10,6 +10,8 @@ import { useMutation } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { useInvalidation } from '../useInvalidation'
 import { authApi, AuthApiError } from '@/lib/api/auth'
+import { setAccessToken } from '@/lib/auth/token-store'
+import { getApiBaseUrl } from '@/lib/api-config'
 
 // ============ Register Mutation ============
 
@@ -160,9 +162,8 @@ const withAuthTimeout = <T>(promise: Promise<T>, ms = 15000): Promise<T> => {
 }
 
 /**
- * Sign in user via backend API
- * Note: Login uses Next.js route (creates httpOnly session cookie)
- * Agency fetch uses apiClient (direct backend call)
+ * Sign in user via Django backend directly.
+ * Django sets auth cookies + returns tokens in body. We store the access_token in memory.
  */
 export function useSignIn(options?: {
   onSuccess?: (data: SignInResponse) => void
@@ -170,13 +171,13 @@ export function useSignIn(options?: {
 }) {
   return useMutation<SignInResponse, Error, SignInInput>({
     mutationFn: async ({ email, password }) => {
-      // Login via Next.js API route which creates httpOnly session cookie
+      const baseUrl = getApiBaseUrl()
+
+      // Login directly to Django — Django sets auth cookies on response
       const response = await withAuthTimeout(
-        fetch('/api/auth/login', {
+        fetch(`${baseUrl}/api/auth/login/`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({ email, password }),
         })
@@ -184,22 +185,32 @@ export function useSignIn(options?: {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.message || 'Invalid login credentials')
+        throw new Error(errorData.message || errorData.detail || 'Invalid login credentials')
       }
 
       const data = await response.json()
 
+      // Store access_token in module store (Django also set it as a cookie)
+      if (data.access_token) {
+        setAccessToken(data.access_token)
+      }
+
+      const userData = data.user
+      if (!userData) {
+        throw new Error('No user data in login response')
+      }
+
       // Fetch agency whitelabel data via direct backend call
       const agencyData = await withAuthTimeout(
-        apiClient.get<{ whitelabelDomain: string | null }>(`/api/agencies/${data.user.agencyId}/whitelabel/`)
+        apiClient.get<{ whitelabelDomain: string | null }>(`/api/agencies/${userData.agency_id}/whitelabel/`)
       )
 
       return {
         user: {
-          id: data.user.id,
-          role: data.user.role,
-          status: data.user.status,
-          agencyId: data.user.agencyId || '',
+          id: userData.id,
+          role: userData.role,
+          status: userData.status,
+          agencyId: userData.agency_id || '',
         },
         agency: {
           whitelabelDomain: agencyData.whitelabelDomain,

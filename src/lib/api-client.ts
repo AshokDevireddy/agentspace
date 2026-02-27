@@ -15,7 +15,7 @@
 
 import camelcaseKeys from 'camelcase-keys'
 import snakecaseKeys from 'snakecase-keys'
-import { getClientAccessToken, clearTokenCache } from '@/lib/auth/client'
+import { getAccessToken } from '@/lib/auth/token-store'
 import { getApiBaseUrl } from '@/lib/api-config'
 import { AuthError, NetworkError, createErrorFromResponse } from '@/lib/error-utils'
 
@@ -63,6 +63,27 @@ function buildUrl(endpoint: string, params?: Record<string, string | number | bo
 }
 
 /**
+ * Dispatch auth:token-expired and wait for auth:refresh-complete from AuthProvider.
+ * Returns true if refresh succeeded, false if timed out.
+ */
+function waitForTokenRefresh(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('auth:refresh-complete', onRefresh)
+      resolve(false)
+    }, 10_000)
+
+    const onRefresh = () => {
+      clearTimeout(timeout)
+      resolve(true)
+    }
+
+    window.addEventListener('auth:refresh-complete', onRefresh, { once: true })
+    window.dispatchEvent(new Event('auth:token-expired'))
+  })
+}
+
+/**
  * Core request handler. Handles auth, case conversion, timeout, and 401 retry.
  */
 async function request<T>(
@@ -83,10 +104,10 @@ async function request<T>(
   const url = buildUrl(endpoint, params)
 
   async function execute(retrying: boolean): Promise<T> {
-    // Get auth token
+    // Get auth token (sync read from module store)
     let token: string | null = null
     if (!skipAuth) {
-      token = await getClientAccessToken()
+      token = getAccessToken()
       if (!token) {
         throw new AuthError('Authentication required. Please log in.')
       }
@@ -127,10 +148,13 @@ async function request<T>(
         signal: controller.signal,
       })
 
-      // 401 retry: clear cache, re-fetch token, try once more
+      // 401 handling: dispatch event for AuthProvider to refresh, then retry
       if (response.status === 401 && !retrying && !skipAuth) {
-        clearTokenCache()
-        return execute(true)
+        const refreshed = await waitForTokenRefresh()
+        if (refreshed) {
+          return execute(true)
+        }
+        throw new AuthError('Session expired. Please log in again.')
       }
 
       if (!response.ok) {
@@ -187,7 +211,7 @@ async function upload<T>(
   async function execute(retrying: boolean): Promise<T> {
     let token: string | null = null
     if (!skipAuth) {
-      token = await getClientAccessToken()
+      token = getAccessToken()
       if (!token) {
         throw new AuthError('Authentication required. Please log in.')
       }
@@ -215,8 +239,11 @@ async function upload<T>(
       })
 
       if (response.status === 401 && !retrying && !skipAuth) {
-        clearTokenCache()
-        return execute(true)
+        const refreshed = await waitForTokenRefresh()
+        if (refreshed) {
+          return execute(true)
+        }
+        throw new AuthError('Session expired. Please log in again.')
       }
 
       if (!response.ok) {

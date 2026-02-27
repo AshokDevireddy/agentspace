@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react'
-import { getClientAccessToken } from '@/lib/auth/client'
+import { getAccessToken } from '@/lib/auth/token-store'
 
 interface SSEOptions {
   /** Whether the SSE connection is enabled */
@@ -90,15 +90,15 @@ export function useSSE(
     }
   }, [])
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(() => {
     // Don't connect if not enabled or already connected
     if (!shouldConnectRef.current || eventSourceRef.current) {
       return
     }
 
     try {
-      // Get access token for authenticated SSE
-      const accessToken = await getClientAccessToken()
+      // Get access token for authenticated SSE (sync read from module store)
+      const accessToken = getAccessToken()
       if (!accessToken) {
         console.error('[SSE] No access token available')
         return
@@ -260,7 +260,7 @@ export function useConversationMessagesSSE(
   }, [onNewMessage, onMessageUpdated, onConversationUpdated])
 
   const url = conversationId
-    ? `/api/sms/sse/messages?conversation_id=${conversationId}`
+    ? `/api/sms/sse/messages/?conversation_id=${conversationId}`
     : ''
 
   return useSSE(url, {
@@ -286,7 +286,7 @@ export function useUnreadCountSSE(
     }
   }, [onCountUpdate])
 
-  return useSSE('/api/sms/sse/unread-count', {
+  return useSSE('/api/sms/sse/unread-count/', {
     enabled,
     onEvent: handleEvent,
   })
@@ -310,7 +310,7 @@ export function useConversationsSSE(
     }
   }, [onConversationUpdate])
 
-  return useSSE(`/api/sms/sse/conversations?view=${view}`, {
+  return useSSE(`/api/sms/sse/conversations/?view=${view}`, {
     enabled,
     onEvent: handleEvent,
   })

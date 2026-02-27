@@ -5,14 +5,15 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { useState } from 'react'
 import { categorizeError, getRetryDelay } from '@/lib/error-utils'
 
-// Global handler for auth errors - redirects to login
+// Global handler for auth errors — dispatches token-expired event
+// AuthProvider handles refresh; api-client handles retry
 function handleAuthError(error: unknown) {
   const category = categorizeError(error)
   if (category === 'auth') {
-    // Prevent multiple redirects
+    // Dispatch event so AuthProvider attempts a refresh.
+    // If refresh fails, AuthProvider redirects to /login.
     if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-      console.warn('[QueryProvider] Auth error detected, redirecting to login')
-      window.location.href = '/login'
+      window.dispatchEvent(new Event('auth:token-expired'))
     }
   }
 }

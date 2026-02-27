@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import CodeExecutor from '@/components/ai/CodeExecutor';
 import ThinkingProgress from '@/components/ai/ThinkingProgress';
 import { useAdminStatus } from '@/hooks/useUserQueries';
+import { getAccessToken } from '@/lib/auth/token-store';
+import { getApiBaseUrl } from '@/lib/api-config';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -294,10 +296,14 @@ export default function AIChat() {
         }
       ];
 
-      const response = await fetch('/api/ai/chat', {
+      const token = getAccessToken()
+      if (!token) throw new Error('Not authenticated')
+
+      const response = await fetch(`${getApiBaseUrl()}/api/ai/chat/stream/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           messages: conversationMessages

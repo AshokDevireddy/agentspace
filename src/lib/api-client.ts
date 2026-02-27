@@ -21,6 +21,7 @@ import { AuthError, NetworkError, createErrorFromResponse } from '@/lib/error-ut
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const UPLOAD_TIMEOUT_MS = 60_000
+const CAMELCASE_OPTIONS = { deep: true, exclude: [/^\d{4}-\d{2}-\d{2}$/] } as const
 
 /**
  * Unwrap Django's `{success: true, data: {...}}` envelope if present.
@@ -184,7 +185,7 @@ async function request<T>(
 
       try {
         const data = JSON.parse(text)
-        const transformed = skipCaseConversion ? data : camelcaseKeys(data, { deep: true })
+        const transformed = skipCaseConversion ? data : camelcaseKeys(data, CAMELCASE_OPTIONS)
         return unwrapEnvelope<T>(transformed)
       } catch {
         return text as unknown as T
@@ -272,7 +273,7 @@ async function upload<T>(
 
       try {
         const data = JSON.parse(text)
-        return unwrapEnvelope<T>(camelcaseKeys(data, { deep: true }))
+        return unwrapEnvelope<T>(camelcaseKeys(data, CAMELCASE_OPTIONS))
       } catch {
         return text as unknown as T
       }

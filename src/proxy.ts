@@ -26,7 +26,6 @@ const PUBLIC_API_PREFIXES = [
   '/api/auth/update-session', // Token refresh - validates existing session internally
   '/api/auth/refresh-session', // Proactive token refresh - validates existing session internally
   '/api/cron/',
-  '/api/telnyx-webhook',
   '/api/webhooks/stripe',
   '/api/favicon',
 ]

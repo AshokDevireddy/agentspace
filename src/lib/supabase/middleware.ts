@@ -92,7 +92,6 @@ export const PUBLIC_ROUTES = [
 
 export const PUBLIC_API_PREFIXES = [
   '/api/cron/',
-  '/api/telnyx-webhook',
   '/api/webhooks/stripe',
   '/api/register',
   '/api/reset-password',

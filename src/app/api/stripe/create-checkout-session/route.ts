@@ -1,173 +1,51 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getAccessToken } from '@/lib/session';
-import { getBackendUrl } from '@/lib/api-config';
-import { stripe } from '@/lib/stripe';
-import { getTierFromPriceId } from '@/lib/subscription-tiers';
+import { NextRequest, NextResponse } from 'next/server'
+import { getAccessToken } from '@/lib/session'
+import { getApiBaseUrl } from '@/lib/api-config'
 
 export async function POST(request: NextRequest) {
   try {
-    // Get access token from Django session
-    const accessToken = await getAccessToken();
-
+    const accessToken = await getAccessToken()
     if (!accessToken) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json();
-    const { priceId, couponCode } = body;
+    const body = await request.json()
+    const origin = request.headers.get('origin') || 'http://localhost:3000'
 
-    if (!priceId) {
-      return NextResponse.json(
-        { error: 'Missing required field: priceId' },
-        { status: 400 }
-      );
-    }
-
-    // Get tier from price ID
-    const tier = getTierFromPriceId(priceId);
-
-    // Get user Stripe data from Django
-    const djangoUrl = `${getBackendUrl()}/api/user/stripe-profile`;
-    const userResponse = await fetch(djangoUrl, {
-      method: 'GET',
+    const apiUrl = getApiBaseUrl()
+    const response = await fetch(`${apiUrl}/api/webhooks/stripe/checkout-session`, {
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`,
+        'Origin': origin,
       },
-    });
+      body: JSON.stringify({
+        price_id: body.priceId,
+        success_url: `${origin}/user/profile?session_id={CHECKOUT_SESSION_ID}&success=true`,
+        cancel_url: `${origin}/user/profile?canceled=true`,
+        coupon_code: body.couponCode || null,
+      }),
+    })
 
-    if (!userResponse.ok) {
-      if (userResponse.status === 404) {
-        return NextResponse.json(
-          { error: 'User not found' },
-          { status: 404 }
-        );
-      }
+    const data = await response.json()
+
+    if (!response.ok) {
       return NextResponse.json(
-        { error: 'Failed to get user data' },
-        { status: userResponse.status }
-      );
+        { error: data.error || 'Failed to create checkout session' },
+        { status: response.status }
+      )
     }
 
-    const userData = await userResponse.json();
-
-    // Check if user is trying to purchase Expert tier
-    if (tier === 'expert') {
-      const isAdmin = userData.role === 'admin';
-
-      if (!isAdmin) {
-        return NextResponse.json(
-          { error: 'Expert tier is only available for admin users' },
-          { status: 403 }
-        );
-      }
-    }
-
-    let customerId = userData.stripe_customer_id;
-
-    // Create Stripe customer if doesn't exist
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: userData.email?.trim(),
-        name: `${userData.first_name} ${userData.last_name}`,
-        metadata: {
-          supabase_user_id: userData.id,
-          auth_user_id: userData.auth_user_id,
-        },
-      });
-
-      customerId = customer.id;
-
-      // Save customer ID to Django
-      const updateResponse = await fetch(`${getBackendUrl()}/api/user/stripe-customer-id`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ stripe_customer_id: customerId }),
-      });
-
-      if (!updateResponse.ok) {
-        console.error('Failed to save Stripe customer ID');
-      }
-    }
-
-    // Validate and check coupon if provided
-    let validatedCoupon = null;
-    if (couponCode) {
-      try {
-        const coupon = await stripe.coupons.retrieve(couponCode);
-
-        if (!coupon.valid) {
-          return NextResponse.json(
-            { error: 'This coupon is no longer active' },
-            { status: 400 }
-          );
-        }
-
-        // Check if customer has already used ANY coupon (one per lifetime)
-        const customer = await stripe.customers.retrieve(customerId);
-        if (!customer.deleted && customer.metadata?.has_used_coupon === 'true') {
-          return NextResponse.json(
-            { error: 'You have already used your one-time promotional discount' },
-            { status: 400 }
-          );
-        }
-
-        validatedCoupon = couponCode;
-      } catch {
-        return NextResponse.json(
-          { error: 'Invalid coupon code' },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Create checkout session
-    const origin = request.headers.get('origin') || 'http://localhost:3000';
-
-    const sessionConfig: any = {
-      customer: customerId,
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
-      success_url: `${origin}/user/profile?session_id={CHECKOUT_SESSION_ID}&success=true`,
-      cancel_url: `${origin}/user/profile?canceled=true`,
-      allow_promotion_codes: true, // Enable coupon field in Stripe Checkout
-      metadata: {
-        user_id: userData.id,
-        tier: tier,
-      },
-      subscription_data: {
-        metadata: {
-          user_id: userData.id,
-          tier: tier,
-        },
-      },
-    };
-
-    // Apply coupon if validated
-    if (validatedCoupon) {
-      sessionConfig.discounts = [{ coupon: validatedCoupon }];
-      // Store that this customer will use this coupon (will be marked as used in webhook)
-      sessionConfig.metadata.applied_coupon = validatedCoupon;
-    }
-
-    const stripeSession = await stripe.checkout.sessions.create(sessionConfig);
-
-    return NextResponse.json({ sessionId: stripeSession.id, url: stripeSession.url });
-  } catch (error: unknown) {
-    console.error('Error creating checkout session:', error);
+    return NextResponse.json({
+      sessionId: data.session_id,
+      url: data.url,
+    })
+  } catch (error) {
+    console.error('Error creating checkout session:', error)
     return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Internal server error' },
       { status: 500 }
-    );
+    )
   }
 }

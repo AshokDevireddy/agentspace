@@ -626,11 +626,15 @@ export default function AnalyticsTestPage() {
 	const _analyticsFullData = selectedAgentAnalytics || mainAnalyticsData?.analyticsFullData || null
 	const _analyticsData = React.useMemo(() => {
 		if (!_analyticsFullData) return null
-		if (viewMode === 'just_me') {
-			return _analyticsFullData.yourDeals as AnalyticsTestValue
-		} else {
-			return _analyticsFullData.downline as AnalyticsTestValue
-		}
+		const scope = viewMode === 'just_me'
+			? _analyticsFullData.yourDeals
+			: _analyticsFullData.downline
+		if (!scope) return null
+		// Normalize series to always be an array regardless of API response shape
+		return {
+			...scope,
+			series: Array.isArray(scope.series) ? scope.series : [],
+		} as AnalyticsTestValue
 	}, [viewMode, _analyticsFullData])
 
 	const isLoading = isMainAnalyticsLoading || isSelectedAgentLoading || !_analyticsData

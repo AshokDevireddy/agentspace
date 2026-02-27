@@ -5,7 +5,7 @@
  * BFF routes handle auth via httpOnly cookies - no need for manual token passing.
  */
 import { useQuery } from '@tanstack/react-query'
-import { getAgentEndpoint } from '@/lib/api-config'
+import { agentEndpoints } from '@/lib/api-config'
 import { fetchWithCredentials } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
@@ -159,7 +159,7 @@ export function useAgentsList(
   return useQuery<AgentsListResponse, Error>({
     queryKey: queryKeys.agentsList(page, view, filters),
     queryFn: async () => {
-      const url = new URL(getAgentEndpoint('list'))
+      const url = new URL(agentEndpoints.list, window.location.origin)
       if (view === 'tree') {
         url.searchParams.set('view', 'tree')
       } else {
@@ -185,7 +185,7 @@ export function useAgentDownlines(
   return useQuery<AgentDownlinesResponse, Error>({
     queryKey: queryKeys.agentDownlines(agentId || ''),
     queryFn: async () => {
-      const url = new URL(getAgentEndpoint('downlines'))
+      const url = new URL(agentEndpoints.downlines, window.location.origin)
       url.searchParams.set('agentId', agentId!)
 
       return fetchWithCredentials(url.toString(), 'Failed to fetch agent downlines')
@@ -201,7 +201,7 @@ export function useAgentsWithoutPositions(options?: { enabled?: boolean }) {
   return useQuery<PendingPositionsResponse, Error>({
     queryKey: queryKeys.agentsPendingPositions(),
     queryFn: async () => {
-      const url = new URL(getAgentEndpoint('withoutPositions'))
+      const url = new URL(agentEndpoints.withoutPositions, window.location.origin)
       url.searchParams.set('all', 'true')
 
       return fetchWithCredentials(url.toString(), 'Failed to fetch agents without positions')

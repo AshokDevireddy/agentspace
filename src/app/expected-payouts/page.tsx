@@ -36,14 +36,26 @@ interface PayoutData {
   statusStandardized: string | null
 }
 
+interface ProductionBreakdown {
+  your: {
+    payouts: PayoutData[]
+    total: number
+    productionTotal: number
+    count: number
+  }
+  downline: {
+    payouts: PayoutData[]
+    total: number
+    productionTotal: number
+    count: number
+  }
+  total: number
+  totalCount: number
+}
+
 interface PayoutsTopLevel {
   payouts: PayoutData[]
-  totalExpected: number
-  totalPremium: number
-  dealCount: number
-  payoutEntries: number
-  personalProduction: number
-  downlineProduction: number
+  production: ProductionBreakdown
   summary: {
     byCarrier: Array<{
       carrier: string
@@ -180,12 +192,14 @@ export default function ExpectedPayoutsPage() {
       }
 
       const data = await response.json()
+      // Django returns { success, data: {...} } — unwrap the nested data
+      const user = data.data || data
       return {
-        id: data.id,
-        role: data.role,
-        agencyId: data.agencyId,
-        subscriptionTier: data.subscriptionTier,
-        authUserId: data.authUserId
+        id: user.id,
+        role: user.role,
+        agencyId: user.agencyId,
+        subscriptionTier: user.subscriptionTier,
+        authUserId: user.authUserId
       } as UserData
     },
     // Only run query when auth is ready (authLoading is false)
@@ -217,8 +231,8 @@ export default function ExpectedPayoutsPage() {
     queryFn: async () => {
       if (!userData) return []
 
-      // Use Django API for agents/downlines
-      const response = await fetch('/api/agents/downlines', {
+      // Use Django API for agents/downlines - requires agentId query param
+      const response = await fetch(`/api/agents/downlines?agentId=${userData.id}`, {
         method: 'GET',
         credentials: 'include'
       })
@@ -229,8 +243,9 @@ export default function ExpectedPayoutsPage() {
       }
 
       const data = await response.json()
-      // Map to expected format - backend returns agents with firstName, lastName (camelCased by api-proxy)
-      return (data.agents || data || []).map((agent: { id: string; firstName?: string; lastName?: string; name?: string }) => ({
+      // Django returns { agentId, downlines: [...], downlineCount } (camelCased by api-proxy)
+      // Downline items have { id, name } — split name into firstName/lastName
+      return (data.downlines || []).map((agent: { id: string; firstName?: string; lastName?: string; name?: string }) => ({
         id: agent.id,
         firstName: agent.firstName || agent.name?.split(' ')[0] || '',
         lastName: agent.lastName || agent.name?.split(' ').slice(1).join(' ') || ''
@@ -316,11 +331,12 @@ export default function ExpectedPayoutsPage() {
   })
 
   const payouts = payoutsData?.payouts || []
-  // Derive production totals from the flat Django response fields (after camelCase transform)
-  const totalExpected = payoutsData?.totalExpected ?? 0
-  const dealCount = payoutsData?.dealCount ?? 0
-  const personalProduction = payoutsData?.personalProduction ?? 0
-  const downlineProduction = payoutsData?.downlineProduction ?? 0
+  const production = payoutsData?.production || null
+  // Access nested production breakdown (matches Django response shape)
+  const totalExpected = production?.total ?? 0
+  const dealCount = production?.totalCount ?? 0
+  const personalProduction = production?.your?.productionTotal ?? 0
+  const downlineProduction = production?.downline?.productionTotal ?? 0
 
   // Fetch debt data - depends on agent filter
   // Use effectiveAgentId to prevent race conditions when filter hasn't been set yet

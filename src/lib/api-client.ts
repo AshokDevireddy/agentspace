@@ -22,6 +22,23 @@ import { AuthError, NetworkError, createErrorFromResponse } from '@/lib/error-ut
 const DEFAULT_TIMEOUT_MS = 30_000
 const UPLOAD_TIMEOUT_MS = 60_000
 
+/**
+ * Unwrap Django's `{success: true, data: {...}}` envelope if present.
+ * Endpoints that don't use the envelope pattern are returned as-is.
+ */
+function unwrapEnvelope<T>(parsed: unknown): T {
+  if (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    !Array.isArray(parsed) &&
+    (parsed as Record<string, unknown>).success === true &&
+    'data' in (parsed as Record<string, unknown>)
+  ) {
+    return (parsed as Record<string, unknown>).data as T
+  }
+  return parsed as T
+}
+
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 interface RequestOptions {
@@ -167,8 +184,8 @@ async function request<T>(
 
       try {
         const data = JSON.parse(text)
-        if (skipCaseConversion) return data as T
-        return camelcaseKeys(data, { deep: true }) as T
+        const transformed = skipCaseConversion ? data : camelcaseKeys(data, { deep: true })
+        return unwrapEnvelope<T>(transformed)
       } catch {
         return text as unknown as T
       }
@@ -255,7 +272,7 @@ async function upload<T>(
 
       try {
         const data = JSON.parse(text)
-        return camelcaseKeys(data, { deep: true }) as T
+        return unwrapEnvelope<T>(camelcaseKeys(data, { deep: true }))
       } catch {
         return text as unknown as T
       }

@@ -43,12 +43,6 @@ interface ScoreboardData {
   }
 }
 
-interface ScoreboardRpcResponse {
-  success: boolean
-  data?: ScoreboardData
-  error?: string
-}
-
 type TimeframeOption = 'this_week' | 'last_week' | 'past_7_days' | 'past_14_days' | 'this_month' | 'last_month' | 'past_30_days' | 'past_90_days' | 'past_180_days' | 'past_12_months' | 'ytd' | 'custom'
 
 const timeframeOptions = [
@@ -95,8 +89,12 @@ export default function Scoreboard() {
     queryKey: queryKeys.myDownlineIds(user?.id || ''),
     queryFn: async () => {
       try {
-        const data = await apiClient.get<{ downlines?: Array<{ id: string; firstName: string; lastName: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
-        const agents: { id: string; firstName: string; lastName: string }[] = data.downlines || (data as any) || []
+        const data = await apiClient.get<{ downlines?: Array<{ id: string; name: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
+        const agents = (data.downlines || []).map(d => ({
+          id: d.id,
+          firstName: d.name?.split(' ')[0] || '',
+          lastName: d.name?.split(' ').slice(1).join(' ') || ''
+        }))
         const ids: string[] = agents.map((d) => d.id)
         return { downlineIds: ids, downlineAgents: agents }
       } catch {
@@ -113,7 +111,7 @@ export default function Scoreboard() {
     queryFn: async () => {
       try {
         const data = await apiClient.get<{ downlines?: Array<{ id: string }> }>('/api/agents/downlines/', { params: { agentId: selectedDownlineAgentId } })
-        const ids: string[] = (data.downlines || (data as any) || []).map((d: { id: string }) => d.id)
+        const ids: string[] = (data.downlines || []).map((d) => d.id)
         return { downlineIds: ids }
       } catch {
         return { downlineIds: [] as string[] }

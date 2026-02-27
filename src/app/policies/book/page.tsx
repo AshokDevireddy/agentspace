@@ -50,25 +50,23 @@ interface DealProduct {
 
 interface Deal {
   id: string
-  date: string
+  createdAt: string
   agent: DealAgent | null
   carrier: DealCarrier | null
-  client: DealClient | null
+  client: (DealClient & { ssnBenefit?: boolean }) | null
   product: DealProduct | string | null
   policyNumber: string
-  appNumber: string
+  applicationNumber: string
   phoneHidden?: boolean
-  effectiveDate: string
-  effectiveDateRaw: string
-  annualPremium: string
-  annualPremiumRaw: number
+  policyEffectiveDate: string | null
+  annualPremium: number | null
+  monthlyPremium: number | null
   leadSource: string
   billingCycle: string
   status: string
   statusStandardized: string
-  ssnBenefit: boolean
-  billingDayOfMonth: string | null
-  billingWeekday: string | null
+  billingDayOfMonth?: string | null
+  billingWeekday?: string | null
   faceValue?: number | null
 }
 
@@ -1013,7 +1011,7 @@ export default function BookOfBusiness() {
                       className="cursor-pointer hover:bg-accent/50 transition-colors"
                       onClick={() => handleRowClick(deal)}
                     >
-                        <td className="whitespace-nowrap">{deal.date}</td>
+                        <td className="whitespace-nowrap">{deal.createdAt}</td>
                         <td className="whitespace-nowrap">
                           {deal.agent
                             ? `${deal.agent.firstName} ${deal.agent.lastName}`.trim()
@@ -1038,8 +1036,8 @@ export default function BookOfBusiness() {
                             ) : (
                               <span className="text-xs text-muted-foreground italic">No Policy #</span>
                             )}
-                            {deal.appNumber && (
-                              <span className="text-xs text-muted-foreground">App: {deal.appNumber}</span>
+                            {deal.applicationNumber && (
+                              <span className="text-xs text-muted-foreground">App: {deal.applicationNumber}</span>
                             )}
                           </div>
                         </td>
@@ -1061,26 +1059,26 @@ export default function BookOfBusiness() {
                         <td>
                           <div className="flex flex-col gap-1">
                             <div className="flex items-baseline gap-1.5">
-                              <span className="text-foreground font-bold text-base">{deal.annualPremium}/yr</span>
-                              {deal.billingCycle && deal.annualPremiumRaw > 0 && (
+                              <span className="text-foreground font-bold text-base">${(deal.annualPremium ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/yr</span>
+                              {deal.billingCycle && (deal.annualPremium ?? 0) > 0 && (
                                 <span className="text-xs text-muted-foreground">
-                                  (${calculateMonthlyPremium(deal.annualPremiumRaw, deal.billingCycle).toFixed(2)}/mo)
+                                  (${calculateMonthlyPremium(deal.annualPremium ?? 0, deal.billingCycle).toFixed(2)}/mo)
                                 </span>
                               )}
                             </div>
                             <div className="flex flex-col gap-0.5">
-                              <span className="text-xs text-muted-foreground">Effective: {deal.effectiveDate}</span>
-                              {deal.ssnBenefit && deal.billingDayOfMonth && deal.billingWeekday ? (
+                              <span className="text-xs text-muted-foreground">Effective: {deal.policyEffectiveDate || '—'}</span>
+                              {deal.client?.ssnBenefit && deal.billingDayOfMonth && deal.billingWeekday ? (
                                 <span className="text-xs text-muted-foreground">
                                   Next Billing ({formatBillingPattern(deal.billingDayOfMonth, deal.billingWeekday)}): {(() => {
                                     const nextBilling = calculateNextCustomBillingDate(deal.billingDayOfMonth, deal.billingWeekday)
                                     return nextBilling ? nextBilling.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A'
                                   })()}
                                 </span>
-                              ) : deal.effectiveDateRaw && deal.billingCycle ? (
+                              ) : deal.policyEffectiveDate && deal.billingCycle ? (
                                 <span className="text-xs text-muted-foreground">
                                   Next Draft: {(() => {
-                                    const nextDraft = calculateNextDraftDate(deal.effectiveDateRaw, deal.billingCycle)
+                                    const nextDraft = calculateNextDraftDate(deal.policyEffectiveDate, deal.billingCycle)
                                     return nextDraft ? nextDraft.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A'
                                   })()}
                                 </span>

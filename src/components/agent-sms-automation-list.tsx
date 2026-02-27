@@ -7,10 +7,10 @@ import { Loader2, Search } from "lucide-react"
 
 export interface AgentAutoSendInfo {
   id: string
-  first_name: string | null
-  last_name: string | null
+  firstName: string | null
+  lastName: string | null
   email: string | null
-  sms_auto_send_enabled: boolean | null
+  smsAutoSendEnabled: boolean | null
 }
 
 interface AgentSmsAutomationListProps {
@@ -53,7 +53,7 @@ export function AgentSmsAutomationList({
   const query = search.toLowerCase().trim()
   const filteredAgents = query
     ? agents.filter((agent) => {
-        const fullName = [agent.first_name, agent.last_name].filter(Boolean).join(" ").toLowerCase()
+        const fullName = [agent.firstName, agent.lastName].filter(Boolean).join(" ").toLowerCase()
         const email = (agent.email ?? "").toLowerCase()
         return fullName.includes(query) || email.includes(query)
       })
@@ -77,15 +77,15 @@ export function AgentSmsAutomationList({
       ) : (
         <div className="divide-y divide-border">
           {filteredAgents.map((agent) => {
-        const displayName = [agent.first_name, agent.last_name].filter(Boolean).join(" ") || "Unnamed Agent"
-        const isOverridden = agent.sms_auto_send_enabled !== null
-        const effectiveValue = agent.sms_auto_send_enabled ?? agencyAutoSendEnabled
+        const displayName = [agent.firstName, agent.lastName].filter(Boolean).join(" ") || "Unnamed Agent"
+        const isOverridden = agent.smsAutoSendEnabled !== null
+        const effectiveValue = agent.smsAutoSendEnabled ?? agencyAutoSendEnabled
         const isSaving = saving === agent.id
 
         let selectValue: string
-        if (agent.sms_auto_send_enabled === null) {
+        if (agent.smsAutoSendEnabled === null) {
           selectValue = "default"
-        } else if (agent.sms_auto_send_enabled === true) {
+        } else if (agent.smsAutoSendEnabled === true) {
           selectValue = "on"
         } else {
           selectValue = "off"

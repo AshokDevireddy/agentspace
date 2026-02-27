@@ -587,7 +587,7 @@ export default function ConfigurationPage() {
   })
 
   // Fetch carrier names (only when carrier-logins tab is active)
-  const { data: carrierNamesData = [], isLoading: loadingCarrierNames } = useApiFetch<string[]>(
+  const { data: carrierNamesRawData = [], isLoading: loadingCarrierNames } = useApiFetch<Array<{id: string, name: string}>>(
     queryKeys.configurationCarrierNames(),
     '/api/carriers/names',
     {
@@ -595,6 +595,7 @@ export default function ConfigurationPage() {
       staleTime: 10 * 60 * 1000, // 10 minutes
     }
   )
+  const carrierNamesData = carrierNamesRawData.map((c: {id: string, name: string}) => c.name)
 
   // Fetch existing policy files from ingest jobs (only when policy-reports tab is active)
   const { data: policyFilesData, isLoading: checkingExistingFiles, refetch: refetchPolicyFiles } = useApiFetch<{files: any[], jobs?: any[]}>(

@@ -185,9 +185,9 @@ export default function PostDeal() {
       const rawTeams: Array<{ value?: string; label?: string; id?: string; name?: string }> = data.teams || []
 
       return {
-        userId: data.userId,
+        userId: data.user?.id,
         agencyId: data.agencyId,
-        isAdminUser: data.isAdmin,
+        isAdminUser: data.user?.isAdmin,
         leadSourceOptions: rawLeadSources.map(ls =>
           ls.value !== undefined
             ? { value: ls.value, label: ls.label ?? ls.name ?? String(ls.value) }

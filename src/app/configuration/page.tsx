@@ -599,7 +599,7 @@ export default function ConfigurationPage() {
   // Fetch existing policy files from ingest jobs (only when policy-reports tab is active)
   const { data: policyFilesData, isLoading: checkingExistingFiles, refetch: refetchPolicyFiles } = useApiFetch<{files: any[], jobs?: any[]}>(
     queryKeys.configurationPolicyFiles(),
-    '/api/upload-policy-reports/jobs',
+    '/api/ingest/jobs/?days=30&limit=50',
     {
       enabled: activeTab === 'policy-reports',
       staleTime: 2 * 60 * 1000, // 2 minutes

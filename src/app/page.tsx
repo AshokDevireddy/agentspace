@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ProductionProgressCard } from "@/components/production-progress-card"
-import { Users, BarChart3, FileText, Briefcase, AlertCircle } from "lucide-react"
+import { Users, BarChart3, Briefcase, AlertCircle } from "lucide-react"
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
@@ -40,7 +40,7 @@ export default function Home() {
   const queryClient = useQueryClient()
   const completeOnboardingMutation = useCompleteOnboarding()
 
-  const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useQuery<UserProfile, Error>({
+  const { data: profileData, isLoading: profileLoading, error: profileError } = useQuery<UserProfile, Error>({
     queryKey: queryKeys.userProfile(user?.id),
     queryFn: async () => {
       const response = await apiClient.get<{ success: boolean; data: UserProfile } | UserProfile>(
@@ -54,7 +54,7 @@ export default function Home() {
     placeholderData: (previousData) => previousData,
   })
 
-  const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useScoreboardData(
+  const { isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useScoreboardData(
     user?.id,
     weekRange.startDate,
     weekRange.endDate,
@@ -150,20 +150,14 @@ export default function Home() {
     }
   }, [userData, setUserRole])
 
-  // Top producers from YTD/MTD query
-  const topProducersData = topProducersResult ?? null
   const topProducers: { rank: number; name: string; amount: string }[] = useMemo(() => {
-    if (!topProducersData?.entries) return []
-    return topProducersData.entries.slice(0, 5).map((producer: LeaderboardProducer) => ({
+    if (!topProducersResult?.entries) return []
+    return topProducersResult.entries.slice(0, 5).map((producer: LeaderboardProducer) => ({
       rank: producer.rank,
       name: producer.agentName,
       amount: `$${parseFloat(producer.production).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     }))
-  }, [topProducersData])
-
-  const dateRange = { startDate: weekRange.startDate, endDate: weekRange.endDate }
-
-  const dashboardData = dashboardResult
+  }, [topProducersResult])
 
   useEffect(() => {
     if (!authLoading && !profileLoading && userData && user?.id) {
@@ -206,25 +200,24 @@ export default function Home() {
   // Include authLoading to show skeletons while auth is initializing (prevents "no data" flash)
   const isHeaderLoading = authLoading || profileLoading
   const isStatsLoading = authLoading || dashboardLoading
-  const isScoreboardLoading = authLoading || scoreboardLoading
   const isPieChartLoading = authLoading || dashboardLoading
 
   // Background refetch indicators for stale-while-revalidate
   const isRefreshing = (dashboardFetching && !dashboardLoading) || (scoreboardFetching && !scoreboardLoading)
 
   const formattedDateRange = useMemo(() => {
-    if (!dateRange.startDate || !dateRange.endDate) return 'This Week'
-    const start = new Date(dateRange.startDate + 'T00:00:00')
-    const end = new Date(dateRange.endDate + 'T00:00:00')
+    if (!weekRange.startDate || !weekRange.endDate) return 'This Week'
+    const start = new Date(weekRange.startDate + 'T00:00:00')
+    const end = new Date(weekRange.endDate + 'T00:00:00')
     return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-  }, [dateRange])
+  }, [weekRange])
 
   const currentData = useMemo((): DealsSummary | DashboardData | null => {
-    if (dashboardData?.yourDeals || dashboardData?.downlineProduction) {
-      return viewMode === 'just_me' ? dashboardData?.yourDeals : dashboardData?.downlineProduction
+    if (dashboardResult?.yourDeals || dashboardResult?.downlineProduction) {
+      return viewMode === 'just_me' ? dashboardResult?.yourDeals : dashboardResult?.downlineProduction
     }
-    return dashboardData || null
-  }, [dashboardData, viewMode])
+    return dashboardResult || null
+  }, [dashboardResult, viewMode])
 
   const pieChartData = useMemo(() => {
     if (!currentData?.carriersActive) return []
@@ -353,7 +346,7 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {(dashboardData?.totals?.pendingPositions || 0) > 0 && (
+            {(dashboardResult?.totals?.pendingPositions || 0) > 0 && (
               <Link href="/agents?tab=pending-positions" className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
                 <AlertCircle className="h-5 w-5" />
                 <span className="font-semibold">Pending Positions</span>
@@ -381,7 +374,7 @@ export default function Home() {
             </Card>
           ))}
         </div>
-      ) : dashboardData && (
+      ) : dashboardResult && (
         <div key={viewMode} className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500" data-tour="dashboard-stats">
           <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
             <CardContent className="p-4">

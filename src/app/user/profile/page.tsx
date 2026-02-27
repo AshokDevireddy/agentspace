@@ -1,21 +1,35 @@
-"use client"
+"use client";
 
 import React, { useState } from "react";
 import { useAuth } from "@/providers/AuthProvider";
 import { PricingTierCard } from "@/components/pricing-tier-card";
 import { SubscriptionManager } from "@/components/subscription-manager";
 import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";
-import { useNotification } from '@/contexts/notification-context'
-import { useTheme } from "next-themes"
-import { updateUserTheme, ThemeMode } from "@/lib/theme"
-import { Sun, Moon, Monitor, Check, Loader2, MessageSquare } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useApiFetch } from '@/hooks/useApiFetch'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { queryKeys } from '@/hooks/queryKeys'
-import { useResetPassword } from '@/hooks/mutations'
-import { apiClient } from '@/lib/api-client'
+import { useNotification } from "@/contexts/notification-context";
+import { useTheme } from "next-themes";
+import { updateUserTheme, ThemeMode } from "@/lib/theme";
+import {
+  Sun,
+  Moon,
+  Monitor,
+  Check,
+  Loader2,
+  Phone,
+  MessageSquare,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useApiFetch } from "@/hooks/useApiFetch";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/hooks/queryKeys";
+import { useResetPassword } from "@/hooks/mutations";
+import { apiClient } from "@/lib/api-client";
 
 interface ProfileData {
   id: string;
@@ -60,23 +74,26 @@ interface ProfileApiResponse {
 
 // Helper function to format date as "Month DD, YYYY"
 const formatRenewalDate = (dateString: string | null | undefined): string => {
-  if (!dateString) return 'Not available';
+  if (!dateString) return "Not available";
   const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 };
 
 export default function ProfilePage() {
   const { user, refreshUser, loading: authLoading } = useAuth();
-  const { showSuccess, showError } = useNotification()
-  const { setTheme } = useTheme()
-  const queryClient = useQueryClient()
+  const { showSuccess, showError } = useNotification();
+  const { setTheme } = useTheme();
+  const queryClient = useQueryClient();
   const [selectedPositionId, setSelectedPositionId] = useState<string>("");
   const [savingTheme, setSavingTheme] = useState(false);
-  const [smsAutoSendValue, setSmsAutoSendValue] = useState<"default" | "on" | "off">("default");
+  const [phoneNumber, setPhoneNumber] = useState<string>("");
+  const [smsAutoSendValue, setSmsAutoSendValue] = useState<
+    "default" | "on" | "off"
+  >("default");
 
   // Password reset mutation
   const resetPasswordMutation = useResetPassword();
@@ -86,7 +103,7 @@ export default function ProfilePage() {
   const {
     data: profileResponse,
     isLoading: profileLoading,
-    error: profileError
+    error: profileError,
   } = useApiFetch<ProfileApiResponse>(
     queryKeys.userProfile(user?.id),
     `/api/user/profile?user_id=${user?.id}`,
@@ -94,67 +111,98 @@ export default function ProfilePage() {
       enabled: !authLoading && !!user,
       staleTime: 5 * 60 * 1000, // 5 minutes - profile rarely changes
       placeholderData: (previousData) => previousData, // Stale-while-revalidate
-    }
-  )
+    },
+  );
 
-  const profileData = profileResponse?.data
+  const profileData = profileResponse?.data;
 
   // Update selectedPositionId when profileData changes
   React.useEffect(() => {
     if (profileData?.positionId) {
-      setSelectedPositionId(profileData.positionId)
+      setSelectedPositionId(profileData.positionId);
     }
-  }, [profileData?.positionId])
+  }, [profileData?.positionId]);
+
+  // Sync phone number from profile data
+  React.useEffect(() => {
+    if (profileData?.phoneNumber) {
+      setPhoneNumber(profileData.phoneNumber);
+    }
+  }, [profileData?.phoneNumber]);
 
   // Sync SMS auto-send value from profile data
   React.useEffect(() => {
-    const val = profileData?.smsAutoSendEnabled
-    if (val === true) setSmsAutoSendValue("on")
-    else if (val === false) setSmsAutoSendValue("off")
-    else if (val === null || val === undefined) setSmsAutoSendValue("default")
-  }, [profileData?.smsAutoSendEnabled])
+    const val = profileData?.smsAutoSendEnabled;
+    if (val === true) setSmsAutoSendValue("on");
+    else if (val === false) setSmsAutoSendValue("off");
+    else if (val === null || val === undefined) setSmsAutoSendValue("default");
+  }, [profileData?.smsAutoSendEnabled]);
 
   // Fetch positions if admin using TanStack Query with apiClient
-  const {
-    data: positions = [],
-    isLoading: positionsLoading
-  } = useQuery<Position[]>({
+  const { data: positions = [], isLoading: positionsLoading } = useQuery<
+    Position[]
+  >({
     queryKey: queryKeys.positionsList(),
     queryFn: async () => {
       try {
-        const data = await apiClient.get<Position[]>('/api/positions/')
+        const data = await apiClient.get<Position[]>("/api/positions/");
         // API returns array directly - validate to prevent cache collision issues
         return Array.isArray(data) ? data : [];
       } catch (err) {
-        console.error('[Profile] Positions query error:', err);
+        console.error("[Profile] Positions query error:", err);
         return [];
       }
     },
     // Wait for auth to be ready and user to be admin
     enabled: !authLoading && !!profileData?.isAdmin,
     retry: 1,
-  })
+  });
 
   // Shared profile update helper
   const updateProfile = async (body: Record<string, unknown>) => {
-    const result = await apiClient.put<{ success: boolean; error?: string }>('/api/user/profile/', body)
-    if (!result.success) throw new Error(result.error || 'Failed to update profile');
+    const result = await apiClient.put<{ success: boolean; error?: string }>(
+      "/api/user/profile/",
+      body,
+    );
+    if (!result.success)
+      throw new Error(result.error || "Failed to update profile");
     return result;
-  }
+  };
 
-  const useProfileMutation = (successMsg: string) => useMutation({
-    mutationFn: updateProfile,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(user?.id) })
-      showSuccess(successMsg);
-    },
-    onError: (error: Error) => {
-      showError(error.message || 'Failed to update profile');
-    }
-  })
+  const useProfileMutation = (successMsg: string) =>
+    useMutation({
+      mutationFn: updateProfile,
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.userProfile(user?.id),
+        });
+        showSuccess(successMsg);
+      },
+      onError: (error: Error) => {
+        showError(error.message || "Failed to update profile");
+      },
+    });
 
-  const updatePositionMutation = useProfileMutation('Position updated successfully!');
-  const updateSmsAutoSendMutation = useProfileMutation('SMS automation preference updated!');
+  const updatePositionMutation = useProfileMutation(
+    "Position updated successfully!",
+  );
+  const updatePhoneMutation = useProfileMutation(
+    "Phone number updated successfully!",
+  );
+  const updateSmsAutoSendMutation = useProfileMutation(
+    "SMS automation preference updated!",
+  );
+
+  const formatPhoneDisplay = (value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 10);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  };
+
+  const handlePhoneUpdate = () => {
+    updatePhoneMutation.mutate({ phoneNumber });
+  };
 
   const handlePositionUpdate = () => {
     if (!selectedPositionId) return;
@@ -162,49 +210,56 @@ export default function ProfilePage() {
   };
 
   const handleSmsAutoSendChange = (selectValue: string) => {
-    const dbValue = selectValue === "default" ? null : selectValue === "on" ? true : false;
+    const dbValue =
+      selectValue === "default" ? null : selectValue === "on" ? true : false;
     setSmsAutoSendValue(selectValue as "default" | "on" | "off");
     updateSmsAutoSendMutation.mutate({ smsAutoSendEnabled: dbValue });
-  }
+  };
 
   const handleThemeChange = async (newTheme: ThemeMode) => {
-    setSavingTheme(true)
-    setTheme(newTheme)
-    const result = await updateUserTheme(newTheme)
+    setSavingTheme(true);
+    setTheme(newTheme);
+    const result = await updateUserTheme(newTheme);
     if (result.success) {
-      await refreshUser()
+      await refreshUser();
     } else {
-      showError('Failed to update theme preference')
+      showError("Failed to update theme preference");
     }
-    setSavingTheme(false)
-  }
+    setSavingTheme(false);
+  };
 
   const handlePasswordReset = () => {
     if (!user?.email) {
-      showError('Unable to send password reset email')
-      return
+      showError("Unable to send password reset email");
+      return;
     }
 
     resetPasswordMutation.mutate(
       { email: user.email },
       {
         onSuccess: () => {
-          showSuccess('Password reset email sent! Check your inbox.')
+          showSuccess("Password reset email sent! Check your inbox.");
         },
         onError: () => {
-          showError('Failed to send password reset email')
-        }
-      }
-    )
-  }
+          showError("Failed to send password reset email");
+        },
+      },
+    );
+  };
 
   // Show error state if profile fetch failed
   if (profileError) {
     return (
       <div className="flex flex-col items-center w-full min-h-screen bg-background py-8">
         <div className="w-full max-w-3xl bg-destructive/10 rounded-xl border border-destructive p-6">
-          <h2 className="text-lg font-semibold text-destructive mb-2">Failed to load profile</h2>
-          <p className="text-sm text-destructive/80">{profileError instanceof Error ? profileError.message : 'An unexpected error occurred'}</p>
+          <h2 className="text-lg font-semibold text-destructive mb-2">
+            Failed to load profile
+          </h2>
+          <p className="text-sm text-destructive/80">
+            {profileError instanceof Error
+              ? profileError.message
+              : "An unexpected error occurred"}
+          </p>
           <button
             onClick={() => window.location.reload()}
             className="mt-4 px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90"
@@ -248,9 +303,17 @@ export default function ProfilePage() {
           <div className="w-32 h-32 bg-muted rounded-lg flex items-center justify-center mr-8 shadow">
             {/* Show avatar if available, else fallback */}
             {user_profile.avatarUrl ? (
-              <img src={user_profile.avatarUrl} alt="Profile" className="w-full h-full object-cover rounded-lg" />
+              <img
+                src={user_profile.avatarUrl}
+                alt="Profile"
+                className="w-full h-full object-cover rounded-lg"
+              />
             ) : (
-              <svg className="w-20 h-20 text-muted-foreground" fill="currentColor" viewBox="0 0 24 24">
+              <svg
+                className="w-20 h-20 text-muted-foreground"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <circle cx="12" cy="8" r="5" />
                 <path d="M12 14c-5 0-8 2.5-8 5v1h16v-1c0-2.5-3-5-8-5z" />
               </svg>
@@ -258,7 +321,9 @@ export default function ProfilePage() {
           </div>
           {/* Info */}
           <div>
-            <h1 className="text-4xl font-extrabold text-foreground mb-1">{user_profile.name}</h1>
+            <h1 className="text-4xl font-extrabold text-foreground mb-1">
+              {user_profile.name}
+            </h1>
           </div>
         </div>
       </div>
@@ -267,7 +332,8 @@ export default function ProfilePage() {
       <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
         <h2 className="text-xl font-bold text-foreground mb-2">Password</h2>
         <p className="text-sm text-muted-foreground mb-4">
-          Reset your password by sending a password reset link to your email address.
+          Reset your password by sending a password reset link to your email
+          address.
         </p>
         <button
           onClick={handlePasswordReset}
@@ -280,9 +346,50 @@ export default function ProfilePage() {
               Sending Email...
             </>
           ) : (
-            'Send Password Reset Email'
+            "Send Password Reset Email"
           )}
         </button>
+      </div>
+
+      {/* Phone Number Section */}
+      <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
+        <h2 className="text-xl font-bold text-foreground mb-2">
+          <Phone className="h-5 w-5 inline mr-2" />
+          Phone Number
+        </h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Your phone number is included in SMS messages sent to clients. Please
+          enter your direct cell number.
+        </p>
+        <div className="flex items-end gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-muted-foreground mb-2">
+              Cell Phone Number
+            </label>
+            <input
+              type="tel"
+              value={formatPhoneDisplay(phoneNumber)}
+              onChange={(e) =>
+                setPhoneNumber(e.target.value.replace(/\D/g, "").slice(0, 10))
+              }
+              placeholder="(555) 123-4567"
+              maxLength={14}
+              className="w-full px-4 py-2 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Format: (XXX) XXX-XXXX
+            </p>
+          </div>
+          <button
+            onClick={handlePhoneUpdate}
+            disabled={
+              updatePhoneMutation.isPending || phoneNumber.length !== 10
+            }
+            className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {updatePhoneMutation.isPending ? "Saving..." : "Save Phone"}
+          </button>
+        </div>
       </div>
 
       {/* SMS Automation Self-Service (Non-admin agents) */}
@@ -293,11 +400,14 @@ export default function ProfilePage() {
             SMS Automation
           </h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Control whether automated SMS messages are sent immediately or saved as drafts for your review.
-            Your agency default is currently set to{' '}
+            Control whether automated SMS messages are sent immediately or saved
+            as drafts for your review. Your agency default is currently set to{" "}
             <span className="font-medium text-foreground">
-              {profileData.agencySmsAutoSendEnabled ? 'Auto-Send' : 'Drafts Only'}
-            </span>.
+              {profileData.agencySmsAutoSendEnabled
+                ? "Auto-Send"
+                : "Drafts Only"}
+            </span>
+            .
           </p>
           <div className="flex items-end gap-4">
             <div className="flex-1">
@@ -314,7 +424,11 @@ export default function ProfilePage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="default">
-                    Agency Default ({profileData.agencySmsAutoSendEnabled ? 'Auto-Send' : 'Drafts Only'})
+                    Agency Default (
+                    {profileData.agencySmsAutoSendEnabled
+                      ? "Auto-Send"
+                      : "Drafts Only"}
+                    )
                   </SelectItem>
                   <SelectItem value="on">Auto-Send (Override)</SelectItem>
                   <SelectItem value="off">Drafts Only (Override)</SelectItem>
@@ -324,7 +438,9 @@ export default function ProfilePage() {
           </div>
           {smsAutoSendValue !== "default" && (
             <p className="text-xs text-amber-600 dark:text-amber-400 mt-3">
-              You are overriding your agency&apos;s default setting. Select &quot;Agency Default&quot; to follow your agency&apos;s preference.
+              You are overriding your agency&apos;s default setting. Select
+              &quot;Agency Default&quot; to follow your agency&apos;s
+              preference.
             </p>
           )}
           {updateSmsAutoSendMutation.isPending && (
@@ -343,7 +459,7 @@ export default function ProfilePage() {
           <div className="flex items-end gap-4">
             <div className="flex-1">
               <label className="block text-sm font-medium text-muted-foreground mb-2">
-                Current Position: {profileData.position?.name || 'Not Set'}
+                Current Position: {profileData.position?.name || "Not Set"}
               </label>
               <select
                 value={selectedPositionId}
@@ -360,55 +476,70 @@ export default function ProfilePage() {
             </div>
             <button
               onClick={handlePositionUpdate}
-              disabled={updatePositionMutation.isPending || !selectedPositionId || selectedPositionId === profileData.positionId}
+              disabled={
+                updatePositionMutation.isPending ||
+                !selectedPositionId ||
+                selectedPositionId === profileData.positionId
+              }
               className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {updatePositionMutation.isPending ? 'Updating...' : 'Update Position'}
+              {updatePositionMutation.isPending
+                ? "Updating..."
+                : "Update Position"}
             </button>
           </div>
         </div>
       )}
 
       {/* Theme Preference (Non-admin agents only - Admins use Settings page) */}
-      {!profileData.isAdmin && user?.role === 'agent' && (
+      {!profileData.isAdmin && user?.role === "agent" && (
         <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
           <h2 className="text-xl font-bold text-foreground mb-2">
             <Moon className="h-5 w-5 inline mr-2" />
             Theme Preference
           </h2>
           <p className="text-sm text-muted-foreground mb-6">
-            Choose your personal theme preference. This setting only affects your account.
+            Choose your personal theme preference. This setting only affects
+            your account.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Light Theme Option */}
             <button
-              onClick={() => handleThemeChange('light')}
+              onClick={() => handleThemeChange("light")}
               disabled={savingTheme}
               className={cn(
                 "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (user?.themeMode || 'system') === 'light'
+                (user?.themeMode || "system") === "light"
                   ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
-                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
+                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600",
               )}
             >
               <div className="flex flex-col items-center gap-3">
-                <Sun className={cn(
-                  "h-10 w-10",
-                  (user?.themeMode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                )} />
+                <Sun
+                  className={cn(
+                    "h-10 w-10",
+                    (user?.themeMode || "system") === "light"
+                      ? "text-blue-600 dark:text-blue-400"
+                      : "text-foreground",
+                  )}
+                />
                 <div className="text-center">
-                  <p className={cn(
-                    "font-semibold text-lg",
-                    (user?.themeMode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                  )}>
+                  <p
+                    className={cn(
+                      "font-semibold text-lg",
+                      (user?.themeMode || "system") === "light"
+                        ? "text-blue-600 dark:text-blue-400"
+                        : "text-foreground",
+                    )}
+                  >
                     Light
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
                     Bright, clean interface
                   </p>
                 </div>
-                {(user?.themeMode || 'system') === 'light' && (
+                {(user?.themeMode || "system") === "light" && (
                   <div className="absolute top-3 right-3">
                     <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
@@ -418,32 +549,40 @@ export default function ProfilePage() {
 
             {/* Dark Theme Option */}
             <button
-              onClick={() => handleThemeChange('dark')}
+              onClick={() => handleThemeChange("dark")}
               disabled={savingTheme}
               className={cn(
                 "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (user?.themeMode || 'system') === 'dark'
+                (user?.themeMode || "system") === "dark"
                   ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
-                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
+                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600",
               )}
             >
               <div className="flex flex-col items-center gap-3">
-                <Moon className={cn(
-                  "h-10 w-10",
-                  (user?.themeMode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                )} />
+                <Moon
+                  className={cn(
+                    "h-10 w-10",
+                    (user?.themeMode || "system") === "dark"
+                      ? "text-blue-600 dark:text-blue-400"
+                      : "text-foreground",
+                  )}
+                />
                 <div className="text-center">
-                  <p className={cn(
-                    "font-semibold text-lg",
-                    (user?.themeMode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                  )}>
+                  <p
+                    className={cn(
+                      "font-semibold text-lg",
+                      (user?.themeMode || "system") === "dark"
+                        ? "text-blue-600 dark:text-blue-400"
+                        : "text-foreground",
+                    )}
+                  >
                     Dark
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
                     Easy on the eyes
                   </p>
                 </div>
-                {(user?.themeMode || 'system') === 'dark' && (
+                {(user?.themeMode || "system") === "dark" && (
                   <div className="absolute top-3 right-3">
                     <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
@@ -453,32 +592,40 @@ export default function ProfilePage() {
 
             {/* System Theme Option */}
             <button
-              onClick={() => handleThemeChange('system')}
+              onClick={() => handleThemeChange("system")}
               disabled={savingTheme}
               className={cn(
                 "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (user?.themeMode || 'system') === 'system'
+                (user?.themeMode || "system") === "system"
                   ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
-                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
+                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600",
               )}
             >
               <div className="flex flex-col items-center gap-3">
-                <Monitor className={cn(
-                  "h-10 w-10",
-                  (user?.themeMode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                )} />
+                <Monitor
+                  className={cn(
+                    "h-10 w-10",
+                    (user?.themeMode || "system") === "system"
+                      ? "text-blue-600 dark:text-blue-400"
+                      : "text-foreground",
+                  )}
+                />
                 <div className="text-center">
-                  <p className={cn(
-                    "font-semibold text-lg",
-                    (user?.themeMode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                  )}>
+                  <p
+                    className={cn(
+                      "font-semibold text-lg",
+                      (user?.themeMode || "system") === "system"
+                        ? "text-blue-600 dark:text-blue-400"
+                        : "text-foreground",
+                    )}
+                  >
                     System
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
                     Follow device settings
                   </p>
                 </div>
-                {(user?.themeMode || 'system') === 'system' && (
+                {(user?.themeMode || "system") === "system" && (
                   <div className="absolute top-3 right-3">
                     <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
@@ -498,53 +645,64 @@ export default function ProfilePage() {
 
       {/* Subscription Section */}
       <div className="w-full max-w-7xl mb-8">
-        <h2 className="text-3xl font-bold text-foreground mb-2 text-center">Choose Your Plan</h2>
-        <p className="text-muted-foreground text-center mb-8">Select the perfect tier for your needs</p>
+        <h2 className="text-3xl font-bold text-foreground mb-2 text-center">
+          Choose Your Plan
+        </h2>
+        <p className="text-muted-foreground text-center mb-8">
+          Select the perfect tier for your needs
+        </p>
 
         {/* Current Subscription Status */}
-        {profileData.subscriptionTier && profileData.subscriptionTier !== 'free' && (
-          <div className="mb-8">
-            <SubscriptionManager
-              subscriptionStatus={profileData.subscriptionStatus || 'active'}
-              hasAiAddon={false}
-            />
+        {profileData.subscriptionTier &&
+          profileData.subscriptionTier !== "free" && (
+            <div className="mb-8">
+              <SubscriptionManager
+                subscriptionStatus={profileData.subscriptionStatus || "active"}
+                hasAiAddon={false}
+              />
 
-            {/* Billing Cycle Information */}
-            {profileData.billingCycleEnd && (
-              <div className="mt-4 p-4 bg-muted/50 rounded-lg border border-border">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Next Billing Date</p>
-                    <p className="text-lg font-semibold text-foreground">
-                      {formatRenewalDate(profileData.billingCycleEnd)}
-                    </p>
-                  </div>
-
-                  {/* Show scheduled tier change if any */}
-                  {profileData.scheduledTierChange && (
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
-                        Scheduled Change
+              {/* Billing Cycle Information */}
+              {profileData.billingCycleEnd && (
+                <div className="mt-4 p-4 bg-muted/50 rounded-lg border border-border">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">
+                        Next Billing Date
                       </p>
-                      <p className="text-base font-semibold text-amber-700 dark:text-amber-300 capitalize">
-                        → {profileData.scheduledTierChange} Tier
+                      <p className="text-lg font-semibold text-foreground">
+                        {formatRenewalDate(profileData.billingCycleEnd)}
                       </p>
                     </div>
-                  )}
+
+                    {/* Show scheduled tier change if any */}
+                    {profileData.scheduledTierChange && (
+                      <div className="text-right">
+                        <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                          Scheduled Change
+                        </p>
+                        <p className="text-base font-semibold text-amber-700 dark:text-amber-300 capitalize">
+                          → {profileData.scheduledTierChange} Tier
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
 
         {/* Usage Stats */}
-        {profileData.subscriptionTier === 'free' && (
+        {profileData.subscriptionTier === "free" && (
           <div className="mb-8 rounded-xl border-2 border-yellow-300 bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20 dark:border-yellow-700 p-6">
-            <h3 className="font-bold text-yellow-900 dark:text-yellow-200 mb-3 text-lg">Free Tier Usage</h3>
+            <h3 className="font-bold text-yellow-900 dark:text-yellow-200 mb-3 text-lg">
+              Free Tier Usage
+            </h3>
             <div className="grid gap-3">
               <div>
                 <div className="flex justify-between mb-1">
-                  <span className="text-sm text-yellow-800 dark:text-yellow-300">Deals Created</span>
+                  <span className="text-sm text-yellow-800 dark:text-yellow-300">
+                    Deals Created
+                  </span>
                   <span className="text-sm font-medium text-yellow-900 dark:text-yellow-200">
                     {profileData.dealsCreatedCount || 0} / 10
                   </span>
@@ -552,13 +710,17 @@ export default function ProfilePage() {
                 <div className="w-full bg-yellow-200 dark:bg-yellow-900/30 rounded-full h-2">
                   <div
                     className="bg-yellow-600 dark:bg-yellow-500 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(((profileData.dealsCreatedCount || 0) / 10) * 100, 100)}%` }}
+                    style={{
+                      width: `${Math.min(((profileData.dealsCreatedCount || 0) / 10) * 100, 100)}%`,
+                    }}
                   />
                 </div>
               </div>
               <div>
                 <div className="flex justify-between mb-1">
-                  <span className="text-sm text-yellow-800 dark:text-yellow-300">Messages Sent</span>
+                  <span className="text-sm text-yellow-800 dark:text-yellow-300">
+                    Messages Sent
+                  </span>
                   <span className="text-sm font-medium text-yellow-900 dark:text-yellow-200">
                     {profileData.messagesSentCount || 0} / 10
                   </span>
@@ -566,12 +728,15 @@ export default function ProfilePage() {
                 <div className="w-full bg-yellow-200 dark:bg-yellow-900/30 rounded-full h-2">
                   <div
                     className="bg-yellow-600 dark:bg-yellow-500 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(((profileData.messagesSentCount || 0) / 10) * 100, 100)}%` }}
+                    style={{
+                      width: `${Math.min(((profileData.messagesSentCount || 0) / 10) * 100, 100)}%`,
+                    }}
                   />
                 </div>
               </div>
             </div>
-            {((profileData.dealsCreatedCount || 0) >= 10 || (profileData.messagesSentCount || 0) >= 10) && (
+            {((profileData.dealsCreatedCount || 0) >= 10 ||
+              (profileData.messagesSentCount || 0) >= 10) && (
               <p className="text-sm font-semibold text-red-600 dark:text-red-400 mt-4">
                 ⚠️ You've reached your limits. Upgrade to unlock more!
               </p>
@@ -588,9 +753,18 @@ export default function ProfilePage() {
             price={TIER_LIMITS.free.price}
             features={TIER_LIMITS.free.features}
             priceId=""
-            isCurrentPlan={profileData.subscriptionTier === 'free'}
-            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
+            isCurrentPlan={profileData.subscriptionTier === "free"}
+            currentTier={
+              (profileData.subscriptionTier as
+                | "free"
+                | "basic"
+                | "pro"
+                | "expert") || "free"
+            }
+            hasActiveSubscription={
+              profileData.subscriptionStatus === "active" &&
+              profileData.subscriptionTier !== "free"
+            }
           />
 
           {/* Basic Tier */}
@@ -600,9 +774,18 @@ export default function ProfilePage() {
             price={TIER_LIMITS.basic.price}
             features={TIER_LIMITS.basic.features}
             priceId={TIER_PRICE_IDS.basic}
-            isCurrentPlan={profileData.subscriptionTier === 'basic'}
-            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
+            isCurrentPlan={profileData.subscriptionTier === "basic"}
+            currentTier={
+              (profileData.subscriptionTier as
+                | "free"
+                | "basic"
+                | "pro"
+                | "expert") || "free"
+            }
+            hasActiveSubscription={
+              profileData.subscriptionStatus === "active" &&
+              profileData.subscriptionTier !== "free"
+            }
           />
 
           {/* Pro Tier */}
@@ -612,10 +795,19 @@ export default function ProfilePage() {
             price={TIER_LIMITS.pro.price}
             features={TIER_LIMITS.pro.features}
             priceId={TIER_PRICE_IDS.pro}
-            isCurrentPlan={profileData.subscriptionTier === 'pro'}
+            isCurrentPlan={profileData.subscriptionTier === "pro"}
             recommended={true}
-            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
+            currentTier={
+              (profileData.subscriptionTier as
+                | "free"
+                | "basic"
+                | "pro"
+                | "expert") || "free"
+            }
+            hasActiveSubscription={
+              profileData.subscriptionStatus === "active" &&
+              profileData.subscriptionTier !== "free"
+            }
           />
 
           {/* Expert Tier */}
@@ -625,170 +817,240 @@ export default function ProfilePage() {
             price={TIER_LIMITS.expert.price}
             features={TIER_LIMITS.expert.features}
             priceId={TIER_PRICE_IDS.expert}
-            isCurrentPlan={profileData.subscriptionTier === 'expert'}
-            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
+            isCurrentPlan={profileData.subscriptionTier === "expert"}
+            currentTier={
+              (profileData.subscriptionTier as
+                | "free"
+                | "basic"
+                | "pro"
+                | "expert") || "free"
+            }
+            hasActiveSubscription={
+              profileData.subscriptionStatus === "active" &&
+              profileData.subscriptionTier !== "free"
+            }
           />
         </div>
 
         {/* Basic Tier Usage */}
-        {profileData.subscriptionTier === 'basic' && (() => {
-          const msgUsage = profileData.messagesSentCount || 0;
-          const msgLimit = 50;
-          const msgOverage = Math.max(msgUsage - msgLimit, 0);
-          const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
-          const msgOverageCost = msgOverage * 0.10;
+        {profileData.subscriptionTier === "basic" &&
+          (() => {
+            const msgUsage = profileData.messagesSentCount || 0;
+            const msgLimit = 50;
+            const msgOverage = Math.max(msgUsage - msgLimit, 0);
+            const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
+            const msgOverageCost = msgOverage * 0.1;
 
-          return (
-            <div className="mt-8 rounded-xl border-2 border-blue-300 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 dark:border-blue-700 p-6">
-              <h3 className="font-bold text-blue-900 dark:text-blue-200 mb-3 text-lg flex items-center gap-2">
-                <span>Basic Tier Usage This Month</span>
-              </h3>
-              <div>
-                <div className="flex justify-between mb-1">
-                  <span className="text-sm text-blue-800 dark:text-blue-300">Messages Sent</span>
-                  <span className="text-sm font-medium text-blue-900 dark:text-blue-200">
-                    {msgUsage} / {msgLimit} included
-                  </span>
+            return (
+              <div className="mt-8 rounded-xl border-2 border-blue-300 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 dark:border-blue-700 p-6">
+                <h3 className="font-bold text-blue-900 dark:text-blue-200 mb-3 text-lg flex items-center gap-2">
+                  <span>Basic Tier Usage This Month</span>
+                </h3>
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-sm text-blue-800 dark:text-blue-300">
+                      Messages Sent
+                    </span>
+                    <span className="text-sm font-medium text-blue-900 dark:text-blue-200">
+                      {msgUsage} / {msgLimit} included
+                    </span>
+                  </div>
+                  <div className="w-full bg-blue-200 dark:bg-blue-900/30 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all"
+                      style={{ width: `${msgPercentage}%` }}
+                    />
+                  </div>
+                  {msgOverage > 0 && (
+                    <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                      Overage: {msgOverage} messages × $0.10 = $
+                      {msgOverageCost.toFixed(2)}
+                    </p>
+                  )}
                 </div>
-                <div className="w-full bg-blue-200 dark:bg-blue-900/30 rounded-full h-2">
-                  <div
-                    className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all"
-                    style={{ width: `${msgPercentage}%` }}
-                  />
-                </div>
-                {msgOverage > 0 && (
-                  <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                    Overage: {msgOverage} messages × $0.10 = ${msgOverageCost.toFixed(2)}
-                  </p>
+                {msgOverageCost > 0 && (
+                  <div className="mt-4 pt-4 border-t border-blue-300 dark:border-blue-700">
+                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+                      Estimated overage charges this month: $
+                      {msgOverageCost.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                      Will be added to your next invoice
+                    </p>
+                  </div>
                 )}
               </div>
-              {msgOverageCost > 0 && (
-                <div className="mt-4 pt-4 border-t border-blue-300 dark:border-blue-700">
-                  <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
-                    Estimated overage charges this month: ${msgOverageCost.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                    Will be added to your next invoice
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+            );
+          })()}
 
         {/* Pro Tier Usage */}
-        {profileData.subscriptionTier === 'pro' && (() => {
-          const msgUsage = profileData.messagesSentCount || 0;
-          const msgLimit = 200;
-          const msgOverage = Math.max(msgUsage - msgLimit, 0);
-          const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
-          const msgOverageCost = msgOverage * 0.08;
+        {profileData.subscriptionTier === "pro" &&
+          (() => {
+            const msgUsage = profileData.messagesSentCount || 0;
+            const msgLimit = 200;
+            const msgOverage = Math.max(msgUsage - msgLimit, 0);
+            const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
+            const msgOverageCost = msgOverage * 0.08;
 
-          return (
-            <div className="mt-8 rounded-xl border-2 border-purple-300 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 dark:border-purple-700 p-6">
-              <h3 className="font-bold text-purple-900 dark:text-purple-200 mb-3 text-lg flex items-center gap-2">
-                <span>Pro Tier Usage This Month</span>
-              </h3>
-              <div>
-                <div className="flex justify-between mb-1">
-                  <span className="text-sm text-purple-800 dark:text-purple-300">Messages Sent</span>
-                  <span className="text-sm font-medium text-purple-900 dark:text-purple-200">
-                    {msgUsage} / {msgLimit} included
-                  </span>
+            return (
+              <div className="mt-8 rounded-xl border-2 border-purple-300 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 dark:border-purple-700 p-6">
+                <h3 className="font-bold text-purple-900 dark:text-purple-200 mb-3 text-lg flex items-center gap-2">
+                  <span>Pro Tier Usage This Month</span>
+                </h3>
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-sm text-purple-800 dark:text-purple-300">
+                      Messages Sent
+                    </span>
+                    <span className="text-sm font-medium text-purple-900 dark:text-purple-200">
+                      {msgUsage} / {msgLimit} included
+                    </span>
+                  </div>
+                  <div className="w-full bg-purple-200 dark:bg-purple-900/30 rounded-full h-2">
+                    <div
+                      className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all"
+                      style={{ width: `${msgPercentage}%` }}
+                    />
+                  </div>
+                  {msgOverage > 0 && (
+                    <p className="text-xs text-purple-700 dark:text-purple-400 mt-1">
+                      Overage: {msgOverage} messages × $0.08 = $
+                      {msgOverageCost.toFixed(2)}
+                    </p>
+                  )}
                 </div>
-                <div className="w-full bg-purple-200 dark:bg-purple-900/30 rounded-full h-2">
-                  <div
-                    className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all"
-                    style={{ width: `${msgPercentage}%` }}
-                  />
-                </div>
-                {msgOverage > 0 && (
-                  <p className="text-xs text-purple-700 dark:text-purple-400 mt-1">
-                    Overage: {msgOverage} messages × $0.08 = ${msgOverageCost.toFixed(2)}
-                  </p>
+                {msgOverageCost > 0 && (
+                  <div className="mt-4 pt-4 border-t border-purple-300 dark:border-purple-700">
+                    <p className="text-sm font-semibold text-purple-900 dark:text-purple-200">
+                      Estimated overage charges this month: $
+                      {msgOverageCost.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-purple-700 dark:text-purple-400 mt-1">
+                      Will be added to your next invoice
+                    </p>
+                  </div>
                 )}
               </div>
-              {msgOverageCost > 0 && (
-                <div className="mt-4 pt-4 border-t border-purple-300 dark:border-purple-700">
-                  <p className="text-sm font-semibold text-purple-900 dark:text-purple-200">
-                    Estimated overage charges this month: ${msgOverageCost.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-purple-700 dark:text-purple-400 mt-1">
-                    Will be added to your next invoice
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+            );
+          })()}
 
         {/* Expert Tier Usage (for all Expert tier users) */}
-        {profileData.subscriptionTier === 'expert' && (() => {
-          const msgUsage = profileData.messagesSentCount || 0;
-          const msgLimit = 1000;
-          const msgOverage = Math.max(msgUsage - msgLimit, 0);
-          const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
-          const msgOverageCost = msgOverage * 0.05;
+        {profileData.subscriptionTier === "expert" &&
+          (() => {
+            const msgUsage = profileData.messagesSentCount || 0;
+            const msgLimit = 1000;
+            const msgOverage = Math.max(msgUsage - msgLimit, 0);
+            const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
+            const msgOverageCost = msgOverage * 0.05;
 
-          // Admin users see both AI and messages
-          if (profileData.isAdmin) {
-            const aiUsage = profileData.aiRequestsCount || 0;
-            const aiLimit = 50;
-            const aiOverage = Math.max(aiUsage - aiLimit, 0);
-            const aiPercentage = Math.min((aiUsage / aiLimit) * 100, 100);
-            const aiOverageCost = aiOverage * 0.25;
-            const totalOverageCost = aiOverageCost + msgOverageCost;
+            // Admin users see both AI and messages
+            if (profileData.isAdmin) {
+              const aiUsage = profileData.aiRequestsCount || 0;
+              const aiLimit = 50;
+              const aiOverage = Math.max(aiUsage - aiLimit, 0);
+              const aiPercentage = Math.min((aiUsage / aiLimit) * 100, 100);
+              const aiOverageCost = aiOverage * 0.25;
+              const totalOverageCost = aiOverageCost + msgOverageCost;
 
+              return (
+                <div className="mt-8 rounded-xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 dark:border-amber-700 p-6">
+                  <h3 className="font-bold text-amber-900 dark:text-amber-200 mb-3 text-lg flex items-center gap-2">
+                    <span>Expert Tier Usage This Month</span>
+                  </h3>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-sm text-amber-800 dark:text-amber-300">
+                          AI Requests
+                        </span>
+                        <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                          {aiUsage} / {aiLimit} included
+                        </span>
+                      </div>
+                      <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
+                        <div
+                          className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
+                          style={{ width: `${aiPercentage}%` }}
+                        />
+                      </div>
+                      {aiOverage > 0 && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                          Overage: {aiOverage} requests × $0.25 = $
+                          {aiOverageCost.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-sm text-amber-800 dark:text-amber-300">
+                          Messages Sent
+                        </span>
+                        <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                          {msgUsage} / {msgLimit} included
+                        </span>
+                      </div>
+                      <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
+                        <div
+                          className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
+                          style={{ width: `${msgPercentage}%` }}
+                        />
+                      </div>
+                      {msgOverage > 0 && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                          Overage: {msgOverage} messages × $0.05 = $
+                          {msgOverageCost.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {totalOverageCost > 0 && (
+                    <div className="mt-4 pt-4 border-t border-amber-300 dark:border-amber-700">
+                      <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                        Estimated overage charges this month: $
+                        {totalOverageCost.toFixed(2)}
+                      </p>
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                        Will be added to your next invoice
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // Non-admin users see only messages
             return (
               <div className="mt-8 rounded-xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 dark:border-amber-700 p-6">
                 <h3 className="font-bold text-amber-900 dark:text-amber-200 mb-3 text-lg flex items-center gap-2">
                   <span>Expert Tier Usage This Month</span>
                 </h3>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm text-amber-800 dark:text-amber-300">AI Requests</span>
-                      <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
-                        {aiUsage} / {aiLimit} included
-                      </span>
-                    </div>
-                    <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
-                      <div
-                        className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
-                        style={{ width: `${aiPercentage}%` }}
-                      />
-                    </div>
-                    {aiOverage > 0 && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                        Overage: {aiOverage} requests × $0.25 = ${aiOverageCost.toFixed(2)}
-                      </p>
-                    )}
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-sm text-amber-800 dark:text-amber-300">
+                      Messages Sent
+                    </span>
+                    <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                      {msgUsage} / {msgLimit} included
+                    </span>
                   </div>
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm text-amber-800 dark:text-amber-300">Messages Sent</span>
-                      <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
-                        {msgUsage} / {msgLimit} included
-                      </span>
-                    </div>
-                    <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
-                      <div
-                        className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
-                        style={{ width: `${msgPercentage}%` }}
-                      />
-                    </div>
-                    {msgOverage > 0 && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                        Overage: {msgOverage} messages × $0.05 = ${msgOverageCost.toFixed(2)}
-                      </p>
-                    )}
+                  <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
+                    <div
+                      className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
+                      style={{ width: `${msgPercentage}%` }}
+                    />
                   </div>
+                  {msgOverage > 0 && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                      Overage: {msgOverage} messages × $0.05 = $
+                      {msgOverageCost.toFixed(2)}
+                    </p>
+                  )}
                 </div>
-                {totalOverageCost > 0 && (
+                {msgOverageCost > 0 && (
                   <div className="mt-4 pt-4 border-t border-amber-300 dark:border-amber-700">
                     <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-                      Estimated overage charges this month: ${totalOverageCost.toFixed(2)}
+                      Estimated overage charges this month: $
+                      {msgOverageCost.toFixed(2)}
                     </p>
                     <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
                       Will be added to your next invoice
@@ -797,46 +1059,7 @@ export default function ProfilePage() {
                 )}
               </div>
             );
-          }
-
-          // Non-admin users see only messages
-          return (
-            <div className="mt-8 rounded-xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 dark:border-amber-700 p-6">
-              <h3 className="font-bold text-amber-900 dark:text-amber-200 mb-3 text-lg flex items-center gap-2">
-                <span>Expert Tier Usage This Month</span>
-              </h3>
-              <div>
-                <div className="flex justify-between mb-1">
-                  <span className="text-sm text-amber-800 dark:text-amber-300">Messages Sent</span>
-                  <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
-                    {msgUsage} / {msgLimit} included
-                  </span>
-                </div>
-                <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
-                  <div
-                    className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
-                    style={{ width: `${msgPercentage}%` }}
-                  />
-                </div>
-                {msgOverage > 0 && (
-                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                    Overage: {msgOverage} messages × $0.05 = ${msgOverageCost.toFixed(2)}
-                  </p>
-                )}
-              </div>
-              {msgOverageCost > 0 && (
-                <div className="mt-4 pt-4 border-t border-amber-300 dark:border-amber-700">
-                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-                    Estimated overage charges this month: ${msgOverageCost.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                    Will be added to your next invoice
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+          })()}
       </div>
     </div>
   );

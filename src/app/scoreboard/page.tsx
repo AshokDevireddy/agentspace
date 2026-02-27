@@ -95,12 +95,12 @@ export default function Scoreboard() {
     queryKey: queryKeys.myDownlineIds(user?.id || ''),
     queryFn: async () => {
       try {
-        const data = await apiClient.get<{ downlines?: Array<{ id: string; firstName: string; lastName: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
-        const agents: { id: string; firstName: string; lastName: string }[] = data.downlines || (data as any) || []
+        const data = await apiClient.get<{ downlines?: Array<{ id: string; name: string; firstName?: string; lastName?: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
+        const agents: { id: string; name: string; firstName?: string; lastName?: string }[] = data.downlines || (data as unknown as { id: string; name: string }[]) || []
         const ids: string[] = agents.map((d) => d.id)
         return { downlineIds: ids, downlineAgents: agents }
       } catch {
-        return { downlineIds: [] as string[], downlineAgents: [] as { id: string; firstName: string; lastName: string }[] }
+        return { downlineIds: [] as string[], downlineAgents: [] as { id: string; name: string; firstName?: string; lastName?: string }[] }
       }
     },
     enabled: !!user?.id,

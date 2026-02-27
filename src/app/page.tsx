@@ -11,10 +11,10 @@ import OnboardingWizard from "@/components/onboarding/OnboardingWizard"
 import type { UserData as OnboardingUserData } from "@/components/onboarding/types"
 import { useTour } from "@/contexts/onboarding-tour-context"
 import type { UserProfile, CarrierActive, PieChartEntry, LeaderboardProducer, DashboardData, DealsSummary } from "@/types"
-import { useApiFetch } from "@/hooks/useApiFetch"
 import { useDashboardSummary, useScoreboardData, useProductionData } from "@/hooks/useDashboardData"
 import { useCompleteOnboarding } from "@/hooks/mutations"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { apiClient } from "@/lib/api-client"
 import { queryKeys } from "@/hooks/queryKeys"
 import { Skeleton } from "@/components/ui/skeleton"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
@@ -40,14 +40,19 @@ export default function Home() {
   const queryClient = useQueryClient()
   const completeOnboardingMutation = useCompleteOnboarding()
 
-  const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useApiFetch<UserProfile>(
-    queryKeys.userProfile(user?.id),
-    `/api/user/profile?user_id=${user?.id}`,
-    {
-      enabled: !!user?.id,
-      placeholderData: (previousData) => previousData,
-    }
-  )
+  const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useQuery<UserProfile, Error>({
+    queryKey: queryKeys.userProfile(user?.id),
+    queryFn: async () => {
+      const response = await apiClient.get<{ success: boolean; data: UserProfile } | UserProfile>(
+        `/api/user/profile`,
+        { params: { user_id: user?.id } }
+      )
+      // Unwrap {success, data} envelope from Django
+      return ('success' in response && response.data ? response.data : response) as UserProfile
+    },
+    enabled: !!user?.id,
+    placeholderData: (previousData) => previousData,
+  })
 
   const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useScoreboardData(
     user?.id,

@@ -69,6 +69,7 @@ export {
   useCompleteOnboarding,
   useSignIn,
   useUpdatePassword,
+  useSetupAccount,
   useUpdateUserProfile,
   useUpdateUserStatus,
 } from './useAuthMutations'

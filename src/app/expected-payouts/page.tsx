@@ -9,6 +9,7 @@ import { DollarSign, TrendingUp, TrendingDown, Calendar } from "lucide-react"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
+import { apiClient } from "@/lib/api-client"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
@@ -170,16 +171,7 @@ export default function ExpectedPayoutsPage() {
   const { data: userData, isPending: userLoading } = useQuery({
     queryKey: queryKeys.userProfile(),
     queryFn: async () => {
-      const response = await fetch('/api/users/me', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        throw new Error("Not authenticated")
-      }
-
-      const data = await response.json()
+      const data = await apiClient.get<UserData>('/api/users/me/')
       return {
         id: data.id,
         role: data.role,
@@ -217,24 +209,17 @@ export default function ExpectedPayoutsPage() {
     queryFn: async () => {
       if (!userData) return []
 
-      // Use Django API for agents/downlines
-      const response = await fetch('/api/agents/downlines', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
+      try {
+        const data = await apiClient.get<{ agents?: Array<{ id: string; firstName?: string; lastName?: string; name?: string }> }>('/api/agents/downlines/')
+        return ((data.agents || (data as any)) || []).map((agent: { id: string; firstName?: string; lastName?: string; name?: string }) => ({
+          id: agent.id,
+          firstName: agent.firstName || agent.name?.split(' ')[0] || '',
+          lastName: agent.lastName || agent.name?.split(' ').slice(1).join(' ') || ''
+        })) as AgentResponse[]
+      } catch {
         console.error('Error fetching agents')
         return []
       }
-
-      const data = await response.json()
-      // Map to expected format - backend returns agents with firstName, lastName (camelCased by api-proxy)
-      return (data.agents || data || []).map((agent: { id: string; firstName?: string; lastName?: string; name?: string }) => ({
-        id: agent.id,
-        firstName: agent.firstName || agent.name?.split(' ')[0] || '',
-        lastName: agent.lastName || agent.name?.split(' ').slice(1).join(' ') || ''
-      })) as AgentResponse[]
     },
     enabled: !!userData,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -249,16 +234,7 @@ export default function ExpectedPayoutsPage() {
   const { data: carriers = [] } = useQuery({
     queryKey: queryKeys.carriersList(),
     queryFn: async () => {
-      const response = await fetch('/api/carriers/names', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch carriers')
-      }
-
-      return response.json() as Promise<CarrierResponse[]>
+      return apiClient.get<CarrierResponse[]>('/api/carriers/names/')
     },
     staleTime: 10 * 60 * 1000, // 10 minutes
   })
@@ -287,26 +263,17 @@ export default function ExpectedPayoutsPage() {
       const endDay = new Date(endYear, endMonthStr, 0).getDate()
       const endDate = `${appliedFilters.endMonth}-${String(endDay).padStart(2, '0')}`
 
-      const params = new URLSearchParams()
-      params.append('start_date', startDate)
-      params.append('end_date', endDate)
-      params.append('agent_id', effectiveAgentId)
+      const queryParams: Record<string, string> = {
+        start_date: startDate,
+        end_date: endDate,
+        agent_id: effectiveAgentId,
+      }
 
       if (appliedFilters.carrier !== "all") {
-        params.append('carrier_id', appliedFilters.carrier)
+        queryParams.carrier_id = appliedFilters.carrier
       }
 
-      const response = await fetch(`/api/expected-payouts?${params.toString()}`, {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || errorData.message || 'Failed to fetch expected payouts')
-      }
-
-      return response.json() as Promise<PayoutsResponse>
+      return apiClient.get<PayoutsResponse>('/api/expected-payouts/', { params: queryParams })
     },
     // Wait for both effectiveAgentId AND userData to be loaded to prevent race conditions
     enabled: !!effectiveAgentId && !!userData,
@@ -330,26 +297,18 @@ export default function ExpectedPayoutsPage() {
   } = useQuery({
     queryKey: queryKeys.expectedPayoutsDebt(effectiveAgentId),
     queryFn: async () => {
-      const params = new URLSearchParams()
-      params.append('agent_id', effectiveAgentId)
-
-      const response = await fetch(`/api/expected-payouts/debt?${params.toString()}`, {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
+      try {
+        const data = await apiClient.get<DebtResponse>('/api/expected-payouts/debt/', { params: { agent_id: effectiveAgentId } })
+        // Django returns flat { debt, dealCount, deals } — not nested under a "debt" key
+        return {
+          total: data.debt,
+          dealCount: data.dealCount,
+          deals: data.deals ?? [],
+        } as DebtData
+      } catch {
         // If debt fetch fails, return zero values
         return { total: 0, dealCount: 0, deals: [] } as DebtData
       }
-
-      const data = await response.json() as DebtResponse
-      // Django returns flat { debt, dealCount, deals } — not nested under a "debt" key
-      return {
-        total: data.debt,
-        dealCount: data.dealCount,
-        deals: data.deals ?? [],
-      } as DebtData
     },
     // Wait for both effectiveAgentId AND userData to be loaded to prevent race conditions
     enabled: !!effectiveAgentId && !!userData,

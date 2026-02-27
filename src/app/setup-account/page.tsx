@@ -11,7 +11,7 @@ import { useNotification } from '@/contexts/notification-context'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
 import { getInviteTokens, clearInviteTokens } from '@/lib/auth/constants'
 import { authApi, AuthApiError } from '@/lib/api/auth'
-import { fetchApi } from '@/lib/api-client'
+import { apiClient } from '@/lib/api-client'
 import { getClientAccessToken } from '@/lib/auth/client'
 
 interface UserData {
@@ -169,10 +169,8 @@ export default function SetupAccount() {
 
       console.log(`[setup-account] FETCH USER: Using Django API with token`)
       try {
-        userRecord = await fetchApi<UserData>(
-          `/api/users/by-auth-id/${authUserId}/onboarding`,
-          accessToken,
-          'Failed to load user data'
+        userRecord = await apiClient.get<UserData>(
+          `/api/users/by-auth-id/${authUserId}/onboarding/`
         )
       } catch {
         userRecord = null
@@ -198,12 +196,10 @@ export default function SetupAccount() {
       })
 
       // Fetch agency data via Django API
-      if (userRecord.agencyId && accessToken) {
+      if (userRecord.agencyId) {
         try {
-          const agencyData = await fetchApi<AgencyData>(
-            `/api/agencies/${userRecord.agencyId}`,
-            accessToken,
-            'Failed to load agency data'
+          const agencyData = await apiClient.get<AgencyData>(
+            `/api/agencies/${userRecord.agencyId}/`
           )
           if (agencyData) {
             setAgencyName(agencyData.displayName || agencyData.name || "AgentSpace")
@@ -308,15 +304,7 @@ export default function SetupAccount() {
 
       // Update user status via Django API - only clients skip the onboarding wizard
       if (userData?.role === 'client') {
-        await fetchApi(
-          `/api/user/profile`,
-          accessToken,
-          'Failed to update status',
-          {
-            method: 'PUT',
-            body: { status: 'active' }
-          }
-        )
+        await apiClient.put('/api/user/profile/', { status: 'active' })
       }
 
       setFormData({

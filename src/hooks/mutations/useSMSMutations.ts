@@ -4,6 +4,7 @@
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { useInvalidation } from '../useInvalidation'
 
 interface SendMessageInput {
@@ -46,22 +47,9 @@ export function useSendMessage(options?: {
 
   return useMutation<SendMessageResponse, Error, SendMessageInput>({
     mutationFn: async ({ dealId, message }) => {
-      const response = await fetch('/api/sms/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ dealId, message }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}))
-        throw new Error(error.error || error.message || 'Failed to send message')
-      }
-
-      return response.json()
+      return apiClient.post<SendMessageResponse>('/api/sms/send/', { dealId, message })
     },
     onSuccess: async (data, variables) => {
-      // Use centralized invalidation with predicate-based conversation list invalidation
       await invalidateConversationRelated(options?.conversationId)
       options?.onSuccess?.(data, variables)
     },
@@ -81,22 +69,9 @@ export function useApproveDrafts(options?: {
 
   return useMutation<DraftActionResponse, Error, DraftActionInput>({
     mutationFn: async ({ messageIds }) => {
-      const response = await fetch('/api/sms/drafts/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageIds }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}))
-        throw new Error(error.error || error.message || 'Failed to approve draft(s)')
-      }
-
-      return response.json()
+      return apiClient.post<DraftActionResponse>('/api/sms/drafts/approve/', { messageIds })
     },
     onSuccess: async (data, variables) => {
-      // Use centralized invalidation - handles conversations, drafts, and messages
       await invalidateConversationRelated(options?.conversationId)
       options?.onSuccess?.(data, variables)
     },
@@ -116,22 +91,9 @@ export function useRejectDrafts(options?: {
 
   return useMutation<DraftActionResponse, Error, DraftActionInput>({
     mutationFn: async ({ messageIds }) => {
-      const response = await fetch('/api/sms/drafts/reject', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageIds }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}))
-        throw new Error(error.error || error.message || 'Failed to reject draft(s)')
-      }
-
-      return response.json()
+      return apiClient.post<DraftActionResponse>('/api/sms/drafts/reject/', { messageIds })
     },
     onSuccess: async (data, variables) => {
-      // Use centralized invalidation - handles conversations, drafts, and messages
       await invalidateConversationRelated(options?.conversationId)
       options?.onSuccess?.(data, variables)
     },
@@ -151,22 +113,9 @@ export function useEditDraft(options?: {
 
   return useMutation<{ success: boolean }, Error, EditDraftInput>({
     mutationFn: async ({ messageId, body }) => {
-      const response = await fetch('/api/sms/drafts/edit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageId, body }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}))
-        throw new Error(error.error || error.message || 'Failed to update draft')
-      }
-
-      return response.json()
+      return apiClient.post<{ success: boolean }>('/api/sms/drafts/edit/', { messageId, body })
     },
     onSuccess: async (data, variables) => {
-      // Use centralized invalidation - handles conversations, drafts, and messages
       await invalidateConversationRelated(options?.conversationId)
       options?.onSuccess?.(data, variables)
     },
@@ -185,20 +134,9 @@ export function useResolveNotification(options?: {
 
   return useMutation<ResolveNotificationResponse, Error, string>({
     mutationFn: async (dealId) => {
-      const response = await fetch(`/api/deals/${dealId}/resolve-notification`, {
-        method: 'POST',
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}))
-        throw new Error(error.error || error.message || 'Failed to resolve notification')
-      }
-
-      return response.json()
+      return apiClient.post<ResolveNotificationResponse>(`/api/deals/${dealId}/resolve-notification/`)
     },
     onSuccess: async (data, dealId) => {
-      // Use centralized invalidation - handles deal details and all conversation lists
       await Promise.all([
         invalidateDealRelated(dealId),
         invalidateConversationRelated(),
@@ -217,19 +155,7 @@ export function useRetryFailed(options?: { onSuccess?: () => void; onError?: (er
 
   return useMutation({
     mutationFn: async (messageIds: string[]) => {
-      const response = await fetch('/api/sms/failed/retry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageIds }),
-      })
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.error || 'Failed to retry messages')
-      }
-
-      return response.json()
+      return apiClient.post('/api/sms/failed/retry/', { messageIds })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] })

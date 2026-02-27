@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
 import { REDIRECT_DELAY_MS, storeInviteTokens, captureHashTokens, type HashTokens } from '@/lib/auth/constants'
-import { fetchApi } from '@/lib/api-client'
+import { apiClient } from '@/lib/api-client'
 import { getClientAccessToken } from '@/lib/auth/client'
 
 interface UserRecord {
@@ -100,7 +100,7 @@ export default function ConfirmSession() {
 
   const routeUser = async (authUserId: string, accessToken?: string) => {
     try {
-      const user = await fetchUserRecord(authUserId, accessToken)
+      const user = await fetchUserRecord(authUserId)
 
       if (!user) {
         completedRef.current = true
@@ -167,37 +167,22 @@ export default function ConfirmSession() {
     setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
   }
 
-  const fetchUserRecord = async (authUserId: string, accessToken?: string): Promise<UserRecord | null> => {
-    if (accessToken) {
-      try {
-        return await fetchApi<UserRecord>(
-          `/api/users/by-auth-id/${authUserId}`,
-          accessToken,
-          'Failed to fetch user'
-        )
-      } catch {
-        return null
-      }
+  const fetchUserRecord = async (authUserId: string): Promise<UserRecord | null> => {
+    try {
+      return await apiClient.get<UserRecord>(
+        `/api/users/by-auth-id/${authUserId}/`
+      )
+    } catch {
+      return null
     }
-    return null
   }
 
   const handleInvitedUser = async (user: UserRecord, accessToken?: string) => {
     // Update status to onboarding via Django API
-    if (accessToken) {
-      try {
-        await fetchApi(
-          `/api/user/profile`,
-          accessToken,
-          'Failed to update status',
-          {
-            method: 'PUT',
-            body: { status: 'onboarding' }
-          }
-        )
-      } catch (err) {
-        console.error('Failed to update user status:', err)
-      }
+    try {
+      await apiClient.put('/api/user/profile/', { status: 'onboarding' })
+    } catch (err) {
+      console.error('Failed to update user status:', err)
     }
 
     // Store tokens for setup-account page to use

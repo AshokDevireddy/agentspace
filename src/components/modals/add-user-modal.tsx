@@ -7,11 +7,11 @@ import { Input } from "@/components/ui/input"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/providers/AuthProvider"
-import { getClientAccessToken } from "@/lib/auth/client"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useSendInvite } from '@/hooks/mutations'
+import { apiClient } from '@/lib/api-client'
 
 interface AddUserModalProps {
   trigger: React.ReactNode
@@ -59,24 +59,10 @@ function useAgentSearch(pauseSearch = false) {
   const { data: searchResults = [], isLoading: isSearching, error } = useQuery<SearchOption[]>({
     queryKey: queryKeys.searchAgents(debouncedSearchTerm),
     queryFn: async ({ signal }) => {
-      // API ROUTE CALL - This calls the secure endpoint for upline search (current user + downline)
-      const response = await fetch(
-        `/api/search-agents?q=${encodeURIComponent(debouncedSearchTerm)}&limit=10&type=downline`,
-        {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          signal, // Abort signal cancels in-flight requests when search term changes
-        }
-      )
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null)
-        const errorMessage = errorData?.error || `HTTP ${response.status}: ${response.statusText}`
-        throw new Error(`Failed to search agents: ${errorMessage}`)
-      }
-
-      const agents: AgentSearchResult[] = await response.json()
+      const agents = await apiClient.get<AgentSearchResult[]>('/api/search-agents/', {
+        params: { q: debouncedSearchTerm, limit: 10, type: 'downline' },
+        signal,
+      })
 
       // Handle empty results gracefully
       if (!Array.isArray(agents)) {
@@ -85,9 +71,10 @@ function useAgentSearch(pauseSearch = false) {
       }
 
       // Transform search results into select options
-      return agents.map(agent => ({
+      // apiClient converts snake_case → camelCase, so use camelCase field names
+      return agents.map((agent: any) => ({
         value: agent.id,
-        label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+        label: `${agent.firstName} ${agent.lastName}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
         status: agent.status
       }))
     },
@@ -153,27 +140,11 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const { data: positionsData, isLoading: positionsLoading } = useQuery({
     queryKey: queryKeys.positionsList(),
     queryFn: async () => {
-      const accessToken = await getClientAccessToken()
+      const data = await apiClient.get<any[]>('/api/positions/')
 
-      if (!accessToken) {
-        throw new Error('No access token available')
-      }
-
-      const response = await fetch('/api/positions', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch positions')
-      }
-
-      const data = await response.json()
-
+      // apiClient converts snake_case → camelCase
       interface PositionData {
-        position_id: string
+        positionId: string
         name: string
         level: number
       }
@@ -181,7 +152,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       // Note: Position-level filtering now handled by API based on user context
       return {
         positions: data.map((pos: PositionData) => ({
-          value: pos.position_id,
+          value: pos.positionId,
           label: `${pos.name} (Level ${pos.level})`,
           level: pos.level
         })) as SearchOption[],
@@ -206,20 +177,12 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       // Fetch user's full name via API to set as default upline
       const fetchUserDetails = async () => {
         try {
-          const accessToken = await getClientAccessToken()
-          if (!accessToken) return
-
-          const response = await fetch('/api/user/profile', {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-          })
-          if (!response.ok) return
-
-          const data = await response.json()
+          const data = await apiClient.get<any>('/api/user/profile/')
           const userData = data.data || data
 
           applyUplineSelection({
             value: authUser.id,
-            label: `${userData.first_name || ''} ${userData.last_name || ''} - ${authUser.email}`
+            label: `${userData.firstName || ''} ${userData.lastName || ''} - ${authUser.email}`
           })
           setHasSetDefaultUpline(true)
         } catch {
@@ -287,32 +250,26 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
   const { data: nameSearchResults = [], isLoading: isNameSearching } = useQuery<SearchOption[]>({
     queryKey: queryKeys.searchPreInviteUsers(debouncedNameSearchTerm),
     queryFn: async ({ signal }) => {
-      const response = await fetch(
-        `/api/search-agents?q=${encodeURIComponent(debouncedNameSearchTerm)}&limit=10&type=pre-invite`,
-        {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          signal, // Abort signal cancels in-flight requests
-        }
-      )
+      try {
+        const agents = await apiClient.get<any[]>('/api/search-agents/', {
+          params: { q: debouncedNameSearchTerm, limit: 10, type: 'pre-invite' },
+          signal,
+        })
 
-      if (!response.ok) {
+        if (!Array.isArray(agents)) {
+          return []
+        }
+
+        // apiClient converts snake_case → camelCase
+        return agents.map((agent: any) => ({
+          value: agent.id,
+          label: `${agent.firstName} ${agent.lastName}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+          status: agent.status
+        }))
+      } catch {
         // Return empty results on error instead of throwing
         return []
       }
-
-      const agents: AgentSearchResult[] = await response.json()
-
-      if (!Array.isArray(agents)) {
-        return []
-      }
-
-      return agents.map(agent => ({
-        value: agent.id,
-        label: `${agent.first_name} ${agent.last_name}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
-        status: agent.status
-      }))
     },
     enabled: !pauseNameSearch && debouncedNameSearchTerm.length >= 2,
     staleTime: 30000,
@@ -526,35 +483,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setIsLoadingPreInviteUser(true)
 
       // Fetch full user details via Django API
-      const accessToken = await getClientAccessToken()
-      if (!accessToken) {
-        setErrors(['No access token available'])
-        setPauseNameSearch(false)
-        setShowNameDropdown(false)
-        setIsLoadingPreInviteUser(false)
-        setLoading(false)
-        return
-      }
-
-      const response = await fetch(`/api/agents/${userId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        console.error('Error fetching user:', response.status)
-        setErrors([`Failed to load user data: HTTP ${response.status}`])
-        setPauseNameSearch(false)
-        setShowNameDropdown(false)
-        setIsLoadingPreInviteUser(false)
-        setLoading(false)
-        return
-      }
-
-      const user = await response.json()
+      const user = await apiClient.get<any>(`/api/agents/${userId}/`)
 
       if (!user) {
         console.error('No user data returned')
@@ -572,15 +501,16 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setNameSearchTerm(selectedOption.label)
 
       // Set form data - preserve existing upline if user doesn't have one
+      // apiClient converts snake_case → camelCase
       setFormData(prev => ({
         ...prev,
-        firstName: user.first_name || "",
-        lastName: user.last_name || "",
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
         email: user.email || "",
-        phoneNumber: user.phone_number || "",
-        permissionLevel: user.perm_level || "",
-        uplineAgentId: user.upline_id || prev.uplineAgentId,
-        positionId: user.position_id || ""
+        phoneNumber: user.phoneNumber || "",
+        permissionLevel: user.permLevel || "",
+        uplineAgentId: user.uplineId || prev.uplineAgentId,
+        positionId: user.positionId || ""
       }))
 
       // Set selected ID and clear loading state
@@ -589,12 +519,12 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
       setLoading(false)
 
       // If there's an upline from the user data, update the upline display
-      if (user.upline_id) {
+      if (user.uplineId) {
         setUplineInputValue("")
         setSelectedUplineLabel("")
         setPauseUplineSearch(false)
         setUplineSearchTerm("")
-        const uplineOption = uplineSearchResults.find(r => r.value === user.upline_id)
+        const uplineOption = uplineSearchResults.find(r => r.value === user.uplineId)
         if (uplineOption) {
           applyUplineSelection(uplineOption)
         }

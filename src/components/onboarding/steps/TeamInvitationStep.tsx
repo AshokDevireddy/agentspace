@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { SimpleSearchableSelect } from '@/components/ui/simple-searchable-select'
 import { useInviteAgent } from '@/hooks/mutations'
 import { useOnboardingProgress } from '@/hooks/useOnboardingProgress'
+import { apiClient } from '@/lib/api-client'
 import type { UserData, InvitedAgent, SearchOption } from '../types'
 
 interface TeamInvitationStepProps {
@@ -72,25 +73,17 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
     const debounceTimer = setTimeout(async () => {
       try {
         setIsSearching(true)
-        const response = await fetch(
-          `/api/search-agents?q=${encodeURIComponent(agentSearchTerm)}&limit=10&type=downline`,
-          {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-          }
-        )
+        const agents = await apiClient.get<any[]>('/api/search-agents/', {
+          params: { q: agentSearchTerm, limit: 10, type: 'downline' },
+        })
 
-        if (response.ok) {
-          const agents = await response.json()
-          if (Array.isArray(agents)) {
-            setAgentSearchResults(
-              agents.map((agent) => ({
-                value: agent.id,
-                label: `${agent.firstName} ${agent.lastName} - ${agent.email}`,
-              }))
-            )
-          }
+        if (Array.isArray(agents)) {
+          setAgentSearchResults(
+            agents.map((agent) => ({
+              value: agent.id,
+              label: `${agent.firstName} ${agent.lastName} - ${agent.email}`,
+            }))
+          )
         }
       } catch (error) {
         console.error('Agent search error:', error)
@@ -112,28 +105,20 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
     const debounceTimer = setTimeout(async () => {
       try {
         setIsNameSearching(true)
-        const response = await fetch(
-          `/api/search-agents?q=${encodeURIComponent(nameSearchTerm)}&limit=10&type=pre-invite`,
-          {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-          }
-        )
+        const agents = await apiClient.get<any[]>('/api/search-agents/', {
+          params: { q: nameSearchTerm, limit: 10, type: 'pre-invite' },
+        })
 
-        if (response.ok) {
-          const agents = await response.json()
-          if (Array.isArray(agents)) {
-            setNameSearchResults(
-              agents.map((agent) => ({
-                value: agent.id,
-                label: `${agent.firstName} ${agent.lastName}${
-                  agent.email ? ' - ' + agent.email : ''
-                }${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
-                status: agent.status,
-              }))
-            )
-          }
+        if (Array.isArray(agents)) {
+          setNameSearchResults(
+            agents.map((agent) => ({
+              value: agent.id,
+              label: `${agent.firstName} ${agent.lastName}${
+                agent.email ? ' - ' + agent.email : ''
+              }${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+              status: agent.status,
+            }))
+          )
         }
       } catch (error) {
         console.error('Name search error:', error)
@@ -231,18 +216,7 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
   const handlePreInviteUserSelect = async (userId: string, option: SearchOption) => {
     try {
       // Fetch user details via Django API
-      const response = await fetch(`/api/agents/${userId}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        setErrors(['Failed to load user data'])
-        return
-      }
-
-      const user = await response.json()
+      const user = await apiClient.get<any>(`/api/agents/${userId}/`)
 
       setCurrentAgentForm({
         firstName: user.firstName || '',

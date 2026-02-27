@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { apiClient } from '@/lib/api-client'
 import { formatPhoneInput, normalizePhoneForStorage } from "@/lib/telnyx"
 
 // Options are loaded dynamically from Supabase based on the user's agency
@@ -138,18 +139,13 @@ export default function PostDeal() {
     queryFn: async () => {
       if (!user?.id) return null
 
-      const response = await fetch('/api/agents/check-positions', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (response.ok) {
-        const data = await response.json()
+      try {
+        const data = await apiClient.get<{ hasAllPositions: boolean; missingPositions: string[] }>('/api/agents/check-positions/')
         return {
           hasAllPositions: data.hasAllPositions,
           missingPositions: data.missingPositions || []
         }
-      } else {
+      } catch {
         console.error('Failed to check positions')
         return {
           hasAllPositions: false,
@@ -173,17 +169,13 @@ export default function PostDeal() {
         return null
       }
 
-      const response = await fetch('/api/deals/form-data', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        console.error('[PostDeal AgencyQuery] Error fetching form data:', response.statusText)
+      let data: any
+      try {
+        data = await apiClient.get('/api/deals/form-data/')
+      } catch (err) {
+        console.error('[PostDeal AgencyQuery] Error fetching form data:', err)
         return null
       }
-
-      const data = await response.json()
 
       // Django returns carriers/products as {id, name, displayName} objects.
       // After camelcaseKeys transform they become {id, name, displayName}.
@@ -255,17 +247,13 @@ export default function PostDeal() {
         return []
       }
 
-      const response = await fetch(`/api/deals/products-by-carrier?carrier_id=${formData.carrierId}`, {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
+      let products: Array<{ id: string; name: string; displayName?: string }>
+      try {
+        products = await apiClient.get<Array<{ id: string; name: string; displayName?: string }>>('/api/deals/products-by-carrier/', { params: { carrier_id: formData.carrierId } })
+      } catch {
         console.error('Failed to fetch products by carrier')
         return []
       }
-
-      const products: Array<{ id: string; name: string; displayName?: string }> = await response.json()
       // Django returns products as {id, name, displayName} objects.
       // After camelcaseKeys transform they become {id, name, displayName}.
       // Map them to {value, label} as required by SimpleSearchableSelect.
@@ -294,30 +282,19 @@ export default function PostDeal() {
       const annualPremium = (monthlyPremium * 12).toFixed(2)
 
       // Send template variables to webhook API
-      const response = await fetch('/api/discord/webhook', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      await apiClient.post('/api/discord/webhook/', {
+        agencyId,
+        placeholders: {
+          agent_name: agentName,
+          carrier_name: carrierName,
+          product_name: productName,
+          monthly_premium: monthlyPremium.toFixed(2),
+          annual_premium: annualPremium,
+          client_name: `${formData.clientFirstName} ${formData.clientLastName}`.trim(),
+          policy_number: formData.policyNumber,
+          effective_date: formData.policyEffectiveDate,
         },
-        body: JSON.stringify({
-          agencyId,
-          placeholders: {
-            agent_name: agentName,
-            carrier_name: carrierName,
-            product_name: productName,
-            monthly_premium: monthlyPremium.toFixed(2),
-            annual_premium: annualPremium,
-            client_name: `${formData.clientFirstName} ${formData.clientLastName}`.trim(),
-            policy_number: formData.policyNumber,
-            effective_date: formData.policyEffectiveDate,
-          },
-        }),
       })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        console.error('[Discord] Webhook API error:', errorData)
-      }
     } catch (error) {
       // Ignore AbortError from page navigation - notification likely sent successfully
       if (error instanceof Error && error.name === 'AbortError') {
@@ -364,61 +341,34 @@ export default function PostDeal() {
         try {
           // Call the invite API directly - it handles checking for existing clients
 
-          // Add timeout to invitation API call
-          const inviteController = new AbortController()
-          const inviteTimeoutId = setTimeout(() => {
-            console.error('[PostDeal] Client invitation timeout triggered')
-            inviteController.abort()
-          }, 15000) // 15 second timeout
+          // Strip formatting from phone number for invite API
+          const cleanPhoneForInvite = formData.clientPhone
+            ? formData.clientPhone.replace(/[^\d]/g, '')
+            : undefined
 
-          let inviteResponse
-          try {
-            // Strip formatting from phone number for invite API
-            const cleanPhoneForInvite = formData.clientPhone
-              ? formData.clientPhone.replace(/[^\d]/g, '')
-              : undefined
+          const inviteData = await apiClient.post<{ success: boolean; userId?: string; alreadyExists?: boolean; error?: string }>('/api/clients/invite/', {
+            email: formData.clientEmail,
+            firstName: formData.clientFirstName,
+            lastName: formData.clientLastName || 'Client',
+            phoneNumber: cleanPhoneForInvite
+          }, { timeout: 15000 })
 
-            inviteResponse = await fetch('/api/clients/invite', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                email: formData.clientEmail,
-                firstName: formData.clientFirstName,
-                lastName: formData.clientLastName || 'Client',
-                phoneNumber: cleanPhoneForInvite
-              }),
-              signal: inviteController.signal
-            })
-            clearTimeout(inviteTimeoutId)
-          } catch (inviteFetchError: any) {
-            clearTimeout(inviteTimeoutId)
-            if (inviteFetchError.name === 'AbortError') {
-              console.error('[PostDeal] Client invitation request timed out after 15 seconds')
-              invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
-              inviteResponse = null
-            } else {
-              console.error('[PostDeal] Client invitation fetch error:', inviteFetchError)
-              invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
-              inviteResponse = null
-            }
+          if (inviteData.success) {
+            clientId = inviteData.userId ?? null
+            invitationMessage = inviteData.alreadyExists
+              ? 'Client invitation was previously sent.'
+              : 'Invitation email sent to client successfully!'
+          } else {
+            const errorMsg = inviteData.error || 'Unknown error'
+            console.error('[PostDeal] Failed to invite client:', errorMsg)
+            invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
           }
-
-          if (inviteResponse) {
-            const inviteData = await inviteResponse.json()
-
-            if (inviteResponse.ok && inviteData.success) {
-              clientId = inviteData.userId
-              invitationMessage = inviteData.alreadyExists
-                ? 'Client invitation was previously sent.'
-                : '✓ Invitation email sent to client successfully!'
-            } else {
-              const errorMsg = inviteData.error || 'Unknown error'
-              console.error('[PostDeal] Failed to invite client:', errorMsg)
-              invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
-            }
+        } catch (clientError: any) {
+          if (clientError?.name === 'AbortError' || clientError?.message?.includes('timed out')) {
+            console.error('[PostDeal] Client invitation request timed out')
+          } else {
+            console.error('[PostDeal] Error in client invitation process:', clientError)
           }
-        } catch (clientError) {
-          console.error('[PostDeal] Error in client invitation process:', clientError)
           invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
         }
       } else {
@@ -479,46 +429,7 @@ export default function PostDeal() {
       }
 
 
-      // Add timeout to prevent infinite hanging
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => {
-        console.error('[PostDeal] Request timeout triggered after 30 seconds')
-        controller.abort()
-      }, 30000) // 30 second timeout
-
-      let res
-      try {
-        res = await fetch("/api/deals", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          signal: controller.signal
-        })
-        clearTimeout(timeoutId)
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId)
-        console.error('[PostDeal] Fetch threw an error:', fetchError)
-        if (fetchError.name === 'AbortError') {
-          console.error('[PostDeal] Request timed out after 30 seconds')
-          throw new Error("Request timed out. Please try again.")
-        }
-        console.error('[PostDeal] Fetch error:', fetchError)
-        throw new Error("Network error. Please check your connection and try again.")
-      }
-
-      let data: any
-      try {
-        const responseText = await res.text()
-        data = JSON.parse(responseText)
-      } catch {
-        console.error('[PostDeal] Non-JSON response from server')
-        throw new Error(res.status >= 500 ? "Server error. Please try again in a moment." : `Unexpected response (${res.status})`)
-      }
-
-      if (!res.ok) {
-        console.error('[PostDeal] Response not OK, throwing error')
-        throw new Error(data.error || "Failed to submit deal.")
-      }
+      const data = await apiClient.post<{ operation?: string; error?: string }>('/api/deals/', payload, { timeout: 30000 })
 
       // Success: show appropriate message based on operation
       let successMessage = ''

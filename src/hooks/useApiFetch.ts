@@ -1,28 +1,18 @@
 import { useQuery, UseQueryOptions } from '@tanstack/react-query'
-import { createHttpError, shouldRetry, getRetryDelay } from './useQueryRetry'
+import { apiClient } from '@/lib/api-client'
+import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
 interface UseApiFetchOptions<T> extends Omit<UseQueryOptions<T, Error>, 'queryKey' | 'queryFn'> {}
 
 export function useApiFetch<T>(
   queryKey: readonly unknown[],
-  url: string,
+  endpoint: string,
   options: UseApiFetchOptions<T> = {}
 ) {
   return useQuery<T, Error>({
     queryKey,
     queryFn: async ({ signal }) => {
-      const response = await fetch(url, {
-        signal,
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        const errorMessage = errorData.error || errorData.message || `API error: ${response.status}`
-        throw createHttpError(errorMessage, response.status)
-      }
-
-      return response.json()
+      return apiClient.get<T>(endpoint, { signal })
     },
     retry: shouldRetry,
     retryDelay: getRetryDelay,

@@ -37,6 +37,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useSendMessage, useResolveNotification, useApproveDrafts, useRejectDrafts, useEditDraft } from '@/hooks/mutations'
+import { apiClient } from '@/lib/api-client'
 
 interface Conversation {
   id: string
@@ -187,7 +188,7 @@ function SMSMessagingPageContent() {
   // Ref for selected conversation to avoid stale closures in subscriptions
   const selectedConversationRef = useRef<Conversation | null>(null)
 
-  // Check if user is admin - uses API route
+  // Check if user is admin - uses apiClient direct to Django
   const { data: adminData, isSuccess: isAdminChecked } = useQuery({
     queryKey: queryKeys.userProfile(user?.id),
     queryFn: async () => {
@@ -195,23 +196,7 @@ function SMSMessagingPageContent() {
         throw new Error('No user ID found')
       }
 
-      const { getClientAccessToken } = await import('@/lib/auth/client')
-      const accessToken = await getClientAccessToken()
-      if (!accessToken) {
-        throw new Error('No session')
-      }
-
-      const response = await fetch('/api/user/profile', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch user profile')
-      }
-
-      const profileData = await response.json()
+      const profileData = await apiClient.get<{ data?: any; isAdmin?: boolean; subscriptionTier?: string; id?: string }>('/api/user/profile/')
       // Handle both wrapped and unwrapped response formats
       const userData = profileData.data || profileData
 
@@ -421,17 +406,7 @@ function SMSMessagingPageContent() {
       messageReadTimeoutsRef.current.delete(messageId)
 
       try {
-        // Get access token for API call
-        const { getClientAccessToken } = await import('@/lib/auth/client')
-        const accessToken = await getClientAccessToken()
-        if (accessToken) {
-          await fetch(`/api/sms/messages/${messageId}/read`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`
-            }
-          })
-        }
+        await apiClient.post(`/api/sms/messages/${messageId}/read/`)
 
         // Invalidate conversations to update unread count
         // Get fresh filter values at the time of invalidation

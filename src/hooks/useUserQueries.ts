@@ -2,30 +2,12 @@
  * User-related query hooks for TanStack Query
  * Centralized user data fetching with proper caching
  *
- * Migrated to use Django API via Next.js API routes
+ * Uses apiClient for direct backend calls.
  */
 
 import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { queryKeys } from './queryKeys'
-
-// ============ API Helper ============
-
-/**
- * Internal helper to call Next.js API routes with credentials.
- * These routes handle auth via httpOnly cookies.
- */
-async function apiCall<T>(endpoint: string): Promise<T> {
-  const response = await fetch(`/api${endpoint}`, {
-    credentials: 'include',
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || errorData.message || `API call failed: ${response.status}`)
-  }
-
-  return response.json()
-}
 
 // ============ User Profile Query ============
 
@@ -54,7 +36,7 @@ interface UserProfileData {
 }
 
 interface UseUserProfileOptions {
-  /** Access token - kept for backward compatibility but not used (auth via httpOnly cookie) */
+  /** Access token - kept for backward compatibility but not used (auth via apiClient) */
   accessToken?: string
   /** Whether to enable the query */
   enabled?: boolean
@@ -64,7 +46,6 @@ interface UseUserProfileOptions {
 
 /**
  * Fetch user profile data by auth_user_id
- * Uses Django API via /api/user/profile
  */
 export function useUserProfile(
   authUserId: string | undefined,
@@ -79,8 +60,7 @@ export function useUserProfile(
         throw new Error('User ID is required')
       }
 
-      const data = await apiCall<UserProfileData>('/user/profile')
-      return data
+      return apiClient.get<UserProfileData>('/api/user/profile/')
     },
     enabled: enabled && !!authUserId,
     staleTime,
@@ -110,7 +90,6 @@ interface UseAgencyBrandingOptions {
 
 /**
  * Fetch agency branding data by agency ID
- * Uses Django API via /api/agencies/{id}/settings
  */
 export function useAgencyBranding(
   agencyId: string | null | undefined,
@@ -125,8 +104,7 @@ export function useAgencyBranding(
         throw new Error('Agency ID is required')
       }
 
-      const data = await apiCall<AgencyBrandingData>(`/agencies/${agencyId}/settings`)
-      return data
+      return apiClient.get<AgencyBrandingData>(`/api/agencies/${agencyId}/settings/`)
     },
     enabled: enabled && !!agencyId,
     staleTime,
@@ -145,32 +123,29 @@ interface UseAgencyBrandingByDomainOptions {
 /**
  * Fetch agency branding data by whitelabel domain
  * Used for domain-based white-label detection
- * Uses Django API via /api/agencies/by-domain
  */
 export function useAgencyBrandingByDomain(
   domain: string | null,
   options: UseAgencyBrandingByDomainOptions = {}
 ) {
-  const { enabled = true, staleTime = 60 * 60 * 1000 } = options // 1 hour default
+  const { enabled = true, staleTime = 60 * 60 * 1000 } = options
 
   return useQuery({
     queryKey: queryKeys.agencyBrandingByDomain(domain),
     queryFn: async () => {
       if (!domain) return null
 
-      const response = await fetch(`/api/agencies/by-domain?domain=${encodeURIComponent(domain)}`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        if (response.status === 404) {
+      try {
+        return await apiClient.get<AgencyBrandingData | null>(
+          '/api/agencies/by-domain/',
+          { params: { domain } }
+        )
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('not found')) {
           return null
         }
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to fetch agency by domain')
+        throw error
       }
-
-      return response.json() as Promise<AgencyBrandingData | null>
     },
     enabled: enabled && !!domain,
     staleTime,
@@ -194,13 +169,12 @@ interface UseAgencyScoreboardSettingsOptions {
 /**
  * Fetch agency scoreboard settings (default start date)
  * Used by the scoreboard page to determine default date range
- * Uses Django API via /api/agencies/{id}/scoreboard-settings
  */
 export function useAgencyScoreboardSettings(
   agencyId: string | null | undefined,
   options: UseAgencyScoreboardSettingsOptions = {}
 ) {
-  const { enabled = true, staleTime = 60 * 60 * 1000 } = options // 1 hour - rarely changes
+  const { enabled = true, staleTime = 60 * 60 * 1000 } = options
 
   return useQuery({
     queryKey: queryKeys.agencyScoreboardSettings(agencyId ?? null),
@@ -209,8 +183,7 @@ export function useAgencyScoreboardSettings(
         throw new Error('Agency ID is required')
       }
 
-      const data = await apiCall<AgencyScoreboardSettings>(`/agencies/${agencyId}/scoreboard-settings`)
-      return data
+      return apiClient.get<AgencyScoreboardSettings>(`/api/agencies/${agencyId}/scoreboard-settings/`)
     },
     enabled: enabled && !!agencyId,
     staleTime,
@@ -231,7 +204,6 @@ interface UseUserByIdOptions {
 /**
  * Fetch user data by user ID (not auth_user_id)
  * Useful for fetching other users' data
- * Uses Django API via /api/user/{id}
  */
 export function useUserById(
   userId: string | undefined,
@@ -246,8 +218,7 @@ export function useUserById(
         throw new Error('User ID is required')
       }
 
-      const data = await apiCall<UserProfileData>(`/user/${userId}`)
-      return data
+      return apiClient.get<UserProfileData>(`/api/user/${userId}/`)
     },
     enabled: enabled && !!userId,
     staleTime,
@@ -270,7 +241,6 @@ interface UseAdminStatusOptions {
 /**
  * Check if the current user has admin privileges
  * Used for admin-only pages and features
- * Uses the user profile endpoint which includes isAdmin
  */
 export function useAdminStatus(
   authUserId: string | undefined,
@@ -285,7 +255,7 @@ export function useAdminStatus(
         throw new Error('User ID is required')
       }
 
-      const data = await apiCall<UserProfileData>('/user/profile')
+      const data = await apiClient.get<UserProfileData>('/api/user/profile/')
       return {
         isAdmin: data.isAdmin || false
       } as AdminStatusData

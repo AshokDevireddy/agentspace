@@ -3,6 +3,7 @@
 import React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
+import { apiClient } from "@/lib/api-client"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, Home } from "lucide-react"
@@ -125,28 +126,15 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
         end_date: endDate
       })
 
-      // Build query params
-      const params = new URLSearchParams({
-        agent_id: currentAgentId,
-      })
-      if (startDate) params.set('start_date', startDate)
-      if (endDate) params.set('end_date', endDate)
+      const params: Record<string, string> = { agent_id: currentAgentId }
+      if (startDate) params.start_date = startDate
+      if (endDate) params.end_date = endDate
 
-      const response = await fetch(`/api/analytics/downline-distribution?${params}`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        console.error('[DownlineProductionChart] API Error:', errorData)
-        throw new Error(`Failed to load downline production data: ${errorData.error || 'Unknown error'}`)
-      }
-
-      const apiData = await response.json()
+      const apiData = await apiClient.get<any>('/api/analytics/downline-distribution/', { params })
 
       console.log('[DownlineProductionChart] API Response:', apiData)
 
-      // api-proxy transforms snake_case to camelCase automatically
+      // apiClient transforms snake_case to camelCase automatically
       // Django returns { entries: [...], totalProduction, totalDeals, agentId }
       const transformedData = (apiData.entries || []).map((item: {
         agentId?: string

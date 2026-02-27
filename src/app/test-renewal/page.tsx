@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { apiClient } from '@/lib/api-client';
 
 export default function TestRenewalPage() {
   const [result, setResult] = useState<any>(null);
@@ -13,17 +14,7 @@ export default function TestRenewalPage() {
     setResult(null);
 
     try {
-      const response = await fetch('/api/test/simulate-renewal', {
-        method: 'POST',
-        credentials: 'include',
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to simulate renewal');
-      }
-
+      const data = await apiClient.post('/api/test/simulate-renewal/');
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');

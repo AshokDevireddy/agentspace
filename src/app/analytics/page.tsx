@@ -20,6 +20,7 @@ import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
+import { apiClient } from '@/lib/api-client'
 import { QueryErrorDisplay } from '@/components/ui/query-error-display'
 import { RefreshingIndicator } from '@/components/ui/refreshing-indicator'
 import {
@@ -560,19 +561,11 @@ export default function AnalyticsTestPage() {
 		queryFn: async () => {
 			if (!user?.id) throw new Error('No authenticated user')
 
-			// Call the API route instead of direct Supabase RPC
-			const analyticsResponse = await fetch('/api/analytics/split-view', {
-				credentials: 'include',
-			})
-			if (!analyticsResponse.ok) {
-				const errorData = await analyticsResponse.json().catch(() => ({}))
-				throw new Error(errorData.error || 'Failed to fetch analytics')
-			}
-			const rpcData = await analyticsResponse.json()
+			const rpcData = await apiClient.get<{yourDeals: AnalyticsTestValue | null, downline: AnalyticsTestValue | null}>('/api/analytics/split-view/')
 			if (!rpcData) throw new Error('No analytics data returned')
 
 			return {
-				analyticsFullData: rpcData as {yourDeals: AnalyticsTestValue | null, downline: AnalyticsTestValue | null},
+				analyticsFullData: rpcData,
 			}
 		},
 		enabled: !!user?.id && hasAnalyticsAccess,
@@ -608,15 +601,10 @@ export default function AnalyticsTestPage() {
 	const { data: selectedAgentAnalytics, isPending: isSelectedAgentLoading } = useQuery({
 		queryKey: queryKeys.analyticsData({ agentId: targetUserId }),
 		queryFn: async () => {
-			const url = targetUserId
-				? `/api/analytics/split-view?agent_id=${targetUserId}`
-				: '/api/analytics/split-view'
-			const response = await fetch(url, { credentials: 'include' })
-			if (!response.ok) {
-				const errorData = await response.json().catch(() => ({}))
-				throw new Error(errorData.error || 'Failed to fetch analytics')
-			}
-			return response.json() as Promise<{yourDeals: AnalyticsTestValue | null, downline: AnalyticsTestValue | null}>
+			return apiClient.get<{yourDeals: AnalyticsTestValue | null, downline: AnalyticsTestValue | null}>(
+				'/api/analytics/split-view/',
+				targetUserId ? { params: { agent_id: targetUserId } } : undefined
+			)
 		},
 		enabled: !!targetUserId && hasAnalyticsAccess,
 		staleTime: 5 * 60 * 1000, // 5 minutes

@@ -29,6 +29,7 @@ import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useAssignPosition, useResendInvite, useSendInvite } from "@/hooks/mutations"
 import { badgeColors, statusColors } from "@/lib/badge-colors"
+import { apiClient } from "@/lib/api-client"
 
 // Types imported from useAgentsData
 
@@ -406,40 +407,14 @@ export default function Agents() {
   const { data: positionsData, isPending: positionsLoading } = useQuery({
     queryKey: queryKeys.positionsWithUserLevel(),
     queryFn: async ({ signal }) => {
-      const { getClientAccessToken } = await import('@/lib/auth/client')
-      const accessToken = await getClientAccessToken()
-
-      if (!accessToken) {
-        return { positions: [], userPositionLevel: null, isAdmin: false }
-      }
-
-      const response = await fetch('/api/positions', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        },
-        signal
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch positions')
-      }
-
-      const positions = await response.json()
+      const positions = await apiClient.get<Position[]>('/api/positions/', { signal })
 
       // Fetch current user's position level and admin status (for filtering assignment dropdown)
       let userPositionLevel = null
       let isAdmin = false
 
-      // Get user profile from API
-      const profileResponse = await fetch('/api/user/profile', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        },
-        signal
-      })
-
-      if (profileResponse.ok) {
-        const profileData = await profileResponse.json()
+      try {
+        const profileData = await apiClient.get<{ data?: any; positionLevel?: number | null; isAdmin?: boolean; role?: string }>('/api/user/profile/', { signal })
         if (profileData.data) {
           userPositionLevel = profileData.data.positionLevel ?? null
           isAdmin = profileData.data.isAdmin || profileData.data.role === 'admin'
@@ -447,6 +422,8 @@ export default function Agents() {
           userPositionLevel = profileData.positionLevel ?? null
           isAdmin = profileData.isAdmin || profileData.role === 'admin'
         }
+      } catch {
+        // Profile fetch failed, continue with defaults
       }
 
       return { positions, userPositionLevel, isAdmin }

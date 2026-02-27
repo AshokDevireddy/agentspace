@@ -1,28 +1,13 @@
 /**
  * Dashboard Data Hook
  *
- * Uses Next.js API routes which proxy to Django backend with httpOnly cookie auth.
+ * Uses apiClient for direct backend calls with JWT auth.
  */
 import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
-
-/**
- * Fetch from local Next.js API route with credentials (cookies)
- */
-async function fetchWithCookies<T>(url: string, errorMessage: string): Promise<T> {
-  const response = await fetch(url, {
-    credentials: 'include',
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || errorData.message || errorMessage)
-  }
-
-  return response.json()
-}
 
 // ============ Types ============
 
@@ -102,7 +87,7 @@ export function useDashboardSummary(
   return useQuery<DashboardSummary, Error>({
     queryKey: queryKeys.dashboard(userId || ''),
     queryFn: async () => {
-      return fetchWithCookies('/api/dashboard/summary', 'Failed to fetch dashboard summary')
+      return apiClient.get<DashboardSummary>('/api/dashboard/summary/')
     },
     enabled: !!userId && (options?.enabled !== false),
     retry: shouldRetry,
@@ -120,11 +105,9 @@ export function useScoreboardData(
   return useQuery<ScoreboardData, Error>({
     queryKey: queryKeys.scoreboard(userId || '', startDate, endDate),
     queryFn: async () => {
-      const url = new URL('/api/scoreboard', window.location.origin)
-      url.searchParams.set('startDate', startDate)
-      url.searchParams.set('endDate', endDate)
-
-      return fetchWithCookies(url.toString(), 'Failed to fetch scoreboard data')
+      return apiClient.get<ScoreboardData>('/api/dashboard/scoreboard/', {
+        params: { start_date: startDate, end_date: endDate },
+      })
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,
@@ -144,12 +127,13 @@ export function useProductionData(
   return useQuery<ProductionEntry[], Error>({
     queryKey: ['production', userId, agentIds.join(','), startDate, endDate],
     queryFn: async () => {
-      const url = new URL('/api/dashboard/production', window.location.origin)
-      url.searchParams.set('agent_ids', agentIds.join(','))
-      url.searchParams.set('start_date', startDate)
-      url.searchParams.set('end_date', endDate)
-
-      return fetchWithCookies(url.toString(), 'Failed to fetch production data')
+      return apiClient.get<ProductionEntry[]>('/api/dashboard/production/', {
+        params: {
+          agent_ids: agentIds.join(','),
+          start_date: startDate,
+          end_date: endDate,
+        },
+      })
     },
     enabled: !!userId && agentIds.length > 0 && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.slow,
@@ -170,20 +154,19 @@ export function useScoreboardBillingCycleData(
   return useQuery<BillingCycleScoreboardData, Error>({
     queryKey: queryKeys.scoreboardBillingCycle(userId || '', startDate, endDate, scope, dateMode, assumedMonthsTillLapse),
     queryFn: async () => {
-      const url = new URL('/api/dashboard/scoreboard-billing-cycle', window.location.origin)
-      url.searchParams.set('start_date', startDate)
-      url.searchParams.set('end_date', endDate)
-      url.searchParams.set('scope', scope)
+      const params: Record<string, string | number | boolean | undefined | null> = {
+        start_date: startDate,
+        end_date: endDate,
+        scope,
+      }
       if (dateMode) {
-        url.searchParams.set('date_mode', dateMode)
+        params.date_mode = dateMode
       }
       if (assumedMonthsTillLapse !== undefined) {
-        url.searchParams.set('assumed_months_till_lapse', String(assumedMonthsTillLapse))
+        params.assumed_months_till_lapse = assumedMonthsTillLapse
       }
 
-      const raw = await fetchWithCookies(url.toString(), 'Failed to fetch scoreboard billing cycle data')
-      // Backend wraps response in { success, data } — unwrap it
-      return (raw as { success: boolean; data: BillingCycleScoreboardData }).data ?? (raw as BillingCycleScoreboardData)
+      return apiClient.get<BillingCycleScoreboardData>('/api/dashboard/scoreboard-billing-cycle/', { params })
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,

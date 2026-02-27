@@ -3,7 +3,7 @@
  * Used by configuration page for managing products
  */
 
-import { useAuthenticatedMutation } from '../useMutations'
+import { useApiMutation } from '../useMutations'
 import { queryKeys } from '../queryKeys'
 
 // Types
@@ -44,7 +44,7 @@ interface Product {
  * Create a new product
  */
 export function useCreateProduct() {
-  return useAuthenticatedMutation<CreateProductResponse, CreateProductInput>('/api/products', {
+  return useApiMutation<CreateProductResponse, CreateProductInput>('/api/products/', {
     method: 'POST',
     invalidateKeys: [
       queryKeys.configurationProducts(),
@@ -58,8 +58,8 @@ export function useCreateProduct() {
  * Update an existing product
  */
 export function useUpdateProduct() {
-  return useAuthenticatedMutation<Product, UpdateProductInput>(
-    (variables) => `/api/products/${variables.productId}`,
+  return useApiMutation<Product, UpdateProductInput>(
+    (variables) => `/api/products/${variables.productId}/`,
     {
       method: 'PUT',
       invalidateKeys: [queryKeys.configurationProducts(), queryKeys.products],
@@ -71,8 +71,8 @@ export function useUpdateProduct() {
  * Delete a product
  */
 export function useDeleteProduct() {
-  return useAuthenticatedMutation<void, DeleteProductInput>(
-    (variables) => `/api/products/${variables.productId}`,
+  return useApiMutation<void, DeleteProductInput>(
+    (variables) => `/api/products/${variables.productId}/`,
     {
       method: 'DELETE',
       invalidateKeys: [
@@ -108,7 +108,7 @@ interface SyncCommissionsResponse {
  * Also invalidates products since commission data is displayed with products
  */
 export function useSaveProductCommissions() {
-  return useAuthenticatedMutation<void, SaveCommissionsInput>('/api/positions/product-commissions', {
+  return useApiMutation<void, SaveCommissionsInput>('/api/positions/product-commissions/', {
     method: 'POST',
     invalidateKeys: [
       queryKeys.configurationCommissions(),
@@ -123,8 +123,8 @@ export function useSaveProductCommissions() {
  * Also invalidates products since commission data is displayed with products
  */
 export function useSyncCommissions() {
-  return useAuthenticatedMutation<SyncCommissionsResponse, SyncCommissionsInput>(
-    (variables) => `/api/positions/product-commissions/sync?carrier_id=${variables.carrierId}`,
+  return useApiMutation<SyncCommissionsResponse, SyncCommissionsInput>(
+    (variables) => `/api/positions/product-commissions/sync/?carrier_id=${variables.carrierId}`,
     {
       method: 'POST',
       invalidateKeys: [

@@ -27,6 +27,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useUpdateAgencyColor } from '@/hooks/mutations/useAgencyMutations'
 import { useUnreadCountSSE } from '@/hooks/use-sse'
+import { apiClient } from '@/lib/api-client'
 
 const navigationItems = [
   { name: "Dashboard", href: "/", icon: Home },
@@ -88,23 +89,26 @@ export default function Navigation() {
     queryFn: async () => {
       if (!agencyId) return null
 
-      const response = await fetch(`/api/agencies/${agencyId}/settings`, {
-        credentials: 'include',
-      })
+      try {
+        const data = await apiClient.get<{
+          displayName: string
+          name: string
+          logoUrl: string
+          primaryColor: string
+          deactivatedPostADeal: boolean
+        }>(`/api/agencies/${agencyId}/settings/`)
 
-      if (!response.ok) {
-        console.error('Error fetching agency branding:', response.status)
+        // apiClient auto-converts snake_case → camelCase
+        return {
+          display_name: data.displayName,
+          name: data.name,
+          logo_url: data.logoUrl,
+          primary_color: data.primaryColor,
+          deactivated_post_a_deal: data.deactivatedPostADeal,
+        }
+      } catch (error) {
+        console.error('Error fetching agency branding:', error)
         return null
-      }
-
-      const data = await response.json()
-      // Map snake_case from Django to expected format
-      return {
-        display_name: data.display_name,
-        name: data.name,
-        logo_url: data.logo_url,
-        primary_color: data.primary_color,
-        deactivated_post_a_deal: data.deactivated_post_a_deal,
       }
     },
     enabled: !!agencyId,
@@ -177,15 +181,9 @@ export default function Navigation() {
     queryKey: queryKeys.conversationCount('self'),
     queryFn: async () => {
       try {
-        const response = await fetch('/api/sms/conversations?view=self&countOnly=true', {
-          credentials: 'include'
+        const data = await apiClient.get<{ unreadCount: number }>('/api/sms/unread-count/', {
+          params: { view_mode: 'downlines' }
         })
-
-        if (!response.ok) {
-          return { unreadCount: 0 }
-        }
-
-        const data = await response.json()
         return { unreadCount: data.unreadCount || 0 }
       } catch (error) {
         console.error('Error fetching unread count:', error)

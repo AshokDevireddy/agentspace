@@ -8,7 +8,7 @@ import { FileText, User, Mail, Phone, MapPin, Calendar, DollarSign, CreditCard, 
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useAuth } from '@/providers/AuthProvider'
-import { fetchApi } from '@/lib/api-client'
+import { apiClient } from '@/lib/api-client'
 
 interface Deal {
   id: string
@@ -72,17 +72,7 @@ export default function ClientDashboard() {
   const { data: dashboardData, isLoading: dashboardLoading, error: dashboardError } = useQuery({
     queryKey: queryKeys.clientUser(),
     queryFn: async () => {
-      const { getClientAccessToken } = await import('@/lib/auth/client')
-      const accessToken = await getClientAccessToken()
-      if (!accessToken) {
-        throw new Error('Not authenticated')
-      }
-
-      const response = await fetchApi<DashboardResponse>(
-        '/api/client/dashboard',
-        accessToken,
-        'Failed to fetch dashboard'
-      )
+      const response = await apiClient.get<DashboardResponse>('/api/client/dashboard/')
 
       if (response.user.role !== 'client') {
         throw new Error('Not a client')
@@ -102,15 +92,9 @@ export default function ClientDashboard() {
   const { data: deals = [], isLoading: dealsLoading, error: dealsError } = useQuery({
     queryKey: queryKeys.clientDeals(userData?.id || ''),
     queryFn: async () => {
-      const { getClientAccessToken } = await import('@/lib/auth/client')
-      const accessToken = await getClientAccessToken()
-      if (!accessToken || !userData?.id) return []
+      if (!userData?.id) return []
 
-      const response = await fetchApi<DealsResponse>(
-        '/api/client/deals',
-        accessToken,
-        'Failed to fetch deals'
-      )
+      const response = await apiClient.get<DealsResponse>('/api/client/deals/')
 
       return response.deals
     },

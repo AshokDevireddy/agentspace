@@ -1,12 +1,10 @@
 /**
  * Agents Data Hook
  *
- * Migrated to use cookie-based auth via fetchWithCredentials.
- * BFF routes handle auth via httpOnly cookies - no need for manual token passing.
+ * Uses apiClient for direct backend calls with JWT auth and case conversion.
  */
 import { useQuery } from '@tanstack/react-query'
-import { getAgentEndpoint } from '@/lib/api-config'
-import { fetchWithCredentials } from '@/lib/api-client'
+import { apiClient } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
@@ -118,34 +116,38 @@ export interface PendingPositionsResponse {
 
 // ============ Helpers ============
 
-function buildAgentFilterParams(filters: AgentsFilters, params: URLSearchParams): void {
+function buildAgentFilterParams(filters: AgentsFilters): Record<string, string | undefined> {
+  const params: Record<string, string | undefined> = {}
+
   if (filters.inUpline && filters.inUpline !== 'all') {
-    params.set('inUpline', filters.inUpline)
+    params.inUpline = filters.inUpline
   }
   if (filters.directUpline && filters.directUpline !== 'all') {
-    params.set('directUpline', filters.directUpline === 'not_set' ? 'not_set' : filters.directUpline)
+    params.directUpline = filters.directUpline === 'not_set' ? 'not_set' : filters.directUpline
   }
   if (filters.inDownline && filters.inDownline !== 'all') {
-    params.set('inDownline', filters.inDownline)
+    params.inDownline = filters.inDownline
   }
   if (filters.directDownline && filters.directDownline !== 'all') {
-    params.set('directDownline', filters.directDownline)
+    params.directDownline = filters.directDownline
   }
   if (filters.agentName && filters.agentName !== 'all') {
-    params.set('agentName', filters.agentName)
+    params.agentName = filters.agentName
   }
   if (filters.status && filters.status !== 'all') {
-    params.set('status', filters.status)
+    params.status = filters.status
   }
   if (filters.position && filters.position !== 'all') {
-    params.set('positionId', filters.position === 'not_set' ? 'not_set' : filters.position)
+    params.positionId = filters.position === 'not_set' ? 'not_set' : filters.position
   }
   if (filters.startMonth) {
-    params.set('startMonth', filters.startMonth)
+    params.startMonth = filters.startMonth
   }
   if (filters.endMonth) {
-    params.set('endMonth', filters.endMonth)
+    params.endMonth = filters.endMonth
   }
+
+  return params
 }
 
 // ============ Hooks ============
@@ -159,16 +161,17 @@ export function useAgentsList(
   return useQuery<AgentsListResponse, Error>({
     queryKey: queryKeys.agentsList(page, view, filters),
     queryFn: async () => {
-      const url = new URL(getAgentEndpoint('list'))
-      if (view === 'tree') {
-        url.searchParams.set('view', 'tree')
-      } else {
-        url.searchParams.set('page', String(page))
-        url.searchParams.set('limit', '20')
+      const params: Record<string, string | undefined> = {
+        ...buildAgentFilterParams(filters),
       }
-      buildAgentFilterParams(filters, url.searchParams)
+      if (view === 'tree') {
+        params.view = 'tree'
+      } else {
+        params.page = String(page)
+        params.limit = '20'
+      }
 
-      return fetchWithCredentials(url.toString(), 'Failed to fetch agents')
+      return apiClient.get<AgentsListResponse>('/api/agents/', { params })
     },
     enabled: (view === 'table' || view === 'tree') && (options?.enabled !== false),
     staleTime: STALE_TIMES.fast,
@@ -185,10 +188,9 @@ export function useAgentDownlines(
   return useQuery<AgentDownlinesResponse, Error>({
     queryKey: queryKeys.agentDownlines(agentId || ''),
     queryFn: async () => {
-      const url = new URL(getAgentEndpoint('downlines'))
-      url.searchParams.set('agentId', agentId!)
-
-      return fetchWithCredentials(url.toString(), 'Failed to fetch agent downlines')
+      return apiClient.get<AgentDownlinesResponse>('/api/agents/downlines/', {
+        params: { agentId: agentId! },
+      })
     },
     enabled: !!agentId && (options?.enabled !== false),
     staleTime: STALE_TIMES.standard,
@@ -201,10 +203,9 @@ export function useAgentsWithoutPositions(options?: { enabled?: boolean }) {
   return useQuery<PendingPositionsResponse, Error>({
     queryKey: queryKeys.agentsPendingPositions(),
     queryFn: async () => {
-      const url = new URL(getAgentEndpoint('withoutPositions'))
-      url.searchParams.set('all', 'true')
-
-      return fetchWithCredentials(url.toString(), 'Failed to fetch agents without positions')
+      return apiClient.get<PendingPositionsResponse>('/api/agents/without-positions/', {
+        params: { all: 'true' },
+      })
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.fast,

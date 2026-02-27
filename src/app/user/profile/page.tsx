@@ -15,6 +15,7 @@ import { useApiFetch } from '@/hooks/useApiFetch'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useResetPassword } from '@/hooks/mutations'
+import { apiClient } from '@/lib/api-client'
 
 interface ProfileData {
   id: string;
@@ -113,8 +114,7 @@ export default function ProfilePage() {
     else if (val === null || val === undefined) setSmsAutoSendValue("default")
   }, [profileData?.smsAutoSendEnabled])
 
-  // Fetch positions if admin using TanStack Query with custom queryFn
-  // Wrapped in try/catch to prevent errors from propagating to global error boundary
+  // Fetch positions if admin using TanStack Query with apiClient
   const {
     data: positions = [],
     isLoading: positionsLoading
@@ -122,26 +122,7 @@ export default function ProfilePage() {
     queryKey: queryKeys.positionsList(),
     queryFn: async () => {
       try {
-        const { getClientAccessToken } = await import('@/lib/auth/client');
-        const accessToken = await getClientAccessToken();
-
-        if (!accessToken) {
-          console.warn('[Profile] No access token for positions fetch');
-          return [];
-        }
-
-        const response = await fetch('/api/positions', {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        });
-
-        if (!response.ok) {
-          console.warn('[Profile] Positions fetch failed:', response.status);
-          return [];
-        }
-
-        const data = await response.json();
+        const data = await apiClient.get<Position[]>('/api/positions/')
         // API returns array directly - validate to prevent cache collision issues
         return Array.isArray(data) ? data : [];
       } catch (err) {
@@ -156,19 +137,7 @@ export default function ProfilePage() {
 
   // Shared profile update helper
   const updateProfile = async (body: Record<string, unknown>) => {
-    const { getClientAccessToken } = await import('@/lib/auth/client');
-    const accessToken = await getClientAccessToken();
-    if (!accessToken) throw new Error('Not authenticated');
-
-    const response = await fetch('/api/user/profile', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`
-      },
-      body: JSON.stringify(body),
-    });
-    const result = await response.json();
+    const result = await apiClient.put<{ success: boolean; error?: string }>('/api/user/profile/', body)
     if (!result.success) throw new Error(result.error || 'Failed to update profile');
     return result;
   }

@@ -23,6 +23,7 @@ import { useAuth } from "@/providers/AuthProvider"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { apiClient } from "@/lib/api-client"
 import { formatPhoneForDisplay } from "@/lib/telnyx"
 
 // Types for the API responses
@@ -282,11 +283,7 @@ export default function BookOfBusiness() {
     queryKey: queryKeys.dealsBookOfBusiness(appliedFilters),
     queryFn: async () => {
       const params = buildDealsParams()
-      const response = await fetch(`/api/deals/book-of-business?${params}`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch deals')
-      }
-      return response.json() as Promise<{ deals: Deal[]; nextCursor?: { cursorCreatedAt: string; cursorId: string } }>
+      return apiClient.get<{ deals: Deal[]; nextCursor?: { cursorCreatedAt: string; cursorId: string } }>(`/api/deals/book-of-business/?${params}`)
     },
     staleTime: 30 * 1000, // 30 seconds
     placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
@@ -297,9 +294,7 @@ export default function BookOfBusiness() {
     queryKey: queryKeys.dealsBookOfBusinessSummary(appliedFilters),
     queryFn: async () => {
       const params = buildDealsParams()
-      const response = await fetch(`/api/deals/book-of-business/summary?${params}`)
-      if (!response.ok) throw new Error('Failed to fetch summary')
-      return response.json()
+      return apiClient.get<BookSummary>(`/api/deals/book-of-business/summary/?${params}`)
     },
     staleTime: 30 * 1000,
     placeholderData: (previousData) => previousData,
@@ -326,11 +321,7 @@ export default function BookOfBusiness() {
     setIsLoadingMore(true)
     try {
       const params = buildDealsParams(nextCursorRef.current || undefined)
-      const response = await fetch(`/api/deals/book-of-business?${params}`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch deals')
-      }
-      const data = await response.json()
+      const data = await apiClient.get<{ deals: Deal[]; nextCursor?: { cursorCreatedAt: string; cursorId: string } }>(`/api/deals/book-of-business/?${params}`)
       setDeals(prev => [...prev, ...data.deals])
       setNextCursor(data.nextCursor || null)
     } catch (err) {

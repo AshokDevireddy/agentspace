@@ -11,6 +11,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useCheckConversation, useCreateConversation } from '@/hooks/mutations'
 import { formatPhoneForDisplay } from "@/lib/telnyx"
+import { apiClient } from '@/lib/api-client'
 
 interface Deal {
   id: string
@@ -60,21 +61,14 @@ export function CreateConversationModal({
   const { data: searchData, isLoading: loading } = useQuery({
     queryKey: queryKeys.searchDeals(debouncedNameSearch.trim(), debouncedPhoneSearch.trim()),
     queryFn: async ({ signal }) => {
-      const params = new URLSearchParams()
-      if (debouncedNameSearch.trim()) params.append('client_name', debouncedNameSearch.trim())
-      if (debouncedPhoneSearch.trim()) params.append('client_phone', debouncedPhoneSearch.trim())
-      params.append('limit', '20')
+      const params: Record<string, string> = { limit: '20' }
+      if (debouncedNameSearch.trim()) params.search = debouncedNameSearch.trim()
+      if (debouncedPhoneSearch.trim()) params.client_phone = debouncedPhoneSearch.trim()
 
-      const response = await fetch(`/api/deals/search-for-conversation?${params.toString()}`, {
-        credentials: 'include',
-        signal
+      const data = await apiClient.get<{ deals: Deal[] }>('/api/deals/', {
+        params,
+        signal,
       })
-
-      if (!response.ok) {
-        throw new Error('Failed to search deals')
-      }
-
-      const data = await response.json()
       return data.deals || []
     },
     enabled: !pauseSearch && !!(debouncedNameSearch.trim() || debouncedPhoneSearch.trim()),

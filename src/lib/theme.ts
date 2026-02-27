@@ -1,27 +1,13 @@
-import { getClientAccessToken } from '@/lib/auth/client'
+import { apiClient } from '@/lib/api-client'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
 export async function updateUserTheme(theme: ThemeMode): Promise<{ success: boolean; error?: string }> {
-  const accessToken = await getClientAccessToken()
-
-  if (!accessToken) {
-    return { success: false, error: 'No authenticated session' }
+  try {
+    await apiClient.put('/api/user/profile/', { themeMode: theme })
+    return { success: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to update theme'
+    return { success: false, error: message }
   }
-
-  const response = await fetch('/api/user/theme', {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`
-    },
-    body: JSON.stringify({ theme })
-  })
-
-  if (!response.ok) {
-    const data = await response.json()
-    return { success: false, error: data.error || 'Failed to update theme' }
-  }
-
-  return { success: true }
 }

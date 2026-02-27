@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { useOnboardingProgress } from '@/hooks/useOnboardingProgress'
-import { fetchWithCredentials } from '@/lib/api-client'
+import { apiClient } from '@/lib/api-client'
 import { useAuth } from '@/providers/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { LogOut } from 'lucide-react'
@@ -93,14 +93,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
       if (validCarriers.length === 0) return
 
       try {
-        await fetchWithCredentials(
-          `/api/user/${userData.id}/carriers`,
-          'Failed to store carriers',
-          {
-            method: 'PATCH',
-            body: { unique_carriers: validCarriers },
-          }
-        )
+        await apiClient.patch(`/api/user/${userData.id}/carriers/`, { uniqueCarriers: validCarriers })
       } catch (error) {
         console.error('[OnboardingWizard] Failed to store carriers:', error)
       }

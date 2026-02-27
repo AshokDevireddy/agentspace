@@ -1,192 +1,45 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/session'
+/**
+ * NIPR Upload - Proxy to Django
+ * POST /api/nipr/upload
+ *
+ * Forwards PDF upload to Django for AI analysis.
+ */
+import { NextRequest } from 'next/server'
+import { getAccessToken } from '@/lib/session'
 import { getApiBaseUrl } from '@/lib/api-config'
-import { analyzePDFReport } from '@/lib/nipr/pdf-analyzer'
-import fs from 'fs'
-import path from 'path'
-import os from 'os'
 
-export const maxDuration = 300 // 5 minutes for AI analysis
-
-/**
- * Helper to update user NIPR data via Django API
- */
-async function updateUserNIPRDataViaDjango(
-  userId: string,
-  carriers: string[],
-  states: string[],
-  accessToken?: string
-): Promise<boolean> {
-  const apiUrl = getApiBaseUrl()
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  }
-
-  if (accessToken) {
-    headers['Authorization'] = `Bearer ${accessToken}`
-  } else {
-    headers['X-Cron-Secret'] = process.env.CRON_SECRET || ''
-  }
-
-  try {
-    const response = await fetch(`${apiUrl}/api/user/${userId}/nipr-data`, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify({
-        unique_carriers: carriers,
-        licensed_states: states,
-      }),
-    })
-    return response.ok
-  } catch (error) {
-    console.error(`Failed to update user ${userId} NIPR data:`, error)
-    return false
-  }
-}
-
-/**
- * Handle NIPR PDF document upload and analysis
- * This provides a faster alternative to the automation process
- */
 export async function POST(request: NextRequest) {
-  console.log('[API/NIPR/UPLOAD] Starting NIPR document upload and analysis...')
-
   try {
-    // Authenticate user via session
-    const session = await getSession()
-    if (!session?.accessToken) {
-      return NextResponse.json({
-        success: false,
-        error: 'Authentication required'
-      }, { status: 401 })
+    const accessToken = await getAccessToken()
+    if (!accessToken) {
+      return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      })
     }
 
-    // Get current user info from Django
-    const apiUrl = getApiBaseUrl()
-    const userResponse = await fetch(`${apiUrl}/api/user/me`, {
-      headers: { Authorization: `Bearer ${session.accessToken}` },
-    })
-
-    if (!userResponse.ok) {
-      return NextResponse.json({
-        success: false,
-        error: 'Authentication required'
-      }, { status: 401 })
-    }
-
-    const userData = await userResponse.json()
-    const userId = userData.id
-
-    // Parse multipart form data
+    // Forward the multipart form data directly to Django
     const formData = await request.formData()
-    const file = formData.get('file') as File | null
+    const apiUrl = getApiBaseUrl()
 
-    if (!file) {
-      return NextResponse.json({
-        success: false,
-        error: 'No file provided'
-      }, { status: 400 })
-    }
-
-    // Validate file type
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      return NextResponse.json({
-        success: false,
-        error: 'Only PDF files are accepted'
-      }, { status: 400 })
-    }
-
-    // Validate file size (max 50MB)
-    const maxSize = 50 * 1024 * 1024
-    if (file.size > maxSize) {
-      return NextResponse.json({
-        success: false,
-        error: 'File size exceeds 50MB limit'
-      }, { status: 400 })
-    }
-
-    console.log(`[API/NIPR/UPLOAD] Received file: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`)
-
-    // Save file temporarily
-    const tempDir = os.tmpdir()
-    const tempFileName = `nipr-upload-${userId}-${Date.now()}.pdf`
-    const tempFilePath = path.join(tempDir, tempFileName)
-
-    try {
-      const bytes = await file.arrayBuffer()
-      const buffer = Buffer.from(bytes)
-      fs.writeFileSync(tempFilePath, buffer)
-      console.log(`[API/NIPR/UPLOAD] Saved temp file: ${tempFilePath}`)
-    } catch (writeError) {
-      console.error('[API/NIPR/UPLOAD] Failed to save temp file:', writeError)
-      return NextResponse.json({
-        success: false,
-        error: 'Failed to process uploaded file'
-      }, { status: 500 })
-    }
-
-    // Analyze the PDF
-    console.log('[API/NIPR/UPLOAD] Starting AI analysis...')
-    const startTime = Date.now()
-    const analysisResult = await analyzePDFReport(tempFilePath)
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1)
-    console.log(`[API/NIPR/UPLOAD] Analysis completed in ${duration}s`)
-
-    // Clean up temp file
-    try {
-      fs.unlinkSync(tempFilePath)
-      console.log('[API/NIPR/UPLOAD] Cleaned up temp file')
-    } catch (cleanupError) {
-      console.warn('[API/NIPR/UPLOAD] Failed to clean up temp file:', cleanupError)
-    }
-
-    if (!analysisResult.success) {
-      return NextResponse.json({
-        success: false,
-        error: 'Failed to analyze PDF. Please ensure it is a valid NIPR PDB report.',
-        details: 'The AI could not extract carrier information from the document.'
-      }, { status: 422 })
-    }
-
-    // Save carriers and states to user profile via Django API
-    if (analysisResult.unique_carriers && analysisResult.unique_carriers.length > 0) {
-      try {
-        const states = analysisResult.licensed_states || []
-        const updated = await updateUserNIPRDataViaDjango(userId, analysisResult.unique_carriers, states, session.accessToken)
-        if (updated) {
-          console.log(`[API/NIPR/UPLOAD] Saved ${analysisResult.unique_carriers.length} carriers and ${states.length} states to user ${userId}`)
-        } else {
-          console.error('[API/NIPR/UPLOAD] Failed to save NIPR data via Django API')
-        }
-      } catch (dbError) {
-        console.error('[API/NIPR/UPLOAD] Failed to save NIPR data:', dbError)
-        // Don't fail the request, just log the error
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: `Successfully analyzed NIPR document`,
-      analysis: {
-        success: analysisResult.success,
-        carriers: analysisResult.unique_carriers,
-        licensedStates: analysisResult.licensedStates,
-        analyzedAt: analysisResult.analyzedAt
+    const response = await fetch(`${apiUrl}/api/nipr/upload`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
       },
-      metrics: {
-        duration: `${duration}s`,
-        carriersFound: analysisResult.unique_carriers.length,
-        residentStates: analysisResult.licensedStates.resident.length,
-        nonResidentStates: analysisResult.licensedStates.nonResident.length
-      }
+      body: formData,
     })
 
+    const data = await response.json()
+    return new Response(JSON.stringify(data), {
+      status: response.status,
+      headers: { 'Content-Type': 'application/json' },
+    })
   } catch (error) {
-    console.error('[API/NIPR/UPLOAD] Error:', error)
-    return NextResponse.json({
-      success: false,
-      error: 'Failed to process NIPR document',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 })
+    console.error('NIPR upload proxy error:', error)
+    return new Response(
+      JSON.stringify({ success: false, error: 'Failed to analyze PDF. Please try again.' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
   }
 }

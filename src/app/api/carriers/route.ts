@@ -7,7 +7,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import camelcaseKeys from 'camelcase-keys'
 import { getApiBaseUrl } from '@/lib/api-config'
 import { getAccessToken } from '@/lib/session'
-import { findMatchingCarriers, type ActiveCarrier } from '@/lib/nipr/fuzzy-match'
 
 type Carrier = {
   id: string
@@ -15,6 +14,55 @@ type Carrier = {
   displayName?: string | null
   isActive?: boolean
   createdAt?: string | null
+}
+
+/** Levenshtein distance between two strings */
+function levenshteinDistance(s1: string, s2: string): number {
+  const matrix: number[][] = []
+  for (let i = 0; i <= s1.length; i++) matrix[i] = [i]
+  for (let j = 0; j <= s2.length; j++) matrix[0][j] = j
+  for (let i = 1; i <= s1.length; i++) {
+    for (let j = 1; j <= s2.length; j++) {
+      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost
+      )
+    }
+  }
+  return matrix[s1.length][s2.length]
+}
+
+/** Calculate similarity (0-1) between two strings */
+function calculateSimilarity(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase().trim()
+  const s2 = str2.toLowerCase().trim()
+  if (s1 === s2) return 1
+  if (s1.length === 0 || s2.length === 0) return 0
+  const distance = levenshteinDistance(s1, s2)
+  return 1 - distance / Math.max(s1.length, s2.length)
+}
+
+/** Find carriers matching NIPR carriers by fuzzy name comparison */
+function findMatchingCarrierIds(
+  niprCarriers: string[],
+  carriers: Carrier[],
+  threshold = 0.8
+): Set<string> {
+  const matchedIds = new Set<string>()
+  for (const niprName of niprCarriers) {
+    for (const carrier of carriers) {
+      const nameSim = calculateSimilarity(niprName, carrier.name)
+      const displaySim = carrier.displayName
+        ? calculateSimilarity(niprName, carrier.displayName)
+        : 0
+      if (Math.max(nameSim, displaySim) >= threshold) {
+        matchedIds.add(carrier.id)
+      }
+    }
+  }
+  return matchedIds
 }
 
 export async function GET(request: NextRequest) {
@@ -76,19 +124,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Fuzzy match carriers at 80% threshold
-    const activeCarriers: ActiveCarrier[] = (carriers || []).map(c => ({
-      id: c.id,
-      name: c.name,
-      display_name: c.displayName || c.name
-    }))
-
-    const matchedCarriers = findMatchingCarriers(uniqueCarriers, activeCarriers, 0.8)
+    const matchedIds = findMatchingCarrierIds(uniqueCarriers, carriers, 0.8)
 
     // Return matched carriers in the same format as original response
-    const filteredCarriers = matchedCarriers.map(m => {
-      const original = carriers?.find(c => c.id === m.id)
-      return original || { id: m.id, name: m.name, displayName: m.display_name, isActive: true, createdAt: null }
-    })
+    const filteredCarriers = carriers.filter(c => matchedIds.has(c.id))
 
     return NextResponse.json(filteredCarriers)
 

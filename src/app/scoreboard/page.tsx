@@ -96,9 +96,9 @@ export default function Scoreboard() {
       const response = await fetch(`/api/agents/downlines?agentId=${user?.id}`, {
         credentials: 'include'
       })
-      if (!response.ok) return { downlineIds: [] as string[], downlineAgents: [] as { id: string; firstName: string; lastName: string }[] }
+      if (!response.ok) return { downlineIds: [] as string[], downlineAgents: [] as { id: string; name?: string; firstName?: string; lastName?: string }[] }
       const data = await response.json()
-      const agents: { id: string; firstName: string; lastName: string }[] = data.downlines || data || []
+      const agents: { id: string; name: string; firstName?: string; lastName?: string }[] = data.downlines || data || []
       const ids: string[] = agents.map((d) => d.id)
       return { downlineIds: ids, downlineAgents: agents }
     },
@@ -308,7 +308,7 @@ export default function Scoreboard() {
     if (!downlineData?.downlineAgents) return []
     return downlineData.downlineAgents.map(agent => ({
       value: agent.id,
-      label: `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || agent.id
+      label: agent.name || `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || agent.id
     }))
   }, [downlineData?.downlineAgents])
 

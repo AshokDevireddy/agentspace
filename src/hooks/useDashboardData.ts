@@ -181,7 +181,9 @@ export function useScoreboardBillingCycleData(
         url.searchParams.set('assumed_months_till_lapse', String(assumedMonthsTillLapse))
       }
 
-      return fetchWithCookies(url.toString(), 'Failed to fetch scoreboard billing cycle data')
+      const raw = await fetchWithCookies(url.toString(), 'Failed to fetch scoreboard billing cycle data')
+      // Backend wraps response in { success, data } — unwrap it
+      return (raw as { success: boolean; data: BillingCycleScoreboardData }).data ?? (raw as BillingCycleScoreboardData)
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,

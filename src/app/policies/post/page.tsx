@@ -177,10 +177,8 @@ export default function PostDeal() {
         return null
       }
 
-      // Django returns carriers/products as {id, name, displayName} objects.
-      // After camelcaseKeys transform they become {id, name, displayName}.
-      // Map them to {value, label} as required by SimpleSearchableSelect.
-      const rawCarriers: Array<{ id: string; name: string; displayName?: string }> = data.carriers || []
+      // Map carriers to {value, label} as required by SimpleSearchableSelect.
+      const rawCarriers: Array<{ id: string; name: string }> = data.carriers || []
       const rawLeadSources: Array<{ value?: string; label?: string; id?: string; name?: string }> = data.leadSources || []
       const rawTeams: Array<{ value?: string; label?: string; id?: string; name?: string }> = data.teams || []
 
@@ -195,7 +193,7 @@ export default function PostDeal() {
         ),
         carriersOptions: rawCarriers.map(c => ({
           value: String(c.id),
-          label: c.displayName || c.name,
+          label: c.name,
         })),
         userFirstName: data.userFirstName,
         userLastName: data.userLastName,
@@ -247,19 +245,17 @@ export default function PostDeal() {
         return []
       }
 
-      let products: Array<{ id: string; name: string; displayName?: string }>
+      let products: Array<{ id: string; name: string }>
       try {
-        products = await apiClient.get<Array<{ id: string; name: string; displayName?: string }>>('/api/deals/products-by-carrier/', { params: { carrier_id: formData.carrierId } })
+        products = await apiClient.get<Array<{ id: string; name: string }>>('/api/deals/products-by-carrier/', { params: { carrier_id: formData.carrierId } })
       } catch {
         console.error('Failed to fetch products by carrier')
         return []
       }
-      // Django returns products as {id, name, displayName} objects.
-      // After camelcaseKeys transform they become {id, name, displayName}.
-      // Map them to {value, label} as required by SimpleSearchableSelect.
+      // Map products to {value, label} as required by SimpleSearchableSelect.
       return products.map(p => ({
         value: String(p.id),
-        label: p.displayName || p.name,
+        label: p.name,
       }))
     },
     enabled: !!agencyId && !!formData.carrierId,

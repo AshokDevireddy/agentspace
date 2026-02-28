@@ -181,9 +181,13 @@ export default function Home() {
         // showWizard will be automatically set to false by the useEffect watching userData.status
       },
       onError: async (error) => {
+        // If user is already active, treat as success and close wizard
+        if (error.message?.toLowerCase().includes('not in onboarding')) {
+          await refreshUser()
+          await queryClient.refetchQueries({ queryKey: queryKeys.userProfile(), type: 'active' })
+          return
+        }
         console.error('Error completing onboarding:', error)
-        // Don't close wizard on error - let user retry
-        // The wizard handles its own error display via setErrors()
         await queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
       },
     })

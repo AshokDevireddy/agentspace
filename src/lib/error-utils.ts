@@ -195,7 +195,9 @@ export async function createErrorFromResponse(response: Response): Promise<Error
 
   try {
     const data = await response.json()
-    errorMessage = data.error || data.message || errorMessage
+    // Django ValidationError wraps message as object: {message: {message: '...'}} or string
+    const msg = data.error || data.message || data.detail
+    errorMessage = typeof msg === 'string' ? msg : (msg?.message ?? errorMessage)
   } catch {
     // Response body wasn't JSON, use status text
   }

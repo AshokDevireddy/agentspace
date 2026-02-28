@@ -595,8 +595,6 @@ export default function ConfigurationPage() {
       staleTime: 10 * 60 * 1000, // 10 minutes
     }
   )
-  const carrierNamesData = carrierNamesRawData.map((c: {id: string, name: string}) => c.name)
-
   // Fetch existing policy files from ingest jobs (only when policy-reports tab is active)
   const { data: policyFilesData, isLoading: checkingExistingFiles, refetch: refetchPolicyFiles } = useApiFetch<{files: any[], jobs?: any[]}>(
     queryKeys.configurationPolicyFiles(),
@@ -730,10 +728,10 @@ export default function ConfigurationPage() {
 
   // Sync carrier names to local state
   useEffect(() => {
-    if (carrierNamesData.length > 0) {
-      setCarrierNames(carrierNamesData)
+    if (carrierNamesRawData.length > 0) {
+      setCarrierNames(carrierNamesRawData.map((c) => c.name))
     }
-  }, [carrierNamesData])
+  }, [carrierNamesRawData])
 
   // Sync policy files to local state
   useEffect(() => {

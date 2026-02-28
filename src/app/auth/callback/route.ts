@@ -100,8 +100,8 @@ export async function GET(request: NextRequest) {
         return redirectResponse
       }
 
-      // Fallback: redirect to dashboard
-      const response = NextResponse.redirect(`${requestUrl.origin}/dashboard`)
+      // Fallback: redirect to home
+      const response = NextResponse.redirect(`${requestUrl.origin}/`)
       copySetCookieHeaders(exchangeResponse, response)
       return response
     } catch (err) {

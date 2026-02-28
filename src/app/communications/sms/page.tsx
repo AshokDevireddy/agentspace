@@ -65,18 +65,14 @@ interface Conversation {
   optedInAt?: string
   optedOutAt?: string
   statusStandardized?: string | null
-  hasNotification?: boolean
 }
 
 interface Message {
   id: string
-  conversationId: string
   // Django returns 'content', not 'body'
   content: string
   direction: 'inbound' | 'outbound'
-  // sentAt may be null for drafts; createdAt is always set
   sentAt: string | null
-  createdAt: string | null
   status: string
   metadata: any
 }
@@ -94,9 +90,11 @@ interface DealDetails {
     phone: string | null
     name: string
   } | null
-  // Deal-level client fields (stored on the deal itself, not the client FK)
-  // These are from d.client_name, d.client_phone, d.client_email, d.client_address
-  // but get_deal_by_id does NOT select them — they are only in the clients FK JOIN above
+  // Top-level client fields returned by Django when client_id FK is null (legacy deals)
+  // Django returns these from d.client_name, d.client_phone, d.client_email directly
+  clientName: string | null
+  clientEmail: string | null
+  clientPhone: string | null
   policyNumber: string | null
   annualPremium: number | null
   monthlyPremium: number | null
@@ -241,14 +239,14 @@ function SMSMessagingPageContent() {
   // Messages query - migrated to useApiFetch
   const { data: messagesData, isPending: messagesLoading } = useApiFetch<{ messages: Message[] }>(
     queryKeys.messages(selectedConversation?.id || ''),
-    `/api/sms/messages?conversationId=${selectedConversation?.id}&view=${effectiveViewMode}`,
+    `/api/sms/messages?conversation_id=${selectedConversation?.id}&view=${effectiveViewMode}`,
     {
       enabled: !!selectedConversation?.id,
       staleTime: 30 * 1000, // 30 seconds - prevents excessive refetches
     }
   )
 
-  // Sort messages: sent messages by sentAt (falling back to createdAt), drafts (sentAt=null) always at bottom
+  // Sort messages: sent messages by sentAt, drafts (sentAt=null) always at bottom
   const messages = (messagesData?.messages || []).sort((a: Message, b: Message) => {
     if (!a.sentAt && !b.sentAt) return 0
     if (!a.sentAt) return 1
@@ -1319,10 +1317,10 @@ function SMSMessagingPageContent() {
                   Client Information
                 </h3>
                 <div className="space-y-3">
-                  {/* Client info comes from the nested client object (clients table JOIN) */}
-                  <DetailRow label="Name" value={dealDetails.client?.name || null} />
-                  <DetailRow label="Phone" value={dealDetails.client?.phone || selectedConversation?.phoneNumber || null} />
-                  <DetailRow label="Email" value={dealDetails.client?.email || null} />
+                  {/* Client info: prefer nested client FK join, fall back to top-level deal fields for legacy deals without client_id */}
+                  <DetailRow label="Name" value={dealDetails.client?.name || dealDetails.clientName || null} />
+                  <DetailRow label="Phone" value={dealDetails.client?.phone || dealDetails.clientPhone || selectedConversation?.phoneNumber || null} />
+                  <DetailRow label="Email" value={dealDetails.client?.email || dealDetails.clientEmail || null} />
                 </div>
               </div>
 

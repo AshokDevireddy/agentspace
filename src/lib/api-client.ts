@@ -52,12 +52,12 @@ interface RequestOptions {
 }
 
 /**
- * Strip trailing slash from endpoint path.
+ * Ensure endpoint path ends with a trailing slash (required by Django APPEND_SLASH).
  * Preserves query strings.
  */
 function normalizeEndpoint(endpoint: string): string {
   const [path, query] = endpoint.split('?')
-  const normalized = path.endsWith('/') ? path.slice(0, -1) : path
+  const normalized = path.endsWith('/') ? path : `${path}/`
   return query ? `${normalized}?${query}` : normalized
 }
 

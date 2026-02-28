@@ -42,14 +42,7 @@ export default function Home() {
 
   const { data: profileData, isLoading: profileLoading, error: profileError } = useQuery<UserProfile, Error>({
     queryKey: queryKeys.userProfile(user?.id),
-    queryFn: async () => {
-      const response = await apiClient.get<{ success: boolean; data: UserProfile } | UserProfile>(
-        `/api/user/profile`,
-        { params: { user_id: user?.id } }
-      )
-      // Unwrap {success, data} envelope from Django
-      return ('success' in response && response.data ? response.data : response) as UserProfile
-    },
+    queryFn: () => apiClient.get<UserProfile>('/api/user/profile/', { params: { user_id: user?.id } }),
     enabled: !!user?.id,
     placeholderData: (previousData) => previousData,
   })

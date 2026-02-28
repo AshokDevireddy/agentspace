@@ -2,6 +2,7 @@
  * Dashboard Data Hook
  *
  * Uses apiClient for direct backend calls with JWT auth.
+ * apiClient automatically unwraps Django {success, data} envelopes and camelCases responses.
  */
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
@@ -87,32 +88,7 @@ interface RawLeaderboardEntry {
   position?: string | null
 }
 
-interface RawScoreboardEnvelope {
-  success: boolean
-  data: {
-    leaderboard: RawLeaderboardEntry[]
-    userRank?: number | null
-    userProduction?: number | null
-  }
-}
-
 // ============ Helpers ============
-
-/**
- * Unwrap a Django {success, data} envelope if present, otherwise return as-is.
- * psycopg2 may also return json_agg fields as raw JSON strings — ensureArray handles that.
- */
-function unwrapEnvelope<T>(raw: unknown): T {
-  if (
-    raw !== null &&
-    typeof raw === 'object' &&
-    'success' in (raw as object) &&
-    'data' in (raw as object)
-  ) {
-    return (raw as { success: boolean; data: T }).data
-  }
-  return raw as T
-}
 
 /** psycopg2 may return json_agg results as a raw JSON string instead of a parsed array */
 function ensureArray<T>(value: T[] | string | null | undefined): T[] {
@@ -136,8 +112,7 @@ export function useDashboardSummary(
   return useQuery<DashboardSummary, Error>({
     queryKey: queryKeys.dashboard(userId || ''),
     queryFn: async () => {
-      const raw = await apiClient.get<DashboardSummary | { success: boolean; data: DashboardSummary }>('/api/dashboard/summary/')
-      const data = unwrapEnvelope<DashboardSummary>(raw)
+      const data = await apiClient.get<DashboardSummary>('/api/dashboard/summary/')
       return {
         ...data,
         yourDeals: normalizeDealsSummary(data.yourDeals),
@@ -160,13 +135,12 @@ export function useScoreboardData(
   return useQuery<ScoreboardData, Error>({
     queryKey: queryKeys.scoreboard(userId || '', startDate, endDate),
     queryFn: async () => {
-      const raw = await apiClient.get<RawScoreboardEnvelope | RawScoreboardEnvelope['data']>('/api/dashboard/scoreboard/', {
+      const data = await apiClient.get<{ leaderboard: RawLeaderboardEntry[]; userRank?: number | null; userProduction?: number | null }>('/api/dashboard/scoreboard/', {
         params: { start_date: startDate, end_date: endDate },
       })
-      const inner = unwrapEnvelope<RawScoreboardEnvelope['data']>(raw)
 
       return {
-        entries: ensureArray<RawLeaderboardEntry>(inner?.leaderboard).map((entry) => ({
+        entries: ensureArray<RawLeaderboardEntry>(data?.leaderboard).map((entry) => ({
           rank: entry.rank,
           agentId: entry.agentId,
           agentName: entry.name,
@@ -174,8 +148,8 @@ export function useScoreboardData(
           dealsCount: entry.dealCount,
           position: entry.position ?? null,
         })),
-        userRank: inner?.userRank ?? null,
-        userProduction: inner?.userProduction != null ? String(inner.userProduction) : null,
+        userRank: data?.userRank ?? null,
+        userProduction: data?.userProduction != null ? String(data.userProduction) : null,
       }
     },
     enabled: !!userId && (options?.enabled !== false),
@@ -196,15 +170,13 @@ export function useProductionData(
   return useQuery<ProductionEntry[], Error>({
     queryKey: ['production', userId, agentIds.join(','), startDate, endDate],
     queryFn: async () => {
-      const raw = await apiClient.get<ProductionEntry[] | { success: boolean; data: ProductionEntry[] }>('/api/dashboard/production/', {
+      const data = await apiClient.get<ProductionEntry[]>('/api/dashboard/production/', {
         params: {
           agent_ids: agentIds.join(','),
           start_date: startDate,
           end_date: endDate,
         },
       })
-      // Production returns a plain array; unwrap envelope only if present
-      const data = Array.isArray(raw) ? raw : unwrapEnvelope<ProductionEntry[]>(raw)
       return ensureArray<ProductionEntry>(data as ProductionEntry[] | string)
     },
     enabled: !!userId && agentIds.length > 0 && (options?.enabled !== false),
@@ -234,8 +206,7 @@ export function useScoreboardBillingCycleData(
       if (dateMode) params.date_mode = dateMode
       if (assumedMonthsTillLapse !== undefined) params.assumed_months_till_lapse = assumedMonthsTillLapse
 
-      const raw = await apiClient.get<BillingCycleScoreboardData | { success: boolean; data: BillingCycleScoreboardData }>('/api/dashboard/scoreboard-billing-cycle/', { params })
-      return unwrapEnvelope<BillingCycleScoreboardData>(raw)
+      return apiClient.get<BillingCycleScoreboardData>('/api/dashboard/scoreboard-billing-cycle/', { params })
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,

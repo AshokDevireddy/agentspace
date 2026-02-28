@@ -48,7 +48,7 @@ export function withTimeout<T>(promise: Promise<T>, ms = AUTH_TIMEOUT_MS): Promi
  */
 export async function withRetry<T>(
   operation: () => Promise<T>,
-  timeouts: readonly number[] = [5000, 8000, 12000]
+  timeouts: readonly number[] = AUTH_RETRY_TIMEOUTS
 ): Promise<{ success: true; result: T } | { success: false; error: Error }> {
   let lastError: Error = new Error('No attempts made')
   const retryStart = Date.now()

@@ -94,18 +94,14 @@ export default function Scoreboard() {
   const { data: downlineData } = useQuery({
     queryKey: queryKeys.myDownlineIds(user?.id || ''),
     queryFn: async () => {
-      try {
-        const data = await apiClient.get<{ downlines?: Array<{ id: string; name: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
-        const agents = (data.downlines || []).map(d => ({
-          id: d.id,
-          firstName: d.name?.split(' ')[0] || '',
-          lastName: d.name?.split(' ').slice(1).join(' ') || ''
-        }))
-        const ids: string[] = agents.map((d) => d.id)
-        return { downlineIds: ids, downlineAgents: agents }
-      } catch {
-        return { downlineIds: [] as string[], downlineAgents: [] as { id: string; firstName: string; lastName: string }[] }
-      }
+      const data = await apiClient.get<{ downlines?: Array<{ id: string; name: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
+      const agents = (data.downlines || []).map(d => ({
+        id: d.id,
+        firstName: d.name?.split(' ')[0] || '',
+        lastName: d.name?.split(' ').slice(1).join(' ') || ''
+      }))
+      const ids: string[] = agents.map((d) => d.id)
+      return { downlineIds: ids, downlineAgents: agents }
     },
     enabled: !!user?.id,
     staleTime: 5 * 60 * 1000,
@@ -115,13 +111,9 @@ export default function Scoreboard() {
   const { data: selectedAgentDownlineData } = useQuery({
     queryKey: queryKeys.myDownlineIds(selectedDownlineAgentId),
     queryFn: async () => {
-      try {
-        const data = await apiClient.get<{ downlines?: Array<{ id: string }> }>('/api/agents/downlines/', { params: { agentId: selectedDownlineAgentId } })
-        const ids: string[] = (data.downlines || []).map((d) => d.id)
-        return { downlineIds: ids }
-      } catch {
-        return { downlineIds: [] as string[] }
-      }
+      const data = await apiClient.get<{ downlines?: Array<{ id: string }> }>('/api/agents/downlines/', { params: { agentId: selectedDownlineAgentId } })
+      const ids: string[] = (data.downlines || []).map((d) => d.id)
+      return { downlineIds: ids }
     },
     enabled: !!selectedDownlineAgentId,
     staleTime: 5 * 60 * 1000,

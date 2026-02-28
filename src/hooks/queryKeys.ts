@@ -119,6 +119,7 @@ export const queryKeys = {
   // Configuration
   configuration: ['configuration'] as const,
   configurationAgentAutoSend: () => ['configuration', 'agent-auto-send'] as const,
+  carrierPayoutSettings: (agencyId: string) => ['configuration', 'carrier-payout-settings', agencyId] as const,
   configurationTab: (tab: string) => ['configuration', tab] as const,
   configurationAgency: () => ['configuration', 'agency'] as const,
   configurationCarriers: () => ['configuration', 'carriers'] as const,

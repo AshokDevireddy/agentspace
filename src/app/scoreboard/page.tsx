@@ -130,8 +130,19 @@ export default function Scoreboard() {
   }, [isHydrated, clientDate.month, clientDate.year])
 
   // Fetch agency default scoreboard start date using TanStack Query
-  const { data: agencySettings } = useAgencyScoreboardSettings(user?.agencyId)
+  const { data: agencySettings } = useAgencyScoreboardSettings(user?.agencyId, {
+    staleTime: 0 // Disable cache to always fetch fresh data for issue_paid_status
+  })
   const defaultScoreboardStartDate = agencySettings?.defaultScoreboardStartDate ?? null
+  const scoreboardAgentVisibility = agencySettings?.scoreboardAgentVisibility ?? false
+  const issuePaidStatusEnabled = agencySettings?.issuePaidStatus ?? true
+
+  // Force filter to 'submitted' when issue_paid_status is disabled
+  useEffect(() => {
+    if (!issuePaidStatusEnabled && submittedFilter === 'issue_paid') {
+      setSubmittedFilter('submitted')
+    }
+  }, [issuePaidStatusEnabled, submittedFilter, setSubmittedFilter])
 
   // Calculate date range based on timeframe - SSR-safe using clientDate
   const getDateRange = useCallback((selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
@@ -724,8 +735,8 @@ export default function Scoreboard() {
         </div>
       )}
 
-      {/* Weekly Stats - Only show for admins (after hydration to avoid mismatch) */}
-      {isHydrated && (user?.role === 'admin' || viewMode === 'my_team') && (
+      {/* Weekly Stats - Show for admins, any role viewing My Team, or when agency scoreboard visibility is enabled */}
+      {isHydrated && (user?.role === 'admin' || viewMode === 'my_team' || scoreboardAgentVisibility) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="professional-card rounded-md">
             <CardContent className="p-6 text-center">

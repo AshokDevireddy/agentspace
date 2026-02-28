@@ -49,13 +49,21 @@ export default function Home() {
     }
   )
 
+  // Derive scope early so it can be used in query options below.
+  // Non-admin agents must see only their team's data, not the full agency.
+  // Defaults to 'team' (safe default) until profileData resolves.
+  const isAdmin = (profileData?.isAdmin) || false
+  const scoreboardScope: 'agency' | 'team' = isAdmin ? 'agency' : 'team'
+
   const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useScoreboardData(
     user?.id,
     weekRange.startDate,
     weekRange.endDate,
     {
-      enabled: !!user?.id && isHydrated,
+      // Gate on profileData so scoreboardScope is derived from real role, not default
+      enabled: !!user?.id && isHydrated && !!profileData,
       staleTime: 60 * 1000, // 1 minute - scoreboard data is more static
+      scope: scoreboardScope,
     }
   )
 
@@ -82,8 +90,9 @@ export default function Home() {
     topProducersRange.start,
     topProducersRange.end,
     {
-      enabled: !!user?.id,
+      enabled: !!user?.id && !!profileData,
       staleTime: 60 * 1000,
+      scope: scoreboardScope,
     }
   )
 
@@ -94,7 +103,7 @@ export default function Home() {
     productionDateRanges.ytd.start,
     productionDateRanges.ytd.end,
     {
-      enabled: !!user?.id,
+      enabled: !!user?.id && !!profileData,
       staleTime: 5 * 60 * 1000, // 5 minutes
     }
   )
@@ -106,7 +115,7 @@ export default function Home() {
     productionDateRanges.mtd.start,
     productionDateRanges.mtd.end,
     {
-      enabled: !!user?.id,
+      enabled: !!user?.id && !!profileData,
       staleTime: 5 * 60 * 1000, // 5 minutes
     }
   )
@@ -135,7 +144,6 @@ export default function Home() {
 
   const userData = profileData || null
   const firstName = userData?.firstName || 'User'
-  const isAdmin = userData?.isAdmin || false
 
   useEffect(() => {
     if (userData) {

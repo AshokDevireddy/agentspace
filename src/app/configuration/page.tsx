@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
-import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft, Mail, MessageCircle, User, LogOut, ChevronLeft } from "lucide-react"
+import { Edit, Trash2, Plus, Check, X, Upload, FileText, TrendingUp, Loader2, Package, DollarSign, Users, MessageSquare, BarChart3, Bell, Building2, Palette, Image, Moon, Sun, Monitor, Lock, ArrowLeft, ArrowRight, Calendar, Mail, MessageCircle, User, LogOut, ChevronLeft } from "lucide-react"
 import Link from "next/link"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import AddProductModal from "@/components/modals/add-product-modal"
@@ -92,7 +92,7 @@ interface Commission {
   commissionPercentage: number
 }
 
-type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "automation" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications" | "sms-templates" | "scoreboard"
+type TabType = "agency-profile" | "carriers" | "positions" | "commissions" | "lead-sources" | "messaging" | "automation" | "policy-reports" | "discord" | "carrier-logins" | "email-notifications" | "sms-templates" | "payout-settings" | "scoreboard"
 
 // Default primary color schemes for light and dark mode
 const DEFAULT_PRIMARY_COLOR_LIGHT = "0 0% 0%" // Black for light mode
@@ -401,6 +401,87 @@ export default function ConfigurationPage() {
     staleTime: 5 * 60 * 1000,
   })
   const automationAgents = automationAgentsData || []
+
+  // ============ Payout Settings ============
+
+  const [carrierPayoutModes, setCarrierPayoutModes] = useState<Record<string, 'submission_date' | 'policy_effective_date'>>({})
+  const [savingPayoutSettings, setSavingPayoutSettings] = useState(false)
+
+  // Fetch existing carrier payout settings from Django backend
+  const { data: payoutSettingsData, isLoading: payoutSettingsLoading } = useQuery({
+    queryKey: queryKeys.carrierPayoutSettings(agencyData?.id || ''),
+    queryFn: async () => {
+      return apiClient.get<Array<{ carrierId: string; dateMode: 'submission_date' | 'policy_effective_date' }>>(
+        `/api/agencies/${agencyData!.id}/payout-settings/`
+      )
+    },
+    enabled: activeTab === 'payout-settings' && !!agencyData?.id,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Initialize carrier payout modes from defaults + saved settings
+  useEffect(() => {
+    if (!carriersData.length) return
+
+    // Paid on draft → policy_effective_date (carrier pays when first premium collected)
+    // Paid on approval/issue → submission_date (carrier pays when app submitted/approved)
+    const PAID_ON_DRAFT_CARRIERS = [
+      'Aetna', 'Aflac', 'AIG', 'Americo', 'Assurity', 'Baltimore Life',
+      'Elco Mutual', 'F&G', 'Gerber', 'GTL', 'Fidelity Life', 'KC Life',
+      'Lafayette', 'National Life Group', 'North American', 'Trinity',
+      'Illinois Mutual', 'Sentinel Security'
+    ]
+    const PAID_ON_APPROVAL_CARRIERS = [
+      'American Amicable', 'Royal Neighbors', 'TransAmerica', 'Forestors',
+      'Mutual of Omaha'
+    ]
+
+    const modes: Record<string, 'submission_date' | 'policy_effective_date'> = {}
+
+    // Set defaults based on carrier name matching
+    carriersData.forEach((carrier: Carrier) => {
+      const name = carrier.displayName || carrier.name
+      if (PAID_ON_DRAFT_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
+        modes[carrier.id] = 'policy_effective_date'
+      } else if (PAID_ON_APPROVAL_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
+        modes[carrier.id] = 'submission_date'
+      } else {
+        modes[carrier.id] = 'policy_effective_date' // default
+      }
+    })
+
+    // Override with saved settings from DB (apiClient converts snake_case → camelCase)
+    if (payoutSettingsData) {
+      payoutSettingsData.forEach((setting: { carrierId: string; dateMode: 'submission_date' | 'policy_effective_date' }) => {
+        modes[setting.carrierId] = setting.dateMode
+      })
+    }
+
+    setCarrierPayoutModes(modes)
+  }, [carriersData, payoutSettingsData])
+
+  const handleSavePayoutSettings = async () => {
+    if (!agencyData?.id) return
+    setSavingPayoutSettings(true)
+    try {
+      const rows = Object.entries(carrierPayoutModes).map(([carrierId, dateMode]) => ({
+        carrierId,
+        dateMode,
+      }))
+
+      await apiClient.post(`/api/agencies/${agencyData.id}/payout-settings/`, { settings: rows })
+
+      showSuccess('Payout settings saved successfully')
+      if (isMounted) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.carrierPayoutSettings(agencyData.id) })
+      }
+    } catch (err: unknown) {
+      console.error('Error saving payout settings:', err)
+      showError(err instanceof Error ? err.message : 'Failed to save payout settings')
+    } finally {
+      setSavingPayoutSettings(false)
+    }
+  }
 
   // Discord Settings state
   const [discordWebhookUrl, setDiscordWebhookUrl] = useState<string>("")
@@ -2082,6 +2163,7 @@ export default function ConfigurationPage() {
     { id: "carrier-logins" as TabType, label: "Carrier Logins", icon: Lock },
     { id: "discord" as TabType, label: "Discord Notifications", icon: Bell },
     { id: "sms-templates" as TabType, label: "SMS Templates", icon: MessageCircle },
+    { id: "payout-settings" as TabType, label: "Payout Settings", icon: Calendar },
     { id: "scoreboard" as TabType, label: "Scoreboard", icon: TrendingUp },
   ]
 
@@ -2099,6 +2181,7 @@ export default function ConfigurationPage() {
     "carrier-logins": { title: "Carrier Logins", description: "Store carrier portal credentials securely" },
     "discord": { title: "Discord Notifications", description: "Connect Discord webhooks for team alerts" },
     "sms-templates": { title: "SMS Templates", description: "Create and customize SMS message templates" },
+    "payout-settings": { title: "Payout Settings", description: "Configure which date each carrier uses for expected payout calculations" },
     "scoreboard": { title: "Scoreboard", description: "Configure scoreboard visibility settings for your agents" },
   }
 
@@ -4461,6 +4544,109 @@ export default function ConfigurationPage() {
                       showError={showError}
                     />
                   </div>
+                </div>
+              )}
+
+              {/* Payout Settings Tab */}
+              {activeTab === "payout-settings" && (
+                <div>
+                  <div className="mb-6">
+                    <p className="text-sm text-muted-foreground">
+                      Configure whether each carrier pays based on the submission date (Paid on Approval) or the policy effective date (Paid on Draft). This affects expected payout calculations.
+                    </p>
+                  </div>
+
+                  {carriersLoading || payoutSettingsLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : carriers.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      No carriers found. Add carriers in the Carriers &amp; Products tab first.
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Paid on Approval/Issue Column — uses submission_date */}
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 pb-2 border-b border-border">
+                            <h3 className="text-sm font-semibold text-foreground">Paid on Approval / Issue</h3>
+                            <span className="text-xs text-muted-foreground">(Submission Date)</span>
+                          </div>
+                          <div className="space-y-2">
+                            {carriers
+                              .filter((c: Carrier) => carrierPayoutModes[c.id] === 'submission_date')
+                              .sort((a: Carrier, b: Carrier) => (a.displayName || a.name).localeCompare(b.displayName || b.name))
+                              .map((carrier: Carrier) => (
+                                <div
+                                  key={carrier.id}
+                                  className="flex items-center justify-between p-3 rounded-lg bg-accent/30 hover:bg-accent/50 transition-colors"
+                                >
+                                  <span className="text-sm font-medium text-foreground">{carrier.displayName || carrier.name}</span>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setCarrierPayoutModes(prev => ({ ...prev, [carrier.id]: 'policy_effective_date' }))}
+                                    className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                                  >
+                                    <ArrowRight className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                            {carriers.filter((c: Carrier) => carrierPayoutModes[c.id] === 'submission_date').length === 0 && (
+                              <div className="text-center py-6 text-sm text-muted-foreground">No carriers assigned</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Paid on Draft Column — uses policy_effective_date */}
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 pb-2 border-b border-border">
+                            <h3 className="text-sm font-semibold text-foreground">Paid on Draft</h3>
+                            <span className="text-xs text-muted-foreground">(Policy Effective Date)</span>
+                          </div>
+                          <div className="space-y-2">
+                            {carriers
+                              .filter((c: Carrier) => carrierPayoutModes[c.id] === 'policy_effective_date' || !carrierPayoutModes[c.id])
+                              .sort((a: Carrier, b: Carrier) => (a.displayName || a.name).localeCompare(b.displayName || b.name))
+                              .map((carrier: Carrier) => (
+                                <div
+                                  key={carrier.id}
+                                  className="flex items-center justify-between p-3 rounded-lg bg-accent/30 hover:bg-accent/50 transition-colors"
+                                >
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setCarrierPayoutModes(prev => ({ ...prev, [carrier.id]: 'submission_date' }))}
+                                    className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                                  >
+                                    <ArrowLeft className="h-4 w-4" />
+                                  </Button>
+                                  <span className="text-sm font-medium text-foreground">{carrier.displayName || carrier.name}</span>
+                                </div>
+                              ))}
+                            {carriers.filter((c: Carrier) => carrierPayoutModes[c.id] === 'policy_effective_date' || !carrierPayoutModes[c.id]).length === 0 && (
+                              <div className="text-center py-6 text-sm text-muted-foreground">No carriers assigned</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-4 border-t border-border">
+                        <Button
+                          onClick={handleSavePayoutSettings}
+                          disabled={savingPayoutSettings}
+                          className="min-w-[120px]"
+                        >
+                          {savingPayoutSettings ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            'Save Settings'
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

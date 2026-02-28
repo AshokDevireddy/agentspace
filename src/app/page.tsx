@@ -42,7 +42,7 @@ export default function Home() {
 
   const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useApiFetch<UserProfile>(
     queryKeys.userProfile(user?.id),
-    `/api/user/profile?user_id=${user?.id}`,
+    '/api/user/profile/',
     {
       enabled: !!user?.id,
       placeholderData: (previousData) => previousData,
@@ -148,11 +148,11 @@ export default function Home() {
   // Top producers from YTD/MTD query
   const topProducersData = topProducersResult ?? null
   const topProducers: { rank: number; name: string; amount: string }[] = useMemo(() => {
-    if (!topProducersData?.entries) return []
-    return topProducersData.entries.slice(0, 5).map((producer: LeaderboardProducer) => ({
+    if (!topProducersData?.leaderboard) return []
+    return topProducersData.leaderboard.slice(0, 5).map((producer: LeaderboardProducer) => ({
       rank: producer.rank,
-      name: producer.agentName,
-      amount: `$${parseFloat(producer.production).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      name: producer.name,
+      amount: `$${producer.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     }))
   }, [topProducersData])
 

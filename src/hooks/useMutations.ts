@@ -1,16 +1,15 @@
 /**
  * Generic mutation utilities for TanStack Query
  * Provides type-safe wrappers with automatic cache invalidation
+ *
+ * Uses apiClient for direct backend calls with JWT auth and case conversion.
  */
 
 import { useMutation, useQueryClient, UseMutationOptions } from '@tanstack/react-query'
 import { QueryKeyType } from './queryKeys'
-import { createErrorFromResponse, NetworkError } from '@/lib/error-utils'
+import { apiClient } from '@/lib/api-client'
 
 type MutationMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
-
-/** Default mutation timeout in milliseconds */
-const DEFAULT_MUTATION_TIMEOUT = 30000 // 30 seconds
 
 interface ApiMutationOptions<TData, TVariables, TContext = unknown> {
   /** HTTP method */
@@ -26,59 +25,12 @@ interface ApiMutationOptions<TData, TVariables, TContext = unknown> {
 }
 
 /**
- * Create a fetch request with timeout and abort handling
- */
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number = DEFAULT_MUTATION_TIMEOUT
-): Promise<Response> {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-
-  try {
-    const response = await fetch(url, {
-      ...init,
-      signal: controller.signal,
-    })
-    return response
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new NetworkError('Request timed out. Please try again.')
-    }
-    // Wrap network errors
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      throw new NetworkError()
-    }
-    throw error
-  } finally {
-    clearTimeout(timeoutId)
-  }
-}
-
-/**
- * Parse response body, handling empty responses
- */
-async function parseResponseBody<T>(response: Response): Promise<T> {
-  const text = await response.text()
-  if (!text) {
-    return null as T
-  }
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    // Return text as-is if not JSON
-    return text as unknown as T
-  }
-}
-
-/**
  * Generic API mutation hook
- * @param urlOrFn - API endpoint URL or function that returns URL based on variables
+ * @param endpointOrFn - Backend API endpoint or function that returns endpoint based on variables
  * @param config - Configuration options
  */
 export function useApiMutation<TData = unknown, TVariables = unknown, TContext = unknown>(
-  urlOrFn: string | ((variables: TVariables) => string),
+  endpointOrFn: string | ((variables: TVariables) => string),
   config: ApiMutationOptions<TData, TVariables, TContext> = {}
 ) {
   const queryClient = useQueryClient()
@@ -86,34 +38,26 @@ export function useApiMutation<TData = unknown, TVariables = unknown, TContext =
 
   return useMutation<TData, Error, TVariables, TContext>({
     mutationFn: async (variables) => {
-      const url = typeof urlOrFn === 'function' ? urlOrFn(variables) : urlOrFn
+      const endpoint = typeof endpointOrFn === 'function' ? endpointOrFn(variables) : endpointOrFn
+      const opts = { timeout }
 
-      const response = await fetchWithTimeout(
-        url,
-        {
-          method,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
-        },
-        timeout
-      )
-
-      if (!response.ok) {
-        throw await createErrorFromResponse(response)
+      switch (method) {
+        case 'DELETE':
+          return apiClient.delete<TData>(endpoint, opts)
+        case 'PUT':
+          return apiClient.put<TData>(endpoint, variables, opts)
+        case 'PATCH':
+          return apiClient.patch<TData>(endpoint, variables, opts)
+        case 'POST':
+        default:
+          return apiClient.post<TData>(endpoint, variables, opts)
       }
-
-      return parseResponseBody<TData>(response)
     },
     onSuccess: (data, variables, context, mutation) => {
-      // Invalidate static query keys
       invalidateKeys.forEach((key) => {
         queryClient.invalidateQueries({ queryKey: [...key] })
       })
 
-      // Invalidate dynamic query keys based on variables
       if (getInvalidateKeys) {
         const dynamicKeys = getInvalidateKeys(variables)
         dynamicKeys.forEach((key) => {
@@ -121,7 +65,6 @@ export function useApiMutation<TData = unknown, TVariables = unknown, TContext =
         })
       }
 
-      // Call user's onSuccess if provided
       if (options.onSuccess) {
         options.onSuccess(data, variables, context, mutation)
       }
@@ -136,30 +79,15 @@ export function useApiMutation<TData = unknown, TVariables = unknown, TContext =
  * Mutation hook for form data (file uploads, etc.)
  */
 export function useFormDataMutation<TData = unknown, TVariables extends FormData = FormData, TContext = unknown>(
-  url: string,
+  endpoint: string,
   config: Omit<ApiMutationOptions<TData, TVariables, TContext>, 'method'> & { method?: 'POST' | 'PUT' } = {}
 ) {
   const queryClient = useQueryClient()
-  const { method = 'POST', invalidateKeys = [], timeout = 60000, options = {} } = config // 60s default for uploads
+  const { method = 'POST', invalidateKeys = [], timeout, options = {} } = config
 
   return useMutation<TData, Error, TVariables, TContext>({
     mutationFn: async (formData) => {
-      const response = await fetchWithTimeout(
-        url,
-        {
-          method,
-          credentials: 'include',
-          body: formData,
-          // Don't set Content-Type header - browser will set it with boundary for FormData
-        },
-        timeout
-      )
-
-      if (!response.ok) {
-        throw await createErrorFromResponse(response)
-      }
-
-      return parseResponseBody<TData>(response)
+      return apiClient.upload<TData>(endpoint, formData, { method, timeout })
     },
     onSuccess: (data, variables, context, mutation) => {
       invalidateKeys.forEach((key) => {
@@ -180,7 +108,7 @@ export function useFormDataMutation<TData = unknown, TVariables extends FormData
  * Use this for mutations where you want immediate UI feedback
  */
 export function useOptimisticMutation<TData, TVariables, TContext = { previousData: TData | undefined }>(
-  urlOrFn: string | ((variables: TVariables) => string),
+  endpointOrFn: string | ((variables: TVariables) => string),
   config: ApiMutationOptions<TData, TVariables, TContext> & {
     /** Query key for the data being optimistically updated */
     queryKey: QueryKeyType
@@ -193,60 +121,42 @@ export function useOptimisticMutation<TData, TVariables, TContext = { previousDa
 
   return useMutation<TData, Error, TVariables, TContext>({
     mutationFn: async (variables) => {
-      const url = typeof urlOrFn === 'function' ? urlOrFn(variables) : urlOrFn
+      const endpoint = typeof endpointOrFn === 'function' ? endpointOrFn(variables) : endpointOrFn
+      const opts = { timeout }
 
-      const response = await fetchWithTimeout(
-        url,
-        {
-          method,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
-        },
-        timeout
-      )
-
-      if (!response.ok) {
-        throw await createErrorFromResponse(response)
+      switch (method) {
+        case 'DELETE':
+          return apiClient.delete<TData>(endpoint, opts)
+        case 'PUT':
+          return apiClient.put<TData>(endpoint, variables, opts)
+        case 'PATCH':
+          return apiClient.patch<TData>(endpoint, variables, opts)
+        case 'POST':
+        default:
+          return apiClient.post<TData>(endpoint, variables, opts)
       }
-
-      return parseResponseBody<TData>(response)
     },
     onMutate: async (variables): Promise<TContext> => {
-      // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: [...queryKey] })
-
-      // Snapshot the previous value
       const previousData = queryClient.getQueryData<TData>([...queryKey])
-
-      // Optimistically update
       queryClient.setQueryData<TData>([...queryKey], (old) =>
         getOptimisticData(variables, old)
       )
-
-      // Return context with the snapshot
       return { previousData } as TContext
     },
     onError: (err, variables, context) => {
-      // Rollback on error
       if (context && typeof context === 'object' && 'previousData' in context) {
         queryClient.setQueryData([...queryKey], (context as { previousData: TData }).previousData)
       }
-      // Invalidate to ensure consistency after error
       queryClient.invalidateQueries({ queryKey: [...queryKey] })
 
-      // Call user's onError if provided
       if (options.onError) {
         options.onError(err, variables, context, undefined as any)
       }
     },
     onSuccess: (data, variables, context, mutation) => {
-      // Update cache with actual server response (instead of invalidating)
       queryClient.setQueryData([...queryKey], data)
 
-      // Invalidate related queries
       invalidateKeys.forEach((key) => {
         queryClient.invalidateQueries({ queryKey: [...key] })
       })
@@ -272,72 +182,3 @@ export function useInvalidateQueries() {
   }
 }
 
-/**
- * Authenticated API mutation hook
- * Use this for API routes that require Bearer token authentication
- * @param urlOrFn - API endpoint URL or function that returns URL based on variables
- * @param config - Configuration options
- */
-export function useAuthenticatedMutation<TData = unknown, TVariables = unknown, TContext = unknown>(
-  urlOrFn: string | ((variables: TVariables) => string),
-  config: ApiMutationOptions<TData, TVariables, TContext> = {}
-) {
-  const queryClient = useQueryClient()
-  const { method = 'POST', invalidateKeys = [], getInvalidateKeys, timeout, options = {} } = config
-
-  return useMutation<TData, Error, TVariables, TContext>({
-    mutationFn: async (variables) => {
-      // Dynamic import to avoid circular dependencies
-      const { getClientAccessToken } = await import('@/lib/auth/client')
-      const { AuthError } = await import('@/lib/error-utils')
-      const accessToken = await getClientAccessToken()
-
-      if (!accessToken) {
-        throw new AuthError('Authentication required. Please log in.')
-      }
-
-      const url = typeof urlOrFn === 'function' ? urlOrFn(variables) : urlOrFn
-
-      const response = await fetchWithTimeout(
-        url,
-        {
-          method,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-          },
-          credentials: 'include',
-          body: method !== 'DELETE' ? JSON.stringify(variables) : undefined,
-        },
-        timeout
-      )
-
-      if (!response.ok) {
-        throw await createErrorFromResponse(response)
-      }
-
-      return parseResponseBody<TData>(response)
-    },
-    onSuccess: (data, variables, context, mutation) => {
-      // Invalidate static query keys
-      invalidateKeys.forEach((key) => {
-        queryClient.invalidateQueries({ queryKey: [...key] })
-      })
-
-      // Invalidate dynamic query keys based on variables
-      if (getInvalidateKeys) {
-        const dynamicKeys = getInvalidateKeys(variables)
-        dynamicKeys.forEach((key) => {
-          queryClient.invalidateQueries({ queryKey: [...key] })
-        })
-      }
-
-      if (options.onSuccess) {
-        options.onSuccess(data, variables, context, mutation)
-      }
-    },
-    onError: options.onError,
-    onMutate: options.onMutate,
-    onSettled: options.onSettled,
-  })
-}

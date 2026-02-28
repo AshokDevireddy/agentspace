@@ -141,10 +141,10 @@ export interface PieChartEntry {
 export interface LeaderboardProducer {
   rank: number
   agentId: string
-  agentName: string
-  position: string | null
-  production: string
-  dealsCount: number
+  name: string
+  total: number
+  dailyBreakdown: Record<string, number>
+  dealCount: number
 }
 
 // API Response Types
@@ -198,9 +198,16 @@ export interface DashboardData {
 }
 
 export interface ScoreboardData {
-  entries: LeaderboardProducer[]
-  userRank: number | null
-  userProduction: string | null
+  leaderboard: LeaderboardProducer[]
+  stats: {
+    totalProduction: number
+    totalDeals: number
+    activeAgents: number
+  }
+  dateRange: {
+    startDate: string
+    endDate: string
+  }
 }
 
 // Deal Hierarchy Snapshot - matches backend DealHierarchySnapshotSerializer

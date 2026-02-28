@@ -12,6 +12,7 @@ import { useAuth } from "@/providers/AuthProvider"
 import { useScoreboardBillingCycleData } from "@/hooks/useDashboardData"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { apiClient } from "@/lib/api-client"
 import { useAgencyScoreboardSettings } from "@/hooks/useUserQueries"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
@@ -40,12 +41,6 @@ interface ScoreboardData {
     startDate: string
     endDate: string
   }
-}
-
-interface ScoreboardRpcResponse {
-  success: boolean
-  data?: ScoreboardData
-  error?: string
 }
 
 type TimeframeOption = 'this_week' | 'last_week' | 'past_7_days' | 'past_14_days' | 'this_month' | 'last_month' | 'past_30_days' | 'past_90_days' | 'past_180_days' | 'past_12_months' | 'ytd' | 'custom'
@@ -93,14 +88,18 @@ export default function Scoreboard() {
   const { data: downlineData } = useQuery({
     queryKey: queryKeys.myDownlineIds(user?.id || ''),
     queryFn: async () => {
-      const response = await fetch(`/api/agents/downlines?agentId=${user?.id}`, {
-        credentials: 'include'
-      })
-      if (!response.ok) return { downlineIds: [] as string[], downlineAgents: [] as { id: string; firstName: string; lastName: string }[] }
-      const data = await response.json()
-      const agents: { id: string; firstName: string; lastName: string }[] = data.downlines || data || []
-      const ids: string[] = agents.map((d) => d.id)
-      return { downlineIds: ids, downlineAgents: agents }
+      try {
+        const data = await apiClient.get<{ downlines?: Array<{ id: string; name: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
+        const agents = (data.downlines || []).map(d => ({
+          id: d.id,
+          firstName: d.name?.split(' ')[0] || '',
+          lastName: d.name?.split(' ').slice(1).join(' ') || ''
+        }))
+        const ids: string[] = agents.map((d) => d.id)
+        return { downlineIds: ids, downlineAgents: agents }
+      } catch {
+        return { downlineIds: [] as string[], downlineAgents: [] as { id: string; firstName: string; lastName: string }[] }
+      }
     },
     enabled: !!user?.id,
     staleTime: 5 * 60 * 1000,
@@ -110,13 +109,13 @@ export default function Scoreboard() {
   const { data: selectedAgentDownlineData } = useQuery({
     queryKey: queryKeys.myDownlineIds(selectedDownlineAgentId),
     queryFn: async () => {
-      const response = await fetch(`/api/agents/downlines?agentId=${selectedDownlineAgentId}`, {
-        credentials: 'include'
-      })
-      if (!response.ok) return { downlineIds: [] as string[] }
-      const data = await response.json()
-      const ids: string[] = (data.downlines || data || []).map((d: { id: string }) => d.id)
-      return { downlineIds: ids }
+      try {
+        const data = await apiClient.get<{ downlines?: Array<{ id: string }> }>('/api/agents/downlines/', { params: { agentId: selectedDownlineAgentId } })
+        const ids: string[] = (data.downlines || []).map((d) => d.id)
+        return { downlineIds: ids }
+      } catch {
+        return { downlineIds: [] as string[] }
+      }
     },
     enabled: !!selectedDownlineAgentId,
     staleTime: 5 * 60 * 1000,

@@ -1,8 +1,9 @@
 /**
- * Hook for fetching agency settings from Django API
+ * Hook for fetching agency settings from backend API
  */
 
 import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { useAuth } from '@/providers/AuthProvider'
 import { queryKeys } from './queryKeys'
 
@@ -44,7 +45,7 @@ export interface AgencySettings {
 }
 
 /**
- * Fetch agency settings from Django API
+ * Fetch agency settings from backend API
  */
 export function useAgencySettings(agencyId?: string | null) {
   const { user } = useAuth()
@@ -57,17 +58,7 @@ export function useAgencySettings(agencyId?: string | null) {
         throw new Error('No agency ID available')
       }
 
-      const response = await fetch(`/api/agencies/${id}/settings`, {
-        method: 'GET',
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || errorData.message || 'Failed to fetch agency settings')
-      }
-
-      return response.json()
+      return apiClient.get<AgencySettings>(`/api/agencies/${id}/settings/`)
     },
     enabled: !!(agencyId || user?.agencyId),
     staleTime: 5 * 60 * 1000, // 5 minutes

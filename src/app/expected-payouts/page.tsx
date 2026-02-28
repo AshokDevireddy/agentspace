@@ -9,6 +9,7 @@ import { DollarSign, TrendingUp, TrendingDown, Calendar } from "lucide-react"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
+import { apiClient } from "@/lib/api-client"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
@@ -36,26 +37,14 @@ interface PayoutData {
   statusStandardized: string | null
 }
 
-interface ProductionBreakdown {
-  your: {
-    payouts: PayoutData[]
-    total: number
-    productionTotal: number
-    count: number
-  }
-  downline: {
-    payouts: PayoutData[]
-    total: number
-    productionTotal: number
-    count: number
-  }
-  total: number
-  totalCount: number
-}
-
 interface PayoutsTopLevel {
   payouts: PayoutData[]
-  production: ProductionBreakdown
+  totalExpected: number
+  totalPremium: number
+  dealCount: number
+  payoutEntries: number
+  personalProduction: number
+  downlineProduction: number
   summary: {
     byCarrier: Array<{
       carrier: string
@@ -182,24 +171,13 @@ export default function ExpectedPayoutsPage() {
   const { data: userData, isPending: userLoading } = useQuery({
     queryKey: queryKeys.userProfile(),
     queryFn: async () => {
-      const response = await fetch('/api/users/me', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        throw new Error("Not authenticated")
-      }
-
-      const data = await response.json()
-      // Django returns { success, data: {...} } — unwrap the nested data
-      const user = data.data || data
+      const data = await apiClient.get<UserData>('/api/user/profile/')
       return {
-        id: user.id,
-        role: user.role,
-        agencyId: user.agencyId,
-        subscriptionTier: user.subscriptionTier,
-        authUserId: user.authUserId
+        id: data.id,
+        role: data.role,
+        agencyId: data.agencyId,
+        subscriptionTier: data.subscriptionTier,
+        authUserId: data.authUserId
       } as UserData
     },
     // Only run query when auth is ready (authLoading is false)
@@ -231,25 +209,19 @@ export default function ExpectedPayoutsPage() {
     queryFn: async () => {
       if (!userData) return []
 
-      // Use Django API for agents/downlines - requires agentId query param
-      const response = await fetch(`/api/agents/downlines?agentId=${userData.id}`, {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
+      try {
+        const data = await apiClient.get<{ downlines?: Array<{ id: string; name?: string }> }>('/api/agents/downlines/', {
+          params: { agentId: userData.id }
+        })
+        return (data.downlines || []).map((agent) => ({
+          id: agent.id,
+          firstName: agent.name?.split(' ')[0] || '',
+          lastName: agent.name?.split(' ').slice(1).join(' ') || ''
+        })) as AgentResponse[]
+      } catch {
         console.error('Error fetching agents')
         return []
       }
-
-      const data = await response.json()
-      // Django returns { agentId, downlines: [...], downlineCount } (camelCased by api-proxy)
-      // Downline items have { id, name } — split name into firstName/lastName
-      return (data.downlines || []).map((agent: { id: string; firstName?: string; lastName?: string; name?: string }) => ({
-        id: agent.id,
-        firstName: agent.firstName || agent.name?.split(' ')[0] || '',
-        lastName: agent.lastName || agent.name?.split(' ').slice(1).join(' ') || ''
-      })) as AgentResponse[]
     },
     enabled: !!userData,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -264,16 +236,7 @@ export default function ExpectedPayoutsPage() {
   const { data: carriers = [] } = useQuery({
     queryKey: queryKeys.carriersList(),
     queryFn: async () => {
-      const response = await fetch('/api/carriers/names', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch carriers')
-      }
-
-      return response.json() as Promise<CarrierResponse[]>
+      return apiClient.get<CarrierResponse[]>('/api/carriers/names/')
     },
     staleTime: 10 * 60 * 1000, // 10 minutes
   })
@@ -302,26 +265,17 @@ export default function ExpectedPayoutsPage() {
       const endDay = new Date(endYear, endMonthStr, 0).getDate()
       const endDate = `${appliedFilters.endMonth}-${String(endDay).padStart(2, '0')}`
 
-      const params = new URLSearchParams()
-      params.append('start_date', startDate)
-      params.append('end_date', endDate)
-      params.append('agent_id', effectiveAgentId)
+      const queryParams: Record<string, string> = {
+        start_date: startDate,
+        end_date: endDate,
+        agent_id: effectiveAgentId,
+      }
 
       if (appliedFilters.carrier !== "all") {
-        params.append('carrier_id', appliedFilters.carrier)
+        queryParams.carrier_id = appliedFilters.carrier
       }
 
-      const response = await fetch(`/api/expected-payouts?${params.toString()}`, {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || errorData.message || 'Failed to fetch expected payouts')
-      }
-
-      return response.json() as Promise<PayoutsResponse>
+      return apiClient.get<PayoutsResponse>('/api/expected-payouts/', { params: queryParams })
     },
     // Wait for both effectiveAgentId AND userData to be loaded to prevent race conditions
     enabled: !!effectiveAgentId && !!userData,
@@ -331,12 +285,11 @@ export default function ExpectedPayoutsPage() {
   })
 
   const payouts = payoutsData?.payouts || []
-  const production = payoutsData?.production || null
-  // Access nested production breakdown (matches Django response shape)
-  const totalExpected = production?.total ?? 0
-  const dealCount = production?.totalCount ?? 0
-  const personalProduction = production?.your?.productionTotal ?? 0
-  const downlineProduction = production?.downline?.productionTotal ?? 0
+  // Derive production totals from the flat Django response fields (after camelCase transform)
+  const totalExpected = payoutsData?.totalExpected ?? 0
+  const dealCount = payoutsData?.dealCount ?? 0
+  const personalProduction = payoutsData?.personalProduction ?? 0
+  const downlineProduction = payoutsData?.downlineProduction ?? 0
 
   // Fetch debt data - depends on agent filter
   // Use effectiveAgentId to prevent race conditions when filter hasn't been set yet
@@ -346,26 +299,18 @@ export default function ExpectedPayoutsPage() {
   } = useQuery({
     queryKey: queryKeys.expectedPayoutsDebt(effectiveAgentId),
     queryFn: async () => {
-      const params = new URLSearchParams()
-      params.append('agent_id', effectiveAgentId)
-
-      const response = await fetch(`/api/expected-payouts/debt?${params.toString()}`, {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
+      try {
+        const data = await apiClient.get<DebtResponse>('/api/expected-payouts/debt/', { params: { agent_id: effectiveAgentId } })
+        // Django returns flat { debt, dealCount, deals } — not nested under a "debt" key
+        return {
+          total: data.debt,
+          dealCount: data.dealCount,
+          deals: data.deals ?? [],
+        } as DebtData
+      } catch {
         // If debt fetch fails, return zero values
         return { total: 0, dealCount: 0, deals: [] } as DebtData
       }
-
-      const data = await response.json() as DebtResponse
-      // Django returns flat { debt, dealCount, deals } — not nested under a "debt" key
-      return {
-        total: data.debt,
-        dealCount: data.dealCount,
-        deals: data.deals ?? [],
-      } as DebtData
     },
     // Wait for both effectiveAgentId AND userData to be loaded to prevent race conditions
     enabled: !!effectiveAgentId && !!userData,

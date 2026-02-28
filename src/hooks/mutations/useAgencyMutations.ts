@@ -1,9 +1,10 @@
 /**
  * Agency-related mutation hooks
- * Handles agency settings updates including SMS templates via Django API
+ * Handles agency settings updates including SMS templates via backend API
  */
 
 import { useMutation } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { useInvalidation } from '../useInvalidation'
 
 // ============ Update Agency Settings (General) ============
@@ -19,7 +20,7 @@ interface UpdateAgencySettingsResponse {
 }
 
 /**
- * General mutation hook for updating any agency settings via Django API
+ * General mutation hook for updating any agency settings
  */
 export function useUpdateAgencySettings(options?: {
   onSuccess?: (data: UpdateAgencySettingsResponse, variables: UpdateAgencySettingsInput) => void
@@ -29,19 +30,7 @@ export function useUpdateAgencySettings(options?: {
 
   return useMutation<UpdateAgencySettingsResponse, Error, UpdateAgencySettingsInput>({
     mutationFn: async ({ agencyId, data }) => {
-      const response = await fetch(`/api/agencies/${agencyId}/settings`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(data),
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || result.message || 'Failed to update agency settings')
-      }
-
+      const result = await apiClient.patch<{ message?: string }>(`/api/agencies/${agencyId}/settings/`, data)
       return { success: true, message: result.message }
     },
     onSuccess: async (data, variables) => {
@@ -78,19 +67,7 @@ export function useUpdateAgencySmsEnabled(options?: {
 
   return useMutation<UpdateSmsEnabledResponse, Error, UpdateSmsEnabledInput>({
     mutationFn: async ({ agencyId, dbField, enabled }) => {
-      const response = await fetch(`/api/agencies/${agencyId}/settings`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ [dbField]: enabled }),
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || result.message || 'Failed to update SMS setting')
-      }
-
+      await apiClient.patch(`/api/agencies/${agencyId}/settings/`, { [dbField]: enabled })
       return { success: true }
     },
     onSuccess: async (data, variables) => {
@@ -127,19 +104,7 @@ export function useUpdateAgencySmsTemplate(options?: {
 
   return useMutation<UpdateSmsTemplateResponse, Error, UpdateSmsTemplateInput>({
     mutationFn: async ({ agencyId, dbField, template }) => {
-      const response = await fetch(`/api/agencies/${agencyId}/settings`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ [dbField]: template }),
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || result.message || 'Failed to update SMS template')
-      }
-
+      await apiClient.patch(`/api/agencies/${agencyId}/settings/`, { [dbField]: template })
       return { success: true }
     },
     onSuccess: async (data, variables) => {
@@ -166,7 +131,6 @@ interface UpdateAgencyColorResponse {
 
 /**
  * Mutation hook for updating agency primary color
- * Used when theme changes to update the default color
  */
 export function useUpdateAgencyColor(options?: {
   onSuccess?: (data: UpdateAgencyColorResponse, variables: UpdateAgencyColorInput) => void
@@ -176,19 +140,7 @@ export function useUpdateAgencyColor(options?: {
 
   return useMutation<UpdateAgencyColorResponse, Error, UpdateAgencyColorInput>({
     mutationFn: async ({ agencyId, primaryColor }) => {
-      const response = await fetch(`/api/agencies/${agencyId}/settings`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ primaryColor }),
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || result.message || 'Failed to update primary color')
-      }
-
+      await apiClient.patch(`/api/agencies/${agencyId}/settings/`, { primaryColor })
       return { success: true }
     },
     onSuccess: async (data, variables) => {
@@ -226,19 +178,7 @@ export function useUploadAgencyLogo(options?: {
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch(`/api/agencies/${agencyId}/logo`, {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || result.message || 'Failed to upload logo')
-      }
-
-      return result
+      return apiClient.upload<UploadAgencyLogoResponse>(`/api/agencies/${agencyId}/logo/`, formData)
     },
     onSuccess: async (data, variables) => {
       await Promise.all([

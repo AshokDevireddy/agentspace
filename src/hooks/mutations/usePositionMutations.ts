@@ -3,7 +3,7 @@
  * Used by configuration page for managing positions
  */
 
-import { useAuthenticatedMutation } from '../useMutations'
+import { useApiMutation } from '../useMutations'
 import { queryKeys } from '../queryKeys'
 
 // Types
@@ -34,7 +34,7 @@ interface Position {
  * Also invalidates agents as positions affect agent display
  */
 export function useCreatePosition() {
-  return useAuthenticatedMutation<Position, CreatePositionInput>('/api/positions', {
+  return useApiMutation<Position, CreatePositionInput>('/api/positions/', {
     method: 'POST',
     invalidateKeys: [
       queryKeys.configurationPositions(),
@@ -50,8 +50,8 @@ export function useCreatePosition() {
  * Also invalidates agents as position changes affect agent display
  */
 export function useUpdatePosition() {
-  return useAuthenticatedMutation<Position, UpdatePositionInput & { positionId: string }>(
-    (variables) => `/api/positions/${variables.positionId}`,
+  return useApiMutation<Position, UpdatePositionInput & { positionId: string }>(
+    (variables) => `/api/positions/${variables.positionId}/`,
     {
       method: 'PUT',
       invalidateKeys: [
@@ -69,8 +69,8 @@ export function useUpdatePosition() {
  * Also invalidates agents as deleted positions affect agent display
  */
 export function useDeletePosition() {
-  return useAuthenticatedMutation<void, { positionId: string }>(
-    (variables) => `/api/positions/${variables.positionId}`,
+  return useApiMutation<void, { positionId: string }>(
+    (variables) => `/api/positions/${variables.positionId}/`,
     {
       method: 'DELETE',
       invalidateKeys: [

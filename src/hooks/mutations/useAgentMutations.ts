@@ -4,7 +4,8 @@
  */
 
 import { useMutation } from '@tanstack/react-query'
-import { useAuthenticatedMutation } from '../useMutations'
+import { useApiMutation } from '../useMutations'
+import { apiClient } from '@/lib/api-client'
 import { queryKeys } from '../queryKeys'
 import { useInvalidation } from '../useInvalidation'
 
@@ -26,34 +27,9 @@ export function useAssignPosition(options?: {
 
   return useMutation<unknown, Error, AssignPositionInput>({
     mutationFn: async ({ agentId, positionId }) => {
-      const { getClientAccessToken } = await import('@/lib/auth/client')
-      const accessToken = await getClientAccessToken()
-
-      if (!accessToken) {
-        throw new Error('Authentication required. Please log in.')
-      }
-
-      const response = await fetch('/api/agents/assign-position', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          agentId,
-          positionId,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to assign position')
-      }
-
-      return response.json()
+      return apiClient.post('/api/agents/assign-position/', { agentId, positionId })
     },
     onSuccess: async (data, variables) => {
-      // Use centralized invalidation - handles agents, positions, and agent details
       await invalidateAgentRelated(variables.agentId)
       options?.onSuccess?.(data, variables)
     },
@@ -78,28 +54,12 @@ export function useResendInvite(options?: {
     string // agentId
   >({
     mutationFn: async (agentId) => {
-      const response = await fetch('/api/agents/resend-invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ agentId }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to resend invitation')
-      }
-
-      return data
+      return apiClient.post<{ message: string }>('/api/agents/resend-invite/', { agentId })
     },
     onSuccess: (data, agentId) => {
-      // Invalidate agent-related queries to refresh status (fire and forget)
-      // Don't await to prevent blocking the UI update
       invalidateAgentRelated(agentId).catch(err => {
         console.error('[useResendInvite] Failed to invalidate queries:', err)
       })
-      // Call the page-level success handler immediately
       options?.onSuccess?.(data, agentId)
     },
     onError: options?.onError,
@@ -116,7 +76,7 @@ interface SendInviteInput {
   permissionLevel: string
   uplineAgentId?: string | null
   positionId?: string | null
-  preInviteUserId?: string | null  // Optional for onboarding flow
+  preInviteUserId?: string | null
 }
 
 /**
@@ -124,7 +84,7 @@ interface SendInviteInput {
  * This is the canonical invite mutation used by both agents page and onboarding wizard
  */
 export function useSendInvite(options?: {
-  invalidateClients?: boolean  // Also invalidate clients
+  invalidateClients?: boolean
   onSuccess?: (data: unknown, variables: SendInviteInput) => void
   onError?: (error: Error) => void
 }) {
@@ -132,25 +92,11 @@ export function useSendInvite(options?: {
 
   return useMutation<unknown, Error, SendInviteInput>({
     mutationFn: async (input) => {
-      const response = await fetch('/api/agents/invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(input),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to send invitation')
-      }
-
-      return response.json()
+      return apiClient.post('/api/agents/invite/', input)
     },
     onSuccess: async (data, variables) => {
-      // Use centralized invalidation - handles agents and positions
       await invalidateAgentRelated()
 
-      // Optionally invalidate client queries
       if (options?.invalidateClients) {
         await invalidateClientRelated()
       }
@@ -185,8 +131,8 @@ interface Agent {
  * Update an agent's details
  */
 export function useUpdateAgent() {
-  return useAuthenticatedMutation<Agent, UpdateAgentInput>(
-    (variables) => `/api/agents/${variables.agentId}`,
+  return useApiMutation<Agent, UpdateAgentInput>(
+    (variables) => `/api/agents/${variables.agentId}/`,
     {
       method: 'PUT',
       invalidateKeys: [queryKeys.agents, queryKeys.agentsPendingPositions()],
@@ -204,8 +150,8 @@ export function useUpdateAgent() {
  * Delete/deactivate an agent
  */
 export function useDeleteAgent() {
-  return useAuthenticatedMutation<void, { agentId: string }>(
-    (variables) => `/api/agents/${variables.agentId}`,
+  return useApiMutation<void, { agentId: string }>(
+    (variables) => `/api/agents/${variables.agentId}/`,
     {
       method: 'DELETE',
       invalidateKeys: [queryKeys.agents, queryKeys.agentsPendingPositions()],
@@ -249,55 +195,29 @@ export function useSaveAgent(options?: {
   return useMutation<SaveAgentResponse, Error, SaveAgentInput>({
     mutationFn: async ({ agentId, agentName, editedData, positionId, shouldSendInvite }) => {
       if (shouldSendInvite) {
-        // Send invite using the invite API
         const nameParts = agentName.split(' ')
         const firstName = nameParts[0] || ''
         const lastName = nameParts.slice(1).join(' ') || ''
-
-        // Determine permission level from role
         const permissionLevel = editedData.role === 'admin' ? 'admin' : 'agent'
 
-        const inviteResponse = await fetch('/api/agents/invite', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            email: editedData.email,
-            firstName,
-            lastName,
-            phoneNumber: editedData.phoneNumber || null,
-            permissionLevel,
-            uplineAgentId: editedData.uplineId && editedData.uplineId !== 'all' ? editedData.uplineId : null,
-            positionId: positionId || null,
-            preInviteUserId: agentId,
-          }),
+        await apiClient.post('/api/agents/invite/', {
+          email: editedData.email,
+          firstName,
+          lastName,
+          phoneNumber: editedData.phoneNumber || null,
+          permissionLevel,
+          uplineAgentId: editedData.uplineId && editedData.uplineId !== 'all' ? editedData.uplineId : null,
+          positionId: positionId || null,
+          preInviteUserId: agentId,
         })
-
-        if (!inviteResponse.ok) {
-          const errorData = await inviteResponse.json()
-          throw new Error(errorData.error || 'Failed to send invitation')
-        }
 
         return { type: 'invite' as const }
       } else {
-        // Regular save (without invite)
-        const response = await fetch(`/api/agents/${agentId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify(editedData),
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || 'Failed to update agent')
-        }
-
+        await apiClient.put(`/api/agents/${agentId}/`, editedData)
         return { type: 'update' as const }
       }
     },
     onSuccess: async (data, variables) => {
-      // Use centralized invalidation - handles agents, positions, and agent details
       await invalidateAgentRelated(variables.agentId)
       options?.onSuccess?.(data, variables)
     },

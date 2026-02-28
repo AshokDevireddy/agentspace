@@ -4,6 +4,7 @@
  */
 
 import { useMutation } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { useInvalidation } from '../useInvalidation'
 
 type SubscriptionTier = 'free' | 'basic' | 'pro' | 'expert'
@@ -61,18 +62,11 @@ export function useCreateCheckoutSession(options?: {
 
   return useMutation<CheckoutSessionResponse, Error, CheckoutSessionInput>({
     mutationFn: async ({ priceId, subscriptionType }) => {
-      const response = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ priceId, subscriptionType }),
+      const data = await apiClient.post<CheckoutSessionResponse>('/api/stripe/create-checkout-session/', {
+        priceId,
+        subscriptionType,
+        origin: window.location.origin,
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create checkout session')
-      }
 
       if (!data.url) {
         throw new Error('No checkout URL returned')
@@ -81,7 +75,6 @@ export function useCreateCheckoutSession(options?: {
       return data
     },
     onSuccess: async (data) => {
-      // Invalidate subscription data in case user returns from checkout
       await invalidateSubscriptionRelated()
       options?.onSuccess?.(data.url)
     },
@@ -100,20 +93,7 @@ export function useChangeSubscription(options?: {
 
   return useMutation<ChangeSubscriptionResponse, Error, ChangeSubscriptionInput>({
     mutationFn: async ({ newTier }) => {
-      const response = await fetch('/api/stripe/change-subscription', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ newTier }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to change subscription')
-      }
-
-      return data
+      return apiClient.post<ChangeSubscriptionResponse>('/api/stripe/change-subscription/', { newTier })
     },
     onSuccess: async (data, variables) => {
       await invalidateSubscriptionRelated()
@@ -134,20 +114,7 @@ export function useAddSubscriptionItem(options?: {
 
   return useMutation<AddSubscriptionItemResponse, Error, AddSubscriptionItemInput>({
     mutationFn: async ({ priceId }) => {
-      const response = await fetch('/api/stripe/add-subscription-item', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ priceId }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to add subscription item')
-      }
-
-      return data
+      return apiClient.post<AddSubscriptionItemResponse>('/api/stripe/add-subscription-item/', { priceId })
     },
     onSuccess: async () => {
       await invalidateSubscriptionRelated()
@@ -168,21 +135,11 @@ export function useOpenBillingPortal(options?: {
 
   return useMutation<PortalSessionResponse, Error, void>({
     mutationFn: async () => {
-      const response = await fetch('/api/stripe/create-portal-session', {
-        method: 'POST',
-        credentials: 'include',
+      return apiClient.post<PortalSessionResponse>('/api/stripe/create-portal-session/', {
+        origin: window.location.origin,
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to open billing portal')
-      }
-
-      return data
     },
     onSuccess: async (data) => {
-      // Invalidate subscription data in case user makes changes in portal
       await invalidateSubscriptionRelated()
       options?.onSuccess?.(data.url)
     },
@@ -201,18 +158,10 @@ export function useCreateTopUpSession(options?: {
 
   return useMutation<TopUpSessionResponse, Error, TopUpSessionInput>({
     mutationFn: async ({ topupProductKey }) => {
-      const response = await fetch('/api/stripe/create-topup-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ topupProductKey }),
+      const data = await apiClient.post<TopUpSessionResponse>('/api/stripe/create-topup-session/', {
+        topupProductKey,
+        origin: window.location.origin,
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create top-up session')
-      }
 
       if (!data.url) {
         throw new Error('No checkout URL returned')
@@ -221,7 +170,6 @@ export function useCreateTopUpSession(options?: {
       return data
     },
     onSuccess: async (data) => {
-      // Invalidate subscription data in case user completes top-up purchase
       await invalidateSubscriptionRelated()
       options?.onSuccess?.(data.url)
     },
@@ -231,12 +179,10 @@ export function useCreateTopUpSession(options?: {
 
 /**
  * Input for combined subscription mutation
- * Includes subscription state to avoid stale closure issues
  */
 interface SubscriptionMutationInput {
   tier: SubscriptionTier
   priceId: string
-  /** Current subscription state - pass at call time to avoid stale closures */
   hasActiveSubscription: boolean
   currentTier: SubscriptionTier
 }
@@ -244,15 +190,11 @@ interface SubscriptionMutationInput {
 /**
  * Combined hook for subscription management
  * Handles both new subscriptions and upgrades/downgrades
- *
- * IMPORTANT: Pass hasActiveSubscription and currentTier in the mutate() call,
- * not in hook options, to ensure fresh values are used.
  */
 export function useSubscription(options?: {
   onCheckoutRedirect?: (url: string) => void
   onSubscriptionChanged?: (data: ChangeSubscriptionResponse, newTier: SubscriptionTier) => void
   onError?: (error: Error) => void
-  /** Unique key to isolate this mutation instance from others */
   mutationKey?: string
 }) {
   const { invalidateSubscriptionRelated } = useInvalidation()
@@ -268,38 +210,15 @@ export function useSubscription(options?: {
         throw new Error('Cannot subscribe to free tier')
       }
 
-      // If user already has an active subscription, change it
-      // These values are passed at call time to avoid stale closures
       if (hasActiveSubscription && currentTier !== 'free') {
-        const response = await fetch('/api/stripe/change-subscription', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ newTier: tier }),
-        })
-
-        const data = await response.json()
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to change subscription')
-        }
-
+        const data = await apiClient.post<ChangeSubscriptionResponse>('/api/stripe/change-subscription/', { newTier: tier })
         return { type: 'change' as const, data }
       }
 
-      // Create new subscription
-      const response = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ priceId }),
+      const data = await apiClient.post<CheckoutSessionResponse>('/api/stripe/create-checkout-session/', {
+        priceId,
+        origin: window.location.origin,
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create checkout session')
-      }
 
       if (!data.url) {
         throw new Error('No checkout URL returned')

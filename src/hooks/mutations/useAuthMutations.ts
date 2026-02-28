@@ -1,11 +1,17 @@
 /**
  * Authentication-related mutation hooks for TanStack Query
  * Used by auth pages (register, reset-password, onboarding, login, setup-account)
+ *
+ * NOTE: Login/logout/session operations stay as Next.js route calls (httpOnly cookie management).
+ * Profile/onboarding mutations use apiClient for direct backend calls.
  */
 
 import { useMutation } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { useInvalidation } from '../useInvalidation'
 import { authApi, AuthApiError } from '@/lib/api/auth'
+import { setAccessToken } from '@/lib/auth/token-store'
+import { getApiBaseUrl } from '@/lib/api-config'
 
 // ============ Register Mutation ============
 
@@ -114,19 +120,7 @@ export function useCompleteOnboarding(options?: {
 
   return useMutation<CompleteOnboardingResponse, Error, void>({
     mutationFn: async () => {
-      const response = await fetch('/api/user/complete-onboarding', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to complete onboarding')
-      }
-
-      return data
+      return apiClient.post<CompleteOnboardingResponse>('/api/user/complete-onboarding/')
     },
     onSuccess: async (data) => {
       await invalidateUserRelated()
@@ -167,29 +161,9 @@ const withAuthTimeout = <T>(promise: Promise<T>, ms = 15000): Promise<T> => {
   return Promise.race([promise, timeout])
 }
 
-// ============ Sign In Mutation ============
-
-interface SignInApiResponse {
-  accessToken: string
-  refreshToken: string
-  expiresIn: number
-  tokenType: string
-  user: {
-    id: string
-    email: string
-    firstName: string
-    lastName: string
-    agencyId: string | null
-    role: string
-    isAdmin: boolean
-    status: string
-    subscriptionTier: string | null
-  }
-}
-
 /**
- * Sign in user via backend API
- * Note: Session is managed via httpOnly cookies, no Supabase session needed
+ * Sign in user via Django backend directly.
+ * Django sets auth cookies + returns tokens in body. We store the access_token in memory.
  */
 export function useSignIn(options?: {
   onSuccess?: (data: SignInResponse) => void
@@ -197,13 +171,13 @@ export function useSignIn(options?: {
 }) {
   return useMutation<SignInResponse, Error, SignInInput>({
     mutationFn: async ({ email, password }) => {
-      // Login via Next.js API route which creates httpOnly session cookie
+      const baseUrl = getApiBaseUrl()
+
+      // Login directly to Django — Django sets auth cookies on response
       const response = await withAuthTimeout(
-        fetch('/api/auth/login', {
+        fetch(`${baseUrl}/api/auth/login/`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({ email, password }),
         })
@@ -211,33 +185,35 @@ export function useSignIn(options?: {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.message || 'Invalid login credentials')
+        throw new Error(errorData.message || errorData.detail || 'Invalid login credentials')
       }
 
       const data = await response.json()
 
-      // Fetch agency whitelabel data via Django API
-      const agencyResponse = await withAuthTimeout(
-        fetch(`/api/agencies/${data.user.agencyId}/whitelabel`, {
-          credentials: 'include',
-        })
-      )
-
-      if (!agencyResponse.ok) {
-        throw new Error('Agency not found')
+      // Store access_token in module store (Django also set it as a cookie)
+      if (data.access_token) {
+        setAccessToken(data.access_token)
       }
 
-      const agencyData = await agencyResponse.json()
+      const userData = data.user
+      if (!userData) {
+        throw new Error('No user data in login response')
+      }
+
+      // Fetch agency whitelabel data via direct backend call
+      const agencyData = await withAuthTimeout(
+        apiClient.get<{ whitelabelDomain: string | null }>(`/api/agencies/${userData.agency_id}/whitelabel/`)
+      )
 
       return {
         user: {
-          id: data.user.id,
-          role: data.user.role,
-          status: data.user.status,
-          agencyId: data.user.agencyId || '',
+          id: userData.id,
+          role: userData.role,
+          status: userData.status,
+          agencyId: userData.agency_id || '',
         },
         agency: {
-          whitelabelDomain: agencyData.whitelabel_domain ?? agencyData.whitelabelDomain,
+          whitelabelDomain: agencyData.whitelabelDomain,
         },
       }
     },
@@ -350,8 +326,7 @@ interface UpdateUserProfileResponse {
 }
 
 /**
- * Update user profile data via Django API
- * Used by setup-account page for profile updates
+ * Update user profile data via backend API
  */
 export function useUpdateUserProfile(options?: {
   onSuccess?: () => void
@@ -361,19 +336,7 @@ export function useUpdateUserProfile(options?: {
 
   return useMutation<UpdateUserProfileResponse, Error, UpdateUserProfileInput>({
     mutationFn: async ({ data }) => {
-      const response = await fetch('/api/user/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(data),
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || result.message || 'Failed to update profile')
-      }
-
+      await apiClient.put('/api/user/profile/', data)
       return { success: true }
     },
     onSuccess: async () => {
@@ -395,8 +358,7 @@ interface UpdateUserStatusResponse {
 }
 
 /**
- * Update user status via Django API
- * Used by auth/confirm page for status updates during email confirmation
+ * Update user status via backend API
  */
 export function useUpdateUserStatus(options?: {
   onSuccess?: () => void
@@ -406,19 +368,7 @@ export function useUpdateUserStatus(options?: {
 
   return useMutation<UpdateUserStatusResponse, Error, UpdateUserStatusInput>({
     mutationFn: async ({ status }) => {
-      const response = await fetch('/api/user/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ status }),
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || result.message || 'Failed to update status')
-      }
-
+      await apiClient.put('/api/user/profile/', { status })
       return { success: true }
     },
     onSuccess: async () => {

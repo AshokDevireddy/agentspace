@@ -23,6 +23,7 @@ import { useAuth } from "@/providers/AuthProvider"
 import { useApiFetch } from "@/hooks/useApiFetch"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { apiClient } from "@/lib/api-client"
 import { formatPhoneForDisplay } from "@/lib/telnyx"
 
 // Types for the API responses
@@ -56,14 +57,16 @@ interface Deal {
   product: DealProduct | string | null
   policyNumber: string
   applicationNumber: string
-  policyEffectiveDate: string
-  annualPremium: number
+  phoneHidden?: boolean
+  policyEffectiveDate: string | null
+  annualPremium: number | null
+  monthlyPremium: number | null
   leadSource: string
   billingCycle: string
   status: string
   statusStandardized: string
-  billingDayOfMonth: string | null
-  billingWeekday: string | null
+  billingDayOfMonth?: string | null
+  billingWeekday?: string | null
   faceValue?: number | null
 }
 
@@ -278,11 +281,7 @@ export default function BookOfBusiness() {
     queryKey: queryKeys.dealsBookOfBusiness(appliedFilters),
     queryFn: async () => {
       const params = buildDealsParams()
-      const response = await fetch(`/api/deals/book-of-business?${params}`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch deals')
-      }
-      return response.json() as Promise<{ deals: Deal[]; nextCursor?: { cursorCreatedAt: string; cursorId: string } }>
+      return apiClient.get<{ deals: Deal[]; nextCursor?: { cursorCreatedAt: string; cursorId: string } }>(`/api/deals/book-of-business/?${params}`)
     },
     staleTime: 30 * 1000, // 30 seconds
     placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
@@ -293,9 +292,7 @@ export default function BookOfBusiness() {
     queryKey: queryKeys.dealsBookOfBusinessSummary(appliedFilters),
     queryFn: async () => {
       const params = buildDealsParams()
-      const response = await fetch(`/api/deals/book-of-business/summary?${params}`)
-      if (!response.ok) throw new Error('Failed to fetch summary')
-      return response.json()
+      return apiClient.get<BookSummary>(`/api/deals/book-of-business/summary/?${params}`)
     },
     staleTime: 30 * 1000,
     placeholderData: (previousData) => previousData,
@@ -322,11 +319,7 @@ export default function BookOfBusiness() {
     setIsLoadingMore(true)
     try {
       const params = buildDealsParams(nextCursorRef.current || undefined)
-      const response = await fetch(`/api/deals/book-of-business?${params}`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch deals')
-      }
-      const data = await response.json()
+      const data = await apiClient.get<{ deals: Deal[]; nextCursor?: { cursorCreatedAt: string; cursorId: string } }>(`/api/deals/book-of-business/?${params}`)
       setDeals(prev => [...prev, ...data.deals])
       setNextCursor(data.nextCursor || null)
     } catch (err) {
@@ -1051,7 +1044,7 @@ export default function BookOfBusiness() {
                         <td>
                           <div className="flex flex-col gap-0.5">
                             <span className="text-sm font-medium">{deal.client?.name || '—'}</span>
-                            {deal.client?.phone && deal.client.phone.includes('***') ? (
+                            {deal.phoneHidden ? (
                               <Badge
                                 className="bg-yellow-500/20 text-yellow-600 border-yellow-500/30 text-xs w-fit"
                                 variant="outline"
@@ -1066,15 +1059,15 @@ export default function BookOfBusiness() {
                         <td>
                           <div className="flex flex-col gap-1">
                             <div className="flex items-baseline gap-1.5">
-                              <span className="text-foreground font-bold text-base">${Number(deal.annualPremium).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/yr</span>
-                              {deal.billingCycle && deal.annualPremium > 0 && (
+                              <span className="text-foreground font-bold text-base">${(deal.annualPremium ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/yr</span>
+                              {deal.billingCycle && (deal.annualPremium ?? 0) > 0 && (
                                 <span className="text-xs text-muted-foreground">
-                                  (${calculateMonthlyPremium(deal.annualPremium, deal.billingCycle).toFixed(2)}/mo)
+                                  (${calculateMonthlyPremium(deal.annualPremium ?? 0, deal.billingCycle).toFixed(2)}/mo)
                                 </span>
                               )}
                             </div>
                             <div className="flex flex-col gap-0.5">
-                              <span className="text-xs text-muted-foreground">Effective: {deal.policyEffectiveDate}</span>
+                              <span className="text-xs text-muted-foreground">Effective: {deal.policyEffectiveDate || '—'}</span>
                               {deal.client?.ssnBenefit && deal.billingDayOfMonth && deal.billingWeekday ? (
                                 <span className="text-xs text-muted-foreground">
                                   Next Billing ({formatBillingPattern(deal.billingDayOfMonth, deal.billingWeekday)}): {(() => {

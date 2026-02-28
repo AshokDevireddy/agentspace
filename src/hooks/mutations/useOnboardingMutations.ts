@@ -7,14 +7,14 @@
  */
 
 import { useMutation } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { useInvalidation } from '../useInvalidation'
 import { RateLimitError } from '@/lib/error-utils'
 
 // Re-export agent invite from the canonical location
-// The hook name is different but the functionality is the same
 export { useSendInvite as useInviteAgent } from './useAgentMutations'
 
-// Re-export policy report mutations from the canonical location
+// Re-export policy report mutations from the canonical location (these STAY as Next.js routes)
 export { useCreatePolicyReportJob as useCreateOnboardingPolicyJob } from './usePolicyReportMutations'
 export { useSignPolicyReportFiles as useSignOnboardingPolicyFiles } from './usePolicyReportMutations'
 
@@ -59,37 +59,18 @@ export function useRunNiprAutomation(options?: {
 
   return useMutation<NiprRunResponse, Error, NiprRunInput>({
     mutationFn: async (variables) => {
-      const response = await fetch('/api/nipr/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(variables),
-      })
-
-      const data = await response.json()
-
-      // Handle rate limit properly - throw error for onError handling
-      if (response.status === 429) {
-        throw new RateLimitError(
-          'Rate limit exceeded for NIPR verification',
-          data.retryAfter || 60
-        )
+      try {
+        return await apiClient.post<NiprRunResponse>('/api/nipr/run/', variables)
+      } catch (error) {
+        // Handle rate limit from apiClient's createErrorFromResponse
+        if (error instanceof RateLimitError) {
+          throw error
+        }
+        // Re-throw other errors
+        throw error
       }
-
-      // Handle conflict (already has pending job) - return as success to allow polling
-      if (response.status === 409) {
-        return { ...data, status: 'conflict' }
-      }
-
-      // For other errors, throw
-      if (!response.ok && !data.queued && !data.processing) {
-        throw new Error(data.error || 'NIPR verification failed')
-      }
-
-      return data
     },
     onSuccess: async (data, variables) => {
-      // Use centralized invalidation - handles NIPR queries and user profile
       await invalidateNiprRelated()
       options?.onSuccess?.(data, variables)
     },
@@ -121,30 +102,18 @@ export function useUploadNiprDocument(options?: {
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch('/api/nipr/upload', {
-        method: 'POST',
-        body: formData,
-      })
+      const data = await apiClient.upload<NiprUploadResponse>('/api/nipr/upload/', formData)
 
-      const data = await response.json()
-
-      if (!response.ok || !data.success) {
+      if (!data.success) {
         throw new Error(data.error || 'Failed to process NIPR document')
       }
 
       return data
     },
     onSuccess: async (data, file) => {
-      // Use centralized invalidation - handles NIPR queries and user profile
       await invalidateNiprRelated()
       options?.onSuccess?.(data, file)
     },
     onError: options?.onError,
   })
 }
-
-// NOTE: Policy report mutations (useCreateOnboardingPolicyJob, useSignOnboardingPolicyFiles)
-// are re-exported from ./usePolicyReportMutations at the top of this file
-// to avoid duplication while maintaining the same API for onboarding components.
-//
-// NOTE: useOnboardingCarrierLogin is re-exported from ./useCarrierMutations at the top of this file

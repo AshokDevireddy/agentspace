@@ -11,8 +11,8 @@ import { useNotification } from '@/contexts/notification-context'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
 import { getInviteTokens, clearInviteTokens } from '@/lib/auth/constants'
 import { authApi, AuthApiError } from '@/lib/api/auth'
-import { fetchApi } from '@/lib/api-client'
-import { getClientAccessToken } from '@/lib/auth/client'
+import { apiClient } from '@/lib/api-client'
+import { getAccessToken } from '@/lib/auth/token-store'
 
 interface UserData {
   id: string
@@ -130,17 +130,18 @@ export default function SetupAccount() {
       if (!authUserId) {
         console.log(`[setup-account] PRIORITY 2: Checking Django session at +${Date.now() - startTime}ms`)
         try {
-          const sessionToken = await getClientAccessToken()
+          const sessionToken = getAccessToken()
           if (sessionToken) {
-            // Get user info from Django session
-            const sessionResponse = await fetch('/api/auth/session', { credentials: 'include' })
-            if (sessionResponse.ok) {
-              const sessionData = await sessionResponse.json()
+            // Get user info from Django session directly
+            try {
+              const sessionData = await apiClient.get<{ authenticated: boolean; user: { authUserId?: string } | null }>('/api/auth/session/')
               if (sessionData.authenticated && sessionData.user?.authUserId) {
                 authUserId = sessionData.user.authUserId
                 accessToken = sessionToken
                 console.log(`[setup-account] PRIORITY 2: Got authUserId from Django session`)
               }
+            } catch {
+              console.error(`[setup-account] PRIORITY 2: Django session check FAILED`)
             }
           }
         } catch (sessionError) {
@@ -169,10 +170,8 @@ export default function SetupAccount() {
 
       console.log(`[setup-account] FETCH USER: Using Django API with token`)
       try {
-        userRecord = await fetchApi<UserData>(
-          `/api/users/by-auth-id/${authUserId}/onboarding`,
-          accessToken,
-          'Failed to load user data'
+        userRecord = await apiClient.get<UserData>(
+          `/api/users/by-auth-id/${authUserId}/onboarding/`
         )
       } catch {
         userRecord = null
@@ -198,12 +197,10 @@ export default function SetupAccount() {
       })
 
       // Fetch agency data via Django API
-      if (userRecord.agencyId && accessToken) {
+      if (userRecord.agencyId) {
         try {
-          const agencyData = await fetchApi<AgencyData>(
-            `/api/agencies/${userRecord.agencyId}`,
-            accessToken,
-            'Failed to load agency data'
+          const agencyData = await apiClient.get<AgencyData>(
+            `/api/agencies/${userRecord.agencyId}/`
           )
           if (agencyData) {
             setAgencyName(agencyData.displayName || agencyData.name || "AgentSpace")
@@ -272,7 +269,7 @@ export default function SetupAccount() {
 
       // First, try to get token from Django session (most reliable)
       try {
-        accessToken = await getClientAccessToken()
+        accessToken = getAccessToken()
       } catch {
         // Continue to fallback
       }
@@ -308,15 +305,7 @@ export default function SetupAccount() {
 
       // Update user status via Django API - only clients skip the onboarding wizard
       if (userData?.role === 'client') {
-        await fetchApi(
-          `/api/user/profile`,
-          accessToken,
-          'Failed to update status',
-          {
-            method: 'PUT',
-            body: { status: 'active' }
-          }
-        )
+        await apiClient.put('/api/user/profile/', { status: 'active' })
       }
 
       setFormData({

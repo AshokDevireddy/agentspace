@@ -13,6 +13,7 @@ import Link from "next/link"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { apiClient } from '@/lib/api-client'
 
 interface PolicyDetailsModalProps {
   open: boolean
@@ -103,16 +104,9 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   const { data: dealData, isLoading: dealLoading, error: dealError, refetch: refetchDeal } = useQuery({
     queryKey: queryKeys.dealDetail(dealId),
     queryFn: async () => {
-      const response = await fetch(`/api/deals/${dealId}?view=${viewMode}`, {
-        credentials: 'include'
+      const data = await apiClient.get<any>(`/api/deals/${dealId}/`, {
+        params: { view: viewMode }
       })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch deal details')
-      }
-
-      const data = await response.json()
-      // The api-proxy returns the deal object at the top level (not nested under data.deal)
       return data
     },
     enabled: open && !!dealId,
@@ -124,15 +118,10 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   const { data: conversationData, isLoading: conversationLoading } = useQuery({
     queryKey: queryKeys.conversationDetail(dealId),
     queryFn: async () => {
-      const response = await fetch(`/api/conversations/by-deal?dealId=${dealId}`, {
-        credentials: 'include'
+      const data = await apiClient.get<any>('/api/conversations/by-deal/', {
+        params: { deal_id: dealId }
       })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch conversation')
-      }
-
-      return response.json()
+      return data
     },
     enabled: open && !!dealId,
   })
@@ -145,15 +134,7 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   const { data: statusOptionsData } = useQuery({
     queryKey: queryKeys.dealsFilterOptions(),
     queryFn: async () => {
-      const response = await fetch('/api/deals/filter-options', {
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch status options')
-      }
-
-      const data = await response.json()
+      const data = await apiClient.get<any>('/api/deals/filter-options/')
       if (data.statuses && data.statuses.length > 0) {
         // Remove the "all" option and just use the actual statuses
         const actualStatuses = data.statuses.filter((s: StatusOption) => s.value !== 'all')
@@ -226,30 +207,18 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   // Mutation for saving deal updates
   const saveDealMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await fetch(`/api/deals/${dealId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          clientName: data.clientName,
-          clientEmail: data.clientEmail,
-          clientPhone: data.clientPhone,
-          policyEffectiveDate: data.policyEffectiveDate,
-          annualPremium: parseFloat(data.annualPremium),
-          monthlyPremium: parseFloat(data.annualPremium) / 12,
-          status: data.status,
-          ssnBenefit: data.ssnBenefit,
-          billingDayOfMonth: data.ssnBenefit ? data.billingDayOfMonth : null,
-          billingWeekday: data.ssnBenefit ? data.billingWeekday : null
-        })
+      return await apiClient.put<any>(`/api/deals/${dealId}/`, {
+        clientName: data.clientName,
+        clientEmail: data.clientEmail,
+        clientPhone: data.clientPhone,
+        policyEffectiveDate: data.policyEffectiveDate,
+        annualPremium: parseFloat(data.annualPremium),
+        monthlyPremium: parseFloat(data.annualPremium) / 12,
+        status: data.status,
+        ssnBenefit: data.ssnBenefit,
+        billingDayOfMonth: data.ssnBenefit ? data.billingDayOfMonth : null,
+        billingWeekday: data.ssnBenefit ? data.billingWeekday : null
       })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to update policy')
-      }
-
-      return response.json()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.dealDetail(dealId) })
@@ -266,24 +235,16 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
   // Mutation for starting conversation
   const startConversationMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch('/api/conversations/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ dealId })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
+      try {
+        const data = await apiClient.post<any>('/api/conversations/start/', { dealId })
+        return { conflict: false, data }
+      } catch (error: any) {
         // Handle 409 Conflict - conversation already exists
-        if (response.status === 409 && data.existingConversation) {
-          return { conflict: true, data }
+        if (error?.status === 409 && error?.data?.existingConversation) {
+          return { conflict: true, data: error.data }
         }
-        throw new Error(data.error || 'Failed to start conversation')
+        throw error
       }
-
-      return { conflict: false, data }
     },
     onSuccess: (result) => {
       if (result.conflict) {
@@ -310,30 +271,13 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
         throw new Error('Client email is required to send an invitation')
       }
 
-      const response = await fetch(`/api/clients/invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: deal.clientEmail,
-          firstName: deal.clientName?.split(' ')[0] || 'Client',
-          lastName: deal.clientName?.split(' ').slice(1).join(' ') || '',
-          phoneNumber: deal.clientPhone || null
-        })
+      const data = await apiClient.post<{ message: string }>('/api/clients/invite/', {
+        email: deal.clientEmail,
+        firstName: deal.clientName?.split(' ')[0] || 'Client',
+        lastName: deal.clientName?.split(' ').slice(1).join(' ') || '',
+        phoneNumber: deal.clientPhone || null
       })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        return { success: true, message: data.message }
-      } else {
-        // If client exists but not invited, try resend endpoint
-        if (data.status) {
-          throw new Error(`Client already has status: ${data.status}. ${data.error}`)
-        } else {
-          throw new Error(data.error || 'Failed to send invitation')
-        }
-      }
+      return { success: true, message: data.message }
     },
     onSuccess: (data) => {
       showSuccess(data.message || 'Invitation sent successfully!')
@@ -356,22 +300,9 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
         throw new Error('Client email is required to resend invitation')
       }
 
-      const response = await fetch('/api/clients/resend-invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: deal.clientEmail
-        })
+      return await apiClient.post<any>('/api/clients/resend-invite/', {
+        email: deal.clientEmail
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to resend invitation')
-      }
-
-      return data
     },
     onSuccess: (data) => {
       showSuccess(data.message || 'Invitation resent successfully!')

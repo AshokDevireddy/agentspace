@@ -27,6 +27,7 @@ import { DEFAULT_DISCORD_TEMPLATE, DISCORD_TEMPLATE_PLACEHOLDERS } from "@/lib/d
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
+import { apiClient } from '@/lib/api-client'
 import { QueryErrorDisplay } from '@/components/ui/query-error-display'
 import {
   useCreatePosition,
@@ -389,10 +390,12 @@ export default function ConfigurationPage() {
   const { data: automationAgentsData, isLoading: automationAgentsLoading } = useQuery({
     queryKey: queryKeys.configurationAgentAutoSend(),
     queryFn: async () => {
-      const response = await fetch('/api/agents/auto-send', { credentials: 'include' })
-      if (!response.ok) return []
-      const data = await response.json()
-      return (data.agents || data || []) as AgentAutoSendInfo[]
+      try {
+        const data = await apiClient.get<{ agents?: AgentAutoSendInfo[] }>('/api/agents/auto-send/')
+        return (data.agents || (data as any) || []) as AgentAutoSendInfo[]
+      } catch {
+        return []
+      }
     },
     enabled: activeTab === 'automation',
     staleTime: 5 * 60 * 1000,
@@ -523,20 +526,7 @@ export default function ConfigurationPage() {
   const { data: carriersData = [], isLoading: carriersLoading, error: carriersError } = useQuery({
     queryKey: queryKeys.configurationCarriers(),
     queryFn: async () => {
-      const response = await fetch('/api/carriers', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to fetch carriers')
-      }
-
-      return response.json() as Promise<Carrier[]>
+      return apiClient.get<Carrier[]>('/api/carriers/')
     },
     // Wait for auth to be ready before fetching
     enabled: !!user,
@@ -547,25 +537,7 @@ export default function ConfigurationPage() {
   const { data: allProductsData = [], isLoading: productsLoading, error: productsError } = useQuery({
     queryKey: queryKeys.configurationProducts(),
     queryFn: async () => {
-      const response = await fetch('/api/products/all', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        if (response.status === 403) {
-          throw new Error('You are not associated with an agency. Please contact your administrator.')
-        } else if (response.status === 401) {
-          throw new Error('Please log in to view products.')
-        }
-        throw new Error(errorData.error || 'Failed to fetch products')
-      }
-
-      return response.json() as Promise<Product[]>
+      return apiClient.get<Product[]>('/api/products/all/')
     },
     // Wait for auth to be ready before fetching
     enabled: !!user,
@@ -576,13 +548,11 @@ export default function ConfigurationPage() {
   const { data: positionsData = [], isLoading: positionsLoading, error: positionsError, refetch: refetchPositions } = useQuery({
     queryKey: queryKeys.configurationPositions(),
     queryFn: async () => {
-      const response = await fetch('/api/positions', {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) return []
-      return response.json() as Promise<Position[]>
+      try {
+        return await apiClient.get<Position[]>('/api/positions/')
+      } catch {
+        return []
+      }
     },
     enabled: activeTab === 'positions' && !!user,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -592,16 +562,11 @@ export default function ConfigurationPage() {
   const { data: commissionsCarriersData = [], isLoading: commissionsCarriersLoading } = useQuery({
     queryKey: queryKeys.configurationCommissionsCarriers(),
     queryFn: async () => {
-      const response = await fetch('/api/carriers/with-products', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include'
-      })
-
-      if (!response.ok) return []
-      return response.json() as Promise<Carrier[]>
+      try {
+        return await apiClient.get<Carrier[]>('/api/carriers/with-products/')
+      } catch {
+        return []
+      }
     },
     enabled: activeTab === 'commissions' && !!user,
     staleTime: 10 * 60 * 1000, // 10 minutes
@@ -611,24 +576,18 @@ export default function ConfigurationPage() {
   const { data: commissionsData = [], isLoading: commissionsLoading, error: commissionsError, refetch: refetchCommissions } = useQuery({
     queryKey: queryKeys.configurationCommissions(selectedCommissionCarrier),
     queryFn: async () => {
-      const url = selectedCommissionCarrier
-        ? `/api/positions/product-commissions?carrier_id=${selectedCommissionCarrier}`
-        : '/api/positions/product-commissions'
-
-      const response = await fetch(url, {
-        method: 'GET',
-        credentials: 'include'
-      })
-
-      if (!response.ok) return []
-      return response.json() as Promise<Commission[]>
+      try {
+        return await apiClient.get<Commission[]>('/api/positions/all-commissions/', selectedCommissionCarrier ? { params: { carrier_id: selectedCommissionCarrier } } : undefined)
+      } catch {
+        return []
+      }
     },
     enabled: activeTab === 'commissions' && !!selectedCommissionCarrier && !!user,
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
   // Fetch carrier names (only when carrier-logins tab is active)
-  const { data: carrierNamesData = [], isLoading: loadingCarrierNames } = useApiFetch<string[]>(
+  const { data: carrierNamesRawData = [], isLoading: loadingCarrierNames } = useApiFetch<Array<{id: string, name: string}>>(
     queryKeys.configurationCarrierNames(),
     '/api/carriers/names',
     {
@@ -636,11 +595,12 @@ export default function ConfigurationPage() {
       staleTime: 10 * 60 * 1000, // 10 minutes
     }
   )
+  const carrierNamesData = carrierNamesRawData.map((c: {id: string, name: string}) => c.name)
 
   // Fetch existing policy files from ingest jobs (only when policy-reports tab is active)
   const { data: policyFilesData, isLoading: checkingExistingFiles, refetch: refetchPolicyFiles } = useApiFetch<{files: any[], jobs?: any[]}>(
     queryKeys.configurationPolicyFiles(),
-    '/api/upload-policy-reports/jobs',
+    '/api/ingest/jobs/?days=30&limit=50',
     {
       enabled: activeTab === 'policy-reports',
       staleTime: 2 * 60 * 1000, // 2 minutes
@@ -1360,23 +1320,13 @@ export default function ConfigurationPage() {
   // Helper function to sync commissions for a specific carrier (silently)
   const syncCommissionsForCarrier = async (carrierId: string, forceRefresh: boolean = false): Promise<void> => {
     try {
-      const response = await fetch(`/api/positions/product-commissions/sync?carrier_id=${carrierId}`, {
-        method: 'POST',
-        credentials: 'include'
-      })
+      const data = await apiClient.post<{ created?: number }>('/api/positions/product-commissions/sync/', undefined, { params: { carrier_id: carrierId } })
+      console.log(`Auto-synced commissions for carrier ${carrierId}: created ${data.created || 0} entries`)
 
-      if (response.ok) {
-        const data = await response.json()
-        console.log(`Auto-synced commissions for carrier ${carrierId}: created ${data.created || 0} entries`)
-
-        // Refresh commissions only when we added new entries and this carrier is active.
-        // Avoid forcing a refetch here to prevent double-loading; the tab/useEffect will handle initial fetch.
-        if (data.created > 0 && selectedCommissionCarrier === carrierId) {
-          await refetchCommissions()
-        }
-      } else {
-        const errorData = await response.json()
-        console.error(`Failed to sync commissions for carrier ${carrierId}:`, errorData)
+      // Refresh commissions only when we added new entries and this carrier is active.
+      // Avoid forcing a refetch here to prevent double-loading; the tab/useEffect will handle initial fetch.
+      if ((data.created ?? 0) > 0 && selectedCommissionCarrier === carrierId) {
+        await refetchCommissions()
       }
     } catch (error) {
       // Log error but don't interrupt user workflow
@@ -1446,18 +1396,8 @@ export default function ConfigurationPage() {
     const existingCarrier = carriers.find(carrier => carrier.id === newProduct.carrierId)
     if (!existingCarrier) {
       try {
-        const response = await fetch('/api/carriers', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include'
-        })
-
-        if (response.ok) {
-          const updatedCarriers = await response.json()
-          setCarriers(updatedCarriers)
-        }
+        const updatedCarriers = await apiClient.get<Carrier[]>('/api/carriers/')
+        setCarriers(updatedCarriers)
       } catch (error) {
         console.error('Error refreshing carriers:', error)
       }
@@ -2055,48 +1995,40 @@ export default function ConfigurationPage() {
         return
       }
 
-      const jobResp = await fetch('/api/upload-policy-reports/create-job', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          agencyId,
-          expectedFiles,
-          clientJobId,
-        }),
+      const jobJson = await apiClient.post<{ job: { jobId: string } }>('/api/ingest/jobs/', {
+        expectedFiles,
+        clientJobId,
       })
-      const jobJson = await jobResp.json().catch(() => null)
-      if (!jobResp.ok || !jobJson?.job?.jobId) {
-        console.error('Failed to create ingest job', { status: jobResp.status, body: jobJson })
+      if (!jobJson?.job?.jobId) {
+        console.error('Failed to create ingest job', { body: jobJson })
         showError('Could not start ingest job. Please try again.')
         return
       }
       const jobId = jobJson.job.jobId as string
       console.debug('Created ingest job', { jobId, expectedFiles })
 
-      // 1) Request presigned URLs for all files in a single call (new ingestion flow)
-      const signResp = await fetch('/api/upload-policy-reports/sign', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+      // 1) Request presigned URLs for all files in a single call (Django direct)
+      const signJson = await apiClient.post<{ files: Array<{ fileId: string; fileName: string; presignedUrl: string }> }>(
+        '/api/ingest/presign/',
+        {
           jobId,
           files: policyReportFiles.map(({ file }) => ({
             fileName: file.name,
             contentType: file.type || 'application/octet-stream',
             size: file.size,
           })),
-        }),
-      })
-      const signJson = await signResp.json().catch(() => null)
-      if (!signResp.ok || !Array.isArray(signJson?.files)) {
-        console.error('Presign failed', { status: signResp.status, body: signJson })
+        },
+        { skipCaseConversion: true }
+      )
+      if (!Array.isArray(signJson?.files)) {
+        console.error('Presign failed', { body: signJson })
         showError('Could not generate upload URLs. Please try again.')
         return
       }
 
       // 2) Upload each file via its presigned URL (no chunking; URLs expire in 60s)
       const results = await Promise.allSettled(
-        (signJson.files as Array<{ fileId: string; fileName: string; presignedUrl: string }>).
-          map(async (f) => {
+        signJson.files.map(async (f) => {
             const match = policyReportFiles.find(pf => pf.file.name === f.fileName)
             if (!match) throw new Error(`Missing file for ${f.fileName}`)
             const res = await putToSignedUrl(f.presignedUrl, match.file)
@@ -3799,12 +3731,7 @@ export default function ConfigurationPage() {
                     onAutoSendEnabledChange={async (enabled) => {
                       if (!agencyData?.id) return
                       try {
-                        await fetch(`/api/agencies/${agencyData.id}/settings`, {
-                          method: 'PATCH',
-                          credentials: 'include',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ smsAutoSendEnabled: enabled }),
-                        })
+                        await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, { smsAutoSendEnabled: enabled })
                         queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
                         showSuccess(`SMS auto-send ${enabled ? 'enabled' : 'disabled'}`)
                       } catch {
@@ -3819,12 +3746,7 @@ export default function ConfigurationPage() {
                     onAgentToggle={async (agentId, value) => {
                       setAutomationAgentSaving(agentId)
                       try {
-                        await fetch('/api/agents/auto-send', {
-                          method: 'PATCH',
-                          credentials: 'include',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ agentId: agentId, smsAutoSendEnabled: value }),
-                        })
+                        await apiClient.patch('/api/agents/auto-send/', { agentId: agentId, smsAutoSendEnabled: value })
                         queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgentAutoSend() })
                       } catch {
                         showError('Failed to update agent auto-send setting')
@@ -4564,12 +4486,7 @@ export default function ConfigurationPage() {
                         onCheckedChange={async (enabled) => {
                           if (!agencyData?.id) return
                           try {
-                            await fetch(`/api/agencies/${agencyData.id}/settings`, {
-                              method: 'PATCH',
-                              credentials: 'include',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ scoreboardAgentVisibility: enabled }),
-                            })
+                            await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, { scoreboardAgentVisibility: enabled })
                             queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
                             showSuccess(`Scoreboard visibility ${enabled ? 'enabled' : 'disabled'} for all agents`)
                           } catch {

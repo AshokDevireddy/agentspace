@@ -43,12 +43,6 @@ interface ScoreboardData {
   }
 }
 
-interface ScoreboardRpcResponse {
-  success: boolean
-  data?: ScoreboardData
-  error?: string
-}
-
 type TimeframeOption = 'this_week' | 'last_week' | 'past_7_days' | 'past_14_days' | 'this_month' | 'last_month' | 'past_30_days' | 'past_90_days' | 'past_180_days' | 'past_12_months' | 'ytd' | 'custom'
 
 const timeframeOptions = [
@@ -95,8 +89,12 @@ export default function Scoreboard() {
     queryKey: queryKeys.myDownlineIds(user?.id || ''),
     queryFn: async () => {
       try {
-        const data = await apiClient.get<{ downlines?: Array<{ id: string; firstName: string; lastName: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
-        const agents: { id: string; firstName: string; lastName: string }[] = data.downlines || (data as any) || []
+        const data = await apiClient.get<{ downlines?: Array<{ id: string; name: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
+        const agents = (data.downlines || []).map(d => ({
+          id: d.id,
+          firstName: d.name?.split(' ')[0] || '',
+          lastName: d.name?.split(' ').slice(1).join(' ') || ''
+        }))
         const ids: string[] = agents.map((d) => d.id)
         return { downlineIds: ids, downlineAgents: agents }
       } catch {
@@ -113,7 +111,7 @@ export default function Scoreboard() {
     queryFn: async () => {
       try {
         const data = await apiClient.get<{ downlines?: Array<{ id: string }> }>('/api/agents/downlines/', { params: { agentId: selectedDownlineAgentId } })
-        const ids: string[] = (data.downlines || (data as any) || []).map((d: { id: string }) => d.id)
+        const ids: string[] = (data.downlines || []).map((d) => d.id)
         return { downlineIds: ids }
       } catch {
         return { downlineIds: [] as string[] }
@@ -132,8 +130,19 @@ export default function Scoreboard() {
   }, [isHydrated, clientDate.month, clientDate.year])
 
   // Fetch agency default scoreboard start date using TanStack Query
-  const { data: agencySettings } = useAgencyScoreboardSettings(user?.agencyId)
+  const { data: agencySettings } = useAgencyScoreboardSettings(user?.agencyId, {
+    staleTime: 0 // Disable cache to always fetch fresh data for issue_paid_status
+  })
   const defaultScoreboardStartDate = agencySettings?.defaultScoreboardStartDate ?? null
+  const scoreboardAgentVisibility = agencySettings?.scoreboardAgentVisibility ?? false
+  const issuePaidStatusEnabled = agencySettings?.issuePaidStatus ?? true
+
+  // Force filter to 'submitted' when issue_paid_status is disabled
+  useEffect(() => {
+    if (!issuePaidStatusEnabled && submittedFilter === 'issue_paid') {
+      setSubmittedFilter('submitted')
+    }
+  }, [issuePaidStatusEnabled, submittedFilter, setSubmittedFilter])
 
   // Calculate date range based on timeframe - SSR-safe using clientDate
   const getDateRange = useCallback((selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
@@ -726,8 +735,8 @@ export default function Scoreboard() {
         </div>
       )}
 
-      {/* Weekly Stats - Only show for admins (after hydration to avoid mismatch) */}
-      {isHydrated && (user?.role === 'admin' || viewMode === 'my_team') && (
+      {/* Weekly Stats - Show for admins, any role viewing My Team, or when agency scoreboard visibility is enabled */}
+      {isHydrated && (user?.role === 'admin' || viewMode === 'my_team' || scoreboardAgentVisibility) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="professional-card rounded-md">
             <CardContent className="p-6 text-center">

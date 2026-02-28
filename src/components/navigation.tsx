@@ -68,7 +68,7 @@ const isDefaultColorForMode = (color: string, mode: 'light' | 'dark' | 'system' 
 }
 
 export default function Navigation() {
-  const { signOut, user } = useAuth()
+  const { signOut, user, isHydrated } = useAuth()
   const pathname = usePathname()
   const { resolvedTheme } = useTheme()
   const queryClient = useQueryClient()
@@ -111,7 +111,7 @@ export default function Navigation() {
         return null
       }
     },
-    enabled: !!agencyId,
+    enabled: !!agencyId && isHydrated,
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
 
@@ -190,7 +190,7 @@ export default function Navigation() {
         return { unreadCount: 0 }
       }
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && isHydrated,
     staleTime: 1000 * 60 * 5, // 5 minutes - rely on real-time updates instead of polling
     refetchInterval: false, // Disable polling - use real-time subscriptions only
   })
@@ -199,7 +199,7 @@ export default function Navigation() {
 
   // SSE for real-time unread count updates
   useUnreadCountSSE({
-    enabled: !!user?.id,
+    enabled: !!user?.id && isHydrated,
     onCountUpdate: useCallback((count: number) => {
       // Update the cache directly for immediate feedback
       queryClient.setQueryData(queryKeys.conversationCount('self'), { unreadCount: count })

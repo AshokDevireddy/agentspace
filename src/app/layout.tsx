@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/providers/QueryProvider";
-import { AuthProvider, UserData } from "@/providers/AuthProvider";
+import { AuthProvider } from "@/providers/AuthProvider";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { ThemeCoordinator } from "@/contexts/ThemeCoordinatorContext";
 import { AgencyBrandingProvider } from "@/contexts/AgencyBrandingContext";
@@ -12,8 +12,8 @@ import ClientLayout from "./client-layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { headers } from "next/headers";
 import { isWhiteLabelDomain } from "@/lib/whitelabel";
-import { getApiBaseUrl, authEndpoints } from "@/lib/api-config";
-import { getSession } from "@/lib/session";
+import { getApiBaseUrl } from "@/lib/api-config";
+import { getAuthSession } from "@/lib/auth/server";
 
 // Force dynamic rendering - ensures session is fetched on every request, not cached at build time
 export const dynamic = 'force-dynamic';
@@ -72,86 +72,17 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-/**
- * Session data response from the backend API
- */
-type SessionResponse = {
-  authenticated: boolean
-  user?: {
-    id: string
-    auth_user_id: string
-    email: string
-    agency_id: string | null
-    role: 'admin' | 'agent' | 'client'
-    is_admin: boolean
-    status: 'active' | 'onboarding' | 'invited' | 'inactive'
-    subscription_tier: 'free' | 'pro' | 'expert' | null
-    theme_mode: 'light' | 'dark' | 'system' | null
-  }
-  agency?: {
-    display_name: string | null
-    whitelabel_domain: string | null
-    logo_url: string | null
-  } | null
-}
-
 export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Fetch session data from the httpOnly session cookie
-  let initialUser: UserData | null = null;
-  let agencyData = null;
+  // Read access_token cookie → Bearer to Django → hydrate AuthProvider
+  const authSession = await getAuthSession();
 
-  try {
-    // Get access token from httpOnly session cookie
-    const session = await getSession();
-
-    if (session?.accessToken) {
-      // Call backend API for session data - validates the JWT and returns user data
-      const apiUrl = getApiBaseUrl();
-      const response = await fetch(`${apiUrl}${authEndpoints.session}`, {
-        headers: {
-          'Authorization': `Bearer ${session.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        cache: 'no-store', // Don't cache auth data
-      });
-
-      if (response.ok) {
-        const data: SessionResponse = await response.json();
-
-        if (data.authenticated && data.user) {
-          initialUser = {
-            id: data.user.id,
-            authUserId: data.user.auth_user_id,
-            email: data.user.email,
-            role: data.user.role,
-            status: data.user.status,
-            themeMode: data.user.theme_mode,
-            isAdmin: data.user.is_admin,
-            agencyId: data.user.agency_id,
-            subscriptionTier: data.user.subscription_tier || 'free',
-          };
-
-          agencyData = data.agency ? {
-            displayName: data.agency.display_name,
-            whitelabelDomain: data.agency.whitelabel_domain,
-            logoUrl: data.agency.logo_url,
-          } : null;
-        }
-      } else if (response.status === 401) {
-        // Token is invalid - user needs to re-authenticate
-        console.log('[Layout] Session invalid - token expired');
-      } else {
-        console.error('[Layout] Session request failed:', response.status);
-      }
-    }
-  } catch (error) {
-    // Log but don't crash - AuthProvider will handle client-side fallback
-    console.error('[Layout] Error fetching session:', error);
-  }
+  const initialUser = authSession?.user ?? null;
+  const initialAccessToken = authSession?.accessToken ?? null;
+  const agencyData = authSession?.agency ?? null;
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -164,7 +95,7 @@ export default async function RootLayout({
               enableSystem
               disableTransitionOnChange
             >
-              <AuthProvider initialUser={initialUser}>
+              <AuthProvider initialUser={initialUser} initialAccessToken={initialAccessToken}>
                 <ThemeCoordinator>
                   <NotificationProvider>
                     <TourProvider>

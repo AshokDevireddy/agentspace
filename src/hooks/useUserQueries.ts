@@ -158,6 +158,7 @@ export function useAgencyBrandingByDomain(
 interface AgencyScoreboardSettings {
   defaultScoreboardStartDate: string | null
   scoreboardAgentVisibility: boolean | null
+  issuePaidStatus?: boolean | null
 }
 
 interface UseAgencyScoreboardSettingsOptions {

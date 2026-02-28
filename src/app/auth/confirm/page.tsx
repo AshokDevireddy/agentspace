@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
 import { REDIRECT_DELAY_MS, storeInviteTokens, captureHashTokens, type HashTokens } from '@/lib/auth/constants'
 import { apiClient } from '@/lib/api-client'
-import { getClientAccessToken } from '@/lib/auth/client'
+import { getAccessToken } from '@/lib/auth/token-store'
 
 interface UserRecord {
   id: string
@@ -63,16 +63,17 @@ export default function ConfirmSession() {
 
       // Fallback: check for existing Django session
       try {
-        const accessToken = await getClientAccessToken()
+        const accessToken = getAccessToken()
         if (accessToken) {
           // We have a session, try to get user info
-          const response = await fetch('/api/auth/session', { credentials: 'include' })
-          if (response.ok) {
-            const data = await response.json()
+          try {
+            const data = await apiClient.get<{ authenticated: boolean; user: { id: string; role: string; status: string } | null }>('/api/auth/session/')
             if (data.authenticated && data.user) {
               await routeUserByData(data.user)
               return
             }
+          } catch {
+            // Session check failed, continue to other methods
           }
         }
       } catch (err) {

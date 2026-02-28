@@ -50,25 +50,23 @@ interface DealProduct {
 
 interface Deal {
   id: string
-  date: string
+  createdAt: string
   agent: DealAgent | null
   carrier: DealCarrier | null
-  client: DealClient | null
+  client: (DealClient & { ssnBenefit?: boolean }) | null
   product: DealProduct | string | null
   policyNumber: string
-  appNumber: string
+  applicationNumber: string
   phoneHidden?: boolean
-  effectiveDate: string
-  effectiveDateRaw: string
-  annualPremium: string
-  annualPremiumRaw: number
+  policyEffectiveDate: string | null
+  annualPremium: number | null
+  monthlyPremium: number | null
   leadSource: string
   billingCycle: string
   status: string
   statusStandardized: string
-  ssnBenefit: boolean
-  billingDayOfMonth: string | null
-  billingWeekday: string | null
+  billingDayOfMonth?: string | null
+  billingWeekday?: string | null
   faceValue?: number | null
 }
 
@@ -145,6 +143,8 @@ export default function BookOfBusiness() {
       effectiveDateStart: "",
       effectiveDateEnd: "",
       clientPhone: "",
+      submittedDateStart: "",
+      submittedDateEnd: "",
       statusMode: 'all' as 'all' | 'active' | 'pending' | 'inactive',
       viewMode: 'downlines' as 'downlines' | 'self'
     },
@@ -269,6 +269,8 @@ export default function BookOfBusiness() {
     if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
     if (appliedFilters.effectiveDateEnd) params.append('effective_date_end', appliedFilters.effectiveDateEnd)
     if (appliedFilters.clientPhone) params.append('client_phone', appliedFilters.clientPhone)
+    if (appliedFilters.submittedDateStart) params.append('submitted_date_start', appliedFilters.submittedDateStart)
+    if (appliedFilters.submittedDateEnd) params.append('submitted_date_end', appliedFilters.submittedDateEnd)
     if (appliedFilters.viewMode) params.append('view', appliedFilters.viewMode)
     params.append('limit', '50')
     if (cursor) {
@@ -382,12 +384,15 @@ export default function BookOfBusiness() {
     appliedFilters.product !== 'all' ||
     appliedFilters.client !== 'all' ||
     appliedFilters.policyNumber !== 'all' ||
+    appliedFilters.clientPhone !== '' ||
     appliedFilters.billingCycle !== 'all' ||
     appliedFilters.leadSource !== 'all' ||
     appliedFilters.status !== 'all' ||
     appliedFilters.effectiveDateSort !== 'all' ||
     appliedFilters.effectiveDateStart ||
-    appliedFilters.effectiveDateEnd
+    appliedFilters.effectiveDateEnd ||
+    appliedFilters.submittedDateStart ||
+    appliedFilters.submittedDateEnd
 
   const addFilter = (filterName: string) => {
     const newVisibleFilters = new Set(visibleFilters)
@@ -433,6 +438,9 @@ export default function BookOfBusiness() {
       case 'dateRange':
         setLocalFilters({ effectiveDateStart: '', effectiveDateEnd: '' })
         break
+      case 'submittedDateRange':
+        setLocalFilters({ submittedDateStart: '', submittedDateEnd: '' })
+        break
       case 'clientPhone':
         setLocalFilters({ clientPhone: '' })
         break
@@ -454,6 +462,7 @@ export default function BookOfBusiness() {
     { id: 'status', label: 'Status' },
     { id: 'effectiveDateSort', label: 'Oldest/Newest' },
     { id: 'dateRange', label: 'Date Range' },
+    { id: 'submittedDateRange', label: 'Submitted Date' },
     { id: 'persistencyPlacement', label: 'Persistency/Placement' },
   ]
 
@@ -669,6 +678,15 @@ export default function BookOfBusiness() {
                   />
                 </Badge>
               )}
+              {visibleFilters.has('submittedDateRange') && (
+                <Badge variant="outline" className="h-8 px-3">
+                  Submitted Date
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('submittedDateRange')}
+                  />
+                </Badge>
+              )}
               {visibleFilters.has('persistencyPlacement') && (
                 <Badge variant="outline" className="h-8 px-3">
                   Persistency/Placement
@@ -869,6 +887,20 @@ export default function BookOfBusiness() {
                   </div>
                 )}
 
+                {visibleFilters.has('submittedDateRange') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Submitted Date Range
+                    </label>
+                    <DateRangePicker
+                      startDate={localFilters.submittedDateStart}
+                      endDate={localFilters.submittedDateEnd}
+                      onRangeChange={(start, end) => setLocalFilters({ submittedDateStart: start, submittedDateEnd: end })}
+                      disabled={loading}
+                    />
+                  </div>
+                )}
+
                 {visibleFilters.has('persistencyPlacement') && (
                   <div>
                     <label className="block text-[10px] font-medium text-muted-foreground mb-1">
@@ -1013,7 +1045,7 @@ export default function BookOfBusiness() {
                       className="cursor-pointer hover:bg-accent/50 transition-colors"
                       onClick={() => handleRowClick(deal)}
                     >
-                        <td className="whitespace-nowrap">{deal.date}</td>
+                        <td className="whitespace-nowrap">{deal.createdAt}</td>
                         <td className="whitespace-nowrap">
                           {deal.agent
                             ? `${deal.agent.firstName} ${deal.agent.lastName}`.trim()
@@ -1038,8 +1070,8 @@ export default function BookOfBusiness() {
                             ) : (
                               <span className="text-xs text-muted-foreground italic">No Policy #</span>
                             )}
-                            {deal.appNumber && (
-                              <span className="text-xs text-muted-foreground">App: {deal.appNumber}</span>
+                            {deal.applicationNumber && (
+                              <span className="text-xs text-muted-foreground">App: {deal.applicationNumber}</span>
                             )}
                           </div>
                         </td>
@@ -1061,26 +1093,26 @@ export default function BookOfBusiness() {
                         <td>
                           <div className="flex flex-col gap-1">
                             <div className="flex items-baseline gap-1.5">
-                              <span className="text-foreground font-bold text-base">{deal.annualPremium}/yr</span>
-                              {deal.billingCycle && deal.annualPremiumRaw > 0 && (
+                              <span className="text-foreground font-bold text-base">${(deal.annualPremium ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/yr</span>
+                              {deal.billingCycle && (deal.annualPremium ?? 0) > 0 && (
                                 <span className="text-xs text-muted-foreground">
-                                  (${calculateMonthlyPremium(deal.annualPremiumRaw, deal.billingCycle).toFixed(2)}/mo)
+                                  (${calculateMonthlyPremium(deal.annualPremium ?? 0, deal.billingCycle).toFixed(2)}/mo)
                                 </span>
                               )}
                             </div>
                             <div className="flex flex-col gap-0.5">
-                              <span className="text-xs text-muted-foreground">Effective: {deal.effectiveDate}</span>
-                              {deal.ssnBenefit && deal.billingDayOfMonth && deal.billingWeekday ? (
+                              <span className="text-xs text-muted-foreground">Effective: {deal.policyEffectiveDate || '—'}</span>
+                              {deal.client?.ssnBenefit && deal.billingDayOfMonth && deal.billingWeekday ? (
                                 <span className="text-xs text-muted-foreground">
                                   Next Billing ({formatBillingPattern(deal.billingDayOfMonth, deal.billingWeekday)}): {(() => {
                                     const nextBilling = calculateNextCustomBillingDate(deal.billingDayOfMonth, deal.billingWeekday)
                                     return nextBilling ? nextBilling.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A'
                                   })()}
                                 </span>
-                              ) : deal.effectiveDateRaw && deal.billingCycle ? (
+                              ) : deal.policyEffectiveDate && deal.billingCycle ? (
                                 <span className="text-xs text-muted-foreground">
                                   Next Draft: {(() => {
-                                    const nextDraft = calculateNextDraftDate(deal.effectiveDateRaw, deal.billingCycle)
+                                    const nextDraft = calculateNextDraftDate(deal.policyEffectiveDate, deal.billingCycle)
                                     return nextDraft ? nextDraft.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A'
                                   })()}
                                 </span>

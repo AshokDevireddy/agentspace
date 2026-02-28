@@ -21,7 +21,9 @@ import {
   Filter,
   Plus,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  AlertCircle,
+  RefreshCw
 } from "lucide-react"
 import {
   Select,
@@ -36,7 +38,7 @@ import { useNotification } from '@/contexts/notification-context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
-import { useSendMessage, useResolveNotification, useApproveDrafts, useRejectDrafts, useEditDraft } from '@/hooks/mutations'
+import { useSendMessage, useResolveNotification, useApproveDrafts, useRejectDrafts, useEditDraft, useRetryFailed } from '@/hooks/mutations'
 import { apiClient } from '@/lib/api-client'
 
 interface Conversation {
@@ -778,8 +780,27 @@ function SMSMessagingPageContent() {
     editDraftMutation.mutate({ messageId, body: editingDraftBody })
   }
 
+  // Retry failed mutation - using centralized hook
+  const retryFailedMutation = useRetryFailed({
+    onSuccess: () => {
+      const currentConversationId = selectedConversationRef.current?.id
+      if (currentConversationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
+      }
+      console.log('Failed message retried successfully')
+    },
+    onError: (error: Error) => {
+      console.error('Error retrying failed message:', error)
+      showError(error.message || 'Failed to retry message')
+    }
+  })
+
+  const handleRetryFailed = (messageId: string) => {
+    retryFailedMutation.mutate({ messageIds: [messageId] })
+  }
+
   // Combined pending state for draft actions - disable all buttons when any draft mutation is in progress
-  const isDraftMutationPending = approveDraftMutation.isPending || rejectDraftMutation.isPending || editDraftMutation.isPending
+  const isDraftMutationPending = approveDraftMutation.isPending || rejectDraftMutation.isPending || editDraftMutation.isPending || retryFailedMutation.isPending
 
   return (
     <div className="h-[calc(100vh-3rem)] flex bg-background relative communication-content" data-tour="communication">
@@ -1026,6 +1047,7 @@ function SMSMessagingPageContent() {
                     const isOutbound = message.direction === 'outbound'
                     const isAutomated = message.metadata?.automated
                     const isDraft = message.status === 'draft'
+                    const isFailed = message.status === 'failed'
                     const isEditing = editingDraftId === message.id
 
                     return (
@@ -1041,6 +1063,8 @@ function SMSMessagingPageContent() {
                             "max-w-[70%] rounded-2xl px-4 py-2 shadow-sm",
                             isDraft
                               ? "bg-yellow-100 dark:bg-yellow-900/30 text-gray-900 dark:text-gray-100 border-2 border-yellow-400 dark:border-yellow-600"
+                              : isFailed
+                              ? "bg-red-100 dark:bg-red-900/30 text-gray-900 dark:text-gray-100 border-2 border-red-400 dark:border-red-600"
                               : isOutbound
                               ? "bg-blue-600 text-white"
                               : "bg-card text-card-foreground border border-border"
@@ -1050,6 +1074,27 @@ function SMSMessagingPageContent() {
                             <div className="text-xs font-semibold mb-2 text-yellow-800 dark:text-yellow-400 flex items-center gap-1">
                               <span className="inline-block w-2 h-2 bg-yellow-500 dark:bg-yellow-400 rounded-full"></span>
                               DRAFT - Pending Approval
+                            </div>
+                          )}
+                          {isFailed && (
+                            <div className="mb-2">
+                              <div className="text-xs font-semibold text-red-800 dark:text-red-400 flex items-center gap-1">
+                                <AlertCircle className="h-3 w-3" />
+                                FAILED - {message.metadata?.error || 'Message could not be delivered'}
+                              </div>
+                              <Button
+                                size="sm"
+                                onClick={() => handleRetryFailed(message.id)}
+                                disabled={isDraftMutationPending}
+                                className="mt-2 bg-red-600 hover:bg-red-700 text-white text-xs"
+                              >
+                                {retryFailedMutation.isPending && retryFailedMutation.variables?.messageIds?.includes(message.id) ? (
+                                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                ) : (
+                                  <RefreshCw className="h-3 w-3 mr-1" />
+                                )}
+                                Retry
+                              </Button>
                             </div>
                           )}
                           {isAutomated && !isDraft && (
@@ -1134,11 +1179,11 @@ function SMSMessagingPageContent() {
                                 <div className="flex items-center justify-end mt-1 space-x-1">
                                   <span className={cn(
                                     "text-xs",
-                                    isOutbound ? "opacity-75" : "text-gray-500"
+                                    isFailed ? "text-red-700 dark:text-red-400" : isOutbound ? "opacity-75" : "text-gray-500"
                                   )}>
-                                    {message.sentAt ? formatMessageTime(message.sentAt) : 'Pending'}
+                                    {isFailed ? 'Failed' : message.sentAt ? formatMessageTime(message.sentAt) : 'Pending'}
                                   </span>
-                                  {isOutbound && (
+                                  {isOutbound && !isFailed && (
                                     <CheckCheck className={cn(
                                       "h-3 w-3",
                                       message.status === 'delivered' ? "opacity-100" : "opacity-50"

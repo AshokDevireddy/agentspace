@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { jwtVerify } from 'jose'
 
-const SECRET = new TextEncoder().encode(process.env.SESSION_SECRET!)
+/**
+ * Next.js 16 proxy — cookie-based auth check only.
+ *
+ * No Supabase SDK. No jose. No network calls.
+ * Just reads the access_token cookie set by Django and redirects if missing.
+ */
 
-// Routes that don't require authentication
 const PUBLIC_ROUTES = [
   '/login',
   '/register',
@@ -13,28 +16,17 @@ const PUBLIC_ROUTES = [
   '/setup-account',
 ]
 
-// Auth callback routes (OAuth, email confirmation, etc.)
 const AUTH_ROUTES = ['/auth/callback', '/auth/confirm']
 
-// API routes that should be public
-const PUBLIC_API_PREFIXES = [
-  '/api/auth/login',
-  '/api/auth/register',
-  '/api/auth/forgot-password',
-  '/api/auth/reset-password',
-  '/api/auth/verify-invite',
-  '/api/auth/update-session', // Token refresh - validates existing session internally
-  '/api/auth/refresh-session', // Proactive token refresh - validates existing session internally
-  '/api/cron/',
-  '/api/webhooks/stripe',
-  '/api/favicon',
-]
-
-export async function proxy(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow public routes
+  // Allow public page routes
   if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {
+    // If user has a token and visits /login, redirect to dashboard
+    if (pathname === '/login' && request.cookies.has('access_token')) {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
     return NextResponse.next()
   }
 
@@ -43,14 +35,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Allow public API routes
-  if (PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
-    return NextResponse.next()
-  }
+  // Check access_token cookie (set by Django on login/refresh)
+  const hasToken = request.cookies.has('access_token')
 
-  // Check session cookie
-  const sessionCookie = request.cookies.get('session')?.value
-  if (!sessionCookie) {
+  if (!hasToken) {
     // For API routes, return 401
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -59,59 +47,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  try {
-    const { payload } = await jwtVerify(sessionCookie, SECRET)
-    const session = payload as { accessToken: string }
-
-    // Check if accessToken (Supabase JWT) is expired
-    // The outer session cookie (7 days) may be valid but the accessToken (~1 hour) may have expired
-    if (session.accessToken) {
-      const tokenParts = session.accessToken.split('.')
-      if (tokenParts.length === 3) {
-        try {
-          const tokenPayload = JSON.parse(atob(tokenParts[1]))
-          // Check if accessToken is expired (with 30 second buffer)
-          if (tokenPayload.exp && tokenPayload.exp * 1000 < Date.now() - 30000) {
-            // Token expired - redirect to login and clear session
-            if (pathname.startsWith('/api/')) {
-              const response = NextResponse.json({ error: 'Token expired' }, { status: 401 })
-              response.cookies.delete('session')
-              return response
-            }
-            const response = NextResponse.redirect(new URL('/login', request.url))
-            response.cookies.delete('session')
-            return response
-          }
-        } catch {
-          // Failed to parse token - continue with normal flow
-        }
-      }
-    }
-
-    return NextResponse.next()
-  } catch {
-    // Invalid/expired session - clear cookie and redirect
-    if (pathname.startsWith('/api/')) {
-      const response = NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      response.cookies.delete('session')
-      return response
-    }
-
-    const response = NextResponse.redirect(new URL('/login', request.url))
-    response.cookies.delete('session')
-    return response
-  }
+  return NextResponse.next()
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public files (images, etc.)
-     */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.jpg$|.*\\.svg$|.*\\.ico$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 }

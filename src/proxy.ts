@@ -37,8 +37,10 @@ export function proxy(request: NextRequest) {
 
   // Check access_token cookie (set by Django on login/refresh)
   const hasToken = request.cookies.has('access_token')
+  // Also accept Authorization header for BFF API calls (client may send token before cookie is available)
+  const hasAuthHeader = pathname.startsWith('/api/') && request.headers.has('authorization')
 
-  if (!hasToken) {
+  if (!hasToken && !hasAuthHeader) {
     // For API routes, return 401
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

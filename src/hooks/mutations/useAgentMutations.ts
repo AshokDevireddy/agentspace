@@ -6,6 +6,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { useApiMutation } from '../useMutations'
 import { apiClient } from '@/lib/api-client'
+import { getAccessToken } from '@/lib/auth/token-store'
 import { queryKeys } from '../queryKeys'
 import { useInvalidation } from '../useInvalidation'
 
@@ -54,7 +55,26 @@ export function useResendInvite(options?: {
     string // agentId
   >({
     mutationFn: async (agentId) => {
-      return apiClient.post<{ message: string }>('/api/agents/resend-invite/', { agentId })
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const token = getAccessToken()
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
+      const response = await fetch('/api/agents/resend-invite', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ agentId }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to resend invitation')
+      }
+
+      return data as { message: string }
     },
     onSuccess: (data, agentId) => {
       invalidateAgentRelated(agentId).catch(err => {

@@ -1,11 +1,12 @@
 /**
  * Agents Data Hook
  *
- * Uses apiClient for direct backend calls with JWT auth and case conversion.
+ * Calls BFF proxy routes (/api/agents, /api/agents/without-positions) which
+ * forward to Django and apply camelcaseKeys transformation on the response.
  */
 import { useQuery } from '@tanstack/react-query'
-import { apiClient } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
+import { getAccessToken } from '@/lib/auth/token-store'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
 
@@ -116,6 +117,37 @@ export interface PendingPositionsResponse {
 
 // ============ Helpers ============
 
+async function fetchBff<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const headers: Record<string, string> = {}
+  const token = getAccessToken()
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const response = await fetch(url, {
+    signal,
+    credentials: 'include',
+    headers,
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.error || errorData.message || `API error: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+function buildQueryString(params: Record<string, string | undefined>): string {
+  const searchParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) {
+      searchParams.set(key, value)
+    }
+  }
+  return searchParams.toString()
+}
+
 function buildAgentFilterParams(filters: AgentsFilters): Record<string, string | undefined> {
   const params: Record<string, string | undefined> = {}
 
@@ -160,7 +192,7 @@ export function useAgentsList(
 ) {
   return useQuery<AgentsListResponse, Error>({
     queryKey: queryKeys.agentsList(page, view, filters),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params: Record<string, string | undefined> = {
         ...buildAgentFilterParams(filters),
       }
@@ -171,7 +203,8 @@ export function useAgentsList(
         params.limit = '20'
       }
 
-      return apiClient.get<AgentsListResponse>('/api/agents/', { params })
+      const qs = buildQueryString(params)
+      return fetchBff<AgentsListResponse>(`/api/agents${qs ? `?${qs}` : ''}`, signal)
     },
     enabled: (view === 'table' || view === 'tree') && (options?.enabled !== false),
     staleTime: STALE_TIMES.fast,
@@ -187,10 +220,8 @@ export function useAgentDownlines(
 ) {
   return useQuery<AgentDownlinesResponse, Error>({
     queryKey: queryKeys.agentDownlines(agentId || ''),
-    queryFn: async () => {
-      return apiClient.get<AgentDownlinesResponse>('/api/agents/downlines/', {
-        params: { agentId: agentId! },
-      })
+    queryFn: async ({ signal }) => {
+      return fetchBff<AgentDownlinesResponse>(`/api/agents/downlines?agentId=${agentId!}`, signal)
     },
     enabled: !!agentId && (options?.enabled !== false),
     staleTime: STALE_TIMES.standard,
@@ -202,10 +233,8 @@ export function useAgentDownlines(
 export function useAgentsWithoutPositions(options?: { enabled?: boolean }) {
   return useQuery<PendingPositionsResponse, Error>({
     queryKey: queryKeys.agentsPendingPositions(),
-    queryFn: async () => {
-      return apiClient.get<PendingPositionsResponse>('/api/agents/without-positions/', {
-        params: { all: 'true' },
-      })
+    queryFn: async ({ signal }) => {
+      return fetchBff<PendingPositionsResponse>('/api/agents/without-positions?all=true', signal)
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.fast,

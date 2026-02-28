@@ -17,6 +17,7 @@ import { useNotification } from "@/contexts/notification-context"
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useSaveAgent } from '@/hooks/mutations'
+import { getAccessToken } from '@/lib/auth/token-store'
 import { apiClient } from '@/lib/api-client'
 
 interface AgentDetailsModalProps {
@@ -148,12 +149,18 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
   // Fetch agent details
   const { data: agent, isLoading: loading, error: agentError, refetch: refetchAgent } = useQuery({
     queryKey: [...queryKeys.agentDetail(agentId), startMonth, endMonth],
-    queryFn: async () => {
-      const params: Record<string, string> = {}
-      if (startMonth) params.start_month = startMonth
-      if (endMonth) params.end_month = endMonth
+    queryFn: async ({ signal }) => {
+      const url = new URL(`/api/agents/${agentId}`, window.location.origin)
+      if (startMonth) url.searchParams.set('startMonth', startMonth)
+      if (endMonth) url.searchParams.set('endMonth', endMonth)
 
-      const data = await apiClient.get<any>(`/api/agents/${agentId}/`, { params })
+      const headers: Record<string, string> = {}
+      const token = getAccessToken()
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const response = await fetch(url.toString(), { signal, credentials: 'include', headers })
+      if (!response.ok) throw new Error('Failed to fetch agent details')
+      const data = await response.json()
       console.log('[AgentDetailsModal] Raw API response:', data)
       // Convert name format from "Last, First" to "First Last" if needed
       // Also normalize status to lowercase for consistency
@@ -179,10 +186,14 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
   // Fetch downlines
   const { data: downlines = [], isLoading: loadingDownlines } = useQuery({
     queryKey: queryKeys.agentDownlines(agentId),
-    queryFn: async () => {
-      const data = await apiClient.get<{ downlines: any[] }>('/api/agents/downlines/', {
-        params: { agent_id: agentId }
-      })
+    queryFn: async ({ signal }) => {
+      const headers: Record<string, string> = {}
+      const token = getAccessToken()
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const response = await fetch(`/api/agents/downlines?agentId=${agentId}`, { signal, credentials: 'include', headers })
+      if (!response.ok) throw new Error('Failed to fetch downlines')
+      const data = await response.json()
       return data.downlines || []
     },
     enabled: open && !!agentId,

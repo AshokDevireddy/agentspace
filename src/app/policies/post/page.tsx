@@ -1052,6 +1052,24 @@ export default function PostDeal() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-foreground">
+                      Submitted Date
+                    </label>
+                    <Input
+                      type="date"
+                      value={formData.submittedDate}
+                      onChange={(e) => handleInputChange("submittedDate", e.target.value)}
+                      className="h-12"
+                      max={today}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Defaults to today. Change this to backdate a previously sold deal.
+                    </p>
+                  </div>
+                </div>
+
                 {/* SSN Benefit */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
@@ -1253,9 +1271,7 @@ export default function PostDeal() {
                       An invitation will be sent to this email for client portal access
                     </p>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
                       Client Phone <span className="text-destructive">*</span>
@@ -1283,24 +1299,6 @@ export default function PostDeal() {
                       onChange={(e) => handleInputChange("clientDateOfBirth", e.target.value)}
                       className="h-12"
                     />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-foreground">
-                      Submitted Date
-                    </label>
-                    <Input
-                      type="date"
-                      value={formData.submittedDate}
-                      onChange={(e) => handleInputChange("submittedDate", e.target.value)}
-                      max={today}
-                      className="h-12"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Defaults to today. Change if the deal was submitted on a different date.
-                    </p>
                   </div>
                 </div>
 
@@ -1349,8 +1347,8 @@ export default function PostDeal() {
                       </h3>
                       <p className="text-sm text-muted-foreground">
                         {beneficiariesRequired
-                          ? "Add at least one beneficiary with name and relationship."
-                          : "Add one or more beneficiaries for this policy. Leave blank if not applicable."}
+                          ? "Add at least one beneficiary for this policy. Both name and relationship are required."
+                          : "Add beneficiaries for this policy (optional). If added, both name and relationship are required."}
                       </p>
                     </div>
                     <Button
@@ -1364,7 +1362,13 @@ export default function PostDeal() {
                     </Button>
                   </div>
 
-                  {beneficiaries.length === 0 && (
+                  {beneficiaries.length === 0 && beneficiariesRequired && (
+                    <div className="text-sm text-muted-foreground border border-destructive/50 rounded-lg p-4 bg-destructive/5">
+                      <span className="text-destructive font-medium">Required:</span> Please add at least one beneficiary using the button above.
+                    </div>
+                  )}
+
+                  {beneficiaries.length === 0 && !beneficiariesRequired && (
                     <div className="text-sm text-muted-foreground border border-border rounded-lg p-4 bg-card/40">
                       No beneficiaries added yet.
                     </div>
@@ -1390,7 +1394,9 @@ export default function PostDeal() {
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <label className="text-sm text-foreground font-medium">Full Name</label>
+                            <label className="text-sm text-foreground font-medium">
+                              Full Name {beneficiariesRequired && <span className="text-destructive">*</span>}
+                            </label>
                             <Input
                               type="text"
                               value={beneficiary.name}
@@ -1400,7 +1406,9 @@ export default function PostDeal() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-sm text-foreground font-medium">Relationship</label>
+                            <label className="text-sm text-foreground font-medium">
+                              Relationship {beneficiariesRequired && <span className="text-destructive">*</span>}
+                            </label>
                             <Input
                               type="text"
                               value={beneficiary.relationship}

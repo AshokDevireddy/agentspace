@@ -107,14 +107,15 @@ export function useScoreboardData(
   userId: string | undefined,
   startDate: string,
   endDate: string,
-  options?: { enabled?: boolean; staleTime?: number }
+  options?: { enabled?: boolean; staleTime?: number; scope?: 'agency' | 'team' }
 ) {
+  const scope = options?.scope
   return useQuery<ScoreboardData, Error>({
-    queryKey: queryKeys.scoreboard(userId || '', startDate, endDate),
+    queryKey: queryKeys.scoreboard(userId || '', startDate, endDate, scope),
     queryFn: async () => {
-      return apiClient.get<ScoreboardData>('/api/dashboard/scoreboard/', {
-        params: { start_date: startDate, end_date: endDate },
-      })
+      const params: Record<string, string> = { start_date: startDate, end_date: endDate }
+      if (scope) params.scope = scope
+      return apiClient.get<ScoreboardData>('/api/dashboard/scoreboard/', { params })
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,

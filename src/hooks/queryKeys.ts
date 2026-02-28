@@ -89,8 +89,10 @@ export const queryKeys = {
   clientDeals: (userId: string) => ['client', 'deals', userId] as const,
 
   // Scoreboard
-  scoreboard: (userId: string, startDate: string, endDate: string, scope?: string) =>
-    ['scoreboard', userId, startDate, endDate, scope] as const,
+  scoreboard: (userId: string, startDate: string, endDate: string, scope?: string, dateMode?: string) =>
+    ['scoreboard', userId, startDate, endDate, scope, dateMode] as const,
+  scoreboardLapsed: (userId: string, startDate: string, endDate: string, scope?: string, submitted?: boolean, dateMode?: string, assumedMonthsTillLapse?: number) =>
+    ['scoreboard', 'lapsed', userId, startDate, endDate, scope, submitted, dateMode, assumedMonthsTillLapse] as const,
   scoreboardBillingCycle: (userId: string, startDate: string, endDate: string, scope?: string, dateMode?: string, assumedMonthsTillLapse?: number) =>
     ['scoreboard', 'billing-cycle', userId, startDate, endDate, scope, dateMode, assumedMonthsTillLapse] as const,
 
@@ -98,6 +100,10 @@ export const queryKeys = {
   analytics: ['analytics'] as const,
   analyticsData: (filters: Record<string, unknown>) =>
     ['analytics', 'data', stableFilterKey(filters)] as const,
+
+  // Production
+  production: (userId: string, agentIds: string, startDate: string, endDate: string, dateMode?: string) =>
+    ['production', userId, agentIds, startDate, endDate, dateMode] as const,
 
   // Downline Production
   downlineProduction: (agentId: string, timeWindow: string) =>

@@ -1,3 +1,6 @@
+// Pages that do not require authentication
+export const AUTH_PATHS = ['/login', '/register', '/setup-account', '/forgot-password', '/reset-password', '/auth/confirm', '/unauthorized'] as const
+
 // Single request timeout - used for individual auth operations
 export const AUTH_TIMEOUT_MS = 15000 // Increased from 5000 to handle Vercel cold starts (2-8s)
 export const REDIRECT_DELAY_MS = 2000

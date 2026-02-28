@@ -53,11 +53,6 @@ interface Position {
   isActive: boolean;
 }
 
-interface ProfileApiResponse {
-  success: boolean;
-  data: ProfileData;
-}
-
 // Helper function to format date as "Month DD, YYYY"
 const formatRenewalDate = (dateString: string | null | undefined): string => {
   if (!dateString) return 'Not available';
@@ -84,20 +79,18 @@ export default function ProfilePage() {
   // Fetch user profile data using TanStack Query
   // Wait for auth to be ready before fetching to prevent race conditions
   const {
-    data: profileResponse,
+    data: profileData,
     isLoading: profileLoading,
     error: profileError
-  } = useApiFetch<ProfileApiResponse>(
+  } = useApiFetch<ProfileData>(
     queryKeys.userProfile(user?.id),
-    `/api/user/profile?user_id=${user?.id}`,
+    '/api/user/profile/',
     {
       enabled: !authLoading && !!user,
       staleTime: 5 * 60 * 1000, // 5 minutes - profile rarely changes
       placeholderData: (previousData) => previousData, // Stale-while-revalidate
     }
   )
-
-  const profileData = profileResponse?.data
 
   // Update selectedPositionId when profileData changes
   React.useEffect(() => {

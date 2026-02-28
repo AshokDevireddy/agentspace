@@ -12,7 +12,7 @@ import type { UserData as OnboardingUserData } from "@/components/onboarding/typ
 import { useTour } from "@/contexts/onboarding-tour-context"
 import type { UserProfile, CarrierActive, PieChartEntry, LeaderboardProducer, DashboardData, DealsSummary } from "@/types"
 import { useApiFetch } from "@/hooks/useApiFetch"
-import { useDashboardSummary, useScoreboardData, useProductionData } from "@/hooks/useDashboardData"
+import { useDashboardSummary, useScoreboardLapsedData } from "@/hooks/useDashboardData"
 import { useCompleteOnboarding } from "@/hooks/mutations"
 import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
@@ -22,7 +22,6 @@ import Link from "next/link"
 import { useWeekDateRange } from "@/hooks/useClientDate"
 import { useLocalStorage } from "@/hooks/useLocalStorage"
 import { useHydrated } from "@/hooks/useHydrated"
-import { getYTDDateRange, getMTDDateRange } from "@/lib/date-utils"
 import { PIE_CHART_COLORS, PIE_CHART_GROUP_THRESHOLD } from "@/lib/chart-colors"
 
 export default function Home() {
@@ -32,6 +31,7 @@ export default function Home() {
   const [hasStartedTour, setHasStartedTour] = useState(false)
   // SSR-safe localStorage hook - returns 'downlines' on server, synced value on client
   const [viewMode, setViewMode] = useLocalStorage<'just_me' | 'downlines'>('dashboard_view_mode', 'downlines')
+  const [dateMode, setDateMode] = useLocalStorage<'submission_date' | 'effective_date'>('dashboard_date_mode', 'submission_date')
   const [topProducersPeriod, setTopProducersPeriod] = useState<'ytd' | 'mtd'>('ytd')
   const isHydrated = useHydrated()
 
@@ -51,20 +51,18 @@ export default function Home() {
 
   // Derive scope early so it can be used in query options below.
   // Non-admin agents must see only their team's data, not the full agency.
-  // Defaults to 'team' (safe default) until profileData resolves.
+  // Defaults to 'downline' (safe default) until profileData resolves.
   const isAdmin = (profileData?.isAdmin) || false
-  const scoreboardScope: 'agency' | 'team' = isAdmin ? 'agency' : 'team'
+  const scoreboardScope: 'agency' | 'downline' = isAdmin ? 'agency' : 'downline'
 
-  const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useScoreboardData(
+  const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useScoreboardLapsedData(
     user?.id,
     weekRange.startDate,
     weekRange.endDate,
-    {
-      // Gate on profileData so scoreboardScope is derived from real role, not default
-      enabled: !!user?.id && isHydrated && !!profileData,
-      staleTime: 60 * 1000, // 1 minute - scoreboard data is more static
-      scope: scoreboardScope,
-    }
+    scoreboardScope,
+    { enabled: !!user?.id && isHydrated && !!profileData },
+    true,
+    dateMode,
   )
 
   const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching, error: dashboardError } = useDashboardSummary(
@@ -75,69 +73,75 @@ export default function Home() {
   )
 
   // Calculate YTD/MTD date ranges for production and top producers
+  // YTD end = Jan 1 of next year (matches main branch) to include future effective dates
   const productionDateRanges = useMemo(() => {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+    const todayStr = `${year}-${month}-${day}`
     return {
-      ytd: getYTDDateRange(),
-      mtd: getMTDDateRange()
+      ytd: { start: `${year}-01-01`, end: `${year + 1}-01-01` },
+      mtd: { start: `${year}-${month}-01`, end: todayStr }
     }
   }, [])
 
   // Top producers query with YTD/MTD period selection
   const topProducersRange = topProducersPeriod === 'ytd' ? productionDateRanges.ytd : productionDateRanges.mtd
 
-  const { data: topProducersResult, isLoading: topProducersLoading } = useScoreboardData(
+  const { data: topProducersResult, isLoading: topProducersLoading } = useScoreboardLapsedData(
     user?.id,
     topProducersRange.start,
     topProducersRange.end,
-    {
-      enabled: !!user?.id && !!profileData,
-      staleTime: 60 * 1000,
-      scope: scoreboardScope,
-    }
+    scoreboardScope,
+    { enabled: !!user?.id && !!profileData },
+    true,
+    dateMode,
   )
 
-  // YTD production query for ProductionProgressCard
-  const { data: ytdProductionResult, isLoading: ytdProductionLoading } = useProductionData(
+  // YTD production — same scoreboard endpoint as weekly/top producers (matches main branch)
+  const { data: ytdScoreboardResult, isLoading: ytdProductionLoading } = useScoreboardLapsedData(
     user?.id,
-    user?.id ? [user.id] : [],
     productionDateRanges.ytd.start,
     productionDateRanges.ytd.end,
-    {
-      enabled: !!user?.id && !!profileData,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    }
+    scoreboardScope,
+    { enabled: !!user?.id && !!profileData },
+    true,
+    dateMode,
   )
 
-  // MTD production query for ProductionProgressCard
-  const { data: mtdProductionResult, isLoading: mtdProductionLoading } = useProductionData(
+  // MTD production — same scoreboard endpoint
+  const { data: mtdScoreboardResult, isLoading: mtdProductionLoading } = useScoreboardLapsedData(
     user?.id,
-    user?.id ? [user.id] : [],
     productionDateRanges.mtd.start,
     productionDateRanges.mtd.end,
-    {
-      enabled: !!user?.id && !!profileData,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    }
+    scoreboardScope,
+    { enabled: !!user?.id && !!profileData },
+    true,
+    dateMode,
   )
 
-  // Extract production values for ProductionProgressCard
+  // Extract production from scoreboard leaderboard (matches main branch):
+  // individual = current user's entry total, hierarchy = all agents' totalProduction
   const ytdProduction = useMemo(() => {
-    const data = ytdProductionResult?.[0]
+    if (!ytdScoreboardResult?.leaderboard) return { individual: 0, hierarchy: 0 }
+    const myEntry = ytdScoreboardResult.leaderboard.find((a: LeaderboardProducer) => a.agentId === user?.id)
     return {
-      individual: data?.individualProduction || 0,
-      hierarchy: data?.hierarchyProduction || 0
+      individual: myEntry?.total || 0,
+      hierarchy: ytdScoreboardResult.stats?.totalProduction || 0
     }
-  }, [ytdProductionResult])
+  }, [ytdScoreboardResult, user?.id])
 
   const mtdProduction = useMemo(() => {
-    const data = mtdProductionResult?.[0]
+    if (!mtdScoreboardResult?.leaderboard) return { individual: 0, hierarchy: 0 }
+    const myEntry = mtdScoreboardResult.leaderboard.find((a: LeaderboardProducer) => a.agentId === user?.id)
     return {
-      individual: data?.individualProduction || 0,
-      hierarchy: data?.hierarchyProduction || 0
+      individual: myEntry?.total || 0,
+      hierarchy: mtdScoreboardResult.stats?.totalProduction || 0
     }
-  }, [mtdProductionResult])
+  }, [mtdScoreboardResult, user?.id])
 
-  const isProductionLoading = ytdProductionLoading || mtdProductionLoading
+  const isProductionLoading = authLoading || profileLoading || ytdProductionLoading || mtdProductionLoading
 
   // Combined error state for main data
   const queryError = dashboardError || scoreboardError || profileError
@@ -331,7 +335,7 @@ export default function Home() {
           error={queryError}
           onRetry={() => {
             queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(user?.id || '') })
-            queryClient.invalidateQueries({ queryKey: queryKeys.scoreboard(user?.id || '', weekRange.startDate, weekRange.endDate) })
+            queryClient.invalidateQueries({ queryKey: queryKeys.scoreboardLapsed(user?.id || '', weekRange.startDate, weekRange.endDate, scoreboardScope, true, dateMode) })
             queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(user?.id) })
           }}
           variant="inline"
@@ -367,6 +371,13 @@ export default function Home() {
               <div className="relative z-10 flex">
                 <button onClick={() => setViewMode('just_me')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${viewMode === 'just_me' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Just Me</button>
                 <button onClick={() => setViewMode('downlines')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${viewMode === 'downlines' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Downlines</button>
+              </div>
+            </div>
+            <div className="relative bg-muted/50 p-1 rounded-lg">
+              <div className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out" style={{ left: dateMode === 'submission_date' ? '4px' : 'calc(50%)', width: 'calc(50% - 4px)' }} />
+              <div className="relative z-10 flex">
+                <button onClick={() => setDateMode('submission_date')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[130px] text-center ${dateMode === 'submission_date' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Submitted Date</button>
+                <button onClick={() => setDateMode('effective_date')} className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[130px] text-center ${dateMode === 'effective_date' ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Effective Date</button>
               </div>
             </div>
           </div>
@@ -475,7 +486,7 @@ export default function Home() {
                       return ` • ${formatDate(startDate)} - ${formatDate(endDate)}`
                     })()}
                   </span>
-                  <span className="text-xs">Based on Submitted Policies</span>
+                  <span className="text-xs">Based on {dateMode === 'submission_date' ? 'Submitted' : 'Effective'} Date</span>
                 </div>
               )}
             </div>

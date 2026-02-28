@@ -25,7 +25,7 @@ export function proxy(request: NextRequest) {
   if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {
     // If user has a token and visits /login, redirect to dashboard
     if (pathname === '/login' && request.cookies.has('access_token')) {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+      return NextResponse.redirect(new URL('/', request.url))
     }
     return NextResponse.next()
   }

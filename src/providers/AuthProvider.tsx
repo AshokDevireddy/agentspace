@@ -1,8 +1,10 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
+import { initTokenFromCookie, setAccessToken, getAccessToken, clearAccessToken } from '@/lib/auth/token-store'
+import { getApiBaseUrl } from '@/lib/api-config'
 
 export type UserData = {
   id: string
@@ -37,138 +39,191 @@ const AuthContext = createContext<AuthContextType>({
 type AuthProviderProps = {
   children: React.ReactNode
   initialUser?: UserData | null
+  initialAccessToken?: string | null
 }
 
 export function AuthProvider({
   children,
-  initialUser = null
+  initialUser = null,
+  initialAccessToken = null,
 }: AuthProviderProps) {
   const [user, setUser] = useState<UserData | null>(initialUser)
   const [loading, setLoading] = useState(!initialUser)
   const [isHydrated, setIsHydrated] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
-  const router = useRouter()
+  const isRefreshingRef = useRef(false)
+  const tokenInitializedRef = useRef(false)
   const queryClient = useQueryClient()
 
-  // Mark as hydrated after first client-side render
+  // Initialize token synchronously BEFORE children render to prevent race conditions
+  // where queries fire before the token is available in the module store
+  if (!tokenInitializedRef.current) {
+    if (initialAccessToken) {
+      setAccessToken(initialAccessToken)
+    } else if (typeof window !== 'undefined') {
+      initTokenFromCookie()
+    }
+    tokenInitializedRef.current = true
+  }
+
+  // Mark hydration complete on mount
   useEffect(() => {
     setIsHydrated(true)
   }, [])
 
-  // Proactive token refresh - checks every minute and refreshes if needed
-  useEffect(() => {
-    if (!user) return // Only run when logged in
-
-    const checkAndRefreshToken = async () => {
-      try {
-        const res = await fetch('/api/auth/refresh-session', {
-          method: 'POST',
-          credentials: 'include',
-        })
-        const data = await res.json()
-
-        if (data.error) {
-          // Refresh failed - redirect to login
-          console.warn('[Auth] Token refresh failed:', data.error)
-          window.location.href = '/login'
-          return
-        }
-
-        if (data.refreshed) {
-          console.info('[Auth] Token refreshed successfully')
-        }
-      } catch (error) {
-        console.error('[Auth] Token refresh check failed:', error)
-      }
-    }
-
-    // Check immediately on mount
-    checkAndRefreshToken()
-
-    // Then check every minute
-    const interval = setInterval(checkAndRefreshToken, 60 * 1000)
-    return () => clearInterval(interval)
-  }, [user])
-
-  // Fetch user session from Next.js API route
+  // Fetch user data from Django /api/auth/session
   const refreshUser = useCallback(async () => {
     try {
-      const res = await fetch('/api/auth/session', { credentials: 'include' })
-      const data = await res.json()
-
+      const data = await apiClient.get<{
+        authenticated: boolean
+        user: {
+          id: string
+          email: string
+          agencyId: string
+          role: string
+          isAdmin: boolean
+          status: string
+          subscriptionTier: string
+        } | null
+      }>('/api/auth/session/')
       if (data.authenticated && data.user) {
         setUser({
           id: data.user.id,
-          authUserId: data.user.authUserId,
+          authUserId: '', // Session endpoint doesn't return this
           email: data.user.email,
-          role: data.user.role,
-          status: data.user.status,
-          themeMode: data.user.themeMode,
+          role: data.user.role as UserData['role'],
+          status: data.user.status as UserData['status'],
+          themeMode: null,
           isAdmin: data.user.isAdmin,
           agencyId: data.user.agencyId,
-          subscriptionTier: data.user.subscriptionTier || 'free',
+          subscriptionTier: (data.user.subscriptionTier || 'free') as UserData['subscriptionTier'],
         })
       } else {
         setUser(null)
+        clearAccessToken()
       }
     } catch {
       setUser(null)
+      clearAccessToken()
     }
   }, [])
 
   // Initialize session on mount if no initial user
   useEffect(() => {
     if (!initialUser && isHydrated) {
-      refreshUser().finally(() => setLoading(false))
+      if (getAccessToken()) {
+        refreshUser().finally(() => setLoading(false))
+      } else {
+        setLoading(false)
+      }
     } else if (initialUser) {
       setLoading(false)
     }
   }, [initialUser, isHydrated, refreshUser])
 
+  // Listen for auth:token-expired from QueryProvider and refresh via Django
+  useEffect(() => {
+    const handleTokenExpired = async () => {
+      if (isRefreshingRef.current) return
+      isRefreshingRef.current = true
+
+      try {
+        // Call Django refresh endpoint — refresh_token is sent via httpOnly cookie
+        const baseUrl = getApiBaseUrl()
+        const res = await fetch(`${baseUrl}/api/auth/refresh/`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          if (data.access_token) {
+            setAccessToken(data.access_token)
+            window.dispatchEvent(new Event('auth:refresh-complete'))
+            return
+          }
+        }
+
+        // Refresh failed → redirect to login
+        clearAccessToken()
+        setUser(null)
+        window.location.href = '/login'
+      } catch {
+        clearAccessToken()
+        setUser(null)
+        window.location.href = '/login'
+      } finally {
+        isRefreshingRef.current = false
+      }
+    }
+
+    window.addEventListener('auth:token-expired', handleTokenExpired)
+    return () => window.removeEventListener('auth:token-expired', handleTokenExpired)
+  }, [])
+
+  // Sign in via Django — Django sets cookies + returns tokens
   const signIn = useCallback(async (email: string, password: string) => {
-    const res = await fetch('/api/auth/login', {
+    const baseUrl = getApiBaseUrl()
+    const res = await fetch(`${baseUrl}/api/auth/login/`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
-      credentials: 'include',
     })
 
     if (!res.ok) {
-      const error = await res.json()
-      throw new Error(error.message || 'Login failed')
+      const error = await res.json().catch(() => ({ message: 'Login failed' }))
+      throw new Error(error.message || error.detail || 'Login failed')
     }
 
     const data = await res.json()
 
+    // Django set cookies in the response. Store token in memory.
+    if (data.access_token) {
+      setAccessToken(data.access_token)
+    }
+
+    const userData = data.user
+    if (!userData) {
+      throw new Error('No user data in login response')
+    }
+
     // Validate user status
-    if (data.user.status !== 'active' && data.user.status !== 'onboarding') {
+    if (userData.status !== 'active' && userData.status !== 'onboarding') {
       throw new Error(
-        data.user.status === 'invited'
+        userData.status === 'invited'
           ? 'Please complete your account setup using the invitation link'
           : 'Your account has been deactivated'
       )
     }
 
-    setUser({
-      id: data.user.id,
-      authUserId: data.user.authUserId,
-      email: data.user.email,
-      role: data.user.role,
-      status: data.user.status,
+    const userObj: UserData = {
+      id: userData.id,
+      authUserId: '',
+      email: userData.email,
+      role: userData.role,
+      status: userData.status,
       themeMode: null,
-      isAdmin: data.user.isAdmin,
-      agencyId: data.user.agencyId,
-      subscriptionTier: data.user.subscriptionTier || 'free',
-    })
+      isAdmin: userData.is_admin,
+      agencyId: userData.agency_id,
+      subscriptionTier: userData.subscription_tier || 'free',
+    }
 
-    return data
+    setUser(userObj)
+
+    return {
+      user: userObj,
+      agency: { whitelabelDomain: userData.whitelabel_domain || null },
+    }
   }, [])
 
+  // Sign out — Django revokes + clears cookies
   const signOut = useCallback(async () => {
-    // Show loading overlay to hide UI during logout
     setIsLoggingOut(true)
 
-    // Clear TanStack Query cache (prevents stale data on re-login)
+    // Clear TanStack Query cache
     queryClient.clear()
 
     // Clear localStorage filters
@@ -181,15 +236,17 @@ export function AuthProvider({
       keysToRemove.forEach(key => localStorage.removeItem(key))
     }
 
-    // Start server signOut (fire and forget - don't await to avoid delay)
-    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(err => {
+    // Call Django logout (fire-and-forget) — Django clears cookies
+    try {
+      await apiClient.post('/api/auth/logout/')
+    } catch (err) {
       console.error('[AuthProvider] Server signOut failed:', err)
-    })
+    }
+
+    clearAccessToken()
 
     // Small delay to ensure overlay renders, then redirect
     await new Promise(resolve => setTimeout(resolve, 50))
-
-    // Hard redirect to login page
     window.location.href = '/login'
   }, [queryClient])
 

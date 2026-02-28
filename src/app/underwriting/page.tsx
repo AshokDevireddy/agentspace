@@ -15,6 +15,7 @@ import {
 import { Loader2, ClipboardCheck, Trophy, TrendingUp, DollarSign, Award, ChevronDown, ChevronUp, RotateCcw, AlertTriangle } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useMutation } from "@tanstack/react-query"
+import { apiClient } from '@/lib/api-client'
 
 interface UnderwritingFormData {
   // Basic fields
@@ -162,19 +163,8 @@ export default function UnderwritingPage() {
   // Mutation for underwriting quote
   const underwritingMutation = useMutation({
     mutationFn: async (data: UnderwritingFormData) => {
-      const response = await fetch('/api/underwriting/quote', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      })
-
-      const responseData = await response.json()
-
-      if (!response.ok) {
-        throw new Error(responseData.error || 'Failed to get underwriting quote')
-      }
+      // skipCaseConversion: Compulife response has mixed-case keys (Compulife_premiumM, etc.)
+      const responseData = await apiClient.post<any>('/api/underwriting/quote/', data, { skipCaseConversion: true })
 
       // Sort results by monthly premium (lowest to highest)
       if (responseData.data?.Compulife_ComparisonResults?.Compulife_Results) {

@@ -171,7 +171,7 @@ export default function ExpectedPayoutsPage() {
   const { data: userData, isPending: userLoading } = useQuery({
     queryKey: queryKeys.userProfile(),
     queryFn: async () => {
-      const data = await apiClient.get<UserData>('/api/users/me/')
+      const data = await apiClient.get<UserData>('/api/user/profile/')
       return {
         id: data.id,
         role: data.role,
@@ -210,11 +210,13 @@ export default function ExpectedPayoutsPage() {
       if (!userData) return []
 
       try {
-        const data = await apiClient.get<{ agents?: Array<{ id: string; firstName?: string; lastName?: string; name?: string }> }>('/api/agents/downlines/')
-        return ((data.agents || (data as any)) || []).map((agent: { id: string; firstName?: string; lastName?: string; name?: string }) => ({
+        const data = await apiClient.get<{ downlines?: Array<{ id: string; name?: string }> }>('/api/agents/downlines/', {
+          params: { agentId: userData.id }
+        })
+        return (data.downlines || []).map((agent) => ({
           id: agent.id,
-          firstName: agent.firstName || agent.name?.split(' ')[0] || '',
-          lastName: agent.lastName || agent.name?.split(' ').slice(1).join(' ') || ''
+          firstName: agent.name?.split(' ')[0] || '',
+          lastName: agent.name?.split(' ').slice(1).join(' ') || ''
         })) as AgentResponse[]
       } catch {
         console.error('Error fetching agents')

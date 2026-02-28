@@ -154,8 +154,8 @@ export default function Home() {
     if (!topProducersResult?.entries) return []
     return topProducersResult.entries.slice(0, 5).map((producer: LeaderboardProducer) => ({
       rank: producer.rank,
-      name: producer.agentName,
-      amount: `$${parseFloat(producer.production).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      name: producer.name,
+      amount: `$${producer.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     }))
   }, [topProducersResult])
 

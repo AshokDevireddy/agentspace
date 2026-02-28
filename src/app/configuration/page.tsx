@@ -587,7 +587,7 @@ export default function ConfigurationPage() {
   })
 
   // Fetch carrier names (only when carrier-logins tab is active)
-  const { data: carrierNamesData = [], isLoading: loadingCarrierNames } = useApiFetch<string[]>(
+  const { data: carrierNamesRawData = [], isLoading: loadingCarrierNames } = useApiFetch<Array<{id: string, name: string}>>(
     queryKeys.configurationCarrierNames(),
     '/api/carriers/names',
     {
@@ -595,11 +595,12 @@ export default function ConfigurationPage() {
       staleTime: 10 * 60 * 1000, // 10 minutes
     }
   )
+  const carrierNamesData = carrierNamesRawData.map((c: {id: string, name: string}) => c.name)
 
   // Fetch existing policy files from ingest jobs (only when policy-reports tab is active)
   const { data: policyFilesData, isLoading: checkingExistingFiles, refetch: refetchPolicyFiles } = useApiFetch<{files: any[], jobs?: any[]}>(
     queryKeys.configurationPolicyFiles(),
-    '/api/upload-policy-reports/jobs',
+    '/api/ingest/jobs/?days=30&limit=50',
     {
       enabled: activeTab === 'policy-reports',
       staleTime: 2 * 60 * 1000, // 2 minutes
@@ -1994,48 +1995,40 @@ export default function ConfigurationPage() {
         return
       }
 
-      const jobResp = await fetch('/api/upload-policy-reports/create-job', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          agencyId,
-          expectedFiles,
-          clientJobId,
-        }),
+      const jobJson = await apiClient.post<{ job: { jobId: string } }>('/api/ingest/jobs/', {
+        expectedFiles,
+        clientJobId,
       })
-      const jobJson = await jobResp.json().catch(() => null)
-      if (!jobResp.ok || !jobJson?.job?.jobId) {
-        console.error('Failed to create ingest job', { status: jobResp.status, body: jobJson })
+      if (!jobJson?.job?.jobId) {
+        console.error('Failed to create ingest job', { body: jobJson })
         showError('Could not start ingest job. Please try again.')
         return
       }
       const jobId = jobJson.job.jobId as string
       console.debug('Created ingest job', { jobId, expectedFiles })
 
-      // 1) Request presigned URLs for all files in a single call (new ingestion flow)
-      const signResp = await fetch('/api/upload-policy-reports/sign', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+      // 1) Request presigned URLs for all files in a single call (Django direct)
+      const signJson = await apiClient.post<{ files: Array<{ fileId: string; fileName: string; presignedUrl: string }> }>(
+        '/api/ingest/presign/',
+        {
           jobId,
           files: policyReportFiles.map(({ file }) => ({
             fileName: file.name,
             contentType: file.type || 'application/octet-stream',
             size: file.size,
           })),
-        }),
-      })
-      const signJson = await signResp.json().catch(() => null)
-      if (!signResp.ok || !Array.isArray(signJson?.files)) {
-        console.error('Presign failed', { status: signResp.status, body: signJson })
+        },
+        { skipCaseConversion: true }
+      )
+      if (!Array.isArray(signJson?.files)) {
+        console.error('Presign failed', { body: signJson })
         showError('Could not generate upload URLs. Please try again.')
         return
       }
 
       // 2) Upload each file via its presigned URL (no chunking; URLs expire in 60s)
       const results = await Promise.allSettled(
-        (signJson.files as Array<{ fileId: string; fileName: string; presignedUrl: string }>).
-          map(async (f) => {
+        signJson.files.map(async (f) => {
             const match = policyReportFiles.find(pf => pf.file.name === f.fileName)
             if (!match) throw new Error(`Missing file for ${f.fileName}`)
             const res = await putToSignedUrl(f.presignedUrl, match.file)

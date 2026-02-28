@@ -33,26 +33,19 @@ interface DashboardSummary {
   }
 }
 
-interface LeaderboardEntry {
+interface ScoreboardEntry {
   rank: number
   agentId: string
-  name: string
-  total: number
-  dailyBreakdown: Record<string, number>
-  dealCount: number
+  agentName: string
+  production: string
+  dealsCount: number
+  position?: string | null
 }
 
 interface ScoreboardData {
-  leaderboard: LeaderboardEntry[]
-  stats: {
-    totalProduction: number
-    totalDeals: number
-    activeAgents: number
-  }
-  dateRange: {
-    startDate: string
-    endDate: string
-  }
+  entries: ScoreboardEntry[]
+  userRank: number | null
+  userProduction: string | null
 }
 
 interface BillingCycleAgentScore {

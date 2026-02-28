@@ -11,6 +11,7 @@ import { useInvalidation } from '../useInvalidation'
 
 // Types
 interface CreateJobInput {
+  agencyId: string
   expectedFiles: number
   clientJobId: string
 }

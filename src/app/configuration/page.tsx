@@ -46,6 +46,16 @@ import {
 } from '@/hooks/mutations'
 import { useAgencySettings, type AgencySettings } from '@/hooks/useAgencySettings'
 
+const SMS_TYPE_OVERRIDE_FIELDS: Record<string, keyof AgencySettings> = {
+  welcome: 'smsWelcomeRequireApproval',
+  birthday: 'smsBirthdayRequireApproval',
+  lapse: 'smsLapseRequireApproval',
+  billing: 'smsBillingRequireApproval',
+  quarterly: 'smsQuarterlyRequireApproval',
+  policy_packet: 'smsPolicyPacketRequireApproval',
+  holiday: 'smsHolidayRequireApproval',
+}
+
 // Types for carrier data
 interface Carrier {
   id: string
@@ -385,6 +395,10 @@ export default function ConfigurationPage() {
 
   // SMS Automation state
   const [automationAgentSaving, setAutomationAgentSaving] = useState<string | null>(null)
+  const [savingAutomation, setSavingAutomation] = useState(false)
+  const [smsTypeOverrides, setSmsTypeOverrides] = useState<Record<string, boolean>>(
+    Object.fromEntries(Object.keys(SMS_TYPE_OVERRIDE_FIELDS).map(k => [k, false]))
+  )
 
   // Fetch agents for automation tab
   const { data: automationAgentsData, isLoading: automationAgentsLoading } = useQuery({
@@ -406,82 +420,6 @@ export default function ConfigurationPage() {
 
   const [carrierPayoutModes, setCarrierPayoutModes] = useState<Record<string, 'submission_date' | 'policy_effective_date'>>({})
   const [savingPayoutSettings, setSavingPayoutSettings] = useState(false)
-
-  // Fetch existing carrier payout settings from Django backend
-  const { data: payoutSettingsData, isLoading: payoutSettingsLoading } = useQuery({
-    queryKey: queryKeys.carrierPayoutSettings(agencyData?.id || ''),
-    queryFn: async () => {
-      return apiClient.get<Array<{ carrierId: string; dateMode: 'submission_date' | 'policy_effective_date' }>>(
-        `/api/agencies/${agencyData!.id}/payout-settings/`
-      )
-    },
-    enabled: activeTab === 'payout-settings' && !!agencyData?.id,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  // Initialize carrier payout modes from defaults + saved settings
-  useEffect(() => {
-    if (!carriersData.length) return
-
-    // Paid on draft → policy_effective_date (carrier pays when first premium collected)
-    // Paid on approval/issue → submission_date (carrier pays when app submitted/approved)
-    const PAID_ON_DRAFT_CARRIERS = [
-      'Aetna', 'Aflac', 'AIG', 'Americo', 'Assurity', 'Baltimore Life',
-      'Elco Mutual', 'F&G', 'Gerber', 'GTL', 'Fidelity Life', 'KC Life',
-      'Lafayette', 'National Life Group', 'North American', 'Trinity',
-      'Illinois Mutual', 'Sentinel Security'
-    ]
-    const PAID_ON_APPROVAL_CARRIERS = [
-      'American Amicable', 'Royal Neighbors', 'TransAmerica', 'Forestors',
-      'Mutual of Omaha'
-    ]
-
-    const modes: Record<string, 'submission_date' | 'policy_effective_date'> = {}
-
-    // Set defaults based on carrier name matching
-    carriersData.forEach((carrier: Carrier) => {
-      const name = carrier.displayName || carrier.name
-      if (PAID_ON_DRAFT_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
-        modes[carrier.id] = 'policy_effective_date'
-      } else if (PAID_ON_APPROVAL_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
-        modes[carrier.id] = 'submission_date'
-      } else {
-        modes[carrier.id] = 'policy_effective_date' // default
-      }
-    })
-
-    // Override with saved settings from DB (apiClient converts snake_case → camelCase)
-    if (payoutSettingsData) {
-      payoutSettingsData.forEach((setting: { carrierId: string; dateMode: 'submission_date' | 'policy_effective_date' }) => {
-        modes[setting.carrierId] = setting.dateMode
-      })
-    }
-
-    setCarrierPayoutModes(modes)
-  }, [carriersData, payoutSettingsData])
-
-  const handleSavePayoutSettings = async () => {
-    if (!agencyData?.id) return
-    setSavingPayoutSettings(true)
-    try {
-      const rows = Object.entries(carrierPayoutModes).map(([carrierId, dateMode]) => ({
-        carrierId,
-        dateMode,
-      }))
-
-      await apiClient.post(`/api/agencies/${agencyData.id}/payout-settings/`, { settings: rows })
-
-      showSuccess('Payout settings saved successfully')
-      if (isMounted) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.carrierPayoutSettings(agencyData.id) })
-      }
-    } catch (err: unknown) {
-      console.error('Error saving payout settings:', err)
-      showError(err instanceof Error ? err.message : 'Failed to save payout settings')
-    } finally {
-      setSavingPayoutSettings(false)
-    }
-  }
 
   // Discord Settings state
   const [discordWebhookUrl, setDiscordWebhookUrl] = useState<string>("")
@@ -613,6 +551,82 @@ export default function ConfigurationPage() {
     enabled: !!user,
     staleTime: 10 * 60 * 1000, // 10 minutes
   })
+
+  // Fetch existing carrier payout settings from Django backend
+  const { data: payoutSettingsData, isLoading: payoutSettingsLoading } = useQuery({
+    queryKey: queryKeys.carrierPayoutSettings(agencyData?.id || ''),
+    queryFn: async () => {
+      return apiClient.get<Array<{ carrierId: string; dateMode: 'submission_date' | 'policy_effective_date' }>>(
+        `/api/agencies/${agencyData!.id}/payout-settings/`
+      )
+    },
+    enabled: activeTab === 'payout-settings' && !!agencyData?.id,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Initialize carrier payout modes from defaults + saved settings
+  useEffect(() => {
+    if (!carriersData.length) return
+
+    // Paid on draft → policy_effective_date (carrier pays when first premium collected)
+    // Paid on approval/issue → submission_date (carrier pays when app submitted/approved)
+    const PAID_ON_DRAFT_CARRIERS = [
+      'Aetna', 'Aflac', 'AIG', 'Americo', 'Assurity', 'Baltimore Life',
+      'Elco Mutual', 'F&G', 'Gerber', 'GTL', 'Fidelity Life', 'KC Life',
+      'Lafayette', 'National Life Group', 'North American', 'Trinity',
+      'Illinois Mutual', 'Sentinel Security'
+    ]
+    const PAID_ON_APPROVAL_CARRIERS = [
+      'American Amicable', 'Royal Neighbors', 'TransAmerica', 'Forestors',
+      'Mutual of Omaha'
+    ]
+
+    const modes: Record<string, 'submission_date' | 'policy_effective_date'> = {}
+
+    // Set defaults based on carrier name matching
+    carriersData.forEach((carrier: Carrier) => {
+      const name = carrier.displayName || carrier.name
+      if (PAID_ON_DRAFT_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
+        modes[carrier.id] = 'policy_effective_date'
+      } else if (PAID_ON_APPROVAL_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
+        modes[carrier.id] = 'submission_date'
+      } else {
+        modes[carrier.id] = 'policy_effective_date' // default
+      }
+    })
+
+    // Override with saved settings from DB (apiClient converts snake_case → camelCase)
+    if (payoutSettingsData) {
+      payoutSettingsData.forEach((setting: { carrierId: string; dateMode: 'submission_date' | 'policy_effective_date' }) => {
+        modes[setting.carrierId] = setting.dateMode
+      })
+    }
+
+    setCarrierPayoutModes(modes)
+  }, [carriersData, payoutSettingsData])
+
+  const handleSavePayoutSettings = async () => {
+    if (!agencyData?.id) return
+    setSavingPayoutSettings(true)
+    try {
+      const rows = Object.entries(carrierPayoutModes).map(([carrierId, dateMode]) => ({
+        carrierId,
+        dateMode,
+      }))
+
+      await apiClient.post(`/api/agencies/${agencyData.id}/payout-settings/`, { settings: rows })
+
+      showSuccess('Payout settings saved successfully')
+      if (isMounted) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.carrierPayoutSettings(agencyData.id) })
+      }
+    } catch (err: unknown) {
+      console.error('Error saving payout settings:', err)
+      showError(err instanceof Error ? err.message : 'Failed to save payout settings')
+    } finally {
+      setSavingPayoutSettings(false)
+    }
+  }
 
   // Fetch all products - only when user is authenticated
   const { data: allProductsData = [], isLoading: productsLoading, error: productsError } = useQuery({
@@ -769,6 +783,11 @@ export default function ConfigurationPage() {
       setLapseEmailBody(agencyData.lapseEmailBody || "")
       setLapseSubjectValue(agencyData.lapseEmailSubject || "Policy Lapse Alert: {{client_name}}")
       setLapseBodyValue(agencyData.lapseEmailBody || "")
+      setSmsTypeOverrides(
+        Object.fromEntries(
+          Object.entries(SMS_TYPE_OVERRIDE_FIELDS).map(([key, field]) => [key, (agencyData[field] as boolean) ?? false])
+        )
+      )
     }
   }, [agencyData])
 
@@ -822,6 +841,39 @@ export default function ConfigurationPage() {
       setUploadedFilesInfo(policyFilesData.files)
     }
   }, [policyFilesData])
+
+  // ============ SMS Automation Handlers ============
+
+  const handleAutoSendEnabledChange = async (enabled: boolean) => {
+    if (!agencyData?.id) return
+    setSavingAutomation(true)
+    try {
+      await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, { smsAutoSendEnabled: enabled })
+      queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+      showSuccess(`SMS auto-send ${enabled ? 'enabled' : 'disabled'}`)
+    } catch {
+      showError('Failed to update auto-send setting')
+    } finally {
+      setSavingAutomation(false)
+    }
+  }
+
+  const handleTypeOverrideChange = async (type: string, requireApproval: boolean) => {
+    if (!agencyData?.id) return
+    setSavingAutomation(true)
+    try {
+      await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, {
+        [SMS_TYPE_OVERRIDE_FIELDS[type]]: requireApproval,
+      })
+      setSmsTypeOverrides(prev => ({ ...prev, [type]: requireApproval }))
+      queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+      showSuccess('Setting updated')
+    } catch {
+      showError('Failed to update setting')
+    } finally {
+      setSavingAutomation(false)
+    }
+  }
 
   // ============ Original useEffects (keeping non-fetch logic) ============
 
@@ -3811,26 +3863,20 @@ export default function ConfigurationPage() {
                   </div>
                   <SmsAutomationSettings
                     smsAutoSendEnabled={agencyData?.smsAutoSendEnabled ?? true}
-                    onAutoSendEnabledChange={async (enabled) => {
-                      if (!agencyData?.id) return
-                      try {
-                        await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, { smsAutoSendEnabled: enabled })
-                        queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
-                        showSuccess(`SMS auto-send ${enabled ? 'enabled' : 'disabled'}`)
-                      } catch {
-                        showError('Failed to update auto-send setting')
-                      }
-                    }}
-                    typeOverrides={{}}
-                    onTypeOverrideChange={() => {}}
-                    saving={false}
+                    onAutoSendEnabledChange={handleAutoSendEnabledChange}
+                    typeOverrides={smsTypeOverrides}
+                    onTypeOverrideChange={handleTypeOverrideChange}
+                    saving={savingAutomation}
                     agents={automationAgents}
                     agentsLoading={automationAgentsLoading}
                     onAgentToggle={async (agentId, value) => {
                       setAutomationAgentSaving(agentId)
                       try {
-                        await apiClient.patch('/api/agents/auto-send/', { agentId: agentId, smsAutoSendEnabled: value })
-                        queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgentAutoSend() })
+                        await apiClient.patch('/api/agents/auto-send/', { agentId, smsAutoSendEnabled: value })
+                        queryClient.setQueryData<AgentAutoSendInfo[]>(
+                          queryKeys.configurationAgentAutoSend(),
+                          (old) => old?.map(a => a.id === agentId ? { ...a, smsAutoSendEnabled: value } : a) ?? []
+                        )
                       } catch {
                         showError('Failed to update agent auto-send setting')
                       } finally {

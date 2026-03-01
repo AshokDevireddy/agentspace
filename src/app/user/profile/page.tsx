@@ -8,7 +8,7 @@ import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";
 import { useNotification } from '@/contexts/notification-context'
 import { useTheme } from "next-themes"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
-import { Sun, Moon, Monitor, Check, Loader2, MessageSquare } from "lucide-react"
+import { Sun, Moon, Monitor, Check, Loader2, Phone, MessageSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useApiFetch } from '@/hooks/useApiFetch'
@@ -71,6 +71,7 @@ export default function ProfilePage() {
   const queryClient = useQueryClient()
   const [selectedPositionId, setSelectedPositionId] = useState<string>("");
   const [savingTheme, setSavingTheme] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState<string>("");
   const [smsAutoSendValue, setSmsAutoSendValue] = useState<"default" | "on" | "off">("default");
 
   // Password reset mutation
@@ -98,6 +99,13 @@ export default function ProfilePage() {
       setSelectedPositionId(profileData.positionId)
     }
   }, [profileData?.positionId])
+
+  // Sync phone number from profile data
+  React.useEffect(() => {
+    if (profileData?.phoneNumber) {
+      setPhoneNumber(profileData.phoneNumber)
+    }
+  }, [profileData?.phoneNumber])
 
   // Sync SMS auto-send value from profile data
   React.useEffect(() => {
@@ -147,7 +155,19 @@ export default function ProfilePage() {
   })
 
   const updatePositionMutation = useProfileMutation('Position updated successfully!');
+  const updatePhoneMutation = useProfileMutation('Phone number updated successfully!');
   const updateSmsAutoSendMutation = useProfileMutation('SMS automation preference updated!');
+
+  const formatPhoneDisplay = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 10)
+    if (digits.length <= 3) return digits
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+  }
+
+  const handlePhoneUpdate = () => {
+    updatePhoneMutation.mutate({ phoneNumber })
+  }
 
   const handlePositionUpdate = () => {
     if (!selectedPositionId) return;
@@ -263,6 +283,38 @@ export default function ProfilePage() {
             'Send Password Reset Email'
           )}
         </button>
+      </div>
+
+      {/* Phone Number Section */}
+      <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
+        <h2 className="text-xl font-bold text-foreground mb-2">
+          <Phone className="h-5 w-5 inline mr-2" />
+          Phone Number
+        </h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Your phone number is used for SMS notifications and automated messages.
+        </p>
+        <div className="flex items-end gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-muted-foreground mb-2">
+              Phone Number
+            </label>
+            <input
+              type="tel"
+              value={formatPhoneDisplay(phoneNumber)}
+              onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              placeholder="(555) 123-4567"
+              className="w-full px-4 py-2 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <button
+            onClick={handlePhoneUpdate}
+            disabled={updatePhoneMutation.isPending || !phoneNumber || phoneNumber === profileData.phoneNumber}
+            className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {updatePhoneMutation.isPending ? 'Saving...' : 'Update'}
+          </button>
+        </div>
       </div>
 
       {/* SMS Automation Self-Service (Non-admin agents) */}

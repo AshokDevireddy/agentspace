@@ -20,11 +20,23 @@ import {
 } from "@/components/ui/popover"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { useAuth } from "@/providers/AuthProvider"
-import { useApiFetch } from "@/hooks/useApiFetch"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { apiClient } from "@/lib/api-client"
 import { formatPhoneForDisplay } from "@/lib/telnyx"
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const response = await fetch(url, { credentials: 'include' })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = `Request failed with status ${response.status}`
+    try {
+      const err = JSON.parse(text)
+      message = err.message || err.error || message
+    } catch { /* use default */ }
+    throw new Error(message)
+  }
+  return response.json()
+}
 
 // Types for the API responses
 interface DealAgent {
@@ -209,31 +221,27 @@ export default function BookOfBusiness() {
   const { user: authUser } = useAuth()
   const userTier = authUser?.subscriptionTier || 'free'
 
-  // Fetch filter options using parallel queries
-  const { data: filterOptionsData } = useApiFetch<{
+  // Fetch filter options using parallel queries (via BFF proxy routes)
+  const { data: filterOptionsData } = useQuery<{
     carriers?: FilterOption[]
     products?: FilterOption[]
     statusStandardized?: FilterOption[]
     billingCycles?: FilterOption[]
     leadSources?: FilterOption[]
     effectiveDateSort?: FilterOption[]
-  }>(
-    queryKeys.dealsFilterOptions(),
-    '/api/deals/filter-options',
-    {
-      staleTime: 15 * 60 * 1000, // 15 minutes - filter options rarely change
-      placeholderData: (previousData) => previousData, // Stale-while-revalidate
-    }
-  )
+  }>({
+    queryKey: queryKeys.dealsFilterOptions(),
+    queryFn: () => fetchJson('/api/deals/filter-options'),
+    staleTime: 15 * 60 * 1000, // 15 minutes - filter options rarely change
+    placeholderData: (previousData) => previousData, // Stale-while-revalidate
+  })
 
-  const { data: niprCarriers } = useApiFetch<Array<{ id: string; displayName: string }>>(
-    queryKeys.carriersList('nipr'),
-    '/api/carriers?filter=nipr',
-    {
-      staleTime: 15 * 60 * 1000, // 15 minutes - carrier list rarely changes
-      placeholderData: (previousData) => previousData, // Stale-while-revalidate
-    }
-  )
+  const { data: niprCarriers } = useQuery<Array<{ id: string; displayName: string }>>({
+    queryKey: queryKeys.carriersList('nipr'),
+    queryFn: () => fetchJson('/api/carriers?filter=nipr'),
+    staleTime: 15 * 60 * 1000, // 15 minutes - carrier list rarely changes
+    placeholderData: (previousData) => previousData, // Stale-while-revalidate
+  })
 
   // Compute filter options
   const filterOptions: FilterOptions = {
@@ -280,23 +288,23 @@ export default function BookOfBusiness() {
     return params.toString()
   }, [appliedFilters])
 
-  // Fetch deals using TanStack Query
+  // Fetch deals using TanStack Query (via BFF proxy route)
   const { data: dealsData, isPending: loading, isFetching: dealsFetching, error: dealsError } = useQuery({
     queryKey: queryKeys.dealsBookOfBusiness(appliedFilters),
     queryFn: async () => {
       const params = buildDealsParams()
-      return apiClient.get<{ deals: Deal[]; nextCursor?: { cursorCreatedAt: string; cursorId: string } }>(`/api/deals/book-of-business/?${params}`)
+      return fetchJson<{ deals: Deal[]; nextCursor?: { cursorCreatedAt: string; cursorId: string } }>(`/api/deals/book-of-business?${params}`)
     },
     staleTime: 30 * 1000, // 30 seconds
     placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent flicker
   })
 
-  // Fetch summary totals (separate query for independent caching)
+  // Fetch summary totals (separate query for independent caching, via BFF proxy route)
   const { data: summaryData, isPending: summaryLoading } = useQuery<BookSummary>({
     queryKey: queryKeys.dealsBookOfBusinessSummary(appliedFilters),
     queryFn: async () => {
       const params = buildDealsParams()
-      return apiClient.get<BookSummary>(`/api/deals/book-of-business/summary/?${params}`)
+      return fetchJson<BookSummary>(`/api/deals/book-of-business/summary?${params}`)
     },
     staleTime: 30 * 1000,
     placeholderData: (previousData) => previousData,
@@ -319,11 +327,11 @@ export default function BookOfBusiness() {
       return
     }
 
-    // Load more
+    // Load more (via BFF proxy route)
     setIsLoadingMore(true)
     try {
       const params = buildDealsParams(nextCursorRef.current || undefined)
-      const data = await apiClient.get<{ deals: Deal[]; nextCursor?: { cursorCreatedAt: string; cursorId: string } }>(`/api/deals/book-of-business/?${params}`)
+      const data = await fetchJson<{ deals: Deal[]; nextCursor?: { cursorCreatedAt: string; cursorId: string } }>(`/api/deals/book-of-business?${params}`)
       setDeals(prev => [...prev, ...data.deals])
       setNextCursor(data.nextCursor || null)
     } catch (err) {

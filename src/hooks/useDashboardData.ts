@@ -187,7 +187,7 @@ export function useScoreboardLapsedData(
   dateMode?: string,
   assumedMonthsTillLapse?: number,
 ) {
-  return useQuery<ScoreboardData, Error>({
+  return useQuery<BillingCycleScoreboardData, Error>({
     queryKey: queryKeys.scoreboardLapsed(userId || '', startDate, endDate, scope, submitted, dateMode, assumedMonthsTillLapse),
     queryFn: async () => {
       const params: Record<string, string | number> = {
@@ -198,7 +198,7 @@ export function useScoreboardLapsedData(
       }
       if (dateMode) params.date_mode = dateMode
       if (assumedMonthsTillLapse !== undefined) params.assumed_months_till_lapse = assumedMonthsTillLapse
-      return apiClient.get<ScoreboardData>('/api/dashboard/scoreboard-lapsed/', { params })
+      return apiClient.get<BillingCycleScoreboardData>('/api/dashboard/scoreboard-lapsed/', { params })
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,

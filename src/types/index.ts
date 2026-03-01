@@ -141,10 +141,10 @@ export interface PieChartEntry {
 export interface LeaderboardProducer {
   rank: number
   agentId: string
-  agentName: string
-  production: string
-  dealsCount: number
-  position?: string | null
+  name: string
+  total: number
+  dailyBreakdown: { [date: string]: number }
+  dealCount: number
 }
 
 // API Response Types

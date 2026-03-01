@@ -407,82 +407,6 @@ export default function ConfigurationPage() {
   const [carrierPayoutModes, setCarrierPayoutModes] = useState<Record<string, 'submission_date' | 'policy_effective_date'>>({})
   const [savingPayoutSettings, setSavingPayoutSettings] = useState(false)
 
-  // Fetch existing carrier payout settings from Django backend
-  const { data: payoutSettingsData, isLoading: payoutSettingsLoading } = useQuery({
-    queryKey: queryKeys.carrierPayoutSettings(agencyData?.id || ''),
-    queryFn: async () => {
-      return apiClient.get<Array<{ carrierId: string; dateMode: 'submission_date' | 'policy_effective_date' }>>(
-        `/api/agencies/${agencyData!.id}/payout-settings/`
-      )
-    },
-    enabled: activeTab === 'payout-settings' && !!agencyData?.id,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  // Initialize carrier payout modes from defaults + saved settings
-  useEffect(() => {
-    if (!carriersData.length) return
-
-    // Paid on draft → policy_effective_date (carrier pays when first premium collected)
-    // Paid on approval/issue → submission_date (carrier pays when app submitted/approved)
-    const PAID_ON_DRAFT_CARRIERS = [
-      'Aetna', 'Aflac', 'AIG', 'Americo', 'Assurity', 'Baltimore Life',
-      'Elco Mutual', 'F&G', 'Gerber', 'GTL', 'Fidelity Life', 'KC Life',
-      'Lafayette', 'National Life Group', 'North American', 'Trinity',
-      'Illinois Mutual', 'Sentinel Security'
-    ]
-    const PAID_ON_APPROVAL_CARRIERS = [
-      'American Amicable', 'Royal Neighbors', 'TransAmerica', 'Forestors',
-      'Mutual of Omaha'
-    ]
-
-    const modes: Record<string, 'submission_date' | 'policy_effective_date'> = {}
-
-    // Set defaults based on carrier name matching
-    carriersData.forEach((carrier: Carrier) => {
-      const name = carrier.displayName || carrier.name
-      if (PAID_ON_DRAFT_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
-        modes[carrier.id] = 'policy_effective_date'
-      } else if (PAID_ON_APPROVAL_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
-        modes[carrier.id] = 'submission_date'
-      } else {
-        modes[carrier.id] = 'policy_effective_date' // default
-      }
-    })
-
-    // Override with saved settings from DB (apiClient converts snake_case → camelCase)
-    if (payoutSettingsData) {
-      payoutSettingsData.forEach((setting: { carrierId: string; dateMode: 'submission_date' | 'policy_effective_date' }) => {
-        modes[setting.carrierId] = setting.dateMode
-      })
-    }
-
-    setCarrierPayoutModes(modes)
-  }, [carriersData, payoutSettingsData])
-
-  const handleSavePayoutSettings = async () => {
-    if (!agencyData?.id) return
-    setSavingPayoutSettings(true)
-    try {
-      const rows = Object.entries(carrierPayoutModes).map(([carrierId, dateMode]) => ({
-        carrierId,
-        dateMode,
-      }))
-
-      await apiClient.post(`/api/agencies/${agencyData.id}/payout-settings/`, { settings: rows })
-
-      showSuccess('Payout settings saved successfully')
-      if (isMounted) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.carrierPayoutSettings(agencyData.id) })
-      }
-    } catch (err: unknown) {
-      console.error('Error saving payout settings:', err)
-      showError(err instanceof Error ? err.message : 'Failed to save payout settings')
-    } finally {
-      setSavingPayoutSettings(false)
-    }
-  }
-
   // Discord Settings state
   const [discordWebhookUrl, setDiscordWebhookUrl] = useState<string>("")
   const [editingDiscordWebhook, setEditingDiscordWebhook] = useState(false)
@@ -613,6 +537,78 @@ export default function ConfigurationPage() {
     enabled: !!user,
     staleTime: 10 * 60 * 1000, // 10 minutes
   })
+
+  // Fetch existing carrier payout settings from Django backend
+  const { data: payoutSettingsData, isLoading: payoutSettingsLoading } = useQuery({
+    queryKey: queryKeys.carrierPayoutSettings(agencyData?.id || ''),
+    queryFn: async () => {
+      return apiClient.get<Array<{ carrierId: string; dateMode: 'submission_date' | 'policy_effective_date' }>>(
+        `/api/agencies/${agencyData!.id}/payout-settings/`
+      )
+    },
+    enabled: activeTab === 'payout-settings' && !!agencyData?.id,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Initialize carrier payout modes from defaults + saved settings
+  useEffect(() => {
+    if (!carriersData.length) return
+
+    const PAID_ON_DRAFT_CARRIERS = [
+      'Aetna', 'Aflac', 'AIG', 'Americo', 'Assurity', 'Baltimore Life',
+      'Elco Mutual', 'F&G', 'Gerber', 'GTL', 'Fidelity Life', 'KC Life',
+      'Lafayette', 'National Life Group', 'North American', 'Trinity',
+      'Illinois Mutual', 'Sentinel Security'
+    ]
+    const PAID_ON_APPROVAL_CARRIERS = [
+      'American Amicable', 'Royal Neighbors', 'TransAmerica', 'Forestors',
+      'Mutual of Omaha'
+    ]
+
+    const modes: Record<string, 'submission_date' | 'policy_effective_date'> = {}
+
+    carriersData.forEach((carrier: Carrier) => {
+      const name = carrier.displayName || carrier.name
+      if (PAID_ON_DRAFT_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
+        modes[carrier.id] = 'policy_effective_date'
+      } else if (PAID_ON_APPROVAL_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
+        modes[carrier.id] = 'submission_date'
+      } else {
+        modes[carrier.id] = 'policy_effective_date'
+      }
+    })
+
+    if (payoutSettingsData) {
+      payoutSettingsData.forEach((setting: { carrierId: string; dateMode: 'submission_date' | 'policy_effective_date' }) => {
+        modes[setting.carrierId] = setting.dateMode
+      })
+    }
+
+    setCarrierPayoutModes(modes)
+  }, [carriersData, payoutSettingsData])
+
+  const handleSavePayoutSettings = async () => {
+    if (!agencyData?.id) return
+    setSavingPayoutSettings(true)
+    try {
+      const rows = Object.entries(carrierPayoutModes).map(([carrierId, dateMode]) => ({
+        carrierId,
+        dateMode,
+      }))
+
+      await apiClient.post(`/api/agencies/${agencyData.id}/payout-settings/`, { settings: rows })
+
+      showSuccess('Payout settings saved successfully')
+      if (isMounted) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.carrierPayoutSettings(agencyData.id) })
+      }
+    } catch (err: unknown) {
+      console.error('Error saving payout settings:', err)
+      showError(err instanceof Error ? err.message : 'Failed to save payout settings')
+    } finally {
+      setSavingPayoutSettings(false)
+    }
+  }
 
   // Fetch all products - only when user is authenticated
   const { data: allProductsData = [], isLoading: productsLoading, error: productsError } = useQuery({

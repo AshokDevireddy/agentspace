@@ -74,7 +74,7 @@ function useAgentSearch(pauseSearch = false) {
       // apiClient converts snake_case → camelCase, so use camelCase field names
       return agents.map((agent: any) => ({
         value: agent.id,
-        label: `${agent.firstName} ${agent.lastName}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+        label: `${agent.firstName || ''} ${agent.lastName || ''}`.trim() + `${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
         status: agent.status
       }))
     },
@@ -263,7 +263,7 @@ export default function AddUserModal({ trigger, upline }: AddUserModalProps) {
         // apiClient converts snake_case → camelCase
         return agents.map((agent: any) => ({
           value: agent.id,
-          label: `${agent.firstName} ${agent.lastName}${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
+          label: `${agent.firstName || ''} ${agent.lastName || ''}`.trim() + `${agent.email ? ' - ' + agent.email : ''}${agent.status === 'pre-invite' ? ' (Pre-invite)' : ''}`,
           status: agent.status
         }))
       } catch {

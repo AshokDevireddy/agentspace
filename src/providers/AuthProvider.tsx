@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { initTokenFromCookie, setAccessToken, getAccessToken, clearAccessToken } from '@/lib/auth/token-store'
 import { getApiBaseUrl } from '@/lib/api-config'
+import { AUTH_PATHS } from '@/lib/auth/constants'
 
 export type UserData = {
   id: string
@@ -71,6 +72,16 @@ export function AuthProvider({
     setIsHydrated(true)
   }, [])
 
+  // Clear auth state, cancel in-flight queries, and redirect to /login
+  const handleAuthFailure = useCallback(() => {
+    clearAccessToken()
+    setUser(null)
+    queryClient.cancelQueries()
+    if (typeof window !== 'undefined' && !AUTH_PATHS.some(p => window.location.pathname.startsWith(p))) {
+      window.location.href = '/login'
+    }
+  }, [queryClient])
+
   // Fetch user data from Django /api/auth/session
   const refreshUser = useCallback(async () => {
     try {
@@ -99,14 +110,12 @@ export function AuthProvider({
           subscriptionTier: (data.user.subscriptionTier || 'free') as UserData['subscriptionTier'],
         })
       } else {
-        setUser(null)
-        clearAccessToken()
+        handleAuthFailure()
       }
     } catch {
-      setUser(null)
-      clearAccessToken()
+      handleAuthFailure()
     }
-  }, [])
+  }, [handleAuthFailure])
 
   // Initialize session on mount if no initial user
   useEffect(() => {
@@ -146,14 +155,9 @@ export function AuthProvider({
           }
         }
 
-        // Refresh failed → redirect to login
-        clearAccessToken()
-        setUser(null)
-        window.location.href = '/login'
+        handleAuthFailure()
       } catch {
-        clearAccessToken()
-        setUser(null)
-        window.location.href = '/login'
+        handleAuthFailure()
       } finally {
         isRefreshingRef.current = false
       }
@@ -161,7 +165,7 @@ export function AuthProvider({
 
     window.addEventListener('auth:token-expired', handleTokenExpired)
     return () => window.removeEventListener('auth:token-expired', handleTokenExpired)
-  }, [])
+  }, [handleAuthFailure])
 
   // Sign in via Django — Django sets cookies + returns tokens
   const signIn = useCallback(async (email: string, password: string) => {

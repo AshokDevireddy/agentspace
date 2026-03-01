@@ -598,6 +598,13 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                         <p className="text-lg font-semibold text-foreground">{deal.clientPhone || 'N/A'}</p>
                       )}
                     </div>
+
+                    {deal.clientAddress && (
+                      <div className="space-y-1 col-span-2">
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Client Address</label>
+                        <p className="text-lg font-semibold text-foreground">{deal.clientAddress}</p>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -764,11 +771,39 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
 
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Billing Cycle
+                      </label>
+                      <p className="text-lg font-semibold text-foreground capitalize">{deal.billingCycle || 'N/A'}</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                         Lead Source
                       </label>
                       <p className="text-lg font-semibold text-foreground capitalize">
                         {deal.leadSource || 'N/A'}
                       </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        Policy Number
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">{deal.policyNumber || 'N/A'}</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Application Number</label>
+                      <p className="text-lg font-semibold text-foreground">{deal.appNumber || 'N/A'}</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        Submission Date
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">{deal.submissionDate ? formatDate(deal.submissionDate) : 'N/A'}</p>
                     </div>
 
                     <div className="space-y-1">

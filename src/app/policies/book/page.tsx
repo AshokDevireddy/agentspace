@@ -143,6 +143,8 @@ export default function BookOfBusiness() {
       effectiveDateStart: "",
       effectiveDateEnd: "",
       clientPhone: "",
+      submittedDateStart: "",
+      submittedDateEnd: "",
       statusMode: 'all' as 'all' | 'active' | 'pending' | 'inactive',
       viewMode: 'downlines' as 'downlines' | 'self'
     },
@@ -267,6 +269,8 @@ export default function BookOfBusiness() {
     if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
     if (appliedFilters.effectiveDateEnd) params.append('effective_date_end', appliedFilters.effectiveDateEnd)
     if (appliedFilters.clientPhone) params.append('client_phone', appliedFilters.clientPhone)
+    if (appliedFilters.submittedDateStart) params.append('submitted_date_start', appliedFilters.submittedDateStart)
+    if (appliedFilters.submittedDateEnd) params.append('submitted_date_end', appliedFilters.submittedDateEnd)
     if (appliedFilters.viewMode) params.append('view', appliedFilters.viewMode)
     params.append('limit', '50')
     if (cursor) {
@@ -380,12 +384,15 @@ export default function BookOfBusiness() {
     appliedFilters.product !== 'all' ||
     appliedFilters.client !== 'all' ||
     appliedFilters.policyNumber !== 'all' ||
+    appliedFilters.clientPhone !== '' ||
     appliedFilters.billingCycle !== 'all' ||
     appliedFilters.leadSource !== 'all' ||
     appliedFilters.status !== 'all' ||
     appliedFilters.effectiveDateSort !== 'all' ||
     appliedFilters.effectiveDateStart ||
-    appliedFilters.effectiveDateEnd
+    appliedFilters.effectiveDateEnd ||
+    appliedFilters.submittedDateStart ||
+    appliedFilters.submittedDateEnd
 
   const addFilter = (filterName: string) => {
     const newVisibleFilters = new Set(visibleFilters)
@@ -431,6 +438,9 @@ export default function BookOfBusiness() {
       case 'dateRange':
         setLocalFilters({ effectiveDateStart: '', effectiveDateEnd: '' })
         break
+      case 'submittedDateRange':
+        setLocalFilters({ submittedDateStart: '', submittedDateEnd: '' })
+        break
       case 'clientPhone':
         setLocalFilters({ clientPhone: '' })
         break
@@ -452,6 +462,7 @@ export default function BookOfBusiness() {
     { id: 'status', label: 'Status' },
     { id: 'effectiveDateSort', label: 'Oldest/Newest' },
     { id: 'dateRange', label: 'Date Range' },
+    { id: 'submittedDateRange', label: 'Submitted Date' },
     { id: 'persistencyPlacement', label: 'Persistency/Placement' },
   ]
 
@@ -667,6 +678,15 @@ export default function BookOfBusiness() {
                   />
                 </Badge>
               )}
+              {visibleFilters.has('submittedDateRange') && (
+                <Badge variant="outline" className="h-8 px-3">
+                  Submitted Date
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('submittedDateRange')}
+                  />
+                </Badge>
+              )}
               {visibleFilters.has('persistencyPlacement') && (
                 <Badge variant="outline" className="h-8 px-3">
                   Persistency/Placement
@@ -862,6 +882,20 @@ export default function BookOfBusiness() {
                       startDate={localFilters.effectiveDateStart}
                       endDate={localFilters.effectiveDateEnd}
                       onRangeChange={(start, end) => setLocalFilters({ effectiveDateStart: start, effectiveDateEnd: end })}
+                      disabled={loading}
+                    />
+                  </div>
+                )}
+
+                {visibleFilters.has('submittedDateRange') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Submitted Date Range
+                    </label>
+                    <DateRangePicker
+                      startDate={localFilters.submittedDateStart}
+                      endDate={localFilters.submittedDateEnd}
+                      onRangeChange={(start, end) => setLocalFilters({ submittedDateStart: start, submittedDateEnd: end })}
                       disabled={loading}
                     />
                   </div>

@@ -8,14 +8,28 @@ import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";
 import { useNotification } from '@/contexts/notification-context'
 import { useTheme } from "next-themes"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
-import { Sun, Moon, Monitor, Check, Loader2, Phone, MessageSquare } from "lucide-react"
+import { Sun, Moon, Monitor, Check, Loader2, Phone, MessageSquare, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { TierUsageCard } from "@/components/tier-usage-card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useResetPassword } from '@/hooks/mutations'
 import { apiClient } from '@/lib/api-client'
+
+interface ThemeOption {
+  value: ThemeMode
+  label: string
+  description: string
+  icon: LucideIcon
+}
+
+const THEME_OPTIONS: ThemeOption[] = [
+  { value: 'light', label: 'Light', description: 'Bright, clean interface', icon: Sun },
+  { value: 'dark', label: 'Dark', description: 'Easy on the eyes', icon: Moon },
+  { value: 'system', label: 'System', description: 'Follow device settings', icon: Monitor },
+]
 
 interface ProfileData {
   id: string;
@@ -413,110 +427,45 @@ export default function ProfilePage() {
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Light Theme Option */}
-            <button
-              onClick={() => handleThemeChange('light')}
-              disabled={savingTheme}
-              className={cn(
-                "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (user?.themeMode || 'system') === 'light'
-                  ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
-                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
-              )}
-            >
-              <div className="flex flex-col items-center gap-3">
-                <Sun className={cn(
-                  "h-10 w-10",
-                  (user?.themeMode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                )} />
-                <div className="text-center">
-                  <p className={cn(
-                    "font-semibold text-lg",
-                    (user?.themeMode || 'system') === 'light' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                  )}>
-                    Light
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Bright, clean interface
-                  </p>
-                </div>
-                {(user?.themeMode || 'system') === 'light' && (
-                  <div className="absolute top-3 right-3">
-                    <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            {THEME_OPTIONS.map((option) => {
+              const isActive = (user?.themeMode || 'system') === option.value
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => handleThemeChange(option.value)}
+                  disabled={savingTheme}
+                  className={cn(
+                    "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
+                    isActive
+                      ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
+                      : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
+                  )}
+                >
+                  <div className="flex flex-col items-center gap-3">
+                    <option.icon className={cn(
+                      "h-10 w-10",
+                      isActive ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                    )} />
+                    <div className="text-center">
+                      <p className={cn(
+                        "font-semibold text-lg",
+                        isActive ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                      )}>
+                        {option.label}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {option.description}
+                      </p>
+                    </div>
+                    {isActive && (
+                      <div className="absolute top-3 right-3">
+                        <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </button>
-
-            {/* Dark Theme Option */}
-            <button
-              onClick={() => handleThemeChange('dark')}
-              disabled={savingTheme}
-              className={cn(
-                "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (user?.themeMode || 'system') === 'dark'
-                  ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
-                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
-              )}
-            >
-              <div className="flex flex-col items-center gap-3">
-                <Moon className={cn(
-                  "h-10 w-10",
-                  (user?.themeMode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                )} />
-                <div className="text-center">
-                  <p className={cn(
-                    "font-semibold text-lg",
-                    (user?.themeMode || 'system') === 'dark' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                  )}>
-                    Dark
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Easy on the eyes
-                  </p>
-                </div>
-                {(user?.themeMode || 'system') === 'dark' && (
-                  <div className="absolute top-3 right-3">
-                    <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                )}
-              </div>
-            </button>
-
-            {/* System Theme Option */}
-            <button
-              onClick={() => handleThemeChange('system')}
-              disabled={savingTheme}
-              className={cn(
-                "relative p-6 rounded-lg border-2 transition-all duration-200 hover:scale-105",
-                (user?.themeMode || 'system') === 'system'
-                  ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/50 shadow-lg"
-                  : "border-border bg-card hover:border-blue-300 dark:hover:border-blue-600"
-              )}
-            >
-              <div className="flex flex-col items-center gap-3">
-                <Monitor className={cn(
-                  "h-10 w-10",
-                  (user?.themeMode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                )} />
-                <div className="text-center">
-                  <p className={cn(
-                    "font-semibold text-lg",
-                    (user?.themeMode || 'system') === 'system' ? "text-blue-600 dark:text-blue-400" : "text-foreground"
-                  )}>
-                    System
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Follow device settings
-                  </p>
-                </div>
-                {(user?.themeMode || 'system') === 'system' && (
-                  <div className="absolute top-3 right-3">
-                    <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                )}
-              </div>
-            </button>
+                </button>
+              )
+            })}
           </div>
 
           {savingTheme && (
@@ -663,212 +612,14 @@ export default function ProfilePage() {
           />
         </div>
 
-        {/* Basic Tier Usage */}
-        {profileData.subscriptionTier === 'basic' && (() => {
-          const msgUsage = profileData.messagesSentCount || 0;
-          const msgLimit = 50;
-          const msgOverage = Math.max(msgUsage - msgLimit, 0);
-          const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
-          const msgOverageCost = msgOverage * 0.10;
-
-          return (
-            <div className="mt-8 rounded-xl border-2 border-blue-300 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 dark:border-blue-700 p-6">
-              <h3 className="font-bold text-blue-900 dark:text-blue-200 mb-3 text-lg flex items-center gap-2">
-                <span>Basic Tier Usage This Month</span>
-              </h3>
-              <div>
-                <div className="flex justify-between mb-1">
-                  <span className="text-sm text-blue-800 dark:text-blue-300">Messages Sent</span>
-                  <span className="text-sm font-medium text-blue-900 dark:text-blue-200">
-                    {msgUsage} / {msgLimit} included
-                  </span>
-                </div>
-                <div className="w-full bg-blue-200 dark:bg-blue-900/30 rounded-full h-2">
-                  <div
-                    className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all"
-                    style={{ width: `${msgPercentage}%` }}
-                  />
-                </div>
-                {msgOverage > 0 && (
-                  <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                    Overage: {msgOverage} messages × $0.10 = ${msgOverageCost.toFixed(2)}
-                  </p>
-                )}
-              </div>
-              {msgOverageCost > 0 && (
-                <div className="mt-4 pt-4 border-t border-blue-300 dark:border-blue-700">
-                  <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
-                    Estimated overage charges this month: ${msgOverageCost.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                    Will be added to your next invoice
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* Pro Tier Usage */}
-        {profileData.subscriptionTier === 'pro' && (() => {
-          const msgUsage = profileData.messagesSentCount || 0;
-          const msgLimit = 200;
-          const msgOverage = Math.max(msgUsage - msgLimit, 0);
-          const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
-          const msgOverageCost = msgOverage * 0.08;
-
-          return (
-            <div className="mt-8 rounded-xl border-2 border-purple-300 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 dark:border-purple-700 p-6">
-              <h3 className="font-bold text-purple-900 dark:text-purple-200 mb-3 text-lg flex items-center gap-2">
-                <span>Pro Tier Usage This Month</span>
-              </h3>
-              <div>
-                <div className="flex justify-between mb-1">
-                  <span className="text-sm text-purple-800 dark:text-purple-300">Messages Sent</span>
-                  <span className="text-sm font-medium text-purple-900 dark:text-purple-200">
-                    {msgUsage} / {msgLimit} included
-                  </span>
-                </div>
-                <div className="w-full bg-purple-200 dark:bg-purple-900/30 rounded-full h-2">
-                  <div
-                    className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all"
-                    style={{ width: `${msgPercentage}%` }}
-                  />
-                </div>
-                {msgOverage > 0 && (
-                  <p className="text-xs text-purple-700 dark:text-purple-400 mt-1">
-                    Overage: {msgOverage} messages × $0.08 = ${msgOverageCost.toFixed(2)}
-                  </p>
-                )}
-              </div>
-              {msgOverageCost > 0 && (
-                <div className="mt-4 pt-4 border-t border-purple-300 dark:border-purple-700">
-                  <p className="text-sm font-semibold text-purple-900 dark:text-purple-200">
-                    Estimated overage charges this month: ${msgOverageCost.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-purple-700 dark:text-purple-400 mt-1">
-                    Will be added to your next invoice
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* Expert Tier Usage (for all Expert tier users) */}
-        {profileData.subscriptionTier === 'expert' && (() => {
-          const msgUsage = profileData.messagesSentCount || 0;
-          const msgLimit = 1000;
-          const msgOverage = Math.max(msgUsage - msgLimit, 0);
-          const msgPercentage = Math.min((msgUsage / msgLimit) * 100, 100);
-          const msgOverageCost = msgOverage * 0.05;
-
-          // Admin users see both AI and messages
-          if (profileData.isAdmin) {
-            const aiUsage = profileData.aiRequestsCount || 0;
-            const aiLimit = 50;
-            const aiOverage = Math.max(aiUsage - aiLimit, 0);
-            const aiPercentage = Math.min((aiUsage / aiLimit) * 100, 100);
-            const aiOverageCost = aiOverage * 0.25;
-            const totalOverageCost = aiOverageCost + msgOverageCost;
-
-            return (
-              <div className="mt-8 rounded-xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 dark:border-amber-700 p-6">
-                <h3 className="font-bold text-amber-900 dark:text-amber-200 mb-3 text-lg flex items-center gap-2">
-                  <span>Expert Tier Usage This Month</span>
-                </h3>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm text-amber-800 dark:text-amber-300">AI Requests</span>
-                      <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
-                        {aiUsage} / {aiLimit} included
-                      </span>
-                    </div>
-                    <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
-                      <div
-                        className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
-                        style={{ width: `${aiPercentage}%` }}
-                      />
-                    </div>
-                    {aiOverage > 0 && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                        Overage: {aiOverage} requests × $0.25 = ${aiOverageCost.toFixed(2)}
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-sm text-amber-800 dark:text-amber-300">Messages Sent</span>
-                      <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
-                        {msgUsage} / {msgLimit} included
-                      </span>
-                    </div>
-                    <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
-                      <div
-                        className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
-                        style={{ width: `${msgPercentage}%` }}
-                      />
-                    </div>
-                    {msgOverage > 0 && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                        Overage: {msgOverage} messages × $0.05 = ${msgOverageCost.toFixed(2)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                {totalOverageCost > 0 && (
-                  <div className="mt-4 pt-4 border-t border-amber-300 dark:border-amber-700">
-                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-                      Estimated overage charges this month: ${totalOverageCost.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                      Will be added to your next invoice
-                    </p>
-                  </div>
-                )}
-              </div>
-            );
-          }
-
-          // Non-admin users see only messages
-          return (
-            <div className="mt-8 rounded-xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 dark:border-amber-700 p-6">
-              <h3 className="font-bold text-amber-900 dark:text-amber-200 mb-3 text-lg flex items-center gap-2">
-                <span>Expert Tier Usage This Month</span>
-              </h3>
-              <div>
-                <div className="flex justify-between mb-1">
-                  <span className="text-sm text-amber-800 dark:text-amber-300">Messages Sent</span>
-                  <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
-                    {msgUsage} / {msgLimit} included
-                  </span>
-                </div>
-                <div className="w-full bg-amber-200 dark:bg-amber-900/30 rounded-full h-2">
-                  <div
-                    className="bg-amber-600 dark:bg-amber-500 h-2 rounded-full transition-all"
-                    style={{ width: `${msgPercentage}%` }}
-                  />
-                </div>
-                {msgOverage > 0 && (
-                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                    Overage: {msgOverage} messages × $0.05 = ${msgOverageCost.toFixed(2)}
-                  </p>
-                )}
-              </div>
-              {msgOverageCost > 0 && (
-                <div className="mt-4 pt-4 border-t border-amber-300 dark:border-amber-700">
-                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-                    Estimated overage charges this month: ${msgOverageCost.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                    Will be added to your next invoice
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        {profileData.subscriptionTier && ['basic', 'pro', 'expert'].includes(profileData.subscriptionTier) && (
+          <TierUsageCard
+            tier={profileData.subscriptionTier as 'basic' | 'pro' | 'expert'}
+            messagesSentCount={profileData.messagesSentCount || 0}
+            aiRequestsCount={profileData.aiRequestsCount || 0}
+            isAdmin={profileData.isAdmin}
+          />
+        )}
       </div>
     </div>
   );

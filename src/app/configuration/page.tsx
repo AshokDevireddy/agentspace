@@ -416,6 +416,9 @@ export default function ConfigurationPage() {
   })
   const automationAgents = automationAgentsData || []
 
+  // Scoreboard state
+  const [savingScoreboardVisibility, setSavingScoreboardVisibility] = useState(false)
+
   // ============ Payout Settings ============
 
   const [carrierPayoutModes, setCarrierPayoutModes] = useState<Record<string, 'submission_date' | 'policy_effective_date'>>({})
@@ -872,6 +875,22 @@ export default function ConfigurationPage() {
       showError('Failed to update setting')
     } finally {
       setSavingAutomation(false)
+    }
+  }
+
+  // ============ Scoreboard Handlers ============
+
+  const handleToggleScoreboardVisibility = async (enabled: boolean) => {
+    if (!agencyData?.id) return
+    setSavingScoreboardVisibility(true)
+    try {
+      await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, { scoreboardAgentVisibility: enabled })
+      queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+      showSuccess(`Scoreboard visibility ${enabled ? 'enabled' : 'disabled'} for all agents`)
+    } catch {
+      showError('Failed to update scoreboard visibility')
+    } finally {
+      setSavingScoreboardVisibility(false)
     }
   }
 
@@ -4708,23 +4727,22 @@ export default function ConfigurationPage() {
                   <div className="rounded-lg border bg-card p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-lg font-semibold text-foreground">Agent Scoreboard Visibility</h3>
+                        <h3 className="text-lg font-semibold text-foreground">Agency Scoreboard Visibility</h3>
                         <p className="text-sm text-muted-foreground mt-1">
-                          When enabled, all agents can see the full agency scoreboard stats (production, policies, active agents). When disabled, non-admin agents only see stats when viewing their own team.
+                          When enabled, all agents can view the full agency leaderboard and summary stats on the scoreboard — not just their own downline.
+                          When disabled, agents only see their downline data in the Agency view.
+                        </p>
+                        <p className={cn(
+                          "text-sm font-medium mt-2",
+                          agencyData?.scoreboardAgentVisibility ? "text-green-600" : "text-muted-foreground"
+                        )}>
+                          Status: {agencyData?.scoreboardAgentVisibility ? "Enabled" : "Disabled"}
                         </p>
                       </div>
                       <Switch
                         checked={agencyData?.scoreboardAgentVisibility ?? false}
-                        onCheckedChange={async (enabled) => {
-                          if (!agencyData?.id) return
-                          try {
-                            await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, { scoreboardAgentVisibility: enabled })
-                            queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
-                            showSuccess(`Scoreboard visibility ${enabled ? 'enabled' : 'disabled'} for all agents`)
-                          } catch {
-                            showError('Failed to update scoreboard visibility setting')
-                          }
-                        }}
+                        onCheckedChange={handleToggleScoreboardVisibility}
+                        disabled={savingScoreboardVisibility}
                       />
                     </div>
                   </div>

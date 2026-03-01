@@ -227,7 +227,15 @@ export function AuthProvider({
   const signOut = useCallback(async () => {
     setIsLoggingOut(true)
 
-    // Clear TanStack Query cache
+    // Capture token before clearing — Django logout requires Bearer auth
+    const token = getAccessToken()
+
+    // Clear auth state FIRST to prevent 401 → refresh → retry loops
+    clearAccessToken()
+    setUser(null)
+
+    // Cancel in-flight queries before clearing cache to stop pending 401 retries
+    queryClient.cancelQueries()
     queryClient.clear()
 
     // Clear localStorage filters
@@ -240,14 +248,22 @@ export function AuthProvider({
       keysToRemove.forEach(key => localStorage.removeItem(key))
     }
 
-    // Call Django logout (fire-and-forget) — Django clears cookies
+    // Call Django logout with raw fetch — bypasses apiClient's 401 retry mechanism.
+    // Uses the saved token for auth + credentials: 'include' for cookie cleanup.
     try {
-      await apiClient.post('/api/auth/logout/')
-    } catch (err) {
-      console.error('[AuthProvider] Server signOut failed:', err)
+      const baseUrl = getApiBaseUrl()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      await fetch(`${baseUrl}/api/auth/logout/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+      })
+    } catch {
+      // Ignore errors — we're logging out regardless
     }
-
-    clearAccessToken()
 
     // Small delay to ensure overlay renders, then redirect
     await new Promise(resolve => setTimeout(resolve, 50))

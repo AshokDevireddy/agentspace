@@ -1,8 +1,8 @@
 /**
  * Agents Data Hook
  *
- * Calls BFF proxy routes (/api/agents, /api/agents/without-positions) which
- * forward to Django and apply camelcaseKeys transformation on the response.
+ * Calls BFF proxy routes (/api/agents, /api/agents/without-positions, /api/agents/downlines)
+ * which forward to Django and apply camelcaseKeys transformation on the response.
  */
 import { useQuery } from '@tanstack/react-query'
 import { STALE_TIMES } from '@/lib/query-config'
@@ -117,27 +117,6 @@ export interface PendingPositionsResponse {
 
 // ============ Helpers ============
 
-async function fetchBff<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const headers: Record<string, string> = {}
-  const token = getAccessToken()
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
-  const response = await fetch(url, {
-    signal,
-    credentials: 'include',
-    headers,
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || errorData.message || `API error: ${response.status}`)
-  }
-
-  return response.json()
-}
-
 function buildQueryString(params: Record<string, string | undefined>): string {
   const searchParams = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -204,7 +183,17 @@ export function useAgentsList(
       }
 
       const qs = buildQueryString(params)
-      return fetchBff<AgentsListResponse>(`/api/agents${qs ? `?${qs}` : ''}`, signal)
+      const response = await fetch(`/api/agents${qs ? `?${qs}` : ''}`, {
+        signal,
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || errorData.message || `API error: ${response.status}`)
+      }
+
+      return response.json() as Promise<AgentsListResponse>
     },
     enabled: (view === 'table' || view === 'tree') && (options?.enabled !== false),
     staleTime: STALE_TIMES.fast,
@@ -221,7 +210,17 @@ export function useAgentDownlines(
   return useQuery<AgentDownlinesResponse, Error>({
     queryKey: queryKeys.agentDownlines(agentId || ''),
     queryFn: async ({ signal }) => {
-      return fetchBff<AgentDownlinesResponse>(`/api/agents/downlines?agentId=${agentId!}`, signal)
+      const response = await fetch(`/api/agents/downlines?agentId=${agentId!}`, {
+        signal,
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || errorData.message || `API error: ${response.status}`)
+      }
+
+      return response.json() as Promise<AgentDownlinesResponse>
     },
     enabled: !!agentId && (options?.enabled !== false),
     staleTime: STALE_TIMES.standard,
@@ -234,7 +233,22 @@ export function useAgentsWithoutPositions(options?: { enabled?: boolean }) {
   return useQuery<PendingPositionsResponse, Error>({
     queryKey: queryKeys.agentsPendingPositions(),
     queryFn: async ({ signal }) => {
-      return fetchBff<PendingPositionsResponse>('/api/agents/without-positions?all=true', signal)
+      const accessToken = getAccessToken()
+      if (!accessToken) throw new Error('Authentication required.')
+
+      const response = await fetch('/api/agents/without-positions?all=true', {
+        signal,
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || errorData.message || `API error: ${response.status}`)
+      }
+
+      return response.json() as Promise<PendingPositionsResponse>
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.fast,

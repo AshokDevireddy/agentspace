@@ -1,4 +1,3 @@
-import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import camelcaseKeys from 'camelcase-keys'
 import snakecaseKeys from 'snakecase-keys'
@@ -6,19 +5,17 @@ import { getApiBaseUrl } from '@/lib/api-config'
 
 export async function POST(request: Request) {
   try {
-    const cookieStore = await cookies()
-    let token = cookieStore.get('access_token')?.value
+    // Auth: Authorization header (same as main's pattern for this route)
+    const authHeader = request.headers.get('authorization')
 
-    if (!token) {
-      const authHeader = request.headers.get('authorization')
-      if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.slice(7)
-      }
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({
+        error: 'Unauthorized',
+        detail: 'No valid token provided',
+      }, { status: 401 })
     }
 
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const token = authHeader.replace('Bearer ', '')
 
     const body = await request.json()
     const snakeBody = snakecaseKeys(body, { deep: true })
@@ -42,6 +39,9 @@ export async function POST(request: Request) {
     return NextResponse.json(transformed)
   } catch (error) {
     console.error('[API /api/agents/assign-position] Error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    )
   }
 }

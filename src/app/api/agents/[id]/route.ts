@@ -4,16 +4,9 @@ import camelcaseKeys from 'camelcase-keys'
 import snakecaseKeys from 'snakecase-keys'
 import { getApiBaseUrl } from '@/lib/api-config'
 
-async function getToken(request: Request): Promise<string | null> {
+async function getToken(): Promise<string | null> {
   const cookieStore = await cookies()
-  let token = cookieStore.get('access_token')?.value
-  if (!token) {
-    const authHeader = request.headers.get('authorization')
-    if (authHeader?.startsWith('Bearer ')) {
-      token = authHeader.slice(7)
-    }
-  }
-  return token || null
+  return cookieStore.get('access_token')?.value || null
 }
 
 export async function GET(
@@ -21,7 +14,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const token = await getToken(request)
+    const token = await getToken()
     if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -58,7 +51,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const token = await getToken(request)
+    const token = await getToken()
     if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -95,7 +88,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const token = await getToken(request)
+    const token = await getToken()
     if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

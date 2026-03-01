@@ -1,49 +1,20 @@
 /**
  * Agent-related mutation hooks for TanStack Query
  * Used by agents page and agent modals for managing agents
+ *
+ * Mirrors main branch patterns:
+ * - useAssignPosition: Authorization header + snake_case body (main uses Supabase getSession)
+ * - useResendInvite: credentials: 'include' only (cookie-based auth)
+ * - useSendInvite: credentials: 'include' only (cookie-based auth)
+ * - useUpdateAgent: useApiMutation with credentials: 'include'
+ * - useDeleteAgent: useApiMutation with credentials: 'include'
+ * - useSaveAgent: credentials: 'include' only (cookie-based auth)
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { getAccessToken } from '@/lib/auth/token-store'
 import { queryKeys } from '../queryKeys'
 import { useInvalidation } from '../useInvalidation'
-
-/**
- * Helper for BFF mutation requests (POST, PUT, DELETE)
- * Sends camelCase to BFF - the BFF route handles snake_case conversion for Django
- */
-async function fetchBffMutation<T>(
-  url: string,
-  method: 'POST' | 'PUT' | 'DELETE',
-  body?: unknown
-): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  const token = getAccessToken()
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
-  const init: RequestInit = {
-    method,
-    headers,
-    credentials: 'include',
-  }
-
-  if (body !== undefined) {
-    init.body = JSON.stringify(body)
-  }
-
-  const response = await fetch(url, init)
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.error || errorData.message || `API error: ${response.status}`)
-  }
-
-  const text = await response.text()
-  if (!text) return {} as T
-  return JSON.parse(text) as T
-}
 
 // ============ Assign Position Mutation ============
 
@@ -54,6 +25,8 @@ interface AssignPositionInput {
 
 /**
  * Assign a position to an agent
+ * Main branch pattern: gets Supabase session token → sends Authorization header
+ * This branch: gets Django token from memory store → sends Authorization header
  */
 export function useAssignPosition(options?: {
   onSuccess?: (data: unknown, variables: AssignPositionInput) => void
@@ -63,10 +36,35 @@ export function useAssignPosition(options?: {
 
   return useMutation<unknown, Error, AssignPositionInput>({
     mutationFn: async ({ agentId, positionId }) => {
-      return fetchBffMutation('/api/agents/assign-position', 'POST', { agentId, positionId })
+      const accessToken = getAccessToken()
+
+      if (!accessToken) {
+        throw new Error('Authentication required. Please log in.')
+      }
+
+      const response = await fetch('/api/agents/assign-position', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          agent_id: agentId,
+          position_id: positionId,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to assign position')
+      }
+
+      return response.json()
     },
-    onSuccess: async (data, variables) => {
-      await invalidateAgentRelated(variables.agentId)
+    onSuccess: (data, variables) => {
+      invalidateAgentRelated(variables.agentId).catch(err => {
+        console.error('[useAssignPosition] Failed to invalidate queries:', err)
+      })
       options?.onSuccess?.(data, variables)
     },
     onError: options?.onError,
@@ -77,6 +75,7 @@ export function useAssignPosition(options?: {
 
 /**
  * Resend an invitation to an agent
+ * Main branch pattern: credentials: 'include' only (cookie-based auth)
  */
 export function useResendInvite(options?: {
   onSuccess?: (data: { message: string }, agentId: string) => void
@@ -90,15 +89,9 @@ export function useResendInvite(options?: {
     string // agentId
   >({
     mutationFn: async (agentId) => {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      const token = getAccessToken()
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
-      }
-
       const response = await fetch('/api/agents/resend-invite', {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ agentId }),
       })
@@ -109,7 +102,7 @@ export function useResendInvite(options?: {
         throw new Error(data.error || 'Failed to resend invitation')
       }
 
-      return data as { message: string }
+      return data
     },
     onSuccess: (data, agentId) => {
       invalidateAgentRelated(agentId).catch(err => {
@@ -136,7 +129,7 @@ interface SendInviteInput {
 
 /**
  * Send invite to a pre-invite user or invite a new agent
- * This is the canonical invite mutation used by both agents page and onboarding wizard
+ * Main branch pattern: credentials: 'include' only (cookie-based auth)
  */
 export function useSendInvite(options?: {
   invalidateClients?: boolean
@@ -147,13 +140,29 @@ export function useSendInvite(options?: {
 
   return useMutation<unknown, Error, SendInviteInput>({
     mutationFn: async (input) => {
-      return fetchBffMutation('/api/agents/invite', 'POST', input)
+      const response = await fetch('/api/agents/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(input),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to send invitation')
+      }
+
+      return response.json()
     },
-    onSuccess: async (data, variables) => {
-      await invalidateAgentRelated()
+    onSuccess: (data, variables) => {
+      invalidateAgentRelated().catch(err => {
+        console.error('[useSendInvite] Failed to invalidate agent queries:', err)
+      })
 
       if (options?.invalidateClients) {
-        await invalidateClientRelated()
+        invalidateClientRelated().catch(err => {
+          console.error('[useSendInvite] Failed to invalidate client queries:', err)
+        })
       }
 
       options?.onSuccess?.(data, variables)
@@ -184,13 +193,36 @@ interface Agent {
 
 /**
  * Update an agent's details
+ * Main branch pattern: useAuthenticatedMutation (Authorization header + credentials: 'include')
  */
 export function useUpdateAgent() {
   const queryClient = useQueryClient()
 
   return useMutation<Agent, Error, UpdateAgentInput>({
     mutationFn: async (variables) => {
-      return fetchBffMutation<Agent>(`/api/agents/${variables.agentId}`, 'PUT', variables)
+      const accessToken = getAccessToken()
+      if (!accessToken) {
+        throw new Error('Authentication required. Please log in.')
+      }
+
+      const response = await fetch(`/api/agents/${variables.agentId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify(variables),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || errorData.detail || 'Failed to update agent')
+      }
+
+      const text = await response.text()
+      if (!text) return null as unknown as Agent
+      return JSON.parse(text) as Agent
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: [...queryKeys.agents] })
@@ -205,13 +237,31 @@ export function useUpdateAgent() {
 
 /**
  * Delete/deactivate an agent
+ * Main branch pattern: useAuthenticatedMutation (Authorization header + credentials: 'include')
  */
 export function useDeleteAgent() {
   const queryClient = useQueryClient()
 
   return useMutation<void, Error, { agentId: string }>({
     mutationFn: async (variables) => {
-      return fetchBffMutation<void>(`/api/agents/${variables.agentId}`, 'DELETE')
+      const accessToken = getAccessToken()
+      if (!accessToken) {
+        throw new Error('Authentication required. Please log in.')
+      }
+
+      const response = await fetch(`/api/agents/${variables.agentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to delete agent')
+      }
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: [...queryKeys.agents] })
@@ -228,10 +278,10 @@ interface SaveAgentInput {
   agentName: string
   editedData: {
     email: string
-    phoneNumber?: string
+    phone_number?: string
     role: string
     status: string
-    uplineId?: string
+    upline_id?: string
   }
   positionId?: string | null
   shouldSendInvite: boolean
@@ -243,7 +293,7 @@ interface SaveAgentResponse {
 
 /**
  * Save agent changes - handles both update and invite operations
- * Used by agent-details-modal for the edit flow
+ * Main branch pattern: credentials: 'include' only (cookie-based auth)
  */
 export function useSaveAgent(options?: {
   onSuccess?: (data: SaveAgentResponse, variables: SaveAgentInput) => void
@@ -259,20 +309,41 @@ export function useSaveAgent(options?: {
         const lastName = nameParts.slice(1).join(' ') || ''
         const permissionLevel = editedData.role === 'admin' ? 'admin' : 'agent'
 
-        await fetchBffMutation('/api/agents/invite', 'POST', {
-          email: editedData.email,
-          firstName,
-          lastName,
-          phoneNumber: editedData.phoneNumber || null,
-          permissionLevel,
-          uplineAgentId: editedData.uplineId && editedData.uplineId !== 'all' ? editedData.uplineId : null,
-          positionId: positionId || null,
-          preInviteUserId: agentId,
+        const inviteResponse = await fetch('/api/agents/invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            email: editedData.email,
+            firstName,
+            lastName,
+            phoneNumber: editedData.phone_number || null,
+            permissionLevel,
+            uplineAgentId: editedData.upline_id && editedData.upline_id !== 'all' ? editedData.upline_id : null,
+            positionId: positionId || null,
+            preInviteUserId: agentId,
+          }),
         })
+
+        if (!inviteResponse.ok) {
+          const errorData = await inviteResponse.json()
+          throw new Error(errorData.error || 'Failed to send invitation')
+        }
 
         return { type: 'invite' as const }
       } else {
-        await fetchBffMutation(`/api/agents/${agentId}`, 'PUT', editedData)
+        const response = await fetch(`/api/agents/${agentId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(editedData),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || errorData.detail || 'Failed to update agent')
+        }
+
         return { type: 'update' as const }
       }
     },

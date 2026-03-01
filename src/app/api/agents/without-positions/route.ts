@@ -1,24 +1,20 @@
-import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import camelcaseKeys from 'camelcase-keys'
 import { getApiBaseUrl } from '@/lib/api-config'
 
 export async function GET(request: Request) {
   try {
-    const cookieStore = await cookies()
-    let token = cookieStore.get('access_token')?.value
+    // Auth: Authorization header (same as main's pattern for this route)
+    const authHeader = request.headers.get('authorization')
 
-    // Fallback to Authorization header (client sends token before cookie is available)
-    if (!token) {
-      const authHeader = request.headers.get('authorization')
-      if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.slice(7)
-      }
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({
+        error: 'Unauthorized',
+        detail: 'No valid token provided',
+      }, { status: 401 })
     }
 
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const token = authHeader.replace('Bearer ', '')
 
     // Forward query params to Django
     const { searchParams } = new URL(request.url)

@@ -5,15 +5,9 @@ import { getApiBaseUrl } from '@/lib/api-config'
 
 export async function GET(request: Request) {
   try {
+    // Auth: cookie-based (matches main's authenticateRoute pattern)
     const cookieStore = await cookies()
-    let token = cookieStore.get('access_token')?.value
-
-    if (!token) {
-      const authHeader = request.headers.get('authorization')
-      if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.slice(7)
-      }
-    }
+    const token = cookieStore.get('access_token')?.value
 
     if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

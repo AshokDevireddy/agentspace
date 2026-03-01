@@ -17,7 +17,6 @@ import { useNotification } from "@/contexts/notification-context"
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useSaveAgent } from '@/hooks/mutations'
-import { getAccessToken } from '@/lib/auth/token-store'
 import { apiClient } from '@/lib/api-client'
 
 interface AgentDetailsModalProps {
@@ -154,12 +153,15 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
       if (startMonth) url.searchParams.set('startMonth', startMonth)
       if (endMonth) url.searchParams.set('endMonth', endMonth)
 
-      const headers: Record<string, string> = {}
-      const token = getAccessToken()
-      if (token) headers['Authorization'] = `Bearer ${token}`
+      const response = await fetch(url.toString(), {
+        signal,
+        credentials: 'include',
+      })
 
-      const response = await fetch(url.toString(), { signal, credentials: 'include', headers })
-      if (!response.ok) throw new Error('Failed to fetch agent details')
+      if (!response.ok) {
+        throw new Error('Failed to fetch agent details')
+      }
+
       const data = await response.json()
       console.log('[AgentDetailsModal] Raw API response:', data)
       // Convert name format from "Last, First" to "First Last" if needed
@@ -186,13 +188,15 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
   // Fetch downlines
   const { data: downlines = [], isLoading: loadingDownlines } = useQuery({
     queryKey: queryKeys.agentDownlines(agentId),
-    queryFn: async ({ signal }) => {
-      const headers: Record<string, string> = {}
-      const token = getAccessToken()
-      if (token) headers['Authorization'] = `Bearer ${token}`
+    queryFn: async () => {
+      const response = await fetch(`/api/agents/downlines?agentId=${agentId}`, {
+        credentials: 'include',
+      })
 
-      const response = await fetch(`/api/agents/downlines?agentId=${agentId}`, { signal, credentials: 'include', headers })
-      if (!response.ok) throw new Error('Failed to fetch downlines')
+      if (!response.ok) {
+        throw new Error('Failed to fetch downlines')
+      }
+
       const data = await response.json()
       return data.downlines || []
     },

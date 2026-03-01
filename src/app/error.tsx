@@ -38,12 +38,12 @@ export default function GlobalError({
             <RefreshCw className="h-4 w-4" />
             Try again
           </Button>
-          <Button asChild variant="outline" className="gap-2">
-            <Link href="/">
+          <Link href="/">
+            <Button variant="outline" className="gap-2">
               <Home className="h-4 w-4" />
               Go to home
-            </Link>
-          </Button>
+            </Button>
+          </Link>
         </div>
 
         {error.digest && (

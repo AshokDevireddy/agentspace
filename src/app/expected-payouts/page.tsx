@@ -9,13 +9,26 @@ import { DollarSign, TrendingUp, TrendingDown, Calendar } from "lucide-react"
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
-import { apiClient } from "@/lib/api-client"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { cn } from "@/lib/utils"
 import { useClientDate } from "@/hooks/useClientDate"
 import { useAuth } from "@/providers/AuthProvider"
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const response = await fetch(url, { credentials: 'include' })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = `Request failed with status ${response.status}`
+    try {
+      const err = JSON.parse(text)
+      message = err.message || err.error || message
+    } catch { /* use default */ }
+    throw new Error(message)
+  }
+  return response.json()
+}
 
 interface PayoutData {
   policyEffectiveDate: string | null
@@ -37,30 +50,13 @@ interface PayoutData {
   statusStandardized: string | null
 }
 
-interface PayoutsTopLevel {
+interface PayoutsResponse {
   payouts: PayoutData[]
   totalExpected: number
-  totalPremium: number
   dealCount: number
-  payoutEntries: number
   personalProduction: number
   downlineProduction: number
-  summary: {
-    byCarrier: Array<{
-      carrier: string
-      premium: number
-      payout: number
-      count: number
-    }>
-    byAgent: Array<{
-      agentId: string
-      name: string
-      payout: number
-      count: number
-      personal: number
-      downline: number
-    }>
-  }
+  summary: Record<string, unknown>
 }
 
 interface CarrierOption {
@@ -91,8 +87,6 @@ interface CarrierResponse {
   id: string
   name: string
 }
-
-type PayoutsResponse = PayoutsTopLevel
 
 interface DebtDeal {
   dealId: string
@@ -167,17 +161,19 @@ export default function ExpectedPayoutsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [userTier, setUserTier] = useState<string>('free')
 
-  // Fetch current user data - waits for auth to be ready to prevent race conditions
+  // Fetch current user data via BFF proxy route
   const { data: userData, isPending: userLoading } = useQuery({
     queryKey: queryKeys.userProfile(),
     queryFn: async () => {
-      const data = await apiClient.get<UserData>('/api/user/profile/')
+      const data = await fetchJson<Record<string, unknown>>('/api/users/me')
+      // Django wraps response in {success, data: {...}} — unwrap if needed
+      const profile = (data.data || data) as Record<string, unknown>
       return {
-        id: data.id,
-        role: data.role,
-        agencyId: data.agencyId,
-        subscriptionTier: data.subscriptionTier,
-        authUserId: data.authUserId
+        id: profile.id,
+        role: profile.role,
+        agencyId: profile.agencyId,
+        subscriptionTier: profile.subscriptionTier,
+        authUserId: profile.authUserId
       } as UserData
     },
     // Only run query when auth is ready (authLoading is false)
@@ -203,16 +199,14 @@ export default function ExpectedPayoutsPage() {
     }
   }, [userData, appliedFilters.agent, setAndApply])
 
-  // Fetch available agents
+  // Fetch available agents via BFF proxy route
   const { data: agents = [] } = useQuery({
     queryKey: queryKeys.agentDownlines(userData?.id || ''),
     queryFn: async () => {
       if (!userData) return []
 
       try {
-        const data = await apiClient.get<{ downlines?: Array<{ id: string; name?: string }> }>('/api/agents/downlines/', {
-          params: { agentId: userData.id }
-        })
+        const data = await fetchJson<{ downlines?: Array<{ id: string; name?: string }> }>(`/api/agents/downlines?agentId=${userData.id}`)
         return (data.downlines || []).map((agent) => ({
           id: agent.id,
           firstName: agent.name?.split(' ')[0] || '',
@@ -232,12 +226,10 @@ export default function ExpectedPayoutsPage() {
     label: [a.firstName, a.lastName].filter(Boolean).join(' ')
   }))
 
-  // Fetch all carriers for filter
+  // Fetch all carriers for filter via BFF proxy route
   const { data: carriers = [] } = useQuery({
     queryKey: queryKeys.carriersList(),
-    queryFn: async () => {
-      return apiClient.get<CarrierResponse[]>('/api/carriers/names/')
-    },
+    queryFn: () => fetchJson<CarrierResponse[]>('/api/carriers/names'),
     staleTime: 10 * 60 * 1000, // 10 minutes
   })
 
@@ -246,7 +238,7 @@ export default function ExpectedPayoutsPage() {
     ...carriers.map(c => ({ value: c.id, label: c.name }))
   ]
 
-  // Fetch payouts data - depends on applied filters
+  // Fetch payouts data via BFF proxy route - depends on applied filters
   // Use effectiveAgentId to prevent race conditions when filter hasn't been set yet
   const {
     data: payoutsData,
@@ -265,17 +257,16 @@ export default function ExpectedPayoutsPage() {
       const endDay = new Date(endYear, endMonthStr, 0).getDate()
       const endDate = `${appliedFilters.endMonth}-${String(endDay).padStart(2, '0')}`
 
-      const queryParams: Record<string, string> = {
-        start_date: startDate,
-        end_date: endDate,
-        agent_id: effectiveAgentId,
-      }
+      const params = new URLSearchParams()
+      params.append('start_date', startDate)
+      params.append('end_date', endDate)
+      params.append('agent_id', effectiveAgentId)
 
       if (appliedFilters.carrier !== "all") {
-        queryParams.carrier_id = appliedFilters.carrier
+        params.append('carrier_id', appliedFilters.carrier)
       }
 
-      return apiClient.get<PayoutsResponse>('/api/expected-payouts/', { params: queryParams })
+      return fetchJson<PayoutsResponse>(`/api/expected-payouts?${params.toString()}`)
     },
     // Wait for both effectiveAgentId AND userData to be loaded to prevent race conditions
     enabled: !!effectiveAgentId && !!userData,
@@ -285,13 +276,12 @@ export default function ExpectedPayoutsPage() {
   })
 
   const payouts = payoutsData?.payouts || []
-  // Derive production totals from the flat Django response fields (after camelCase transform)
   const totalExpected = payoutsData?.totalExpected ?? 0
   const dealCount = payoutsData?.dealCount ?? 0
   const personalProduction = payoutsData?.personalProduction ?? 0
   const downlineProduction = payoutsData?.downlineProduction ?? 0
 
-  // Fetch debt data - depends on agent filter
+  // Fetch debt data via BFF proxy route - depends on agent filter
   // Use effectiveAgentId to prevent race conditions when filter hasn't been set yet
   const {
     data: debtData,
@@ -300,8 +290,8 @@ export default function ExpectedPayoutsPage() {
     queryKey: queryKeys.expectedPayoutsDebt(effectiveAgentId),
     queryFn: async () => {
       try {
-        const data = await apiClient.get<DebtResponse>('/api/expected-payouts/debt/', { params: { agent_id: effectiveAgentId } })
-        // Django returns flat { debt, dealCount, deals } — not nested under a "debt" key
+        const data = await fetchJson<DebtResponse>(`/api/expected-payouts/debt?agent_id=${effectiveAgentId}`)
+        // Django returns flat { debt, dealCount, deals }
         return {
           total: data.debt,
           dealCount: data.dealCount,
@@ -566,7 +556,7 @@ export default function ExpectedPayoutsPage() {
                     <div className={cn(
                       "text-2xl font-bold",
                       (totalExpected - (debtData?.total || 0)) >= 0
-                        ? "text-foreground"
+                        ? "text-green-600 dark:text-green-400"
                         : "text-destructive"
                     )}>
                       ${(totalExpected - (debtData?.total || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

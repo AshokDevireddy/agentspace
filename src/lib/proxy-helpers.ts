@@ -63,15 +63,23 @@ export async function proxyGet(
   const { searchParams } = new URL(request.url)
   const url = buildDjangoUrl(djangoPath, searchParams)
 
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  })
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    })
 
-  return forwardResponse(response)
+    return forwardResponse(response)
+  } catch (err) {
+    console.error(`[proxyGet] Failed to reach Django at ${url}:`, err)
+    return NextResponse.json(
+      { error: 'Backend service unavailable', detail: String(err) },
+      { status: 502 }
+    )
+  }
 }
 
 /**

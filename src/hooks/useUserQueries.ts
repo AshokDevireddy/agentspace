@@ -60,7 +60,8 @@ export function useUserProfile(
         throw new Error('User ID is required')
       }
 
-      return apiClient.get<UserProfileData>('/api/user/profile/')
+      const response = await apiClient.get<{ success: boolean; data: UserProfileData }>('/api/user/profile/')
+      return response.data
     },
     enabled: enabled && !!authUserId,
     staleTime,
@@ -256,9 +257,9 @@ export function useAdminStatus(
         throw new Error('User ID is required')
       }
 
-      const data = await apiClient.get<UserProfileData>('/api/user/profile/')
+      const response = await apiClient.get<{ success: boolean; data: UserProfileData }>('/api/user/profile/')
       return {
-        isAdmin: data.isAdmin || false
+        isAdmin: response.data?.isAdmin || false
       } as AdminStatusData
     },
     enabled: enabled && !!authUserId,

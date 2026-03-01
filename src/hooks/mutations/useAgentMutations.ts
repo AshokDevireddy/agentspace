@@ -1,13 +1,73 @@
 /**
  * Agent-related mutation hooks for TanStack Query
  * Used by agents page and agent modals for managing agents
+ *
+ * All mutations go through BFF proxy routes which handle
+ * snake_case/camelCase conversion and return camelCase JSON.
  */
 
-import { useMutation } from '@tanstack/react-query'
-import { useApiMutation } from '../useMutations'
-import { apiClient } from '@/lib/api-client'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
 import { useInvalidation } from '../useInvalidation'
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = `Request failed with status ${response.status}`
+    try {
+      const err = JSON.parse(text)
+      message = err.message || err.error || message
+    } catch { /* use default */ }
+    throw new Error(message)
+  }
+  const text = await response.text()
+  return text ? JSON.parse(text) : (null as T)
+}
+
+async function putJson<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = `Request failed with status ${response.status}`
+    try {
+      const err = JSON.parse(text)
+      message = err.message || err.error || message
+    } catch { /* use default */ }
+    throw new Error(message)
+  }
+  const text = await response.text()
+  return text ? JSON.parse(text) : (null as T)
+}
+
+async function deleteJson<T>(url: string): Promise<T> {
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = `Request failed with status ${response.status}`
+    try {
+      const err = JSON.parse(text)
+      message = err.message || err.error || message
+    } catch { /* use default */ }
+    throw new Error(message)
+  }
+  const text = await response.text()
+  return text ? JSON.parse(text) : (null as T)
+}
 
 // ============ Assign Position Mutation ============
 
@@ -27,7 +87,7 @@ export function useAssignPosition(options?: {
 
   return useMutation<unknown, Error, AssignPositionInput>({
     mutationFn: async ({ agentId, positionId }) => {
-      return apiClient.post('/api/agents/assign-position/', { agentId, positionId })
+      return postJson('/api/agents/assign-position', { agentId, positionId })
     },
     onSuccess: async (data, variables) => {
       await invalidateAgentRelated(variables.agentId)
@@ -54,7 +114,7 @@ export function useResendInvite(options?: {
     string // agentId
   >({
     mutationFn: async (agentId) => {
-      return apiClient.post<{ message: string }>('/api/agents/resend-invite/', { agentId })
+      return postJson<{ message: string }>('/api/agents/resend-invite', { agentId })
     },
     onSuccess: (data, agentId) => {
       invalidateAgentRelated(agentId).catch(err => {
@@ -92,7 +152,7 @@ export function useSendInvite(options?: {
 
   return useMutation<unknown, Error, SendInviteInput>({
     mutationFn: async (input) => {
-      return apiClient.post('/api/agents/invite/', input)
+      return postJson('/api/agents/invite', input)
     },
     onSuccess: async (data, variables) => {
       await invalidateAgentRelated()
@@ -131,17 +191,20 @@ interface Agent {
  * Update an agent's details
  */
 export function useUpdateAgent() {
-  return useApiMutation<Agent, UpdateAgentInput>(
-    (variables) => `/api/agents/${variables.agentId}/`,
-    {
-      method: 'PUT',
-      invalidateKeys: [queryKeys.agents, queryKeys.agentsPendingPositions()],
-      getInvalidateKeys: (variables) => [
-        queryKeys.agentDetail(variables.agentId),
-        queryKeys.agentDownlines(variables.agentId),
-      ],
-    }
-  )
+  const queryClient = useQueryClient()
+
+  return useMutation<Agent, Error, UpdateAgentInput>({
+    mutationFn: async (variables) => {
+      const { agentId, ...body } = variables
+      return putJson<Agent>(`/api/agents/${agentId}`, body)
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.agents] })
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.agentsPendingPositions()] })
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.agentDetail(variables.agentId)] })
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.agentDownlines(variables.agentId)] })
+    },
+  })
 }
 
 // ============ Delete Agent Mutation ============
@@ -150,16 +213,18 @@ export function useUpdateAgent() {
  * Delete/deactivate an agent
  */
 export function useDeleteAgent() {
-  return useApiMutation<void, { agentId: string }>(
-    (variables) => `/api/agents/${variables.agentId}/`,
-    {
-      method: 'DELETE',
-      invalidateKeys: [queryKeys.agents, queryKeys.agentsPendingPositions()],
-      getInvalidateKeys: (variables) => [
-        queryKeys.agentDetail(variables.agentId),
-      ],
-    }
-  )
+  const queryClient = useQueryClient()
+
+  return useMutation<void, Error, { agentId: string }>({
+    mutationFn: async ({ agentId }) => {
+      return deleteJson<void>(`/api/agents/${agentId}`)
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.agents] })
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.agentsPendingPositions()] })
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.agentDetail(variables.agentId)] })
+    },
+  })
 }
 
 // ============ Save Agent Mutation (Update or Invite) ============
@@ -200,7 +265,7 @@ export function useSaveAgent(options?: {
         const lastName = nameParts.slice(1).join(' ') || ''
         const permissionLevel = editedData.role === 'admin' ? 'admin' : 'agent'
 
-        await apiClient.post('/api/agents/invite/', {
+        await postJson('/api/agents/invite', {
           email: editedData.email,
           firstName,
           lastName,
@@ -213,7 +278,7 @@ export function useSaveAgent(options?: {
 
         return { type: 'invite' as const }
       } else {
-        await apiClient.put(`/api/agents/${agentId}/`, editedData)
+        await putJson(`/api/agents/${agentId}`, editedData)
         return { type: 'update' as const }
       }
     },

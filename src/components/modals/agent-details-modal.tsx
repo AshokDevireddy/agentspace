@@ -180,9 +180,11 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
   const { data: downlines = [], isLoading: loadingDownlines } = useQuery({
     queryKey: queryKeys.agentDownlines(agentId),
     queryFn: async () => {
-      const data = await apiClient.get<{ downlines: any[] }>('/api/agents/downlines/', {
-        params: { agent_id: agentId }
+      const response = await fetch(`/api/agents/downlines?agentId=${agentId}`, {
+        credentials: 'include',
       })
+      if (!response.ok) throw new Error('Failed to fetch downlines')
+      const data = await response.json()
       return data.downlines || []
     },
     enabled: open && !!agentId,

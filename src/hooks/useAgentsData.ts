@@ -1,13 +1,26 @@
 /**
  * Agents Data Hook
  *
- * Uses apiClient for direct backend calls with JWT auth and case conversion.
+ * Fetches agent data through BFF proxy routes which return camelCase JSON.
  */
 import { useQuery } from '@tanstack/react-query'
-import { apiClient } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
 import { shouldRetry, getRetryDelay } from './useQueryRetry'
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const response = await fetch(url, { credentials: 'include' })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = `Request failed with status ${response.status}`
+    try {
+      const err = JSON.parse(text)
+      message = err.message || err.error || message
+    } catch { /* use default */ }
+    throw new Error(message)
+  }
+  return response.json()
+}
 
 // ============ Types ============
 
@@ -171,7 +184,11 @@ export function useAgentsList(
         params.limit = '20'
       }
 
-      return apiClient.get<AgentsListResponse>('/api/agents/', { params })
+      const qs = new URLSearchParams()
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined) qs.set(key, value)
+      }
+      return fetchJson<AgentsListResponse>(`/api/agents?${qs.toString()}`)
     },
     enabled: (view === 'table' || view === 'tree') && (options?.enabled !== false),
     staleTime: STALE_TIMES.fast,
@@ -188,9 +205,7 @@ export function useAgentDownlines(
   return useQuery<AgentDownlinesResponse, Error>({
     queryKey: queryKeys.agentDownlines(agentId || ''),
     queryFn: async () => {
-      return apiClient.get<AgentDownlinesResponse>('/api/agents/downlines/', {
-        params: { agentId: agentId! },
-      })
+      return fetchJson<AgentDownlinesResponse>(`/api/agents/downlines?agentId=${agentId!}`)
     },
     enabled: !!agentId && (options?.enabled !== false),
     staleTime: STALE_TIMES.standard,
@@ -203,9 +218,7 @@ export function useAgentsWithoutPositions(options?: { enabled?: boolean }) {
   return useQuery<PendingPositionsResponse, Error>({
     queryKey: queryKeys.agentsPendingPositions(),
     queryFn: async () => {
-      return apiClient.get<PendingPositionsResponse>('/api/agents/without-positions/', {
-        params: { all: 'true' },
-      })
+      return fetchJson<PendingPositionsResponse>('/api/agents/without-positions?all=true')
     },
     enabled: options?.enabled !== false,
     staleTime: STALE_TIMES.fast,

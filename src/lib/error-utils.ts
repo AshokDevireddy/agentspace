@@ -195,8 +195,7 @@ export async function createErrorFromResponse(response: Response): Promise<Error
 
   try {
     const data = await response.json()
-    // Django ValidationError wraps message as object: {message: {message: '...'}} or string
-    const msg = data.error || data.message || data.detail
+    const msg = data.message || data.detail || data.error
     errorMessage = typeof msg === 'string' ? msg : (msg?.message ?? errorMessage)
   } catch {
     // Response body wasn't JSON, use status text
@@ -208,6 +207,7 @@ export async function createErrorFromResponse(response: Response): Promise<Error
       return new AuthError(errorMessage)
     case 404:
       return new Error('Resource not found')
+    case 409:
     case 422:
       return new ValidationError(errorMessage)
     case 429:

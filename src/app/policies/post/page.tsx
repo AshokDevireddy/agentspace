@@ -356,16 +356,11 @@ export default function PostDeal() {
               : 'Invitation email sent to client successfully!'
           } else {
             const errorMsg = inviteData.error || 'Unknown error'
-            console.error('[PostDeal] Failed to invite client:', errorMsg)
-            invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
+            invitationMessage = `Email invite failed: ${errorMsg}. Please send manually from Book of Business.`
           }
-        } catch (clientError: any) {
-          if (clientError?.name === 'AbortError' || clientError?.message?.includes('timed out')) {
-            console.error('[PostDeal] Client invitation request timed out')
-          } else {
-            console.error('[PostDeal] Error in client invitation process:', clientError)
-          }
-          invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
+        } catch (clientError: unknown) {
+          const msg = clientError instanceof Error ? clientError.message : 'Unknown error'
+          invitationMessage = `Email invite failed: ${msg}. Please send manually from Book of Business.`
         }
       } else {
         invitationMessage = 'No client email provided - client will not receive portal access.'
@@ -452,14 +447,12 @@ export default function PostDeal() {
       queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business'] })
 
       // Check if invitation failed and show appropriate notifications
-      if (successMessage.includes('Email unable to send')) {
-        // Show success for deal creation
+      if (successMessage.includes('Email invite failed')) {
         const dealMessage = successMessage.split('\n\n')[0]
+        const inviteWarning = successMessage.split('\n\n')[1] || 'Email invite failed. Please send manually from Book of Business.'
         showSuccess(dealMessage, 5000)
-        // Show warning for email failure
-        showWarning('Email unable to send. Please send invitation manually from Book of Business.', 7000)
+        showWarning(inviteWarning, 9000)
       } else {
-        // Show combined success message
         showSuccess(successMessage, 7000)
       }
 

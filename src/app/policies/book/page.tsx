@@ -95,7 +95,8 @@ interface FilterOptions {
 }
 
 // Dynamic color generator for status values - MORE VIBRANT
-const getStatusColor = (status: string) => {
+const getStatusColor = (status: string | null | undefined) => {
+  if (!status) return "bg-slate-500 text-white border-slate-600";
   const statusLower = status.toLowerCase();
   if (statusLower.includes('draft')) return "bg-gray-600 text-white border-gray-700";
   if (statusLower.includes('pending') || statusLower.includes('force')) return "bg-yellow-500 text-gray-900 border-yellow-600 font-semibold";

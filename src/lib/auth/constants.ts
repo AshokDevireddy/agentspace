@@ -1,3 +1,6 @@
+// Pages that do not require authentication
+export const AUTH_PATHS = ['/login', '/register', '/setup-account', '/forgot-password', '/reset-password', '/auth/confirm', '/unauthorized'] as const
+
 // Single request timeout - used for individual auth operations
 export const AUTH_TIMEOUT_MS = 15000 // Increased from 5000 to handle Vercel cold starts (2-8s)
 export const REDIRECT_DELAY_MS = 2000
@@ -45,7 +48,7 @@ export function withTimeout<T>(promise: Promise<T>, ms = AUTH_TIMEOUT_MS): Promi
  */
 export async function withRetry<T>(
   operation: () => Promise<T>,
-  timeouts: readonly number[] = [5000, 8000, 12000]
+  timeouts: readonly number[] = AUTH_RETRY_TIMEOUTS
 ): Promise<{ success: true; result: T } | { success: false; error: Error }> {
   let lastError: Error = new Error('No attempts made')
   const retryStart = Date.now()

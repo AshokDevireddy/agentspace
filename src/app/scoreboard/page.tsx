@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon, Info, Trophy, Medal, Award } from "lucide-react"
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
-import { useScoreboardBillingCycleData } from "@/hooks/useDashboardData"
+import { useScoreboardLapsedData } from "@/hooks/useDashboardData"
 import { queryKeys } from "@/hooks/queryKeys"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiClient } from "@/lib/api-client"
@@ -42,6 +42,11 @@ interface ScoreboardData {
     endDate: string
   }
 }
+
+const ASSUMED_MONTHS_DEFAULT = 5
+const ASSUMED_MONTHS_MIN = 1
+const ASSUMED_MONTHS_MAX = 10
+const SKELETON_DATE_COLUMNS = 7
 
 type TimeframeOption = 'this_week' | 'last_week' | 'past_7_days' | 'past_14_days' | 'this_month' | 'last_month' | 'past_30_days' | 'past_90_days' | 'past_180_days' | 'past_12_months' | 'ytd' | 'custom'
 
@@ -77,10 +82,11 @@ export default function Scoreboard() {
   // SSR-safe: Initialize with clientDate values (deterministic on server, actual on client)
   const [calendarMonth, setCalendarMonth] = useState(clientDate.month)
   const [calendarYear, setCalendarYear] = useState(clientDate.year)
-  const [assumedMonthsTillLapse, setAssumedMonthsTillLapse] = useState<number>(5)
-  const [assumedMonthsInput, setAssumedMonthsInput] = useState<string>('5')
+  const [assumedMonthsTillLapse, setAssumedMonthsTillLapse] = useState(ASSUMED_MONTHS_DEFAULT)
+  const [assumedMonthsInput, setAssumedMonthsInput] = useState(String(ASSUMED_MONTHS_DEFAULT))
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
   const [submittedFilter, setSubmittedFilter] = useLocalStorage<'submitted' | 'issue_paid'>('scoreboard_date_mode', 'submitted')
+  const [dateMode, setDateMode] = useLocalStorage<'submission_date' | 'effective_date'>('scoreboard_date_field', 'submission_date')
   const [viewMode, setViewMode] = useState<'agency' | 'my_team'>('agency')
   const [selectedDownlineAgentId, setSelectedDownlineAgentId] = useState<string>('')
 
@@ -88,18 +94,14 @@ export default function Scoreboard() {
   const { data: downlineData } = useQuery({
     queryKey: queryKeys.myDownlineIds(user?.id || ''),
     queryFn: async () => {
-      try {
-        const data = await apiClient.get<{ downlines?: Array<{ id: string; name: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
-        const agents = (data.downlines || []).map(d => ({
-          id: d.id,
-          firstName: d.name?.split(' ')[0] || '',
-          lastName: d.name?.split(' ').slice(1).join(' ') || ''
-        }))
-        const ids: string[] = agents.map((d) => d.id)
-        return { downlineIds: ids, downlineAgents: agents }
-      } catch {
-        return { downlineIds: [] as string[], downlineAgents: [] as { id: string; firstName: string; lastName: string }[] }
-      }
+      const data = await apiClient.get<{ downlines?: Array<{ id: string; name: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
+      const agents = (data.downlines || []).map(d => ({
+        id: d.id,
+        firstName: d.name?.split(' ')[0] || '',
+        lastName: d.name?.split(' ').slice(1).join(' ') || ''
+      }))
+      const ids: string[] = agents.map((d) => d.id)
+      return { downlineIds: ids, downlineAgents: agents }
     },
     enabled: !!user?.id,
     staleTime: 5 * 60 * 1000,
@@ -109,13 +111,9 @@ export default function Scoreboard() {
   const { data: selectedAgentDownlineData } = useQuery({
     queryKey: queryKeys.myDownlineIds(selectedDownlineAgentId),
     queryFn: async () => {
-      try {
-        const data = await apiClient.get<{ downlines?: Array<{ id: string }> }>('/api/agents/downlines/', { params: { agentId: selectedDownlineAgentId } })
-        const ids: string[] = (data.downlines || []).map((d) => d.id)
-        return { downlineIds: ids }
-      } catch {
-        return { downlineIds: [] as string[] }
-      }
+      const data = await apiClient.get<{ downlines?: Array<{ id: string }> }>('/api/agents/downlines/', { params: { agentId: selectedDownlineAgentId } })
+      const ids: string[] = (data.downlines || []).map((d) => d.id)
+      return { downlineIds: ids }
     },
     enabled: !!selectedDownlineAgentId,
     staleTime: 5 * 60 * 1000,
@@ -130,8 +128,19 @@ export default function Scoreboard() {
   }, [isHydrated, clientDate.month, clientDate.year])
 
   // Fetch agency default scoreboard start date using TanStack Query
-  const { data: agencySettings } = useAgencyScoreboardSettings(user?.agencyId)
+  const { data: agencySettings, isLoading: isAgencySettingsLoading } = useAgencyScoreboardSettings(user?.agencyId, {
+    staleTime: 0 // Disable cache to always fetch fresh data for issue_paid_status
+  })
   const defaultScoreboardStartDate = agencySettings?.defaultScoreboardStartDate ?? null
+  const scoreboardAgentVisibility = agencySettings?.scoreboardAgentVisibility ?? false
+  const issuePaidStatusEnabled = agencySettings?.issuePaidStatus ?? true
+
+  // Force submittedFilter to 'submitted' when issue_paid_status is disabled
+  useEffect(() => {
+    if (!issuePaidStatusEnabled && submittedFilter === 'issue_paid') {
+      setSubmittedFilter('submitted')
+    }
+  }, [issuePaidStatusEnabled, submittedFilter, setSubmittedFilter])
 
   // Calculate date range based on timeframe - SSR-safe using clientDate
   const getDateRange = useCallback((selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
@@ -227,7 +236,7 @@ export default function Scoreboard() {
       return `${year}-${month}-${day}`
     }
 
-    // Use agency default start date if available and not null, but only when submitted filter is true
+    // Use agency default start date if available and not null, but only when in submitted mode
     const finalStartDate = (submittedFilter === 'submitted' && defaultScoreboardStartDate)
       ? defaultScoreboardStartDate
       : formatLocalDate(startDate)
@@ -265,10 +274,7 @@ export default function Scoreboard() {
   // Fetch scoreboard data using TanStack Query
   const shouldFetch = !!user?.id && (timeframe !== 'custom' || (!!dateRange.startDate && !!dateRange.endDate))
 
-  // Map UI filter to backend date_mode parameter
-  const dateMode = submittedFilter === 'issue_paid' ? 'effective_date' : 'submission_date'
-
-  const { data: rpcResponse, isPending: isDataLoading, isFetching, error: queryError } = useScoreboardBillingCycleData(
+  const { data: rpcResponse, isPending: isDataLoading, isFetching, error: queryError } = useScoreboardLapsedData(
     user?.id,
     dateRange.startDate,
     dateRange.endDate,
@@ -277,11 +283,19 @@ export default function Scoreboard() {
       enabled: shouldFetch,
       staleTime: 1000 * 60 * 5, // 5 minutes
     },
+    submittedFilter === 'submitted',
     dateMode,
     assumedMonthsTillLapse,
   )
 
-  // Extract data and error from response
+  const lapsedQueryKey = useMemo(
+    () => queryKeys.scoreboardLapsed(
+      user?.id || '', dateRange.startDate, dateRange.endDate,
+      'agency', submittedFilter === 'submitted', dateMode, assumedMonthsTillLapse
+    ),
+    [user?.id, dateRange.startDate, dateRange.endDate, submittedFilter, dateMode, assumedMonthsTillLapse]
+  )
+
   const data = rpcResponse ?? null
   const error = queryError?.message ?? null
 
@@ -466,239 +480,272 @@ export default function Scoreboard() {
             <RefreshingIndicator isRefreshing={isRefreshing} />
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min="1"
-                max="10"
-                step="1"
-                value={assumedMonthsInput}
-                onChange={(e) => {
-                  const inputValue = e.target.value
-                  // Update the input display value
-                  setAssumedMonthsInput(inputValue)
+            {isAgencySettingsLoading ? (
+              <>
+                <div className="h-9 w-[60px] bg-muted animate-pulse rounded-md" />
+                <div className="h-9 w-[160px] bg-muted animate-pulse rounded-md" />
+                <div className="h-10 w-[280px] bg-muted animate-pulse rounded-md" />
+                <div className="h-10 w-[200px] bg-muted animate-pulse rounded-md" />
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-1 border rounded-md p-1">
+                  <Button
+                    variant={viewMode === 'agency' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => {
+                      setViewMode('agency')
+                      setSelectedDownlineAgentId('')
+                    }}
+                    className="h-9 px-3 text-sm"
+                  >
+                    Agency
+                  </Button>
+                  <Button
+                    variant={viewMode === 'my_team' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('my_team')}
+                    className="h-9 px-3 text-sm"
+                  >
+                    My Team
+                  </Button>
+                </div>
 
-                  // Parse and validate
-                  if (inputValue === '') {
-                    return // Allow empty while typing
-                  }
-
-                  const value = parseInt(inputValue, 10)
-                  // Only update the actual state if it's a valid whole number between 1-10
-                  if (!isNaN(value) && value >= 1 && value <= 10 && Number.isInteger(value)) {
-                    setAssumedMonthsTillLapse(value)
-                  }
-                }}
-                onBlur={(e) => {
-                  const inputValue = e.target.value.trim()
-                  if (inputValue === '') {
-                    // If empty on blur, reset to default
-                    setAssumedMonthsTillLapse(5)
-                    setAssumedMonthsInput('5')
-                    return
-                  }
-
-                  const value = parseInt(inputValue, 10)
-                  // Reset to default if invalid
-                  if (isNaN(value) || value < 1 || value > 10 || !Number.isInteger(value)) {
-                    setAssumedMonthsTillLapse(5)
-                    setAssumedMonthsInput('5')
-                  } else {
-                    // Ensure input display matches the validated value
-                    setAssumedMonthsInput(value.toString())
-                  }
-                }}
-                className="w-[60px] rounded-md h-9 text-sm"
-                placeholder="5"
-              />
-              <div className="relative">
-                <Info
-                  className="h-3 w-3 text-muted-foreground cursor-help"
-                  onMouseEnter={() => setShowAssumedMonthsTooltip(true)}
-                  onMouseLeave={() => setShowAssumedMonthsTooltip(false)}
-                />
-                {showAssumedMonthsTooltip && (
-                  <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 w-64 p-2 bg-popover border border-border rounded-md shadow-lg text-xs text-popover-foreground z-50 pointer-events-none whitespace-normal">
-                    Assumed Months Till Lapse: The assumed time how long policies remained active before lapsing (1-10 months)
-                  </div>
+                {viewMode === 'my_team' && downlineAgentOptions.length > 0 && (
+                  <SimpleSearchableSelect
+                    options={downlineAgentOptions}
+                    value={selectedDownlineAgentId}
+                    onValueChange={setSelectedDownlineAgentId}
+                    placeholder="All (My Team)"
+                    searchPlaceholder="Search agents..."
+                    className="w-[200px]"
+                  />
                 )}
-              </div>
-            </div>
-            <div className="flex rounded-md overflow-hidden border border-border">
-              <Button
-                variant={viewMode === 'agency' ? 'default' : 'ghost'}
-                size="sm"
-                className="rounded-none h-9 text-sm"
-                onClick={() => { setViewMode('agency'); setSelectedDownlineAgentId('') }}
-              >
-                Agency
-              </Button>
-              <Button
-                variant={viewMode === 'my_team' ? 'default' : 'ghost'}
-                size="sm"
-                className="rounded-none h-9 text-sm"
-                onClick={() => setViewMode('my_team')}
-              >
-                My Team
-              </Button>
-            </div>
-            {viewMode === 'my_team' && downlineAgentOptions.length > 0 && (
-              <SimpleSearchableSelect
-                options={downlineAgentOptions}
-                value={selectedDownlineAgentId}
-                onValueChange={setSelectedDownlineAgentId}
-                placeholder="All team members"
-                searchPlaceholder="Search agents..."
-              />
-            )}
-            <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeOption)}>
-              <SelectTrigger className="w-[160px] rounded-md h-9 text-sm">
-                <SelectValue placeholder="Select timeframe" />
-              </SelectTrigger>
-              <SelectContent className="rounded-md max-h-[300px]">
-                {timeframeOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
 
-            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="w-[280px] justify-start text-left font-normal">
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {customStartDate && customEndDate ? (
-                    <span>
-                      {formatDisplayDate(customStartDate)} - {formatDisplayDate(customEndDate)}
-                    </span>
-                  ) : customStartDate ? (
-                    <span>{formatDisplayDate(customStartDate)} - Select end date</span>
-                  ) : (
-                    <span className="text-muted-foreground">Pick a date range</span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
-                <div className="p-4">
-                  {/* Calendar Header */}
-                  <div className="flex items-center justify-between mb-4">
-                    <button
-                      onClick={() => {
-                        if (calendarMonth === 0) {
-                          setCalendarMonth(11)
-                          setCalendarYear(calendarYear - 1)
-                        } else {
-                          setCalendarMonth(calendarMonth - 1)
-                        }
-                      }}
-                      className="p-2 hover:bg-accent rounded"
-                    >
-                      ←
-                    </button>
-                    <div className="font-semibold">
-                      {monthNames[calendarMonth]} {calendarYear}
-                    </div>
-                    <button
-                      onClick={() => {
-                        if (calendarMonth === 11) {
-                          setCalendarMonth(0)
-                          setCalendarYear(calendarYear + 1)
-                        } else {
-                          setCalendarMonth(calendarMonth + 1)
-                        }
-                      }}
-                      className="p-2 hover:bg-accent rounded"
-                    >
-                      →
-                    </button>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={ASSUMED_MONTHS_MIN}
+                    max={ASSUMED_MONTHS_MAX}
+                    step="1"
+                    value={assumedMonthsInput}
+                    onChange={(e) => {
+                      const inputValue = e.target.value
+                      setAssumedMonthsInput(inputValue)
 
-                  {/* Calendar Grid */}
-                  <div className="grid grid-cols-7 gap-1">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                      <div key={day} className="text-center text-xs font-medium text-muted-foreground p-2">
-                        {day}
-                      </div>
-                    ))}
-                    {calendarDays.map((day, index) => {
-                      if (day === null) {
-                        return <div key={`empty-${index}`} />
+                      if (inputValue === '') {
+                        return
                       }
 
-                      const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                      const isInRange = isDateInRange(day)
-                      const isStart = isDateStart(day)
-                      const isEnd = isDateEnd(day)
+                      const value = parseInt(inputValue, 10)
+                      if (!isNaN(value) && value >= ASSUMED_MONTHS_MIN && value <= ASSUMED_MONTHS_MAX && Number.isInteger(value)) {
+                        setAssumedMonthsTillLapse(value)
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const inputValue = e.target.value.trim()
+                      if (inputValue === '') {
+                        setAssumedMonthsTillLapse(ASSUMED_MONTHS_DEFAULT)
+                        setAssumedMonthsInput(String(ASSUMED_MONTHS_DEFAULT))
+                        return
+                      }
 
-                      return (
-                        <button
-                          key={day}
-                          onClick={() => handleDateClick(day)}
-                          onMouseEnter={() => setHoveredDate(dateStr)}
-                          onMouseLeave={() => setHoveredDate(null)}
-                          className={`
-                            p-2 text-sm rounded-md transition-colors
-                            ${isStart || isEnd ? 'bg-primary text-primary-foreground font-semibold' : ''}
-                            ${isInRange && !isStart && !isEnd ? 'bg-primary/20' : ''}
-                            ${!isInRange && !isStart && !isEnd ? 'hover:bg-accent' : ''}
-                          `}
-                        >
-                          {day}
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {/* Action buttons */}
-                  <div className="flex justify-between mt-4 pt-4 border-t">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setCustomStartDate('')
-                        setCustomEndDate('')
-                        setSelectingStartDate(true)
-                      }}
-                    >
-                      Clear
-                    </Button>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => {
-                        setIsCalendarOpen(false)
-                        if (customStartDate && customEndDate) {
-                          setTimeframe('custom')
-                        }
-                      }}
-                      disabled={!customStartDate || !customEndDate}
-                    >
-                      Apply
-                    </Button>
+                      const value = parseInt(inputValue, 10)
+                      if (isNaN(value) || value < ASSUMED_MONTHS_MIN || value > ASSUMED_MONTHS_MAX || !Number.isInteger(value)) {
+                        setAssumedMonthsTillLapse(ASSUMED_MONTHS_DEFAULT)
+                        setAssumedMonthsInput(String(ASSUMED_MONTHS_DEFAULT))
+                      } else {
+                        setAssumedMonthsInput(value.toString())
+                      }
+                    }}
+                    className="w-[60px] rounded-md h-9 text-sm"
+                    placeholder={String(ASSUMED_MONTHS_DEFAULT)}
+                  />
+                  <div className="relative">
+                    <Info
+                      className="h-3 w-3 text-muted-foreground cursor-help"
+                      onMouseEnter={() => setShowAssumedMonthsTooltip(true)}
+                      onMouseLeave={() => setShowAssumedMonthsTooltip(false)}
+                    />
+                    {showAssumedMonthsTooltip && (
+                      <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 w-64 p-2 bg-popover border border-border rounded-md shadow-lg text-xs text-popover-foreground z-50 pointer-events-none whitespace-normal">
+                        Assumed Months Till Lapse: The assumed time how long policies remained active before lapsing (1-10 months)
+                      </div>
+                    )}
                   </div>
                 </div>
-              </PopoverContent>
-            </Popover>
 
-            <div className="flex items-center gap-1 border rounded-md p-1">
-              <Button
-                variant={submittedFilter === 'submitted' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setSubmittedFilter('submitted')}
-                className="h-9 px-3 text-sm"
-              >
-                Submitted
-              </Button>
-              <Button
-                variant={submittedFilter === 'issue_paid' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setSubmittedFilter('issue_paid')}
-                className="h-9 px-3 text-sm"
-              >
-                Issue Paid
-              </Button>
-            </div>
+                <Select value={timeframe} onValueChange={(value) => setTimeframe(value as TimeframeOption)}>
+                  <SelectTrigger className="w-[160px] rounded-md h-9 text-sm">
+                    <SelectValue placeholder="Select timeframe" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-md max-h-[300px]">
+                    {timeframeOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-[280px] justify-start text-left font-normal">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {customStartDate && customEndDate ? (
+                        <span>
+                          {formatDisplayDate(customStartDate)} - {formatDisplayDate(customEndDate)}
+                        </span>
+                      ) : customStartDate ? (
+                        <span>{formatDisplayDate(customStartDate)} - Select end date</span>
+                      ) : (
+                        <span className="text-muted-foreground">Pick a date range</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <div className="p-4">
+                      {/* Calendar Header */}
+                      <div className="flex items-center justify-between mb-4">
+                        <button
+                          onClick={() => {
+                            if (calendarMonth === 0) {
+                              setCalendarMonth(11)
+                              setCalendarYear(calendarYear - 1)
+                            } else {
+                              setCalendarMonth(calendarMonth - 1)
+                            }
+                          }}
+                          className="p-2 hover:bg-accent rounded"
+                        >
+                          ←
+                        </button>
+                        <div className="font-semibold">
+                          {monthNames[calendarMonth]} {calendarYear}
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (calendarMonth === 11) {
+                              setCalendarMonth(0)
+                              setCalendarYear(calendarYear + 1)
+                            } else {
+                              setCalendarMonth(calendarMonth + 1)
+                            }
+                          }}
+                          className="p-2 hover:bg-accent rounded"
+                        >
+                          →
+                        </button>
+                      </div>
+
+                      {/* Calendar Grid */}
+                      <div className="grid grid-cols-7 gap-1">
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                          <div key={day} className="text-center text-xs font-medium text-muted-foreground p-2">
+                            {day}
+                          </div>
+                        ))}
+                        {calendarDays.map((day, index) => {
+                          if (day === null) {
+                            return <div key={`empty-${index}`} />
+                          }
+
+                          const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                          const isInRange = isDateInRange(day)
+                          const isStart = isDateStart(day)
+                          const isEnd = isDateEnd(day)
+
+                          return (
+                            <button
+                              key={day}
+                              onClick={() => handleDateClick(day)}
+                              onMouseEnter={() => setHoveredDate(dateStr)}
+                              onMouseLeave={() => setHoveredDate(null)}
+                              className={`
+                                p-2 text-sm rounded-md transition-colors
+                                ${isStart || isEnd ? 'bg-primary text-primary-foreground font-semibold' : ''}
+                                ${isInRange && !isStart && !isEnd ? 'bg-primary/20' : ''}
+                                ${!isInRange && !isStart && !isEnd ? 'hover:bg-accent' : ''}
+                              `}
+                            >
+                              {day}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex justify-between mt-4 pt-4 border-t">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setCustomStartDate('')
+                            setCustomEndDate('')
+                            setSelectingStartDate(true)
+                          }}
+                        >
+                          Clear
+                        </Button>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => {
+                            setIsCalendarOpen(false)
+                            if (customStartDate && customEndDate) {
+                              setTimeframe('custom')
+                            }
+                          }}
+                          disabled={!customStartDate || !customEndDate}
+                        >
+                          Apply
+                        </Button>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                {issuePaidStatusEnabled && (
+                  <div className="flex items-center gap-1 border rounded-md p-1">
+                    <Button
+                      variant={submittedFilter === 'submitted' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setSubmittedFilter('submitted')}
+                      className="h-9 px-3 text-sm"
+                    >
+                      Submitted
+                    </Button>
+                    <Button
+                      variant={submittedFilter === 'issue_paid' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setSubmittedFilter('issue_paid')}
+                      className="h-9 px-3 text-sm"
+                    >
+                      Issue Paid
+                    </Button>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-1 border rounded-md p-1">
+                  <Button
+                    variant={dateMode === 'submission_date' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setDateMode('submission_date')}
+                    className="h-9 px-3 text-sm"
+                  >
+                    Submitted Date
+                  </Button>
+                  <Button
+                    variant={dateMode === 'effective_date' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setDateMode('effective_date')}
+                    className="h-9 px-3 text-sm"
+                  >
+                    Effective Date
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </div>
         <div className="flex items-center space-x-2 text-sm text-muted-foreground mt-1">
@@ -717,15 +764,15 @@ export default function Scoreboard() {
         <div className="mb-6">
           <QueryErrorDisplay
             error={queryError}
-            onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate) })}
+            onRetry={() => queryClient.invalidateQueries({ queryKey: lapsedQueryKey })}
             variant="card"
             title="Failed to load scoreboard data"
           />
         </div>
       )}
 
-      {/* Weekly Stats - Only show for admins (after hydration to avoid mismatch) */}
-      {isHydrated && (user?.role === 'admin' || viewMode === 'my_team') && (
+      {/* Weekly Stats - Show for admins, any role viewing My Team, or when agency scoreboard visibility is enabled */}
+      {isHydrated && (user?.role === 'admin' || viewMode === 'my_team' || scoreboardAgentVisibility) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="professional-card rounded-md">
             <CardContent className="p-6 text-center">
@@ -836,7 +883,7 @@ export default function Scoreboard() {
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-0 bg-card z-10 w-20 min-w-[80px]" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Rank</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground sticky left-[80px] bg-card z-10" style={{ boxShadow: '2px 0 4px -2px rgba(0, 0, 0, 0.1)' }}>Name</th>
                     {/* Use fixed placeholder columns for loading skeleton to avoid hydration mismatch */}
-                    {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                    {Array.from({ length: SKELETON_DATE_COLUMNS }, (_, i) => i).map((i) => (
                       <th key={i} className="text-center py-3 px-4 font-medium text-muted-foreground whitespace-nowrap">
                         <span className="h-4 w-10 bg-muted animate-pulse rounded inline-block" />
                       </th>
@@ -854,7 +901,7 @@ export default function Scoreboard() {
                         <div className="h-5 w-32 bg-muted animate-pulse rounded" />
                       </td>
                       {/* Use fixed placeholder columns for loading skeleton to avoid hydration mismatch */}
-                      {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                      {Array.from({ length: SKELETON_DATE_COLUMNS }, (_, i) => i).map((i) => (
                         <td key={i} className="py-3 px-4 text-center">
                           <div className="h-5 w-20 bg-muted animate-pulse rounded mx-auto" />
                         </td>
@@ -870,7 +917,7 @@ export default function Scoreboard() {
           ) : queryError ? (
             <QueryErrorDisplay
               error={queryError}
-              onRetry={() => queryClient.invalidateQueries({ queryKey: queryKeys.scoreboard(user?.id || '', dateRange.startDate, dateRange.endDate) })}
+              onRetry={() => queryClient.invalidateQueries({ queryKey: lapsedQueryKey })}
               variant="inline"
               className="mx-auto max-w-md"
             />

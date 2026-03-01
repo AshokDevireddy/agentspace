@@ -107,14 +107,17 @@ export function useScoreboardData(
   userId: string | undefined,
   startDate: string,
   endDate: string,
-  options?: { enabled?: boolean; staleTime?: number }
+  options?: { enabled?: boolean; staleTime?: number; scope?: 'agency' | 'team'; dateMode?: string }
 ) {
+  const scope = options?.scope
+  const dateMode = options?.dateMode
   return useQuery<ScoreboardData, Error>({
-    queryKey: queryKeys.scoreboard(userId || '', startDate, endDate),
+    queryKey: queryKeys.scoreboard(userId || '', startDate, endDate, scope, dateMode),
     queryFn: async () => {
-      return apiClient.get<ScoreboardData>('/api/dashboard/scoreboard/', {
-        params: { start_date: startDate, end_date: endDate },
-      })
+      const params: Record<string, string> = { start_date: startDate, end_date: endDate }
+      if (scope) params.scope = scope
+      if (dateMode) params.date_mode = dateMode
+      return apiClient.get<ScoreboardData>('/api/dashboard/scoreboard/', { params })
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,
@@ -129,23 +132,56 @@ export function useProductionData(
   agentIds: string[],
   startDate: string,
   endDate: string,
-  options?: { enabled?: boolean; staleTime?: number }
+  options?: { enabled?: boolean; staleTime?: number },
+  dateMode?: string,
 ) {
+  const agentIdsKey = agentIds.join(',')
   return useQuery<ProductionEntry[], Error>({
-    queryKey: ['production', userId, agentIds.join(','), startDate, endDate],
+    queryKey: queryKeys.production(userId || '', agentIdsKey, startDate, endDate, dateMode),
     queryFn: async () => {
-      return apiClient.get<ProductionEntry[]>('/api/dashboard/production/', {
-        params: {
-          agent_ids: agentIds.join(','),
-          start_date: startDate,
-          end_date: endDate,
-        },
-      })
+      const params: Record<string, string> = {
+        agent_ids: agentIdsKey,
+        start_date: startDate,
+        end_date: endDate,
+      }
+      if (dateMode) params.date_mode = dateMode
+      return apiClient.get<ProductionEntry[]>('/api/dashboard/production/', { params })
     },
     enabled: !!userId && agentIds.length > 0 && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.slow,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
+  })
+}
+
+export function useScoreboardLapsedData(
+  userId: string | undefined,
+  startDate: string,
+  endDate: string,
+  scope: 'agency' | 'downline' = 'agency',
+  options?: { enabled?: boolean; staleTime?: number },
+  submitted: boolean = true,
+  dateMode?: string,
+  assumedMonthsTillLapse?: number,
+) {
+  return useQuery<ScoreboardData, Error>({
+    queryKey: queryKeys.scoreboardLapsed(userId || '', startDate, endDate, scope, submitted, dateMode, assumedMonthsTillLapse),
+    queryFn: async () => {
+      const params: Record<string, string | number> = {
+        start_date: startDate,
+        end_date: endDate,
+        scope,
+        submitted: submitted ? 'true' : 'false',
+      }
+      if (dateMode) params.date_mode = dateMode
+      if (assumedMonthsTillLapse !== undefined) params.assumed_months_till_lapse = assumedMonthsTillLapse
+      return apiClient.get<ScoreboardData>('/api/dashboard/scoreboard-lapsed/', { params })
+    },
+    enabled: !!userId && (options?.enabled !== false),
+    staleTime: options?.staleTime ?? STALE_TIMES.standard,
+    retry: shouldRetry,
+    retryDelay: getRetryDelay,
+    placeholderData: (previousData) => previousData,
   })
 }
 
@@ -161,7 +197,7 @@ export function useScoreboardBillingCycleData(
   return useQuery<BillingCycleScoreboardData, Error>({
     queryKey: queryKeys.scoreboardBillingCycle(userId || '', startDate, endDate, scope, dateMode, assumedMonthsTillLapse),
     queryFn: async () => {
-      const params: Record<string, string | number | boolean | undefined | null> = {
+      const params: Record<string, string | number> = {
         start_date: startDate,
         end_date: endDate,
         scope,

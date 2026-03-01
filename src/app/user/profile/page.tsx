@@ -53,11 +53,6 @@ interface Position {
   isActive: boolean;
 }
 
-interface ProfileApiResponse {
-  success: boolean;
-  data: ProfileData;
-}
-
 // Helper function to format date as "Month DD, YYYY"
 const formatRenewalDate = (dateString: string | null | undefined): string => {
   if (!dateString) return 'Not available';
@@ -84,20 +79,18 @@ export default function ProfilePage() {
   // Fetch user profile data using TanStack Query
   // Wait for auth to be ready before fetching to prevent race conditions
   const {
-    data: profileResponse,
+    data: profileData,
     isLoading: profileLoading,
     error: profileError
-  } = useApiFetch<ProfileApiResponse>(
+  } = useApiFetch<ProfileData>(
     queryKeys.userProfile(user?.id),
-    `/api/user/profile?user_id=${user?.id}`,
+    '/api/user/profile/',
     {
       enabled: !authLoading && !!user,
       staleTime: 5 * 60 * 1000, // 5 minutes - profile rarely changes
       placeholderData: (previousData) => previousData, // Stale-while-revalidate
     }
   )
-
-  const profileData = profileResponse?.data
 
   // Update selectedPositionId when profileData changes
   React.useEffect(() => {
@@ -233,32 +226,19 @@ export default function ProfilePage() {
     );
   }
 
-  // Prepare user object with API data
-  const user_profile = {
-    name: profileData.fullName,
-    avatarUrl: "", // Keep as empty for now
-  };
-
   return (
     <div className="flex flex-col items-center w-full min-h-screen bg-background py-8">
       {/* Profile Card */}
       <div className="w-full max-w-3xl bg-card rounded-2xl shadow-md p-8 mb-8 border border-border">
         <div className="flex items-center">
-          {/* Avatar */}
           <div className="w-32 h-32 bg-muted rounded-lg flex items-center justify-center mr-8 shadow">
-            {/* Show avatar if available, else fallback */}
-            {user_profile.avatarUrl ? (
-              <img src={user_profile.avatarUrl} alt="Profile" className="w-full h-full object-cover rounded-lg" />
-            ) : (
-              <svg className="w-20 h-20 text-muted-foreground" fill="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="8" r="5" />
-                <path d="M12 14c-5 0-8 2.5-8 5v1h16v-1c0-2.5-3-5-8-5z" />
-              </svg>
-            )}
+            <svg className="w-20 h-20 text-muted-foreground" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="8" r="5" />
+              <path d="M12 14c-5 0-8 2.5-8 5v1h16v-1c0-2.5-3-5-8-5z" />
+            </svg>
           </div>
-          {/* Info */}
           <div>
-            <h1 className="text-4xl font-extrabold text-foreground mb-1">{user_profile.name}</h1>
+            <h1 className="text-4xl font-extrabold text-foreground mb-1">{profileData.fullName}</h1>
           </div>
         </div>
       </div>

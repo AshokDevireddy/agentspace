@@ -4,18 +4,24 @@ import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from '@ta
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { useState } from 'react'
 import { categorizeError, getRetryDelay } from '@/lib/error-utils'
+import { getAccessToken } from '@/lib/auth/token-store'
+import { AUTH_PATHS } from '@/lib/auth/constants'
 
-// Global handler for auth errors — dispatches token-expired event
-// AuthProvider handles refresh; api-client handles retry
+// Safety net: redirect on cascading auth errors after token is already cleared
 function handleAuthError(error: unknown) {
   const category = categorizeError(error)
-  if (category === 'auth') {
-    // Dispatch event so AuthProvider attempts a refresh.
-    // If refresh fails, AuthProvider redirects to /login.
-    if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-      window.dispatchEvent(new Event('auth:token-expired'))
-    }
+  if (category !== 'auth') return
+  if (typeof window === 'undefined') return
+  if (AUTH_PATHS.some(p => window.location.pathname.startsWith(p))) return
+
+  // Token already cleared — auth is irrecoverable, redirect now
+  if (!getAccessToken()) {
+    window.location.href = '/login'
+    return
   }
+
+  // Token still present — attempt refresh flow
+  window.dispatchEvent(new Event('auth:token-expired'))
 }
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {

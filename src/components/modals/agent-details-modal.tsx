@@ -149,11 +149,15 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
   const { data: agent, isLoading: loading, error: agentError, refetch: refetchAgent } = useQuery({
     queryKey: [...queryKeys.agentDetail(agentId), startMonth, endMonth],
     queryFn: async () => {
-      const params: Record<string, string> = {}
-      if (startMonth) params.start_month = startMonth
-      if (endMonth) params.end_month = endMonth
+      const qs = new URLSearchParams()
+      if (startMonth) qs.set('startMonth', startMonth)
+      if (endMonth) qs.set('endMonth', endMonth)
+      const qsStr = qs.toString()
+      const url = `/api/agents/${agentId}${qsStr ? `?${qsStr}` : ''}`
 
-      const data = await apiClient.get<any>(`/api/agents/${agentId}/`, { params })
+      const response = await fetch(url, { credentials: 'include' })
+      if (!response.ok) throw new Error('Failed to fetch agent details')
+      const data = await response.json()
       console.log('[AgentDetailsModal] Raw API response:', data)
       // Convert name format from "Last, First" to "First Last" if needed
       // Also normalize status to lowercase for consistency

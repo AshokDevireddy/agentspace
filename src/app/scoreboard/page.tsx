@@ -85,7 +85,6 @@ export default function Scoreboard() {
   const [assumedMonthsTillLapse, setAssumedMonthsTillLapse] = useState(ASSUMED_MONTHS_DEFAULT)
   const [assumedMonthsInput, setAssumedMonthsInput] = useState(String(ASSUMED_MONTHS_DEFAULT))
   const [showAssumedMonthsTooltip, setShowAssumedMonthsTooltip] = useState(false)
-  const [submittedFilter, setSubmittedFilter] = useLocalStorage<'submitted' | 'issue_paid'>('scoreboard_date_mode', 'submitted')
   const [dateMode, setDateMode] = useLocalStorage<'submission_date' | 'effective_date'>('scoreboard_date_field', 'submission_date')
   const [viewMode, setViewMode] = useState<'agency' | 'my_team'>('agency')
   const [selectedDownlineAgentId, setSelectedDownlineAgentId] = useState<string>('')
@@ -128,19 +127,9 @@ export default function Scoreboard() {
   }, [isHydrated, clientDate.month, clientDate.year])
 
   // Fetch agency default scoreboard start date using TanStack Query
-  const { data: agencySettings, isLoading: isAgencySettingsLoading } = useAgencyScoreboardSettings(user?.agencyId, {
-    staleTime: 0 // Disable cache to always fetch fresh data for issue_paid_status
-  })
+  const { data: agencySettings, isLoading: isAgencySettingsLoading } = useAgencyScoreboardSettings(user?.agencyId)
   const defaultScoreboardStartDate = agencySettings?.defaultScoreboardStartDate ?? null
   const scoreboardAgentVisibility = agencySettings?.scoreboardAgentVisibility ?? false
-  const issuePaidStatusEnabled = agencySettings?.issuePaidStatus ?? true
-
-  // Force submittedFilter to 'submitted' when issue_paid_status is disabled
-  useEffect(() => {
-    if (!issuePaidStatusEnabled && submittedFilter === 'issue_paid') {
-      setSubmittedFilter('submitted')
-    }
-  }, [issuePaidStatusEnabled, submittedFilter, setSubmittedFilter])
 
   // Calculate date range based on timeframe - SSR-safe using clientDate
   const getDateRange = useCallback((selectedTimeframe: TimeframeOption): { startDate: string, endDate: string } => {
@@ -237,7 +226,7 @@ export default function Scoreboard() {
     }
 
     // Use agency default start date if available and not null, but only when in submitted mode
-    const finalStartDate = (submittedFilter === 'submitted' && defaultScoreboardStartDate)
+    const finalStartDate = defaultScoreboardStartDate
       ? defaultScoreboardStartDate
       : formatLocalDate(startDate)
 
@@ -245,7 +234,7 @@ export default function Scoreboard() {
       startDate: finalStartDate,
       endDate: formatLocalDate(endDate)
     }
-  }, [clientDate, customStartDate, customEndDate, defaultScoreboardStartDate, submittedFilter])
+  }, [clientDate, customStartDate, customEndDate, defaultScoreboardStartDate])
 
   // Memoize the date range calculation to avoid unnecessary recalculations
   // SSR-safe: uses clientDate which returns deterministic values on server
@@ -283,7 +272,7 @@ export default function Scoreboard() {
       enabled: shouldFetch,
       staleTime: 1000 * 60 * 5, // 5 minutes
     },
-    submittedFilter === 'submitted',
+    true,
     dateMode,
     assumedMonthsTillLapse,
   )
@@ -291,9 +280,9 @@ export default function Scoreboard() {
   const lapsedQueryKey = useMemo(
     () => queryKeys.scoreboardLapsed(
       user?.id || '', dateRange.startDate, dateRange.endDate,
-      'agency', submittedFilter === 'submitted', dateMode, assumedMonthsTillLapse
+      'agency', true, dateMode, assumedMonthsTillLapse
     ),
-    [user?.id, dateRange.startDate, dateRange.endDate, submittedFilter, dateMode, assumedMonthsTillLapse]
+    [user?.id, dateRange.startDate, dateRange.endDate, dateMode, assumedMonthsTillLapse]
   )
 
   const data = rpcResponse ?? null
@@ -704,27 +693,6 @@ export default function Scoreboard() {
                     </div>
                   </PopoverContent>
                 </Popover>
-
-                {issuePaidStatusEnabled && (
-                  <div className="flex items-center gap-1 border rounded-md p-1">
-                    <Button
-                      variant={submittedFilter === 'submitted' ? 'default' : 'ghost'}
-                      size="sm"
-                      onClick={() => setSubmittedFilter('submitted')}
-                      className="h-9 px-3 text-sm"
-                    >
-                      Submitted
-                    </Button>
-                    <Button
-                      variant={submittedFilter === 'issue_paid' ? 'default' : 'ghost'}
-                      size="sm"
-                      onClick={() => setSubmittedFilter('issue_paid')}
-                      className="h-9 px-3 text-sm"
-                    >
-                      Issue Paid
-                    </Button>
-                  </div>
-                )}
 
                 <div className="flex items-center gap-1 border rounded-md p-1">
                   <Button

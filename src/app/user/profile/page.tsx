@@ -8,8 +8,9 @@ import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";
 import { useNotification } from '@/contexts/notification-context'
 import { useTheme } from "next-themes"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
-import { Sun, Moon, Monitor, Check, Loader2, Phone, MessageSquare, type LucideIcon } from "lucide-react"
+import { Sun, Moon, Monitor, Check, Loader2, Phone, MessageSquare, type LucideIcon, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { TierUsageCard } from "@/components/tier-usage-card"
 import { TierUsageCard } from "@/components/tier-usage-card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useApiFetch } from '@/hooks/useApiFetch'
@@ -17,6 +18,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useResetPassword } from '@/hooks/mutations'
 import { apiClient } from '@/lib/api-client'
+
+interface ThemeOption {
+  value: ThemeMode
+  label: string
+  description: string
+  icon: LucideIcon
+}
+
+const THEME_OPTIONS: ThemeOption[] = [
+  { value: 'light', label: 'Light', description: 'Bright, clean interface', icon: Sun },
+  { value: 'dark', label: 'Dark', description: 'Easy on the eyes', icon: Moon },
+  { value: 'system', label: 'System', description: 'Follow device settings', icon: Monitor },
+]
 
 interface ThemeOption {
   value: ThemeMode

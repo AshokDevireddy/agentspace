@@ -41,6 +41,13 @@ export interface AgencySettings {
   smsPolicyPacketTemplate: string | null
   defaultScoreboardStartDate: string | null
   smsAutoSendEnabled: boolean
+  smsWelcomeRequireApproval: boolean
+  smsBillingRequireApproval: boolean
+  smsLapseRequireApproval: boolean
+  smsBirthdayRequireApproval: boolean
+  smsHolidayRequireApproval: boolean
+  smsQuarterlyRequireApproval: boolean
+  smsPolicyPacketRequireApproval: boolean
   scoreboardAgentVisibility: boolean
 }
 

@@ -46,6 +46,16 @@ import {
 } from '@/hooks/mutations'
 import { useAgencySettings, type AgencySettings } from '@/hooks/useAgencySettings'
 
+const SMS_TYPE_OVERRIDE_FIELDS: Record<string, keyof AgencySettings> = {
+  welcome: 'smsWelcomeRequireApproval',
+  birthday: 'smsBirthdayRequireApproval',
+  lapse: 'smsLapseRequireApproval',
+  billing: 'smsBillingRequireApproval',
+  quarterly: 'smsQuarterlyRequireApproval',
+  policy_packet: 'smsPolicyPacketRequireApproval',
+  holiday: 'smsHolidayRequireApproval',
+}
+
 // Types for carrier data
 interface Carrier {
   id: string
@@ -385,6 +395,10 @@ export default function ConfigurationPage() {
 
   // SMS Automation state
   const [automationAgentSaving, setAutomationAgentSaving] = useState<string | null>(null)
+  const [savingAutomation, setSavingAutomation] = useState(false)
+  const [smsTypeOverrides, setSmsTypeOverrides] = useState<Record<string, boolean>>(
+    Object.fromEntries(Object.keys(SMS_TYPE_OVERRIDE_FIELDS).map(k => [k, false]))
+  )
 
   // Fetch agents for automation tab
   const { data: automationAgentsData, isLoading: automationAgentsLoading } = useQuery({
@@ -401,6 +415,9 @@ export default function ConfigurationPage() {
     staleTime: 5 * 60 * 1000,
   })
   const automationAgents = automationAgentsData || []
+
+  // Scoreboard state
+  const [savingScoreboardVisibility, setSavingScoreboardVisibility] = useState(false)
 
   // ============ Payout Settings ============
 
@@ -763,6 +780,11 @@ export default function ConfigurationPage() {
       setLapseEmailBody(agencyData.lapseEmailBody || "")
       setLapseSubjectValue(agencyData.lapseEmailSubject || "Policy Lapse Alert: {{client_name}}")
       setLapseBodyValue(agencyData.lapseEmailBody || "")
+      setSmsTypeOverrides(
+        Object.fromEntries(
+          Object.entries(SMS_TYPE_OVERRIDE_FIELDS).map(([key, field]) => [key, (agencyData[field] as boolean) ?? false])
+        )
+      )
     }
   }, [agencyData])
 
@@ -816,6 +838,55 @@ export default function ConfigurationPage() {
       setUploadedFilesInfo(policyFilesData.files)
     }
   }, [policyFilesData])
+
+  // ============ SMS Automation Handlers ============
+
+  const handleAutoSendEnabledChange = async (enabled: boolean) => {
+    if (!agencyData?.id) return
+    setSavingAutomation(true)
+    try {
+      await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, { smsAutoSendEnabled: enabled })
+      queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+      showSuccess(`SMS auto-send ${enabled ? 'enabled' : 'disabled'}`)
+    } catch {
+      showError('Failed to update auto-send setting')
+    } finally {
+      setSavingAutomation(false)
+    }
+  }
+
+  const handleTypeOverrideChange = async (type: string, requireApproval: boolean) => {
+    if (!agencyData?.id) return
+    setSavingAutomation(true)
+    try {
+      await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, {
+        [SMS_TYPE_OVERRIDE_FIELDS[type]]: requireApproval,
+      })
+      setSmsTypeOverrides(prev => ({ ...prev, [type]: requireApproval }))
+      queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+      showSuccess('Setting updated')
+    } catch {
+      showError('Failed to update setting')
+    } finally {
+      setSavingAutomation(false)
+    }
+  }
+
+  // ============ Scoreboard Handlers ============
+
+  const handleToggleScoreboardVisibility = async (enabled: boolean) => {
+    if (!agencyData?.id) return
+    setSavingScoreboardVisibility(true)
+    try {
+      await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, { scoreboardAgentVisibility: enabled })
+      queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
+      showSuccess(`Scoreboard visibility ${enabled ? 'enabled' : 'disabled'} for all agents`)
+    } catch {
+      showError('Failed to update scoreboard visibility')
+    } finally {
+      setSavingScoreboardVisibility(false)
+    }
+  }
 
   // ============ Original useEffects (keeping non-fetch logic) ============
 
@@ -3805,26 +3876,20 @@ export default function ConfigurationPage() {
                   </div>
                   <SmsAutomationSettings
                     smsAutoSendEnabled={agencyData?.smsAutoSendEnabled ?? true}
-                    onAutoSendEnabledChange={async (enabled) => {
-                      if (!agencyData?.id) return
-                      try {
-                        await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, { smsAutoSendEnabled: enabled })
-                        queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
-                        showSuccess(`SMS auto-send ${enabled ? 'enabled' : 'disabled'}`)
-                      } catch {
-                        showError('Failed to update auto-send setting')
-                      }
-                    }}
-                    typeOverrides={{}}
-                    onTypeOverrideChange={() => {}}
-                    saving={false}
+                    onAutoSendEnabledChange={handleAutoSendEnabledChange}
+                    typeOverrides={smsTypeOverrides}
+                    onTypeOverrideChange={handleTypeOverrideChange}
+                    saving={savingAutomation}
                     agents={automationAgents}
                     agentsLoading={automationAgentsLoading}
                     onAgentToggle={async (agentId, value) => {
                       setAutomationAgentSaving(agentId)
                       try {
-                        await apiClient.patch('/api/agents/auto-send/', { agentId: agentId, smsAutoSendEnabled: value })
-                        queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgentAutoSend() })
+                        await apiClient.patch('/api/agents/auto-send/', { agentId, smsAutoSendEnabled: value })
+                        queryClient.setQueryData<AgentAutoSendInfo[]>(
+                          queryKeys.configurationAgentAutoSend(),
+                          (old) => old?.map(a => a.id === agentId ? { ...a, smsAutoSendEnabled: value } : a) ?? []
+                        )
                       } catch {
                         showError('Failed to update agent auto-send setting')
                       } finally {
@@ -4656,23 +4721,22 @@ export default function ConfigurationPage() {
                   <div className="rounded-lg border bg-card p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-lg font-semibold text-foreground">Agent Scoreboard Visibility</h3>
+                        <h3 className="text-lg font-semibold text-foreground">Agency Scoreboard Visibility</h3>
                         <p className="text-sm text-muted-foreground mt-1">
-                          When enabled, all agents can see the full agency scoreboard stats (production, policies, active agents). When disabled, non-admin agents only see stats when viewing their own team.
+                          When enabled, all agents can view the full agency leaderboard and summary stats on the scoreboard — not just their own downline.
+                          When disabled, agents only see their downline data in the Agency view.
+                        </p>
+                        <p className={cn(
+                          "text-sm font-medium mt-2",
+                          agencyData?.scoreboardAgentVisibility ? "text-green-600" : "text-muted-foreground"
+                        )}>
+                          Status: {agencyData?.scoreboardAgentVisibility ? "Enabled" : "Disabled"}
                         </p>
                       </div>
                       <Switch
                         checked={agencyData?.scoreboardAgentVisibility ?? false}
-                        onCheckedChange={async (enabled) => {
-                          if (!agencyData?.id) return
-                          try {
-                            await apiClient.patch(`/api/agencies/${agencyData.id}/settings/`, { scoreboardAgentVisibility: enabled })
-                            queryClient.invalidateQueries({ queryKey: queryKeys.configurationAgency() })
-                            showSuccess(`Scoreboard visibility ${enabled ? 'enabled' : 'disabled'} for all agents`)
-                          } catch {
-                            showError('Failed to update scoreboard visibility setting')
-                          }
-                        }}
+                        onCheckedChange={handleToggleScoreboardVisibility}
+                        disabled={savingScoreboardVisibility}
                       />
                     </div>
                   </div>

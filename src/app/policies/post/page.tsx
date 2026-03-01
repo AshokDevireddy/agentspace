@@ -179,18 +179,18 @@ export default function PostDeal() {
 
       // Map carriers to {value, label} as required by SimpleSearchableSelect.
       const rawCarriers: Array<{ id: string; name: string }> = data.carriers || []
-      const rawLeadSources: Array<{ value?: string; label?: string; id?: string; name?: string }> = data.leadSources || []
-      const rawTeams: Array<{ value?: string; label?: string; id?: string; name?: string }> = data.teams || []
+      const rawLeadSources: Array<string | { value?: string; label?: string; id?: string; name?: string }> = data.leadSources || []
+      const rawTeams: Array<string | { value?: string; label?: string; id?: string; name?: string }> = data.teams || []
 
       return {
         userId: data.user?.id,
         agencyId: data.agencyId,
         isAdminUser: data.user?.isAdmin,
-        leadSourceOptions: rawLeadSources.map(ls =>
-          ls.value !== undefined
-            ? { value: ls.value, label: ls.label ?? ls.name ?? String(ls.value) }
-            : { value: String(ls.id), label: ls.name ?? String(ls.id) }
-        ),
+        leadSourceOptions: rawLeadSources.map(ls => {
+          if (typeof ls === 'string') return { value: ls, label: ls }
+          if (ls.value !== undefined) return { value: ls.value, label: ls.label ?? ls.name ?? ls.value }
+          return { value: String(ls.id), label: ls.name ?? String(ls.id) }
+        }),
         carriersOptions: rawCarriers.map(c => ({
           value: String(c.id),
           label: c.name,
@@ -198,11 +198,11 @@ export default function PostDeal() {
         userFirstName: data.userFirstName,
         userLastName: data.userLastName,
         deactivatedPostADeal: data.deactivatedPostADeal || false,
-        teamsOptions: rawTeams.map(t =>
-          t.value !== undefined
-            ? { value: t.value, label: t.label ?? t.name ?? String(t.value) }
-            : { value: String(t.id), label: t.name ?? String(t.id) }
-        ),
+        teamsOptions: rawTeams.map(t => {
+          if (typeof t === 'string') return { value: t, label: t }
+          if (t.value !== undefined) return { value: t.value, label: t.label ?? t.name ?? t.value }
+          return { value: String(t.id), label: t.name ?? String(t.id) }
+        }),
         beneficiariesRequired: data.beneficiariesRequired ?? false
       }
     },
@@ -1064,10 +1064,8 @@ export default function PostDeal() {
                       Defaults to today. Change this to backdate a previously sold deal.
                     </p>
                   </div>
-                </div>
 
-                {/* SSN Benefit */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* SSN Benefit */}
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
                       SSN Benefit <span className="text-destructive">*</span>
@@ -1183,16 +1181,18 @@ export default function PostDeal() {
 
                 {/* Team - Only shown if teams exist */}
                 {teamsOptions.length > 0 && (
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-foreground">
-                      Team <span className="text-destructive">*</span>
-                    </label>
-                    <SimpleSearchableSelect
-                      options={teamsOptions}
-                      value={formData.team}
-                      onValueChange={(value) => handleInputChange("team", value)}
-                      placeholder="Select team"
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-foreground">
+                        Team <span className="text-destructive">*</span>
+                      </label>
+                      <SimpleSearchableSelect
+                        options={teamsOptions}
+                        value={formData.team}
+                        onValueChange={(value) => handleInputChange("team", value)}
+                        placeholder="Select team"
+                      />
+                    </div>
                   </div>
                 )}
 

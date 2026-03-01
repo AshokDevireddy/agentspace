@@ -144,7 +144,7 @@ async function routeUserByAuthId(
 ): Promise<NextResponse> {
   try {
     const callbackResponse = await fetch(
-      `${apiUrl}/api/auth/callback-user?auth_user_id=${authUserId}`,
+      `${apiUrl}/api/auth/callback-user/?auth_user_id=${authUserId}`,
       {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },

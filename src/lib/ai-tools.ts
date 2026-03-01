@@ -330,7 +330,7 @@ export async function getAgencySummary(params: any, agencyId: string, accessToke
     // Fetch data from Django APIs in parallel
     const [agencyData, dashboardData, agentsData, dealsData] = await Promise.all([
       // Get agency settings
-      fetchDjangoApi<any>(`/api/agencies/${agencyId}/settings`, accessToken).catch(() => null),
+      fetchDjangoApi<any>(`/api/agencies/${agencyId}/settings/`, accessToken).catch(() => null),
 
       // Get dashboard summary for production metrics
       fetchDjangoApi<any>('/api/dashboard/summary/', accessToken).catch(() => null),
@@ -565,8 +565,8 @@ export async function getAgentHierarchy(params: any, agencyId: string, accessTok
 
     // Get root agent and downline from Django API
     const [agentData, downlineData] = await Promise.all([
-      fetchDjangoApi<any>(`/api/agents/${agentId}`, accessToken).catch(() => null),
-      fetchDjangoApi<any>(`/api/agents/${agentId}/downline`, accessToken).catch(() => ({ downlines: [] }))
+      fetchDjangoApi<any>(`/api/agents/${agentId}/`, accessToken).catch(() => null),
+      fetchDjangoApi<any>(`/api/agents/${agentId}/downline/`, accessToken).catch(() => ({ downlines: [] }))
     ]);
 
     if (!agentData) {

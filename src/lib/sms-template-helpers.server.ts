@@ -32,7 +32,7 @@ export async function batchFetchAgencySmsSettings(
   // Fetch all agencies in parallel
   const fetchPromises = uniqueIds.map(async (agencyId) => {
     try {
-      const response = await fetch(`${apiUrl}/api/agencies/${agencyId}/settings`, {
+      const response = await fetch(`${apiUrl}/api/agencies/${agencyId}/settings/`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

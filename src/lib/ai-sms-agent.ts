@@ -465,7 +465,7 @@ Please provide a helpful response about their policy information. Keep it under 
 async function getAgencyDetails(agencyId: string): Promise<Agency | null> {
   try {
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-    const response = await fetch(`${apiUrl}/api/agencies/${agencyId}`, {
+    const response = await fetch(`${apiUrl}/api/agencies/${agencyId}/`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -498,7 +498,7 @@ async function getAgencyDetails(agencyId: string): Promise<Agency | null> {
 async function flagDealForMoreInfo(dealId: string): Promise<void> {
   try {
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-    const response = await fetch(`${apiUrl}/api/deals/${dealId}/status`, {
+    const response = await fetch(`${apiUrl}/api/deals/${dealId}/status/`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',

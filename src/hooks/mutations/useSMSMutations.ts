@@ -21,14 +21,22 @@ interface DraftActionInput {
   messageIds: string[]
 }
 
-interface DraftActionResponse {
+interface DraftApproveResponse {
   success: boolean
-  processed: number
+  approved: number
+  failed: number
+  results: Array<{ messageId: string; success: boolean; telnyxMessageId?: string }>
+  errors: Array<{ messageId?: string; error: string }> | null
+}
+
+interface DraftRejectResponse {
+  success: boolean
+  rejected: number
 }
 
 interface EditDraftInput {
   messageId: string
-  body: string
+  content: string
 }
 
 interface ResolveNotificationResponse {
@@ -62,14 +70,14 @@ export function useSendMessage(options?: {
  */
 export function useApproveDrafts(options?: {
   conversationId?: string
-  onSuccess?: (data: DraftActionResponse, variables: DraftActionInput) => void
+  onSuccess?: (data: DraftApproveResponse, variables: DraftActionInput) => void
   onError?: (error: Error) => void
 }) {
   const { invalidateConversationRelated } = useInvalidation()
 
-  return useMutation<DraftActionResponse, Error, DraftActionInput>({
+  return useMutation<DraftApproveResponse, Error, DraftActionInput>({
     mutationFn: async ({ messageIds }) => {
-      return apiClient.post<DraftActionResponse>('/api/sms/drafts/approve/', { messageIds })
+      return apiClient.post<DraftApproveResponse>('/api/sms/drafts/approve/', { messageIds })
     },
     onSuccess: async (data, variables) => {
       await invalidateConversationRelated(options?.conversationId)
@@ -84,14 +92,14 @@ export function useApproveDrafts(options?: {
  */
 export function useRejectDrafts(options?: {
   conversationId?: string
-  onSuccess?: (data: DraftActionResponse, variables: DraftActionInput) => void
+  onSuccess?: (data: DraftRejectResponse, variables: DraftActionInput) => void
   onError?: (error: Error) => void
 }) {
   const { invalidateConversationRelated } = useInvalidation()
 
-  return useMutation<DraftActionResponse, Error, DraftActionInput>({
+  return useMutation<DraftRejectResponse, Error, DraftActionInput>({
     mutationFn: async ({ messageIds }) => {
-      return apiClient.post<DraftActionResponse>('/api/sms/drafts/reject/', { messageIds })
+      return apiClient.post<DraftRejectResponse>('/api/sms/drafts/reject/', { messageIds })
     },
     onSuccess: async (data, variables) => {
       await invalidateConversationRelated(options?.conversationId)
@@ -112,8 +120,8 @@ export function useEditDraft(options?: {
   const { invalidateConversationRelated } = useInvalidation()
 
   return useMutation<{ success: boolean }, Error, EditDraftInput>({
-    mutationFn: async ({ messageId, body }) => {
-      return apiClient.post<{ success: boolean }>('/api/sms/drafts/edit/', { messageId, body })
+    mutationFn: async ({ messageId, content }) => {
+      return apiClient.patch<{ success: boolean }>(`/api/sms/drafts/${messageId}/`, { body: content })
     },
     onSuccess: async (data, variables) => {
       await invalidateConversationRelated(options?.conversationId)
@@ -154,7 +162,7 @@ export function useRetryFailed(options?: { onSuccess?: () => void; onError?: (er
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (messageIds: string[]) => {
+    mutationFn: async ({ messageIds }: { messageIds: string[] }) => {
       return apiClient.post('/api/sms/failed/retry/', { messageIds })
     },
     onSuccess: () => {

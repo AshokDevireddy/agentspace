@@ -230,7 +230,7 @@ function SMSMessagingPageContent() {
   }, [selectedConversation])
   const { data: conversationsData, isPending: loading } = useApiFetch<{ conversations: Conversation[] }>(
     queryKeys.conversationsList(effectiveViewMode, { searchQuery, notificationFilter }),
-    `/api/sms/conversations?view=${effectiveViewMode}`,
+    `/api/sms/conversations?view_mode=${effectiveViewMode}`,
     {
       enabled: isAdminChecked,
       staleTime: 30 * 1000, // 30 seconds
@@ -243,7 +243,7 @@ function SMSMessagingPageContent() {
   // Messages query - migrated to useApiFetch
   const { data: messagesData, isPending: messagesLoading } = useApiFetch<{ messages: Message[] }>(
     queryKeys.messages(selectedConversation?.id || ''),
-    `/api/sms/messages?conversationId=${selectedConversation?.id}&view=${effectiveViewMode}`,
+    `/api/sms/messages?conversation_id=${selectedConversation?.id}`,
     {
       enabled: !!selectedConversation?.id,
       staleTime: 30 * 1000, // 30 seconds - prevents excessive refetches
@@ -425,7 +425,7 @@ function SMSMessagingPageContent() {
 
   // SSE for global conversation updates (new inbound messages)
   useConversationsSSE(
-    effectiveViewMode === 'all' ? 'all' : 'self',
+    effectiveViewMode,
     {
       enabled: !!user?.id,
       onConversationUpdate: useCallback((conversationIds: string[]) => {
@@ -777,7 +777,7 @@ function SMSMessagingPageContent() {
   })
 
   const handleSaveEditDraft = (messageId: string) => {
-    editDraftMutation.mutate({ messageId, body: editingDraftBody })
+    editDraftMutation.mutate({ messageId, content: editingDraftBody })
   }
 
   // Retry failed mutation - using centralized hook

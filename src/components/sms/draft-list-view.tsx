@@ -13,9 +13,8 @@ import { useApproveDrafts, useRejectDrafts } from '@/hooks/mutations'
 
 interface DraftMessage {
   id: string
-  body: string
-  direction: string
-  metadata: any
+  content: string
+  metadata: Record<string, any> | null
   createdAt: string | null
 }
 
@@ -42,7 +41,7 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
   // Fetch drafts using TanStack Query
   const { data, isLoading: loading } = useApiFetch<{ drafts: DraftGroup[] }>(
     queryKeys.draftsList(viewMode),
-    `/api/sms/drafts?view=${viewMode}`
+    `/api/sms/drafts?view_mode=${viewMode}`
   )
 
   const draftGroups = data?.drafts || []
@@ -235,7 +234,7 @@ export function DraftListView({ viewMode, onClose, onConversationClick }: DraftL
                           </div>
                         )}
                         <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">
-                          {message.body}
+                          {message.content}
                         </p>
                       </div>
                     </div>

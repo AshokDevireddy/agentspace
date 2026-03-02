@@ -45,6 +45,10 @@ interface PayoutsTopLevel {
   payoutEntries: number
   personalProduction: number
   downlineProduction: number
+  personalPremiumTotal: number
+  downlinePremiumTotal: number
+  personalDealCount: number
+  downlineDealCount: number
   summary: {
     byCarrier: Array<{
       carrier: string
@@ -211,7 +215,7 @@ export default function ExpectedPayoutsPage() {
 
       try {
         const data = await apiClient.get<{ downlines?: Array<{ id: string; name?: string }> }>('/api/agents/downlines/', {
-          params: { agentId: userData.id }
+          params: { agentId: userData.id, recursive: 'true' }
         })
         return (data.downlines || []).map((agent) => ({
           id: agent.id,
@@ -290,6 +294,10 @@ export default function ExpectedPayoutsPage() {
   const dealCount = payoutsData?.dealCount ?? 0
   const personalProduction = payoutsData?.personalProduction ?? 0
   const downlineProduction = payoutsData?.downlineProduction ?? 0
+  const personalPremiumTotal = payoutsData?.personalPremiumTotal ?? 0
+  const downlinePremiumTotal = payoutsData?.downlinePremiumTotal ?? 0
+  const personalDealCount = payoutsData?.personalDealCount ?? 0
+  const downlineDealCount = payoutsData?.downlineDealCount ?? 0
 
   // Fetch debt data - depends on agent filter
   // Use effectiveAgentId to prevent race conditions when filter hasn't been set yet
@@ -503,10 +511,10 @@ export default function ExpectedPayoutsPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  ${personalProduction.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${personalPremiumTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  From deals you wrote
+                  From {personalDealCount} deals you wrote
                 </p>
               </CardContent>
             </Card>
@@ -518,10 +526,10 @@ export default function ExpectedPayoutsPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  ${downlineProduction.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${downlinePremiumTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  From downline deals
+                  From {downlineDealCount} downline deals
                 </p>
               </CardContent>
             </Card>

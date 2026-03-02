@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
 import { REDIRECT_DELAY_MS, storeInviteTokens, captureHashTokens, type HashTokens } from '@/lib/auth/constants'
 import { apiClient } from '@/lib/api-client'
-import { getAccessToken } from '@/lib/auth/token-store'
+import { authApi } from '@/lib/api/auth'
+import { getAccessToken, setAccessToken } from '@/lib/auth/token-store'
 
 interface UserRecord {
   id: string
@@ -13,7 +14,6 @@ interface UserRecord {
   status: string
 }
 
-// 35s master timeout
 const MASTER_TIMEOUT_MS = 35000
 
 export default function ConfirmSession() {
@@ -26,12 +26,10 @@ export default function ConfirmSession() {
   useEffect(() => {
     if (processingRef.current) return
     processingRef.current = true
-
     confirmSession()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Master timeout to prevent infinite loading
   useEffect(() => {
     const masterTimeout = setTimeout(() => {
       if (!completedRef.current) {
@@ -40,20 +38,40 @@ export default function ConfirmSession() {
         router.push('/login?error=Session confirmation timed out. Please try your invitation link again.')
       }
     }, MASTER_TIMEOUT_MS)
-
     return () => clearTimeout(masterTimeout)
   }, [router])
 
   const confirmSession = async () => {
     try {
-      // Try hash tokens first (from email invite links)
       if (initialHashTokens) {
         const payload = decodeAndValidateJwt(initialHashTokens.accessToken)
 
         if (!payload) {
           completedRef.current = true
-          setMessage('Your link has expired. Please request a new invitation.')
+          setMessage('Your invitation link has expired.')
           setTimeout(() => router.push('/login?error=Your invitation link has expired. Please contact your administrator.'), REDIRECT_DELAY_MS)
+          return
+        }
+
+        try {
+          const verifyResult = await authApi.verifyInvite({
+            access_token: initialHashTokens.accessToken,
+            refresh_token: initialHashTokens.refreshToken,
+          })
+
+          if (verifyResult.valid && verifyResult.access_token) {
+            setAccessToken(verifyResult.access_token)
+            storeInviteTokens(verifyResult.access_token, verifyResult.refresh_token)
+          } else {
+            completedRef.current = true
+            setMessage('Session verification failed.')
+            setTimeout(() => router.push('/login?error=Session verification failed. Please try again.'), REDIRECT_DELAY_MS)
+            return
+          }
+        } catch {
+          completedRef.current = true
+          setMessage('Failed to verify invite.')
+          setTimeout(() => router.push('/login?error=Failed to verify invite. Please try again.'), REDIRECT_DELAY_MS)
           return
         }
 
@@ -76,8 +94,8 @@ export default function ConfirmSession() {
             // Session check failed, continue to other methods
           }
         }
-      } catch (err) {
-        console.error('Error checking existing session:', err)
+      } catch {
+        // Error checking existing session
       }
 
       // Try PKCE flow (code in query params) - redirect to callback route
@@ -91,8 +109,7 @@ export default function ConfirmSession() {
       completedRef.current = true
       setMessage('Session confirmation failed. Redirecting to login...')
       setTimeout(() => router.push('/login?error=Invitation link has expired.'), REDIRECT_DELAY_MS)
-    } catch (err) {
-      console.error('Error in confirmSession:', err)
+    } catch {
       completedRef.current = true
       setMessage('An error occurred. Redirecting to login...')
       setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
@@ -132,8 +149,7 @@ export default function ConfirmSession() {
       completedRef.current = true
       setMessage('Account is not accessible. Please contact support.')
       setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
-    } catch (err) {
-      console.error('Error in routeUser:', err)
+    } catch {
       completedRef.current = true
       setMessage('An error occurred. Redirecting to login...')
       setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
@@ -141,15 +157,7 @@ export default function ConfirmSession() {
   }
 
   const routeUserByData = async (userData: { id: string; role: string; status: string }) => {
-    if (userData.status === 'invited') {
-      // For invited users coming from existing session, redirect to setup
-      completedRef.current = true
-      setMessage('Continue setting up your account...')
-      router.push('/setup-account')
-      return
-    }
-
-    if (userData.status === 'onboarding') {
+    if (userData.status === 'invited' || userData.status === 'onboarding') {
       completedRef.current = true
       setMessage('Continue setting up your account...')
       router.push('/setup-account')
@@ -178,12 +186,11 @@ export default function ConfirmSession() {
     }
   }
 
-  const handleInvitedUser = async (user: UserRecord, accessToken?: string) => {
-    // Update status to onboarding via Django API
+  const handleInvitedUser = async (_user: UserRecord, accessToken?: string) => {
     try {
       await apiClient.put('/api/user/profile/', { status: 'onboarding' })
-    } catch (err) {
-      console.error('Failed to update user status:', err)
+    } catch {
+      // Failed to update user status
     }
 
     // Store tokens for setup-account page to use

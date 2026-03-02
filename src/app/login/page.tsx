@@ -17,16 +17,30 @@ export default function LoginPage() {
 
   const processedRef = useRef(false)
   const cleanedRef = useRef(false)
+  const [redirecting, setRedirecting] = useState(false)
 
-  // Clean up any stale tokens on mount
+  // FIRST: If Supabase redirected here with hash tokens, forward to /auth/confirm immediately
   useEffect(() => {
-    if (cleanedRef.current) return
+    const hash = window.location.hash.substring(1)
+    if (hash) {
+      const params = new URLSearchParams(hash)
+      if (params.get('access_token')) {
+        setRedirecting(true)
+        window.location.href = `/auth/confirm#${hash}`
+        return
+      }
+    }
+  }, [])
+
+  // Clean up any stale tokens on mount (skip if redirecting)
+  useEffect(() => {
+    if (cleanedRef.current || redirecting) return
     cleanedRef.current = true
 
     // Clear any stored tokens from invite/recovery flows
     clearInviteTokens()
     clearRecoveryTokens()
-  }, [])
+  }, [redirecting])
 
   // Handle URL error parameters
   useEffect(() => {
@@ -51,6 +65,14 @@ export default function LoginPage() {
     const hash = window.location.hash.substring(1)
     if (hash) {
       const params = new URLSearchParams(hash)
+
+      // If Supabase redirected here with auth tokens, forward to /auth/confirm
+      const accessToken = params.get('access_token')
+      if (accessToken) {
+        window.location.href = `/auth/confirm#${hash}`
+        return
+      }
+
       const urlError = params.get('error')
       const errorDescription = params.get('error_description')
 

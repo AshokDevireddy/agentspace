@@ -238,6 +238,7 @@ export const authApi = {
   async verifyInvite(data: VerifyInviteRequest): Promise<VerifyInviteResponse> {
     const response = await fetch(getAuthEndpoint('verifyInvite'), {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     })

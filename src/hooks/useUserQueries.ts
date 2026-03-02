@@ -95,6 +95,7 @@ interface AgencyBrandingData {
   primary_color: string | null
   theme_mode: string | null
   whitelabel_domain: string | null
+  timezone: string | null
 }
 
 interface UseAgencyBrandingOptions {
@@ -125,7 +126,7 @@ export function useAgencyBranding(
       // If access token provided, use REST API
       if (accessToken) {
         const { data, error } = await supabaseRestFetch<AgencyBrandingData[]>(
-          `/rest/v1/agencies?id=eq.${agencyId}&select=id,name,display_name,logo_url,primary_color,theme_mode,whitelabel_domain`,
+          `/rest/v1/agencies?id=eq.${agencyId}&select=id,name,display_name,logo_url,primary_color,theme_mode,whitelabel_domain,timezone`,
           { accessToken }
         )
 
@@ -140,7 +141,7 @@ export function useAgencyBranding(
       const supabase = createClient()
       const { data, error } = await supabase
         .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, theme_mode, whitelabel_domain')
+        .select('id, name, display_name, logo_url, primary_color, theme_mode, whitelabel_domain, timezone')
         .eq('id', agencyId)
         .maybeSingle()
 
@@ -182,7 +183,7 @@ export function useAgencyBrandingByDomain(
       const supabase = createClient()
       const { data, error } = await supabase
         .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, theme_mode, whitelabel_domain')
+        .select('id, name, display_name, logo_url, primary_color, theme_mode, whitelabel_domain, timezone')
         .eq('whitelabel_domain', domain)
         .eq('is_active', true)
         .maybeSingle()
@@ -201,6 +202,7 @@ interface AgencyScoreboardSettings {
   default_scoreboard_start_date: string | null
   issue_paid_status: boolean | null
   scoreboard_agent_visibility: boolean | null
+  timezone: string | null
 }
 
 interface UseAgencyScoreboardSettingsOptions {
@@ -230,7 +232,7 @@ export function useAgencyScoreboardSettings(
       const supabase = createClient()
       const { data, error } = await supabase
         .from('agencies')
-        .select('default_scoreboard_start_date, issue_paid_status, scoreboard_agent_visibility')
+        .select('default_scoreboard_start_date, issue_paid_status, scoreboard_agent_visibility, timezone')
         .eq('id', agencyId)
         .maybeSingle()
 

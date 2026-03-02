@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
+import { getDatePartsInTimezone, DEFAULT_TIMEZONE } from '@/lib/timezone'
+import { useAgencyScoreboardSettings } from '@/hooks/useUserQueries'
 
 // Options are loaded dynamically from Supabase based on the user's agency
 
@@ -59,7 +61,7 @@ const STEPS = [
 
 export default function PostDeal() {
   const [formData, setFormData] = useState<typeof initialFormData>(initialFormData)
-  const { user } = useAuth()
+  const { user, userData: authUserData } = useAuth()
   const supabase = createClient()
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -69,7 +71,12 @@ export default function PostDeal() {
   const errorRef = useRef<HTMLDivElement>(null)
   const [currentStep, setCurrentStep] = useState(1)
   const submitIntentRef = useRef(false)
-  const today = useMemo(() => new Date().toISOString().split('T')[0], [])
+  const submittedDateTouchedRef = useRef(false)
+
+  // Fetch agency timezone for computing "today" in the correct timezone
+  const { data: agencySettings } = useAgencyScoreboardSettings(authUserData?.agency_id)
+  const agencyTimezone = agencySettings?.timezone || DEFAULT_TIMEZONE
+  const today = useMemo(() => getDatePartsInTimezone(agencyTimezone).isoDate, [agencyTimezone])
 
   // Dynamic option states
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([])
@@ -122,7 +129,10 @@ export default function PostDeal() {
   ]
 
   useEffect(() => {
-    setFormData(prev => ({ ...prev, submittedDate: today }))
+    // Only auto-set the submitted date if the user hasn't manually changed it
+    if (!submittedDateTouchedRef.current) {
+      setFormData(prev => ({ ...prev, submittedDate: today }))
+    }
   }, [today])
 
   useEffect(() => {
@@ -292,7 +302,7 @@ export default function PostDeal() {
         userLastName: currentUser.last_name,
         deactivatedPostADeal: agencyData?.deactivated_post_a_deal || false,
         beneficiariesRequired: agencyData?.beneficiaries_required || false,
-        hasTeams: agencyData?.teams !== null && agencyData?.teams !== undefined
+        hasTeams: agencyData?.teams !== null && agencyData?.teams !== undefined,
       }
 
       console.log('[PostDeal AgencyQuery] Query complete, returning:', {
@@ -810,6 +820,9 @@ export default function PostDeal() {
   }, [])
 
   const handleInputChange = (field: string, value: string) => {
+    if (field === "submittedDate") {
+      submittedDateTouchedRef.current = true
+    }
     if (field === "monthlyPremium" || field === "coverageAmount") {
       if (value.startsWith("-")) return
       setFormData({ ...formData, [field]: value })

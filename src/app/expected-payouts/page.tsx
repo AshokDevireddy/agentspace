@@ -17,6 +17,8 @@ import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { cn } from "@/lib/utils"
 import { useClientDate } from "@/hooks/useClientDate"
 import { useAuth } from "@/providers/AuthProvider"
+import { useAgencyScoreboardSettings } from "@/hooks/useUserQueries"
+import { DEFAULT_TIMEZONE } from "@/lib/timezone"
 
 interface PayoutData {
   month: string
@@ -107,10 +109,14 @@ export default function ExpectedPayoutsPage() {
   const queryClient = useQueryClient()
 
   // Get auth state - ensures Supabase client is ready before making queries
-  const { user: authUser, loading: authLoading } = useAuth()
+  const { user: authUser, loading: authLoading, userData: authUserData } = useAuth()
+
+  // Fetch agency timezone for timezone-aware date calculations
+  const { data: agencySettings } = useAgencyScoreboardSettings(authUserData?.agency_id)
+  const agencyTimezone = agencySettings?.timezone || DEFAULT_TIMEZONE
 
   // SSR-safe date hook - returns deterministic values on server, actual values on client
-  const clientDate = useClientDate()
+  const clientDate = useClientDate(agencyTimezone)
 
   // Calculate default date range (current year: Jan to Dec)
   // SSR-safe: uses clientDate.year which is deterministic on server

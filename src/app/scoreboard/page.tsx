@@ -20,6 +20,7 @@ import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { useHydrated } from "@/hooks/useHydrated"
 import { useClientDate } from "@/hooks/useClientDate"
 import { useLocalStorage } from "@/hooks/useLocalStorage"
+import { DEFAULT_TIMEZONE } from "@/lib/timezone"
 
 interface AgentScore {
   rank: number
@@ -72,7 +73,13 @@ export default function Scoreboard() {
 
   // SSR-safe hydration and date hooks
   const isHydrated = useHydrated()
-  const clientDate = useClientDate()
+
+  // Fetch agency settings early so timezone is available for date hooks
+  const { data: agencySettings, isLoading: isAgencySettingsLoading } = useAgencyScoreboardSettings(userData?.agency_id, {
+    staleTime: 0 // Disable cache to always fetch fresh data for issue_paid_status
+  })
+  const agencyTimezone = agencySettings?.timezone || DEFAULT_TIMEZONE
+  const clientDate = useClientDate(agencyTimezone)
 
   const [timeframe, setTimeframe] = useState<TimeframeOption>('this_month')
   const [customStartDate, setCustomStartDate] = useState('')
@@ -142,10 +149,6 @@ export default function Scoreboard() {
     }
   }, [isHydrated, clientDate.month, clientDate.year])
 
-  // Fetch agency default scoreboard start date using TanStack Query
-  const { data: agencySettings, isLoading: isAgencySettingsLoading } = useAgencyScoreboardSettings(userData?.agency_id, {
-    staleTime: 0 // Disable cache to always fetch fresh data for issue_paid_status
-  })
   const defaultScoreboardStartDate = agencySettings?.default_scoreboard_start_date ?? null
   const issuePaidStatusEnabled = agencySettings?.issue_paid_status ?? true
   const scoreboardAgentVisibility = agencySettings?.scoreboard_agent_visibility ?? false

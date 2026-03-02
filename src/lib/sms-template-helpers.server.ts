@@ -16,6 +16,7 @@ export interface AgencySmsSettings {
   sms_quarterly_template: string | null;
   sms_holiday_enabled: boolean | null;
   sms_holiday_template: string | null;
+  timezone?: string | null;
 }
 
 export async function batchFetchAgencySmsSettings(
@@ -42,7 +43,8 @@ export async function batchFetchAgencySmsSettings(
       sms_quarterly_enabled,
       sms_quarterly_template,
       sms_holiday_enabled,
-      sms_holiday_template
+      sms_holiday_template,
+      timezone
     `)
     .in('id', uniqueIds);
 

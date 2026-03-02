@@ -27,6 +27,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
 import { QueryErrorDisplay } from '@/components/ui/query-error-display'
+import { SimpleSearchableSelect } from '@/components/ui/simple-searchable-select'
+import { DEFAULT_TIMEZONE } from '@/lib/timezone'
 import {
   useCreatePosition,
   useUpdatePosition,
@@ -94,6 +96,7 @@ interface Agency {
   sms_policy_packet_require_approval?: boolean
   sms_holiday_require_approval?: boolean
   scoreboard_agent_visibility?: boolean
+  timezone?: string
 }
 
 // Types for position data
@@ -317,6 +320,11 @@ export default function ConfigurationPage() {
       if (pendingLogo !== null) {
         updates.logo_url = pendingLogo || null
       }
+
+      // Save timezone if changed
+      if (agencyTimezone !== (agency.timezone || DEFAULT_TIMEZONE)) {
+        updates.timezone = agencyTimezone
+      }
       
       if (Object.keys(updates).length === 0) {
         showWarning('No changes to save')
@@ -379,6 +387,7 @@ export default function ConfigurationPage() {
       displayName !== (agency.display_name || agency.name) ||
       agencyThemeMode !== agency.theme_mode ||
       whitelabelDomain !== (agency.whitelabel_domain || '') ||
+      agencyTimezone !== (agency.timezone || DEFAULT_TIMEZONE) ||
       logoChanged
     )
   }
@@ -400,7 +409,10 @@ export default function ConfigurationPage() {
     // Reset whitelabel domain
     setWhitelabelDomain(agency.whitelabel_domain || '')
     setWhitelabelDomainValue(agency.whitelabel_domain || '')
-    
+
+    // Reset timezone
+    setAgencyTimezone(agency.timezone || DEFAULT_TIMEZONE)
+
     // Reset logo
     setPendingLogo(null)
   }
@@ -412,6 +424,31 @@ export default function ConfigurationPage() {
   const [editingWhitelabelDomain, setEditingWhitelabelDomain] = useState(false)
   const [whitelabelDomainValue, setWhitelabelDomainValue] = useState("")
   const [savingWhitelabelDomain, setSavingWhitelabelDomain] = useState(false)
+
+  // Agency Timezone state
+  const [agencyTimezone, setAgencyTimezone] = useState(DEFAULT_TIMEZONE)
+  const timezoneOptions = useMemo(() => {
+    try {
+      const now = new Date()
+      return Intl.supportedValuesOf('timeZone').map((tz) => {
+        const offset = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          timeZoneName: 'shortOffset',
+        })
+          .formatToParts(now)
+          .find((p) => p.type === 'timeZoneName')?.value || ''
+        return { value: tz, label: `${tz} (${offset})` }
+      })
+    } catch {
+      return [
+        { value: 'America/Los_Angeles', label: 'America/Los_Angeles (UTC-08:00)' },
+        { value: 'America/Denver', label: 'America/Denver (UTC-07:00)' },
+        { value: 'America/Chicago', label: 'America/Chicago (UTC-06:00)' },
+        { value: 'America/New_York', label: 'America/New_York (UTC-05:00)' },
+        { value: 'UTC', label: 'UTC (UTC+00:00)' },
+      ]
+    }
+  }, [])
 
   // Lead Sources state
   const [leadSources, setLeadSources] = useState<string[]>([])
@@ -576,7 +613,7 @@ export default function ConfigurationPage() {
 
       const { data: agencyInfo, error } = await supabase
         .from('agencies')
-        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, discord_notification_enabled, discord_notification_template, discord_bot_username, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template, sms_auto_send_enabled, sms_welcome_require_approval, sms_birthday_require_approval, sms_lapse_require_approval, sms_billing_require_approval, sms_quarterly_require_approval, sms_policy_packet_require_approval, sms_holiday_require_approval, scoreboard_agent_visibility')
+        .select('id, name, display_name, logo_url, primary_color, theme_mode, lead_sources, phone_number, messaging_enabled, discord_webhook_url, discord_notification_enabled, discord_notification_template, discord_bot_username, whitelabel_domain, lapse_email_notifications_enabled, lapse_email_subject, lapse_email_body, sms_welcome_enabled, sms_welcome_template, sms_billing_reminder_enabled, sms_billing_reminder_template, sms_lapse_reminder_enabled, sms_lapse_reminder_template, sms_birthday_enabled, sms_birthday_template, sms_holiday_enabled, sms_holiday_template, sms_quarterly_enabled, sms_quarterly_template, sms_policy_packet_enabled, sms_policy_packet_template, sms_auto_send_enabled, sms_welcome_require_approval, sms_birthday_require_approval, sms_lapse_require_approval, sms_billing_require_approval, sms_quarterly_require_approval, sms_policy_packet_require_approval, sms_holiday_require_approval, scoreboard_agent_visibility, timezone')
         .eq('id', userDataLocal.agency_id)
         .single()
 
@@ -926,6 +963,7 @@ export default function ConfigurationPage() {
       setDiscordNotificationTemplate(agencyData.discord_notification_template || "")
       setDiscordBotUsername(agencyData.discord_bot_username || "AgentSpace Deal Bot")
       setWhitelabelDomain(agencyData.whitelabel_domain || "")
+      setAgencyTimezone(agencyData.timezone || DEFAULT_TIMEZONE)
       setSmsWelcomeEnabled(agencyData.sms_welcome_enabled ?? true)
       setSmsWelcomeTemplate(agencyData.sms_welcome_template || "")
       setSmsBillingReminderEnabled(agencyData.sms_billing_reminder_enabled ?? true)
@@ -3243,6 +3281,21 @@ export default function ConfigurationPage() {
                           </button>
                         </div>
                       )}
+                    </div>
+
+                    {/* Agency Timezone */}
+                    <div className="bg-accent/30 rounded-lg p-6 border border-border">
+                      <h3 className="text-xl font-semibold text-foreground mb-4">Agency Timezone</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Set your agency&apos;s preferred timezone. This will be used for displaying dates and times throughout the application.
+                      </p>
+                      <SimpleSearchableSelect
+                        options={timezoneOptions}
+                        value={agencyTimezone}
+                        onValueChange={(value) => setAgencyTimezone(value || DEFAULT_TIMEZONE)}
+                        placeholder="Select timezone..."
+                        searchPlaceholder="Search timezones..."
+                      />
                     </div>
 
                     {/* Preview Section */}

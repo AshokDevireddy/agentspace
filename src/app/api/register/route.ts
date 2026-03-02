@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { getDatePartsInTimezone, DEFAULT_TIMEZONE } from '@/lib/timezone'
 
 export async function POST(request: Request) {
   try {
@@ -186,7 +187,7 @@ export async function POST(request: Request) {
         status: 'invited',
         total_prod: 0,
         total_policies_sold: 0,
-        start_date: new Date().toISOString().split('T')[0],
+        start_date: getDatePartsInTimezone(DEFAULT_TIMEZONE).isoDate,
         agency_id: agencyData.id,
         theme_mode: 'system'
       }])

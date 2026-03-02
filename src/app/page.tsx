@@ -18,6 +18,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import Link from "next/link"
 import { useWeekDateRange } from "@/hooks/useClientDate"
+import { useAgencyScoreboardSettings } from "@/hooks/useUserQueries"
+import { getDatePartsInTimezone, DEFAULT_TIMEZONE } from "@/lib/timezone"
 import { useLocalStorage } from "@/hooks/useLocalStorage"
 import { useHydrated } from "@/hooks/useHydrated"
 
@@ -34,8 +36,12 @@ export default function Home() {
   const [dateMode, setDateMode] = useLocalStorage<'submitted_date' | 'policy_effective_date'>('dashboard_date_mode', 'submitted_date')
   const isHydrated = useHydrated()
 
+  // Fetch agency timezone for timezone-aware date calculations
+  const { data: agencySettings } = useAgencyScoreboardSettings(authUserData?.agency_id)
+  const agencyTimezone = agencySettings?.timezone || DEFAULT_TIMEZONE
+
   // SSR-safe week date range - returns deterministic dates on server, actual current week on client
-  const weekRange = useWeekDateRange()
+  const weekRange = useWeekDateRange(agencyTimezone)
   const queryClient = useQueryClient()
   const completeOnboardingMutation = useCompleteOnboarding()
 
@@ -75,19 +81,19 @@ export default function Home() {
     }
   )
 
-  // Calculate YTD/MTD date ranges for production and top producers
-  const productionDateRanges = useMemo(() => {
-    const today = new Date()
-    const year = today.getFullYear()
-    const month = String(today.getMonth() + 1).padStart(2, '0')
-    const day = String(today.getDate()).padStart(2, '0')
-    const todayStr = `${year}-${month}-${day}`
+  // Calculate YTD/MTD date ranges and current date parts for production and top producers (timezone-aware)
+  const { productionDateRanges, agencyDateParts } = useMemo(() => {
+    const parts = getDatePartsInTimezone(agencyTimezone)
+    const month = String(parts.month + 1).padStart(2, '0')
 
     return {
-      ytd: { start: `${year}-01-01`, end: `${year + 1}-01-01` },
-      mtd: { start: `${year}-${month}-01`, end: todayStr }
+      productionDateRanges: {
+        ytd: { start: `${parts.year}-01-01`, end: `${parts.year + 1}-01-01` },
+        mtd: { start: `${parts.year}-${month}-01`, end: parts.isoDate }
+      },
+      agencyDateParts: parts,
     }
-  }, [])
+  }, [agencyTimezone])
 
   // Top producers query with YTD/MTD period selection
   const topProducersRange = topProducersPeriod === 'ytd' ? productionDateRanges.ytd : productionDateRanges.mtd
@@ -471,24 +477,12 @@ export default function Home() {
                   <span>
                     {topProducersPeriod === 'ytd' ? 'Year to Date' : 'Month to Date'}
                     {(() => {
-                      const today = new Date()
-                      const year = today.getFullYear()
-                      const month = today.getMonth()
-                      const day = today.getDate()
-                      
-                      let startDate: Date
-                      if (topProducersPeriod === 'ytd') {
-                        startDate = new Date(year, 0, 1) // Jan 1
-                      } else {
-                        startDate = new Date(year, month, 1) // First of current month
-                      }
-                      const endDate = new Date(year, month, day)
-                      
-                      const formatDate = (date: Date) => {
-                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                      }
-                      
-                      return ` • ${formatDate(startDate)} - ${formatDate(endDate)}`
+                      const startDate = topProducersPeriod === 'ytd'
+                        ? new Date(agencyDateParts.year, 0, 1)
+                        : new Date(agencyDateParts.year, agencyDateParts.month, 1)
+                      const endDate = new Date(agencyDateParts.year, agencyDateParts.month, agencyDateParts.day)
+                      const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      return ` • ${fmt(startDate)} - ${fmt(endDate)}`
                     })()}
                   </span>
                   <span className="text-xs">Based on {dateMode === 'submitted_date' ? 'Submitted Date' : 'Policy Effective Date'}</span>

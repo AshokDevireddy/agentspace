@@ -15,6 +15,7 @@ import { batchFetchAgencySmsSettings } from "@/lib/sms-template-helpers.server";
 import { sendOrCreateDraft, batchFetchAutoSendSettings, batchFetchAgentAutoSendStatus } from '@/lib/sms-auto-send';
 import { formatPhoneForDisplay } from '@/lib/telnyx';
 import { calculateNextCustomBillingDate } from "@/lib/utils";
+import { getDatePartsInTimezone, DEFAULT_TIMEZONE } from '@/lib/timezone';
 
 export async function GET(request: NextRequest) {
   try {
@@ -47,21 +48,9 @@ export async function GET(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // Get dates in PST
-    const todayPST = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" }),
-    );
-    todayPST.setHours(0, 0, 0, 0);
-    const threeDaysFromNow = new Date(todayPST);
-    threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
-
+    // Date filtering is now handled per-agency timezone in the RPC
     console.log(`📅 Current time (UTC): ${new Date().toISOString()}`);
-    console.log(`📅 Today (PST): ${todayPST.toLocaleDateString("en-US")}`);
-    console.log(
-      `📅 Looking for billing due on: ${
-        threeDaysFromNow.toLocaleDateString("en-US")
-      } (3 days from now)`,
-    );
+    console.log(`📅 Billing date matching uses per-agency timezone (RPC-level)`);
 
     // Query deals using new RPC function with custom billing date support
     console.log(
@@ -98,10 +87,27 @@ export async function GET(request: NextRequest) {
     let errorCount = 0;
     let skippedCount = 0;
 
+    // Pre-compute "3 days from now" per timezone to avoid redundant work in the loop
+    const threeDaysCache = new Map<string, Date>();
+    const getThreeDaysFromNow = (tz: string): Date => {
+      if (threeDaysCache.has(tz)) return threeDaysCache.get(tz)!;
+      const parts = getDatePartsInTimezone(tz);
+      const today = new Date(parts.year, parts.month, parts.day);
+      today.setHours(0, 0, 0, 0);
+      const result = new Date(today);
+      result.setDate(result.getDate() + 3);
+      threeDaysCache.set(tz, result);
+      return result;
+    };
+
     // Process each deal
     console.log("\n💌 Processing billing reminders...");
     for (const deal of deals) {
       try {
+        const agencySettings = agencySettingsMap.get(deal.agency_id);
+        const dealTimezone = agencySettings?.timezone || DEFAULT_TIMEZONE;
+        const threeDaysFromNow = getThreeDaysFromNow(dealTimezone);
+
         let nextBillingDate: Date;
         if (
           deal.ssn_benefit && deal.billing_day_of_month && deal.billing_weekday
@@ -120,11 +126,11 @@ export async function GET(request: NextRequest) {
         }
         const nextBillingDateStr = nextBillingDate.toLocaleDateString("en-US");
 
-        // Safety net: skip if recalculated billing date doesn't match 3 days from now
+        // Safety net: skip if recalculated billing date doesn't match 3 days from now (in agency timezone)
         const nextBillingNorm = new Date(nextBillingDate);
         nextBillingNorm.setHours(0, 0, 0, 0);
         if (nextBillingNorm.getTime() !== threeDaysFromNow.getTime()) {
-          console.log(`  ⏭️  SKIPPED: Billing date ${nextBillingDateStr} is not 3 days from now`);
+          console.log(`  ⏭️  SKIPPED: Billing date ${nextBillingDateStr} is not 3 days from now (agency tz: ${dealTimezone})`);
           skippedCount++;
           continue;
         }
@@ -189,7 +195,6 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        const agencySettings = agencySettingsMap.get(deal.agency_id);
         if (agencySettings?.sms_billing_reminder_enabled === false) {
           console.log(
             `  ⏭️  SKIPPED: Billing reminder SMS disabled for agency ${deal.agency_name}`,

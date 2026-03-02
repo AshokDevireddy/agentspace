@@ -3,6 +3,7 @@
 import { createServerClient, createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { getDatePartsInTimezone, DEFAULT_TIMEZONE } from '@/lib/timezone'
 
 // Types
 interface ActionResult {
@@ -198,7 +199,7 @@ export async function signup(formData: FormData): Promise<ActionResult> {
       status: 'invited',
       total_prod: 0,
       total_policies_sold: 0,
-      start_date: new Date().toISOString().split('T')[0],
+      start_date: getDatePartsInTimezone(DEFAULT_TIMEZONE).isoDate,
       agency_id: agencyData.id,
       theme_mode: 'system',
     }])

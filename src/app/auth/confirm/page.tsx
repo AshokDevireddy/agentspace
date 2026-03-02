@@ -4,8 +4,6 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
 import { REDIRECT_DELAY_MS, storeInviteTokens, captureHashTokens, type HashTokens } from '@/lib/auth/constants'
-import { apiClient } from '@/lib/api-client'
-import { getAccessToken } from '@/lib/auth/token-store'
 
 interface UserRecord {
   id: string
@@ -63,17 +61,12 @@ export default function ConfirmSession() {
 
       // Fallback: check for existing Django session
       try {
-        const accessToken = getAccessToken()
-        if (accessToken) {
-          // We have a session, try to get user info
-          try {
-            const data = await apiClient.get<{ authenticated: boolean; user: { id: string; role: string; status: string } | null }>('/api/auth/session/')
-            if (data.authenticated && data.user) {
-              await routeUserByData(data.user)
-              return
-            }
-          } catch {
-            // Session check failed, continue to other methods
+        const res = await fetch('/api/auth/session', { credentials: 'include' })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.authenticated && data.user) {
+            await routeUserByData(data.user)
+            return
           }
         }
       } catch (err) {
@@ -101,7 +94,7 @@ export default function ConfirmSession() {
 
   const routeUser = async (authUserId: string, accessToken?: string) => {
     try {
-      const user = await fetchUserRecord(authUserId)
+      const user = await fetchUserRecord(authUserId, accessToken)
 
       if (!user) {
         completedRef.current = true
@@ -168,11 +161,18 @@ export default function ConfirmSession() {
     setTimeout(() => router.push('/login'), REDIRECT_DELAY_MS)
   }
 
-  const fetchUserRecord = async (authUserId: string): Promise<UserRecord | null> => {
+  const fetchUserRecord = async (authUserId: string, accessToken?: string): Promise<UserRecord | null> => {
     try {
-      return await apiClient.get<UserRecord>(
-        `/api/users/by-auth-id/${authUserId}/`
-      )
+      const headers: Record<string, string> = {}
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`
+      }
+      const res = await fetch(`/api/users/by-auth-id/${authUserId}`, {
+        credentials: 'include',
+        headers,
+      })
+      if (!res.ok) return null
+      return await res.json()
     } catch {
       return null
     }
@@ -181,7 +181,16 @@ export default function ConfirmSession() {
   const handleInvitedUser = async (user: UserRecord, accessToken?: string) => {
     // Update status to onboarding via Django API
     try {
-      await apiClient.put('/api/user/profile/', { status: 'onboarding' })
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`
+      }
+      await fetch('/api/users/me', {
+        method: 'PUT',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({ status: 'onboarding' }),
+      })
     } catch (err) {
       console.error('Failed to update user status:', err)
     }

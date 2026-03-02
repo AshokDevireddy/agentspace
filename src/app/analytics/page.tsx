@@ -19,6 +19,7 @@ import { Info } from "lucide-react"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
+import { useAgencySettings } from '@/hooks/useAgencySettings'
 import { queryKeys } from '@/hooks/queryKeys'
 import { apiClient } from '@/lib/api-client'
 import { QueryErrorDisplay } from '@/components/ui/query-error-display'
@@ -304,6 +305,7 @@ function parsePeriodToIndex(period: string): number {
 }
 
 function getLastNPeriods(series: ReadonlyArray<{ period: string }>, endPeriod: string, n: number | "all") {
+	if (!Array.isArray(series)) return []
 	if (n === "all") return Array.from(new Set(series.map((s) => s.period)))
 	const endIdx = parsePeriodToIndex(endPeriod)
 	const unique = Array.from(new Set(series.map((s) => s.period)))
@@ -518,6 +520,7 @@ export default function AnalyticsTestPage() {
 	const [trendMetric, setTrendMetric] = React.useState<"persistency" | "placement" | "submitted" | "active" | "avgprem" | "all">("persistency")
 	const [timeWindow, setTimeWindow] = React.useState<"3" | "6" | "9" | "all">("all")
 	const [carrierFilter, setCarrierFilter] = React.useState<string>("ALL")
+	const [leadSourceFilter, setLeadSourceFilter] = React.useState<string>("ALL")
 	const [selectedCarrier, setSelectedCarrier] = React.useState<string | null>(null)
 	const [hoverInfo, setHoverInfo] = React.useState<null | { x: number; y: number; label: string; submitted: number; sharePct: number; persistencyPct: number; active: number }>(null)
 	const [hoverStatusInfo, setHoverStatusInfo] = React.useState<null | { x: number; y: number; status: string; count: number; pct: number }>(null)
@@ -548,20 +551,28 @@ export default function AnalyticsTestPage() {
 
 	const queryClient = useQueryClient()
 	const { user } = useAuth()
+	const { data: agencySettings } = useAgencySettings()
 
 	// Get user data from AuthProvider (already loaded on app mount)
 	const originalUserId = user?.id || null
 	const subscriptionTier = user?.subscriptionTier || 'free'
 	const userRole = user?.role || null
 	const hasAnalyticsAccess = subscriptionTier === 'pro' || subscriptionTier === 'expert'
+	const leadSources = React.useMemo(() => agencySettings?.leadSources ?? [], [agencySettings?.leadSources])
 
 	// 1. Main analytics fetch - Get analytics data only (user data comes from AuthProvider)
+	const leadSourceParam = leadSourceFilter !== 'ALL' ? leadSourceFilter : undefined
 	const { data: mainAnalyticsData, isPending: isMainAnalyticsLoading, isFetching: isMainAnalyticsFetching, error: mainAnalyticsError } = useQuery({
-		queryKey: queryKeys.analyticsData({ view: 'initial' }),
+		queryKey: queryKeys.analyticsData({ view: 'initial', leadSource: leadSourceFilter }),
 		queryFn: async () => {
 			if (!user?.id) throw new Error('No authenticated user')
 
-			const rpcData = await apiClient.get<{yourDeals: AnalyticsTestValue | null, downline: AnalyticsTestValue | null}>('/api/analytics/split-view/')
+			const params: Record<string, string> = {}
+			if (leadSourceParam) params.lead_source = leadSourceParam
+			const rpcData = await apiClient.get<{yourDeals: AnalyticsTestValue | null, downline: AnalyticsTestValue | null}>(
+				'/api/analytics/split-view/',
+				{ ...(Object.keys(params).length > 0 && { params }), skipCaseConversion: true }
+			)
 			if (!rpcData) throw new Error('No analytics data returned')
 
 			return {
@@ -599,11 +610,14 @@ export default function AnalyticsTestPage() {
 	// 3. Fetch analytics when selected agent changes
 	const targetUserId = selectedAgentId || originalUserId
 	const { data: selectedAgentAnalytics, isPending: isSelectedAgentLoading } = useQuery({
-		queryKey: queryKeys.analyticsData({ agentId: targetUserId }),
+		queryKey: queryKeys.analyticsData({ agentId: targetUserId, leadSource: leadSourceFilter }),
 		queryFn: async () => {
+			const params: Record<string, string> = {}
+			if (targetUserId) params.agent_id = targetUserId
+			if (leadSourceParam) params.lead_source = leadSourceParam
 			return apiClient.get<{yourDeals: AnalyticsTestValue | null, downline: AnalyticsTestValue | null}>(
 				'/api/analytics/split-view/',
-				targetUserId ? { params: { agent_id: targetUserId } } : undefined
+				{ ...(Object.keys(params).length > 0 && { params }), skipCaseConversion: true }
 			)
 		},
 		enabled: !!targetUserId && hasAnalyticsAccess,
@@ -643,12 +657,14 @@ export default function AnalyticsTestPage() {
 		for (const row of (_analyticsData?.series ?? [])) {
 			if (!periods.includes(row.period)) continue
 			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) continue
+			// Guard: skip rows whose carrier wasn't declared in meta.carriers
+			if (!agg[row.carrier]) continue
 			agg[row.carrier].submitted += row.submitted
 			agg[row.carrier].active += row.active
 			agg[row.carrier].inactive += row.inactive
 		}
 		return agg
-	}, [periods, carrierFilter])
+	}, [periods, carrierFilter, _analyticsData])
 
 	const totalSubmitted = React.useMemo(() => Object.values(byCarrierAgg).reduce((a, s) => a + s.submitted, 0), [byCarrierAgg])
 
@@ -788,7 +804,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
     return (_analyticsData?.meta.carriers ?? [])
             .map((label) => ({
                 label,
-                value: byCarrierAgg[label].submitted,
+                value: byCarrierAgg[label]?.submitted ?? 0,
                 color: carrierColorForLabel(label),
             }))
 			.filter((w) => w.value > 0)
@@ -863,7 +879,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		}))
 
 		return { wedges: donutWedges, legendEntries: allEntries, total }
-	}, [detailCarrier, timeWindow, windowKey, groupBy])
+	}, [detailCarrier, timeWindow, windowKey, groupBy, _analyticsData])
 
 	// State breakdown for detail view (when groupBy === "state")
 	const stateBreakdown = React.useMemo(() => {
@@ -1146,7 +1162,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		}).filter(e => e.count > 0) // Filter after calculating angles to ensure proper rendering
 
 		return { wedges, total, active, inactive }
-	}, [carrierFilter, windowKey, groupBy])
+	}, [carrierFilter, windowKey, groupBy, _analyticsData])
 
 	// Placement breakdown for detail view (when groupBy === "placement")
 	const placementBreakdown = React.useMemo(() => {
@@ -1508,6 +1524,21 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							</SelectContent>
 						</Select>
 
+						{/* Lead source/type filter */}
+						{leadSources.length > 0 && (
+							<SimpleSearchableSelect
+								options={[
+									{ value: "ALL", label: "All Lead Types" },
+									...leadSources.map(ls => ({ value: ls, label: ls }))
+								]}
+								value={leadSourceFilter}
+								onValueChange={setLeadSourceFilter}
+								placeholder="All Lead Types"
+								searchPlaceholder="Search lead type..."
+								className="w-[160px] flex-shrink-0"
+							/>
+						)}
+
 						{/* Agent Search */}
 						<SimpleSearchableSelect
 							options={[
@@ -1588,6 +1619,21 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							))}
 						</SelectContent>
 					</Select>
+
+					{/* Lead source/type filter */}
+					{leadSources.length > 0 && (
+						<SimpleSearchableSelect
+							options={[
+								{ value: "ALL", label: "All Lead Types" },
+								...leadSources.map(ls => ({ value: ls, label: ls }))
+							]}
+							value={leadSourceFilter}
+							onValueChange={setLeadSourceFilter}
+							placeholder="All Lead Types"
+							searchPlaceholder="Search lead type..."
+							className="w-[160px] flex-shrink-0"
+						/>
+					)}
 
 					{/* Agent Search */}
 					<SimpleSearchableSelect
@@ -2438,7 +2484,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 										const path = describeArc(160, 160, 150, w.start, w.end)
 										const mid = (w.start + w.end) / 2
 										const center = polarToCartesian(160, 160, 90, mid)
-										const agg = byCarrierAgg[w.label]
+										const agg = byCarrierAgg[w.label] ?? { active: 0, inactive: 0, submitted: 0 }
 										const persistencyPct = agg.active + agg.inactive > 0 ? (agg.active / (agg.active + agg.inactive)) * 100 : 0
 										const isHovered = hoverInfo?.label === w.label
 										const isOtherHovered = hoverInfo !== null && !isHovered

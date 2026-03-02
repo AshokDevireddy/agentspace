@@ -296,7 +296,7 @@ export function useUnreadCountSSE(
  * Hook specifically for conversations list SSE
  */
 export function useConversationsSSE(
-  view: 'self' | 'all',
+  view: 'self' | 'all' | 'downlines',
   options: {
     onConversationUpdate?: (conversationIds: string[]) => void
     enabled?: boolean
@@ -310,7 +310,7 @@ export function useConversationsSSE(
     }
   }, [onConversationUpdate])
 
-  return useSSE(`/api/sms/sse/conversations/?view=${view}`, {
+  return useSSE(`/api/sms/sse/conversations/?view_mode=${view}`, {
     enabled,
     onEvent: handleEvent,
   })

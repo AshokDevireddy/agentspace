@@ -59,6 +59,7 @@ interface Deal {
   applicationNumber: string
   phoneHidden?: boolean
   policyEffectiveDate: string | null
+  submissionDate: string | null
   annualPremium: number | null
   monthlyPremium: number | null
   leadSource: string
@@ -95,7 +96,8 @@ interface FilterOptions {
 }
 
 // Dynamic color generator for status values - MORE VIBRANT
-const getStatusColor = (status: string) => {
+const getStatusColor = (status: string | null | undefined) => {
+  if (!status) return "bg-slate-500 text-white border-slate-600";
   const statusLower = status.toLowerCase();
   if (statusLower.includes('draft')) return "bg-gray-600 text-white border-gray-700";
   if (statusLower.includes('pending') || statusLower.includes('force')) return "bg-yellow-500 text-gray-900 border-yellow-600 font-semibold";
@@ -926,48 +928,50 @@ export default function BookOfBusiness() {
         </CardContent>
       </Card>
 
-      {/* Summary Cards */}
-      <div className={cn(
-        "grid grid-cols-1 sm:grid-cols-3 gap-4",
-        userTier === 'basic' && viewMode === 'downlines' && "blur-sm pointer-events-none"
-      )}>
-        <Card className="professional-card !rounded-md">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground mb-1">Total Annual Premium</p>
-            {summaryLoading ? (
-              <div className="h-7 w-28 bg-muted rounded animate-pulse" />
-            ) : (
-              <p className="text-2xl font-bold text-foreground">
-                ${(summaryData?.totalAnnualPremium ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-        <Card className="professional-card !rounded-md">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground mb-1">Total Coverage Amount</p>
-            {summaryLoading ? (
-              <div className="h-7 w-28 bg-muted rounded animate-pulse" />
-            ) : (
-              <p className="text-2xl font-bold text-foreground">
-                ${(summaryData?.totalFaceValue ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-        <Card className="professional-card !rounded-md">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground mb-1">Total Policies</p>
-            {summaryLoading ? (
-              <div className="h-7 w-20 bg-muted rounded animate-pulse" />
-            ) : (
-              <p className="text-2xl font-bold text-foreground">
-                {(summaryData?.totalPolicies ?? 0).toLocaleString()}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {/* Summary Cards — only visible when filters are applied */}
+      {hasActiveFilters && (
+        <div className={cn(
+          "grid grid-cols-1 sm:grid-cols-3 gap-4",
+          userTier === 'basic' && viewMode === 'downlines' && "blur-sm pointer-events-none"
+        )}>
+          <Card className="professional-card !rounded-md">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Total Annual Premium</p>
+              {summaryLoading ? (
+                <div className="h-7 w-28 bg-muted rounded animate-pulse" />
+              ) : (
+                <p className="text-2xl font-bold text-foreground">
+                  ${(summaryData?.totalAnnualPremium ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card className="professional-card !rounded-md">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Total Coverage Amount</p>
+              {summaryLoading ? (
+                <div className="h-7 w-28 bg-muted rounded animate-pulse" />
+              ) : (
+                <p className="text-2xl font-bold text-foreground">
+                  ${(summaryData?.totalFaceValue ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card className="professional-card !rounded-md">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Total Policies</p>
+              {summaryLoading ? (
+                <div className="h-7 w-20 bg-muted rounded animate-pulse" />
+              ) : (
+                <p className="text-2xl font-bold text-foreground">
+                  {(summaryData?.totalPolicies ?? 0).toLocaleString()}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Policies Table */}
       <div className={cn(
@@ -978,12 +982,13 @@ export default function BookOfBusiness() {
           <table className="jira-table min-w-full">
             <thead>
               <tr>
-                <th>Date</th>
+                <th>Submitted</th>
+                <th>Effective</th>
                 <th>Agent</th>
                 <th>Carrier / Product</th>
                 <th>Policy / App #</th>
                 <th>Client Info</th>
-                <th>Premium / Effective Date</th>
+                <th>Premium / Billing</th>
                 <th>Coverage</th>
                 <th>Lead Source</th>
                 <th className="text-center">Status</th>
@@ -994,6 +999,7 @@ export default function BookOfBusiness() {
                 // Skeleton loaders for table rows
                 Array.from({ length: 10 }).map((_, index) => (
                   <tr key={index} className="animate-pulse">
+                    <td><div className="h-4 w-20 bg-muted rounded" /></td>
                     <td><div className="h-4 w-20 bg-muted rounded" /></td>
                     <td><div className="h-4 w-24 bg-muted rounded" /></td>
                     <td>
@@ -1028,13 +1034,13 @@ export default function BookOfBusiness() {
                 ))
               ) : error ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-destructive">
+                  <td colSpan={10} className="py-8 text-center text-destructive">
                     Error: {error}
                   </td>
                 </tr>
               ) : deals.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={10} className="py-8 text-center text-muted-foreground">
                     No deals found matching your criteria
                   </td>
                 </tr>
@@ -1045,10 +1051,19 @@ export default function BookOfBusiness() {
                       className="cursor-pointer hover:bg-accent/50 transition-colors"
                       onClick={() => handleRowClick(deal)}
                     >
-                        <td className="whitespace-nowrap">{deal.createdAt}</td>
+                        <td className="whitespace-nowrap text-sm">
+                          {deal.submissionDate
+                            ? new Date(deal.submissionDate + 'T00:00:00').toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+                            : '—'}
+                        </td>
+                        <td className="whitespace-nowrap text-sm">
+                          {deal.policyEffectiveDate
+                            ? new Date(deal.policyEffectiveDate + 'T00:00:00').toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+                            : '—'}
+                        </td>
                         <td className="whitespace-nowrap">
                           {deal.agent
-                            ? `${deal.agent.firstName} ${deal.agent.lastName}`.trim()
+                            ? `${deal.agent.firstName || ''}${deal.agent.lastName ? ` ${deal.agent.lastName}` : ''}`.trim()
                             : '—'}
                         </td>
                         <td>
@@ -1101,7 +1116,6 @@ export default function BookOfBusiness() {
                               )}
                             </div>
                             <div className="flex flex-col gap-0.5">
-                              <span className="text-xs text-muted-foreground">Effective: {deal.policyEffectiveDate || '—'}</span>
                               {deal.client?.ssnBenefit && deal.billingDayOfMonth && deal.billingWeekday ? (
                                 <span className="text-xs text-muted-foreground">
                                   Next Billing ({formatBillingPattern(deal.billingDayOfMonth, deal.billingWeekday)}): {(() => {
@@ -1148,7 +1162,7 @@ export default function BookOfBusiness() {
                             className={`${getStatusColor(deal.statusStandardized)} border capitalize`}
                             variant="outline"
                           >
-                            {deal.statusStandardized}
+                            {deal.statusStandardized || deal.status || '—'}
                           </Badge>
                         </td>
                       </tr>

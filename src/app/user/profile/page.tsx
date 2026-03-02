@@ -8,7 +8,7 @@ import { TIER_LIMITS, TIER_PRICE_IDS } from "@/lib/subscription-tiers";
 import { useNotification } from '@/contexts/notification-context'
 import { useTheme } from "next-themes"
 import { updateUserTheme, ThemeMode } from "@/lib/theme"
-import { Sun, Moon, Monitor, Check, Loader2, MessageSquare, type LucideIcon } from "lucide-react"
+import { Sun, Moon, Monitor, Check, Loader2, MessageSquare, Phone, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TierUsageCard } from "@/components/tier-usage-card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -86,6 +86,7 @@ export default function ProfilePage() {
   const [selectedPositionId, setSelectedPositionId] = useState<string>("");
   const [savingTheme, setSavingTheme] = useState(false);
   const [smsAutoSendValue, setSmsAutoSendValue] = useState<"default" | "on" | "off">("default");
+  const [phoneNumber, setPhoneNumber] = useState<string>("");
 
   // Password reset mutation
   const resetPasswordMutation = useResetPassword();
@@ -120,6 +121,12 @@ export default function ProfilePage() {
     else if (val === false) setSmsAutoSendValue("off")
     else if (val === null || val === undefined) setSmsAutoSendValue("default")
   }, [profileData?.smsAutoSendEnabled])
+
+  React.useEffect(() => {
+    if (profileData?.phoneNumber) {
+      setPhoneNumber(profileData.phoneNumber)
+    }
+  }, [profileData?.phoneNumber])
 
   // Fetch positions if admin using TanStack Query with apiClient
   const {
@@ -162,6 +169,13 @@ export default function ProfilePage() {
 
   const updatePositionMutation = useProfileMutation('Position updated successfully!');
   const updateSmsAutoSendMutation = useProfileMutation('SMS automation preference updated!');
+  const updatePhoneMutation = useProfileMutation('Phone number updated successfully!');
+
+  const formatPhoneDisplay = (digits: string) => {
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
 
   const handlePositionUpdate = () => {
     if (!selectedPositionId) return;
@@ -277,6 +291,42 @@ export default function ProfilePage() {
             'Send Password Reset Email'
           )}
         </button>
+      </div>
+
+      {/* Phone Number Section */}
+      <div className="w-full max-w-3xl bg-card rounded-2xl shadow border border-border p-6 mb-8">
+        <h2 className="text-xl font-bold text-foreground mb-2">
+          <Phone className="h-5 w-5 inline mr-2" />
+          Phone Number
+        </h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Your phone number is included in SMS messages sent to clients. Please enter your direct cell number.
+        </p>
+        <div className="flex items-end gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-muted-foreground mb-2">
+              Cell Phone Number
+            </label>
+            <input
+              type="tel"
+              value={formatPhoneDisplay(phoneNumber)}
+              onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              placeholder="(555) 123-4567"
+              maxLength={14}
+              className="w-full px-4 py-2 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Format: (XXX) XXX-XXXX
+            </p>
+          </div>
+          <button
+            onClick={() => updatePhoneMutation.mutate({ phoneNumber })}
+            disabled={updatePhoneMutation.isPending || phoneNumber.length !== 10}
+            className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {updatePhoneMutation.isPending ? 'Saving...' : 'Save Phone'}
+          </button>
+        </div>
       </div>
 
       {/* SMS Automation Self-Service (Non-admin agents) */}

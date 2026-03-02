@@ -154,18 +154,26 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
       if (endMonth) params.end_month = endMonth
 
       const data = await apiClient.get<any>(`/api/agents/${agentId}/`, { params })
-      console.log('[AgentDetailsModal] Raw API response:', data)
-      // Convert name format from "Last, First" to "First Last" if needed
-      // Also normalize status to lowercase for consistency
+      // Map Django nested response to the flat shape the template expects
+      const pos = typeof data.position === 'object' ? data.position : null
+      const upl = typeof data.upline === 'object' ? data.upline : null
       const transformedData = {
         ...data,
-        name: data.name?.includes(',')
-          ? data.name.split(',').reverse().map((s: string) => s.trim()).join(' ')
-          : data.name,
+        name: data.name
+          ? (data.name.includes(',') ? data.name.split(',').reverse().map((s: string) => s.trim()).join(' ') : data.name)
+          : [data.firstName, data.lastName].filter(Boolean).join(' ') || 'Unknown',
         status: data.status?.toLowerCase() || 'active',
-        is_active: data.is_active ?? true // Ensure is_active is preserved
+        is_active: data.isActive ?? true,
+        phone_number: data.phone ?? null,
+        created: data.createdAt ?? null,
+        badge: data.badge ?? pos?.name ?? data.position ?? data.role ?? 'agent',
+        position: pos?.name ?? data.position,
+        position_id: pos?.id ?? data.positionId ?? null,
+        position_level: pos?.level ?? data.positionLevel ?? null,
+        upline: upl?.name ?? data.upline,
+        upline_id: upl?.id ?? data.uplineId ?? null,
+        downlines: data.downlines ?? data.hierarchy?.directDownlineCount ?? 0,
       }
-      console.log('[AgentDetailsModal] Transformed agent data:', transformedData)
       return transformedData
     },
     enabled: open && !!agentId,
@@ -181,7 +189,7 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
     queryKey: queryKeys.agentDownlines(agentId),
     queryFn: async () => {
       const data = await apiClient.get<{ downlines: any[] }>('/api/agents/downlines/', {
-        params: { agent_id: agentId }
+        params: { agentId }
       })
       return data.downlines || []
     },
@@ -301,8 +309,8 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
-                <div className={`w-12 h-12 rounded-full ${badgeColors[agent.badge] || 'bg-muted text-muted-foreground'} flex items-center justify-center text-lg font-bold border`}>
-                  {agent.badge?.charAt(0) || agent.name?.charAt(0) || 'A'}
+                <div className={`w-12 h-12 rounded-full ${badgeColors[agent.badge] || getPositionColorByLevel(agent.position_level, positionColorMap)} flex items-center justify-center text-lg font-bold border`}>
+                  {agent.name?.charAt(0) || agent.badge?.charAt(0) || 'A'}
                 </div>
                 <div>
                   <h2 className="text-3xl font-bold text-foreground">
@@ -504,13 +512,6 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
                     Created
                   </label>
                   <p className="text-lg font-semibold text-foreground">{formatDate(agent.created)}</p>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
-                    Last Login
-                  </label>
-                  <p className="text-lg font-semibold text-foreground">{agent.lastLogin || 'N/A'}</p>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Upline</label>

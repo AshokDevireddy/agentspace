@@ -21,15 +21,15 @@ export const getBackendUrl = getApiBaseUrl
 // ============================================================================
 
 export const authEndpoints = {
-  login: '/api/auth/login',
-  logout: '/api/auth/logout',
-  refresh: '/api/auth/refresh',
-  session: '/api/auth/session',
-  register: '/api/auth/register',
-  forgotPassword: '/api/auth/forgot-password',
-  resetPassword: '/api/auth/reset-password',
-  verifyInvite: '/api/auth/verify-invite',
-  setupAccount: '/api/auth/setup-account',
+  login: '/api/auth/login/',
+  logout: '/api/auth/logout/',
+  refresh: '/api/auth/refresh/',
+  session: '/api/auth/session/',
+  register: '/api/auth/register/',
+  forgotPassword: '/api/auth/forgot-password/',
+  resetPassword: '/api/auth/reset-password/',
+  verifyInvite: '/api/auth/verify-invite/',
+  setupAccount: '/api/auth/setup-account/',
 } as const
 
 export function getAuthEndpoint(

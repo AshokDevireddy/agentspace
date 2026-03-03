@@ -60,8 +60,7 @@ export function useUserProfile(
         throw new Error('User ID is required')
       }
 
-      const response = await apiClient.get<{ success: boolean; data: UserProfileData }>('/api/user/profile/')
-      return response.data
+      return apiClient.get<UserProfileData>('/api/user/profile/')
     },
     enabled: enabled && !!authUserId,
     staleTime,

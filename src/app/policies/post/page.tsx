@@ -177,34 +177,32 @@ export default function PostDeal() {
         return null
       }
 
-      // Django returns carriers/products as {id, name, displayName} objects.
-      // After camelcaseKeys transform they become {id, name, displayName}.
-      // Map them to {value, label} as required by SimpleSearchableSelect.
-      const rawCarriers: Array<{ id: string; name: string; displayName?: string }> = data.carriers || []
-      const rawLeadSources: Array<{ value?: string; label?: string; id?: string; name?: string }> = data.leadSources || []
-      const rawTeams: Array<{ value?: string; label?: string; id?: string; name?: string }> = data.teams || []
+      // Map carriers to {value, label} as required by SimpleSearchableSelect.
+      const rawCarriers: Array<{ id: string; name: string }> = data.carriers || []
+      const rawLeadSources: Array<string | { value?: string; label?: string; id?: string; name?: string }> = data.leadSources || []
+      const rawTeams: Array<string | { value?: string; label?: string; id?: string; name?: string }> = data.teams || []
 
       return {
         userId: data.user?.id,
         agencyId: data.agencyId,
         isAdminUser: data.user?.isAdmin,
-        leadSourceOptions: rawLeadSources.map(ls =>
-          ls.value !== undefined
-            ? { value: ls.value, label: ls.label ?? ls.name ?? String(ls.value) }
-            : { value: String(ls.id), label: ls.name ?? String(ls.id) }
-        ),
+        leadSourceOptions: rawLeadSources.map(ls => {
+          if (typeof ls === 'string') return { value: ls, label: ls }
+          if (ls.value !== undefined) return { value: ls.value, label: ls.label ?? ls.name ?? ls.value }
+          return { value: String(ls.id), label: ls.name ?? String(ls.id) }
+        }),
         carriersOptions: rawCarriers.map(c => ({
           value: String(c.id),
-          label: c.displayName || c.name,
+          label: c.name,
         })),
         userFirstName: data.userFirstName,
         userLastName: data.userLastName,
         deactivatedPostADeal: data.deactivatedPostADeal || false,
-        teamsOptions: rawTeams.map(t =>
-          t.value !== undefined
-            ? { value: t.value, label: t.label ?? t.name ?? String(t.value) }
-            : { value: String(t.id), label: t.name ?? String(t.id) }
-        ),
+        teamsOptions: rawTeams.map(t => {
+          if (typeof t === 'string') return { value: t, label: t }
+          if (t.value !== undefined) return { value: t.value, label: t.label ?? t.name ?? t.value }
+          return { value: String(t.id), label: t.name ?? String(t.id) }
+        }),
         beneficiariesRequired: data.beneficiariesRequired ?? false
       }
     },
@@ -247,19 +245,17 @@ export default function PostDeal() {
         return []
       }
 
-      let products: Array<{ id: string; name: string; displayName?: string }>
+      let products: Array<{ id: string; name: string }>
       try {
-        products = await apiClient.get<Array<{ id: string; name: string; displayName?: string }>>('/api/deals/products-by-carrier/', { params: { carrier_id: formData.carrierId } })
+        products = await apiClient.get<Array<{ id: string; name: string }>>('/api/deals/products-by-carrier/', { params: { carrier_id: formData.carrierId } })
       } catch {
         console.error('Failed to fetch products by carrier')
         return []
       }
-      // Django returns products as {id, name, displayName} objects.
-      // After camelcaseKeys transform they become {id, name, displayName}.
-      // Map them to {value, label} as required by SimpleSearchableSelect.
+      // Map products to {value, label} as required by SimpleSearchableSelect.
       return products.map(p => ({
         value: String(p.id),
-        label: p.displayName || p.name,
+        label: p.name,
       }))
     },
     enabled: !!agencyId && !!formData.carrierId,
@@ -360,16 +356,11 @@ export default function PostDeal() {
               : 'Invitation email sent to client successfully!'
           } else {
             const errorMsg = inviteData.error || 'Unknown error'
-            console.error('[PostDeal] Failed to invite client:', errorMsg)
-            invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
+            invitationMessage = `Email invite failed: ${errorMsg}. Please send manually from Book of Business.`
           }
-        } catch (clientError: any) {
-          if (clientError?.name === 'AbortError' || clientError?.message?.includes('timed out')) {
-            console.error('[PostDeal] Client invitation request timed out')
-          } else {
-            console.error('[PostDeal] Error in client invitation process:', clientError)
-          }
-          invitationMessage = 'Email unable to send. Please try manually from Book of Business.'
+        } catch (clientError: unknown) {
+          const msg = clientError instanceof Error ? clientError.message : 'Unknown error'
+          invitationMessage = `Email invite failed: ${msg}. Please send manually from Book of Business.`
         }
       } else {
         invitationMessage = 'No client email provided - client will not receive portal access.'
@@ -456,14 +447,12 @@ export default function PostDeal() {
       queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business'] })
 
       // Check if invitation failed and show appropriate notifications
-      if (successMessage.includes('Email unable to send')) {
-        // Show success for deal creation
+      if (successMessage.includes('Email invite failed')) {
         const dealMessage = successMessage.split('\n\n')[0]
+        const inviteWarning = successMessage.split('\n\n')[1] || 'Email invite failed. Please send manually from Book of Business.'
         showSuccess(dealMessage, 5000)
-        // Show warning for email failure
-        showWarning('Email unable to send. Please send invitation manually from Book of Business.', 7000)
+        showWarning(inviteWarning, 9000)
       } else {
-        // Show combined success message
         showSuccess(successMessage, 7000)
       }
 
@@ -1068,10 +1057,8 @@ export default function PostDeal() {
                       Defaults to today. Change this to backdate a previously sold deal.
                     </p>
                   </div>
-                </div>
 
-                {/* SSN Benefit */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* SSN Benefit */}
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-foreground">
                       SSN Benefit <span className="text-destructive">*</span>
@@ -1187,16 +1174,18 @@ export default function PostDeal() {
 
                 {/* Team - Only shown if teams exist */}
                 {teamsOptions.length > 0 && (
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-foreground">
-                      Team <span className="text-destructive">*</span>
-                    </label>
-                    <SimpleSearchableSelect
-                      options={teamsOptions}
-                      value={formData.team}
-                      onValueChange={(value) => handleInputChange("team", value)}
-                      placeholder="Select team"
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-foreground">
+                        Team <span className="text-destructive">*</span>
+                      </label>
+                      <SimpleSearchableSelect
+                        options={teamsOptions}
+                        value={formData.team}
+                        onValueChange={(value) => handleInputChange("team", value)}
+                        placeholder="Select team"
+                      />
+                    </div>
                   </div>
                 )}
 

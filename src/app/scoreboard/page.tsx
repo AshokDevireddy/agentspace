@@ -310,7 +310,7 @@ export default function Scoreboard() {
     if (!downlineData?.downlineAgents) return []
     return downlineData.downlineAgents.map(agent => ({
       value: agent.id,
-      label: `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || agent.id
+      label: agent.name || `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || agent.id
     }))
   }, [downlineData?.downlineAgents])
 

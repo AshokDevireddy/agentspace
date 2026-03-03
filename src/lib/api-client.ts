@@ -52,7 +52,7 @@ interface RequestOptions {
 }
 
 /**
- * Ensure the endpoint has a trailing slash (Django APPEND_SLASH compatibility).
+ * Ensure endpoint path ends with a trailing slash (required by Django APPEND_SLASH).
  * Preserves query strings.
  */
 function normalizeEndpoint(endpoint: string): string {

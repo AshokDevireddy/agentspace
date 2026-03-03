@@ -34,7 +34,11 @@ export function initTokenFromCookie() {
 
 /**
  * Clear the token (called on logout).
+ * Also deletes the browser cookie so middleware stops seeing it.
  */
 export function clearAccessToken() {
   currentToken = null
+  if (typeof document !== 'undefined') {
+    document.cookie = 'access_token=; Max-Age=0; path=/'
+  }
 }

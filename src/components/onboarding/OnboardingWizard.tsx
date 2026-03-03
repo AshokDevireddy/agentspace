@@ -127,12 +127,16 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
 
   // Handle NIPR skip
   const handleNiprSkip = useCallback(async () => {
-    // Update server state
+    // Update server state - don't block navigation if this fails
     if (onboardingProgress) {
-      await onboardingProgress.updateProgress({
-        step: 'team_invitation',
-        nipr_status: 'skipped',
-      })
+      try {
+        await onboardingProgress.updateProgress({
+          step: 'team_invitation',
+          nipr_status: 'skipped',
+        })
+      } catch (error) {
+        console.error('[OnboardingWizard] Failed to update progress on skip:', error)
+      }
     }
 
     setCurrentStep(3)

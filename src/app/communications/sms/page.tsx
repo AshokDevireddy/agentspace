@@ -67,18 +67,14 @@ interface Conversation {
   optedInAt?: string
   optedOutAt?: string
   statusStandardized?: string | null
-  hasNotification?: boolean
 }
 
 interface Message {
   id: string
-  conversationId: string
   // Django returns 'content', not 'body'
   content: string
   direction: 'inbound' | 'outbound'
-  // sentAt may be null for drafts; createdAt is always set
   sentAt: string | null
-  createdAt: string | null
   status: string
   metadata: any
 }
@@ -251,7 +247,7 @@ function SMSMessagingPageContent() {
     }
   )
 
-  // Sort messages: sent messages by sentAt (falling back to createdAt), drafts (sentAt=null) always at bottom
+  // Sort messages: sent messages by sentAt, drafts (sentAt=null) always at bottom
   const messages = (messagesData?.messages || []).sort((a: Message, b: Message) => {
     if (!a.sentAt && !b.sentAt) return 0
     if (!a.sentAt) return 1

@@ -87,7 +87,7 @@ interface Message {
 // After camelCase transform the shape is:
 interface DealDetails {
   id: string
-  // Client info is nested under client object from the clients table JOIN
+  // Nested client object — only present when a portal client user is linked to the deal
   client: {
     id: string | null
     firstName: string | null
@@ -96,9 +96,10 @@ interface DealDetails {
     phone: string | null
     name: string
   } | null
-  // Deal-level client fields (stored on the deal itself, not the client FK)
-  // These are from d.client_name, d.client_phone, d.client_email, d.client_address
-  // but get_deal_by_id does NOT select them — they are only in the clients FK JOIN above
+  // Top-level client fields — always present, resolved from linked client or deal fields directly
+  clientName: string | null
+  clientEmail: string | null
+  clientPhone: string | null
   policyNumber: string | null
   annualPremium: number | null
   monthlyPremium: number | null
@@ -539,16 +540,16 @@ function SMSMessagingPageContent() {
       messageInputRef.current.style.height = 'auto'
     }
 
-    if (!selectedConversation.dealId) {
-      showError('No deal associated with this conversation')
+    if (!selectedConversation.id) {
+      showError('No conversation selected')
       setMessageInput(messageText)
       return
     }
 
     try {
       await sendMessageMutation.mutateAsync({
-        dealId: selectedConversation.dealId,
-        message: messageText,
+        conversationId: selectedConversation.id,
+        content: messageText,
       })
     } catch (error) {
       // Restore message input on error
@@ -711,17 +712,22 @@ function SMSMessagingPageContent() {
     }
   }, [queryClient, handleConversationSelect])
 
-  // Approve draft mutation - using centralized hook
+  // Approve draft mutation
   const approveDraftMutation = useApproveDrafts({
-    onSuccess: () => {
-      // Also invalidate messages query for the current conversation
-      const currentConversationId = selectedConversationRef.current?.id
-      if (currentConversationId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
+    onSuccess: (data) => {
+      // Invalidate messages for the current conversation to refresh UI state
+      const convId = selectedConversationRef.current?.id
+      if (convId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(convId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversationDetail(convId) })
+      }
+      if (data.failed && data.failed > 0 && (!data.approved || data.approved === 0)) {
+        showError(data.errors?.[0]?.error || 'Failed to send message')
+      } else if (data.approved && data.approved > 0) {
+        showSuccess('Message sent successfully')
       }
     },
     onError: (error: Error) => {
-      console.error('Error approving draft:', error)
       showError(error.message || 'Failed to approve draft')
     }
   })
@@ -730,17 +736,15 @@ function SMSMessagingPageContent() {
     approveDraftMutation.mutate({ messageIds: [messageId] })
   }
 
-  // Reject draft mutation - using centralized hook
+  // Reject draft mutation
   const rejectDraftMutation = useRejectDrafts({
     onSuccess: () => {
-      // Also invalidate messages query for the current conversation
-      const currentConversationId = selectedConversationRef.current?.id
-      if (currentConversationId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
+      const convId = selectedConversationRef.current?.id
+      if (convId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(convId) })
       }
     },
     onError: (error: Error) => {
-      console.error('Error rejecting draft:', error)
       showError(error.message || 'Failed to reject draft')
     }
   })
@@ -759,19 +763,17 @@ function SMSMessagingPageContent() {
     setEditingDraftBody("")
   }
 
-  // Edit draft mutation - using centralized hook
+  // Edit draft mutation
   const editDraftMutation = useEditDraft({
     onSuccess: () => {
-      // Also invalidate messages query for the current conversation
-      const currentConversationId = selectedConversationRef.current?.id
-      if (currentConversationId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
+      const convId = selectedConversationRef.current?.id
+      if (convId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(convId) })
       }
       setEditingDraftId(null)
       setEditingDraftBody("")
     },
     onError: (error: Error) => {
-      console.error('Error updating draft:', error)
       showError(error.message || 'Failed to update draft')
     }
   })
@@ -1364,10 +1366,9 @@ function SMSMessagingPageContent() {
                   Client Information
                 </h3>
                 <div className="space-y-3">
-                  {/* Client info comes from the nested client object (clients table JOIN) */}
-                  <DetailRow label="Name" value={dealDetails.client?.name || null} />
-                  <DetailRow label="Phone" value={dealDetails.client?.phone || selectedConversation?.phoneNumber || null} />
-                  <DetailRow label="Email" value={dealDetails.client?.email || null} />
+                  <DetailRow label="Name" value={dealDetails.clientName || dealDetails.client?.name || null} />
+                  <DetailRow label="Phone" value={dealDetails.clientPhone || dealDetails.client?.phone || selectedConversation?.phoneNumber || null} />
+                  <DetailRow label="Email" value={dealDetails.clientEmail || dealDetails.client?.email || null} />
                 </div>
               </div>
 

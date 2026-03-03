@@ -75,7 +75,8 @@ export function normalizePhoneForStorage(phone: string): string {
  * Formats a phone number for display as (XXX) XXX-XXXX
  * Handles both 10-digit and 11-digit (with leading 1) phone numbers
  */
-export function formatPhoneForDisplay(phone: string): string {
+export function formatPhoneForDisplay(phone: string | null | undefined): string {
+  if (!phone) return ''
   // Remove all non-digit characters
   const digits = phone.replace(/\D/g, '');
 

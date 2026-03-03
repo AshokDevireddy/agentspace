@@ -167,8 +167,8 @@ export default function UnderwritingPage() {
       const responseData = await apiClient.post<any>('/api/underwriting/quote/', data, { skipCaseConversion: true })
 
       // Sort results by monthly premium (lowest to highest)
-      if (responseData.data?.Compulife_ComparisonResults?.Compulife_Results) {
-        responseData.data.Compulife_ComparisonResults.Compulife_Results.sort((a: any, b: any) =>
+      if (responseData?.Compulife_ComparisonResults?.Compulife_Results) {
+        responseData.Compulife_ComparisonResults.Compulife_Results.sort((a: any, b: any) =>
           parseFloat(a.Compulife_premiumM) - parseFloat(b.Compulife_premiumM)
         )
       }
@@ -1265,7 +1265,7 @@ export default function UnderwritingPage() {
       )}
 
       {/* Results Display */}
-      {results && results.data?.Compulife_ComparisonResults?.Compulife_Results && (
+      {results && results?.Compulife_ComparisonResults?.Compulife_Results && (
         <div className="mt-8 space-y-6">
           {/* Summary Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1275,7 +1275,7 @@ export default function UnderwritingPage() {
                   <div>
                     <p className="text-sm font-medium text-green-900 dark:text-green-100">Best Rate</p>
                     <p className="text-3xl font-bold text-green-700 dark:text-green-300 mt-1">
-                      ${parseFloat(results.data.Compulife_ComparisonResults.Compulife_Results[0].Compulife_premiumM).toFixed(2)}
+                      ${parseFloat(results.Compulife_ComparisonResults.Compulife_Results[0].Compulife_premiumM).toFixed(2)}
                     </p>
                     <p className="text-xs text-green-600 dark:text-green-400 mt-1">per month</p>
                   </div>
@@ -1290,7 +1290,7 @@ export default function UnderwritingPage() {
                   <div>
                     <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Average Rate</p>
                     <p className="text-3xl font-bold text-blue-700 dark:text-blue-300 mt-1">
-                      ${(results.data.Compulife_ComparisonResults.Compulife_Results.reduce((sum: number, q: any) => sum + parseFloat(q.Compulife_premiumM), 0) / results.data.Compulife_ComparisonResults.Compulife_Results.length).toFixed(2)}
+                      ${(results.Compulife_ComparisonResults.Compulife_Results.reduce((sum: number, q: any) => sum + parseFloat(q.Compulife_premiumM), 0) / results.Compulife_ComparisonResults.Compulife_Results.length).toFixed(2)}
                     </p>
                     <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">per month</p>
                   </div>
@@ -1305,7 +1305,7 @@ export default function UnderwritingPage() {
                   <div>
                     <p className="text-sm font-medium text-purple-900 dark:text-purple-100">Total Carriers</p>
                     <p className="text-3xl font-bold text-purple-700 dark:text-purple-300 mt-1">
-                      {results.data.Compulife_ComparisonResults.Compulife_Results.length}
+                      {results.Compulife_ComparisonResults.Compulife_Results.length}
                     </p>
                     <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">quotes found</p>
                   </div>
@@ -1336,10 +1336,10 @@ export default function UnderwritingPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-xl">
-                    {results.data.Compulife_ComparisonResults.Compulife_title}
+                    {results.Compulife_ComparisonResults.Compulife_title}
                   </CardTitle>
                   <CardDescription className="mt-1">
-                    {formData.sex === 'M' ? 'Male' : 'Female'}, Age {results.data.Lookup.Birthdate.NearestAge}, {formData.smoker === 'Y' ? 'Smoker' : 'Non-Smoker'} • {results.data.Lookup.healthtxt}
+                    {formData.sex === 'M' ? 'Male' : 'Female'}, Age {results.Lookup.Birthdate.NearestAge}, {formData.smoker === 'Y' ? 'Smoker' : 'Non-Smoker'} • {results.Lookup.healthtxt}
                   </CardDescription>
                 </div>
               </div>
@@ -1359,7 +1359,7 @@ export default function UnderwritingPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {results.data.Compulife_ComparisonResults.Compulife_Results.map((quote: any, index: number) => (
+                    {results.Compulife_ComparisonResults.Compulife_Results.map((quote: any, index: number) => (
                       <tr
                         key={index}
                         className={`border-b hover:bg-muted/30 transition-colors ${
@@ -1418,15 +1418,15 @@ export default function UnderwritingPage() {
                   <span className="text-lg">ℹ️</span>
                   <div className="text-xs text-muted-foreground space-y-2">
                     <p className="font-semibold text-sm text-foreground">Important Disclosure</p>
-                    <p>{results.data.Compulife_ComparisonResults.Compulife_Copyright}</p>
+                    <p>{results.Compulife_ComparisonResults.Compulife_Copyright}</p>
                     <p>
                       These quotes are estimates based on the information provided and are subject to full underwriting approval.
                       Actual rates may vary based on detailed health history, lifestyle factors, and individual carrier underwriting guidelines.
                       Always verify current rates and complete policy terms with the insurance carrier before making a decision.
                     </p>
                     <p className="text-xs">
-                      Data as of: {results.data.AccessDate.month} {results.data.AccessDate.day}, {results.data.AccessDate.year} •
-                      AM Best Ratings as of: {results.data.AccessDate.ambestdate}
+                      Data as of: {results.AccessDate.month} {results.AccessDate.day}, {results.AccessDate.year} •
+                      AM Best Ratings as of: {results.AccessDate.ambestdate}
                     </p>
                   </div>
                 </div>

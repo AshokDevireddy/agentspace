@@ -599,6 +599,16 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                       )}
                     </div>
 
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        Date of Birth
+                      </label>
+                      <p className="text-lg font-semibold text-foreground">
+                        {deal.dateOfBirth ? formatDate(deal.dateOfBirth) : 'N/A'}
+                      </p>
+                    </div>
+
                     {deal.clientAddress && (
                       <div className="space-y-1 col-span-2">
                         <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Client Address</label>
@@ -728,16 +738,6 @@ export function PolicyDetailsModal({ open, onOpenChange, dealId, onUpdate, viewM
                       ) : (
                         <p className="text-lg font-semibold text-muted-foreground">N/A</p>
                       )}
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        Date of Birth
-                      </label>
-                      <p className="text-lg font-semibold text-foreground">
-                        {deal.dateOfBirth ? formatDate(deal.dateOfBirth) : 'N/A'}
-                      </p>
                     </div>
 
                     <div className="space-y-1">

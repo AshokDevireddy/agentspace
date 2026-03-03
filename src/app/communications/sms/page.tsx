@@ -83,7 +83,7 @@ interface Message {
 // After camelCase transform the shape is:
 interface DealDetails {
   id: string
-  // Client info is nested under client object from the clients table JOIN
+  // Nested client object — only present when a portal client user is linked to the deal
   client: {
     id: string | null
     firstName: string | null
@@ -92,8 +92,7 @@ interface DealDetails {
     phone: string | null
     name: string
   } | null
-  // Top-level client fields returned by Django when client_id FK is null (legacy deals)
-  // Django returns these from d.client_name, d.client_phone, d.client_email directly
+  // Top-level client fields — always present, resolved from linked client or deal fields directly
   clientName: string | null
   clientEmail: string | null
   clientPhone: string | null
@@ -228,7 +227,7 @@ function SMSMessagingPageContent() {
   }, [selectedConversation])
   const { data: conversationsData, isPending: loading } = useApiFetch<{ conversations: Conversation[] }>(
     queryKeys.conversationsList(effectiveViewMode, { searchQuery, notificationFilter }),
-    `/api/sms/conversations?view=${effectiveViewMode}`,
+    `/api/sms/conversations?view_mode=${effectiveViewMode}`,
     {
       enabled: isAdminChecked,
       staleTime: 30 * 1000, // 30 seconds
@@ -241,7 +240,7 @@ function SMSMessagingPageContent() {
   // Messages query - migrated to useApiFetch
   const { data: messagesData, isPending: messagesLoading } = useApiFetch<{ messages: Message[] }>(
     queryKeys.messages(selectedConversation?.id || ''),
-    `/api/sms/messages?conversation_id=${selectedConversation?.id}&view=${effectiveViewMode}`,
+    `/api/sms/messages?conversation_id=${selectedConversation?.id}`,
     {
       enabled: !!selectedConversation?.id,
       staleTime: 30 * 1000, // 30 seconds - prevents excessive refetches
@@ -423,7 +422,7 @@ function SMSMessagingPageContent() {
 
   // SSE for global conversation updates (new inbound messages)
   useConversationsSSE(
-    effectiveViewMode === 'all' ? 'all' : 'self',
+    effectiveViewMode,
     {
       enabled: !!user?.id,
       onConversationUpdate: useCallback((conversationIds: string[]) => {
@@ -537,16 +536,16 @@ function SMSMessagingPageContent() {
       messageInputRef.current.style.height = 'auto'
     }
 
-    if (!selectedConversation.dealId) {
-      showError('No deal associated with this conversation')
+    if (!selectedConversation.id) {
+      showError('No conversation selected')
       setMessageInput(messageText)
       return
     }
 
     try {
       await sendMessageMutation.mutateAsync({
-        dealId: selectedConversation.dealId,
-        message: messageText,
+        conversationId: selectedConversation.id,
+        content: messageText,
       })
     } catch (error) {
       // Restore message input on error
@@ -709,17 +708,22 @@ function SMSMessagingPageContent() {
     }
   }, [queryClient, handleConversationSelect])
 
-  // Approve draft mutation - using centralized hook
+  // Approve draft mutation
   const approveDraftMutation = useApproveDrafts({
-    onSuccess: () => {
-      // Also invalidate messages query for the current conversation
-      const currentConversationId = selectedConversationRef.current?.id
-      if (currentConversationId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
+    onSuccess: (data) => {
+      // Invalidate messages for the current conversation to refresh UI state
+      const convId = selectedConversationRef.current?.id
+      if (convId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(convId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.conversationDetail(convId) })
+      }
+      if (data.failed && data.failed > 0 && (!data.approved || data.approved === 0)) {
+        showError(data.errors?.[0]?.error || 'Failed to send message')
+      } else if (data.approved && data.approved > 0) {
+        showSuccess('Message sent successfully')
       }
     },
     onError: (error: Error) => {
-      console.error('Error approving draft:', error)
       showError(error.message || 'Failed to approve draft')
     }
   })
@@ -728,17 +732,15 @@ function SMSMessagingPageContent() {
     approveDraftMutation.mutate({ messageIds: [messageId] })
   }
 
-  // Reject draft mutation - using centralized hook
+  // Reject draft mutation
   const rejectDraftMutation = useRejectDrafts({
     onSuccess: () => {
-      // Also invalidate messages query for the current conversation
-      const currentConversationId = selectedConversationRef.current?.id
-      if (currentConversationId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
+      const convId = selectedConversationRef.current?.id
+      if (convId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(convId) })
       }
     },
     onError: (error: Error) => {
-      console.error('Error rejecting draft:', error)
       showError(error.message || 'Failed to reject draft')
     }
   })
@@ -757,25 +759,23 @@ function SMSMessagingPageContent() {
     setEditingDraftBody("")
   }
 
-  // Edit draft mutation - using centralized hook
+  // Edit draft mutation
   const editDraftMutation = useEditDraft({
     onSuccess: () => {
-      // Also invalidate messages query for the current conversation
-      const currentConversationId = selectedConversationRef.current?.id
-      if (currentConversationId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.messages(currentConversationId) })
+      const convId = selectedConversationRef.current?.id
+      if (convId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.messages(convId) })
       }
       setEditingDraftId(null)
       setEditingDraftBody("")
     },
     onError: (error: Error) => {
-      console.error('Error updating draft:', error)
       showError(error.message || 'Failed to update draft')
     }
   })
 
   const handleSaveEditDraft = (messageId: string) => {
-    editDraftMutation.mutate({ messageId, body: editingDraftBody })
+    editDraftMutation.mutate({ messageId, content: editingDraftBody })
   }
 
   // Retry failed mutation - using centralized hook
@@ -1362,10 +1362,9 @@ function SMSMessagingPageContent() {
                   Client Information
                 </h3>
                 <div className="space-y-3">
-                  {/* Client info: prefer nested client FK join, fall back to top-level deal fields for legacy deals without client_id */}
-                  <DetailRow label="Name" value={dealDetails.client?.name || dealDetails.clientName || null} />
-                  <DetailRow label="Phone" value={dealDetails.client?.phone || dealDetails.clientPhone || selectedConversation?.phoneNumber || null} />
-                  <DetailRow label="Email" value={dealDetails.client?.email || dealDetails.clientEmail || null} />
+                  <DetailRow label="Name" value={dealDetails.clientName || dealDetails.client?.name || null} />
+                  <DetailRow label="Phone" value={dealDetails.clientPhone || dealDetails.client?.phone || selectedConversation?.phoneNumber || null} />
+                  <DetailRow label="Email" value={dealDetails.clientEmail || dealDetails.client?.email || null} />
                 </div>
               </div>
 

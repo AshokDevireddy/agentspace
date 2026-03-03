@@ -143,7 +143,7 @@ export interface LeaderboardProducer {
   agentId: string
   name: string
   total: number
-  dailyBreakdown: Record<string, number>
+  dailyBreakdown: { [date: string]: number }
   dealCount: number
 }
 

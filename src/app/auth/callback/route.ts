@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
         return redirectResponse
       }
 
-      // Fallback: redirect to home (dashboard is the root page)
+      // Fallback: redirect to home
       const response = NextResponse.redirect(`${requestUrl.origin}/`)
       copySetCookieHeaders(exchangeResponse, response)
       return response
@@ -144,7 +144,7 @@ async function routeUserByAuthId(
 ): Promise<NextResponse> {
   try {
     const callbackResponse = await fetch(
-      `${apiUrl}/api/auth/callback-user?auth_user_id=${authUserId}`,
+      `${apiUrl}/api/auth/callback-user/?auth_user_id=${authUserId}`,
       {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },

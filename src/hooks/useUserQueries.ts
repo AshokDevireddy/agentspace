@@ -256,9 +256,10 @@ export function useAdminStatus(
         throw new Error('User ID is required')
       }
 
-      const data = await apiClient.get<UserProfileData>('/api/user/profile/')
+      // apiClient auto-unwraps the {success, data} envelope, so response IS the profile data
+      const profile = await apiClient.get<UserProfileData>('/api/user/profile/')
       return {
-        isAdmin: data.isAdmin || false
+        isAdmin: profile.isAdmin || false
       } as AdminStatusData
     },
     enabled: enabled && !!authUserId,

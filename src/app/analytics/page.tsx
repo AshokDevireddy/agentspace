@@ -628,11 +628,15 @@ export default function AnalyticsTestPage() {
 	const _analyticsFullData = selectedAgentAnalytics || mainAnalyticsData?.analyticsFullData || null
 	const _analyticsData = React.useMemo(() => {
 		if (!_analyticsFullData) return null
-		if (viewMode === 'just_me') {
-			return _analyticsFullData.yourDeals as AnalyticsTestValue
-		} else {
-			return _analyticsFullData.downline as AnalyticsTestValue
-		}
+		const scope = viewMode === 'just_me'
+			? _analyticsFullData.yourDeals
+			: _analyticsFullData.downline
+		if (!scope) return null
+		// Normalize series to always be an array regardless of API response shape
+		return {
+			...scope,
+			series: Array.isArray(scope.series) ? scope.series : [],
+		} as AnalyticsTestValue
 	}, [viewMode, _analyticsFullData])
 
 	const isLoading = isMainAnalyticsLoading || isSelectedAgentLoading || !_analyticsData
@@ -657,8 +661,7 @@ export default function AnalyticsTestPage() {
 		for (const row of (_analyticsData?.series ?? [])) {
 			if (!periods.includes(row.period)) continue
 			if (carrierFilter !== "ALL" && row.carrier !== carrierFilter) continue
-			// Guard: skip rows whose carrier wasn't declared in meta.carriers
-			if (!agg[row.carrier]) continue
+			if (!agg[row.carrier]) agg[row.carrier] = { submitted: 0, active: 0, inactive: 0 }
 			agg[row.carrier].submitted += row.submitted
 			agg[row.carrier].active += row.active
 			agg[row.carrier].inactive += row.inactive
@@ -696,8 +699,8 @@ export default function AnalyticsTestPage() {
 				if (!carrierData) continue
 				const windowData = carrierData[windowKey]
 				if (!windowData) continue
-				totalPlaced += (windowData as any).placed || 0
-				totalNotPlaced += (windowData as any).notPlaced || 0
+				totalPlaced += (windowData as unknown as Record<string, number>).placed || 0
+				totalNotPlaced += (windowData as unknown as Record<string, number>).notPlaced || 0
 			}
 		} else {
 			// Single carrier
@@ -706,8 +709,8 @@ export default function AnalyticsTestPage() {
 				if (carrierData) {
 					const windowData = carrierData[windowKey]
 					if (windowData) {
-						totalPlaced = (windowData as any).placed || 0
-						totalNotPlaced = (windowData as any).notPlaced || 0
+						totalPlaced = (windowData as unknown as Record<string, number>).placed || 0
+						totalNotPlaced = (windowData as unknown as Record<string, number>).notPlaced || 0
 					}
 				}
 			}
@@ -820,9 +823,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 	// Determine if we should show detail view
 	const detailCarrier = React.useMemo(() => {
 		if (selectedCarrier) return selectedCarrier
-		if (carrierFilter !== "ALL" && groupBy === "carrier") return carrierFilter
 		return null
-	}, [selectedCarrier, carrierFilter, groupBy])
+	}, [selectedCarrier])
 
 	// Helper to get window key
 	const windowKey = React.useMemo(() => timeWindow === "all" ? "allTime" : `${timeWindow}m` as "3m" | "6m" | "9m" | "allTime", [timeWindow])
@@ -1185,8 +1187,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 				if (!carrierData) continue
 				const windowData = carrierData[windowKey]
 				if (!windowData) continue
-				placed += (windowData as any).placed || 0
-				notPlaced += (windowData as any).notPlaced || 0
+				placed += (windowData as unknown as Record<string, number>).placed || 0
+				notPlaced += (windowData as unknown as Record<string, number>).notPlaced || 0
 			}
 		} else {
 			// Single carrier
@@ -1196,8 +1198,8 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 			if (!carrierData) return null
 			const windowData = carrierData[windowKey]
 			if (!windowData) return null
-			placed = (windowData as any).placed || 0
-			notPlaced = (windowData as any).notPlaced || 0
+			placed = (windowData as unknown as Record<string, number>).placed || 0
+			notPlaced = (windowData as unknown as Record<string, number>).notPlaced || 0
 		}
 
 		const entries: { label: string; count: number; color: string }[] = [
@@ -1343,7 +1345,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 		})
 
 		return sortedPeriods
-	}, [periods, carrierFilter, trendMetric])
+	}, [periods, carrierFilter, trendMetric, _analyticsData])
 
 	if (!hasAnalyticsAccess) {
 		return (

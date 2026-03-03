@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ProductionProgressCard } from "@/components/production-progress-card"
-import { Users, BarChart3, FileText, Briefcase, AlertCircle } from "lucide-react"
+import { Users, BarChart3, Briefcase, AlertCircle } from "lucide-react"
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useAuth } from "@/providers/AuthProvider"
@@ -11,10 +11,10 @@ import OnboardingWizard from "@/components/onboarding/OnboardingWizard"
 import type { UserData as OnboardingUserData } from "@/components/onboarding/types"
 import { useTour } from "@/contexts/onboarding-tour-context"
 import type { UserProfile, CarrierActive, PieChartEntry, LeaderboardProducer, DashboardData, DealsSummary } from "@/types"
-import { useApiFetch } from "@/hooks/useApiFetch"
 import { useDashboardSummary, useScoreboardLapsedData } from "@/hooks/useDashboardData"
 import { useCompleteOnboarding } from "@/hooks/mutations"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { apiClient } from "@/lib/api-client"
 import { queryKeys } from "@/hooks/queryKeys"
 import { Skeleton } from "@/components/ui/skeleton"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
@@ -40,14 +40,12 @@ export default function Home() {
   const queryClient = useQueryClient()
   const completeOnboardingMutation = useCompleteOnboarding()
 
-  const { data: profileData, isLoading: profileLoading, isFetching: profileFetching, error: profileError } = useApiFetch<UserProfile>(
-    queryKeys.userProfile(user?.id),
-    '/api/user/profile/',
-    {
-      enabled: !!user?.id,
-      placeholderData: (previousData) => previousData,
-    }
-  )
+  const { data: profileData, isLoading: profileLoading, error: profileError } = useQuery<UserProfile, Error>({
+    queryKey: queryKeys.userProfile(user?.id),
+    queryFn: () => apiClient.get<UserProfile>('/api/user/profile/', { params: { user_id: user?.id } }),
+    enabled: !!user?.id,
+    placeholderData: (previousData) => previousData,
+  })
 
   // Derive scope early so it can be used in query options below.
   // Non-admin agents must see only their team's data, not the full agency.
@@ -55,7 +53,7 @@ export default function Home() {
   const isAdmin = (profileData?.isAdmin) || false
   const scoreboardScope: 'agency' | 'downline' = isAdmin ? 'agency' : 'downline'
 
-  const { data: scoreboardResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useScoreboardLapsedData(
+  const { isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useScoreboardLapsedData(
     user?.id,
     weekRange.startDate,
     weekRange.endDate,
@@ -157,20 +155,14 @@ export default function Home() {
     }
   }, [userData, setUserRole])
 
-  // Top producers from YTD/MTD query
-  const topProducersData = topProducersResult ?? null
   const topProducers: { rank: number; name: string; amount: string }[] = useMemo(() => {
-    if (!topProducersData?.leaderboard) return []
-    return topProducersData.leaderboard.slice(0, 5).map((producer: LeaderboardProducer) => ({
+    if (!topProducersResult?.leaderboard) return []
+    return topProducersResult.leaderboard.slice(0, 5).map((producer: LeaderboardProducer) => ({
       rank: producer.rank,
       name: producer.name,
       amount: `$${producer.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     }))
-  }, [topProducersData])
-
-  const dateRange = { startDate: weekRange.startDate, endDate: weekRange.endDate }
-
-  const dashboardData = dashboardResult
+  }, [topProducersResult])
 
   useEffect(() => {
     if (!authLoading && !profileLoading && userData && user?.id) {
@@ -201,9 +193,13 @@ export default function Home() {
         // showWizard will be automatically set to false by the useEffect watching userData.status
       },
       onError: async (error) => {
+        // If user is already active, treat as success and close wizard
+        if (error.message?.toLowerCase().includes('not in onboarding')) {
+          await refreshUser()
+          await queryClient.refetchQueries({ queryKey: queryKeys.userProfile(), type: 'active' })
+          return
+        }
         console.error('Error completing onboarding:', error)
-        // Don't close wizard on error - let user retry
-        // The wizard handles its own error display via setErrors()
         await queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
       },
     })
@@ -213,25 +209,24 @@ export default function Home() {
   // Include authLoading to show skeletons while auth is initializing (prevents "no data" flash)
   const isHeaderLoading = authLoading || profileLoading
   const isStatsLoading = authLoading || dashboardLoading
-  const isScoreboardLoading = authLoading || scoreboardLoading
   const isPieChartLoading = authLoading || dashboardLoading
 
   // Background refetch indicators for stale-while-revalidate
   const isRefreshing = (dashboardFetching && !dashboardLoading) || (scoreboardFetching && !scoreboardLoading)
 
   const formattedDateRange = useMemo(() => {
-    if (!dateRange.startDate || !dateRange.endDate) return 'This Week'
-    const start = new Date(dateRange.startDate + 'T00:00:00')
-    const end = new Date(dateRange.endDate + 'T00:00:00')
+    if (!weekRange.startDate || !weekRange.endDate) return 'This Week'
+    const start = new Date(weekRange.startDate + 'T00:00:00')
+    const end = new Date(weekRange.endDate + 'T00:00:00')
     return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-  }, [dateRange])
+  }, [weekRange])
 
   const currentData = useMemo((): DealsSummary | DashboardData | null => {
-    if (dashboardData?.yourDeals || dashboardData?.downlineProduction) {
-      return viewMode === 'just_me' ? dashboardData?.yourDeals : dashboardData?.downlineProduction
+    if (dashboardResult?.yourDeals || dashboardResult?.downlineProduction) {
+      return viewMode === 'just_me' ? dashboardResult?.yourDeals : dashboardResult?.downlineProduction
     }
-    return dashboardData || null
-  }, [dashboardData, viewMode])
+    return dashboardResult || null
+  }, [dashboardResult, viewMode])
 
   const pieChartData = useMemo(() => {
     if (!currentData?.carriersActive) return []
@@ -360,7 +355,7 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {(dashboardData?.totals?.pendingPositions || 0) > 0 && (
+            {(dashboardResult?.totals?.pendingPositions || 0) > 0 && (
               <Link href="/agents?tab=pending-positions" className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
                 <AlertCircle className="h-5 w-5" />
                 <span className="font-semibold">Pending Positions</span>
@@ -395,7 +390,7 @@ export default function Home() {
             </Card>
           ))}
         </div>
-      ) : dashboardData && (
+      ) : dashboardResult && (
         <div key={viewMode} className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500" data-tour="dashboard-stats">
           <Card className="professional-card rounded-md transition-all duration-300 hover:shadow-lg">
             <CardContent className="p-4">

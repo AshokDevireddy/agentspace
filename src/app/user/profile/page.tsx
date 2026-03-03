@@ -85,8 +85,8 @@ export default function ProfilePage() {
   const queryClient = useQueryClient()
   const [selectedPositionId, setSelectedPositionId] = useState<string>("");
   const [savingTheme, setSavingTheme] = useState(false);
-  const [smsAutoSendValue, setSmsAutoSendValue] = useState<"default" | "on" | "off">("default");
   const [phoneNumber, setPhoneNumber] = useState<string>("");
+  const [smsAutoSendValue, setSmsAutoSendValue] = useState<"default" | "on" | "off">("default");
 
   // Password reset mutation
   const resetPasswordMutation = useResetPassword();
@@ -114,6 +114,13 @@ export default function ProfilePage() {
     }
   }, [profileData?.positionId])
 
+  // Sync phone number from profile data
+  React.useEffect(() => {
+    if (profileData?.phoneNumber) {
+      setPhoneNumber(profileData.phoneNumber)
+    }
+  }, [profileData?.phoneNumber])
+
   // Sync SMS auto-send value from profile data
   React.useEffect(() => {
     const val = profileData?.smsAutoSendEnabled
@@ -121,12 +128,6 @@ export default function ProfilePage() {
     else if (val === false) setSmsAutoSendValue("off")
     else if (val === null || val === undefined) setSmsAutoSendValue("default")
   }, [profileData?.smsAutoSendEnabled])
-
-  React.useEffect(() => {
-    if (profileData?.phoneNumber) {
-      setPhoneNumber(profileData.phoneNumber)
-    }
-  }, [profileData?.phoneNumber])
 
   // Fetch positions if admin using TanStack Query with apiClient
   const {
@@ -168,13 +169,14 @@ export default function ProfilePage() {
   })
 
   const updatePositionMutation = useProfileMutation('Position updated successfully!');
-  const updateSmsAutoSendMutation = useProfileMutation('SMS automation preference updated!');
   const updatePhoneMutation = useProfileMutation('Phone number updated successfully!');
+  const updateSmsAutoSendMutation = useProfileMutation('SMS automation preference updated!');
 
-  const formatPhoneDisplay = (digits: string) => {
-    if (digits.length <= 3) return digits;
-    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  const formatPhoneDisplay = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 10)
+    if (digits.length <= 3) return digits
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
   }
 
   const handlePositionUpdate = () => {

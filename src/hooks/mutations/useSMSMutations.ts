@@ -8,8 +8,8 @@ import { apiClient } from '@/lib/api-client'
 import { useInvalidation } from '../useInvalidation'
 
 interface SendMessageInput {
-  dealId: string
-  message: string
+  conversationId: string
+  content: string
 }
 
 interface SendMessageResponse {
@@ -54,8 +54,8 @@ export function useSendMessage(options?: {
   const { invalidateConversationRelated } = useInvalidation()
 
   return useMutation<SendMessageResponse, Error, SendMessageInput>({
-    mutationFn: async ({ dealId, message }) => {
-      return apiClient.post<SendMessageResponse>('/api/sms/send/', { dealId, message })
+    mutationFn: async ({ conversationId, content }) => {
+      return apiClient.post<SendMessageResponse>('/api/sms/send/', { conversationId, content })
     },
     onSuccess: async (data, variables) => {
       await invalidateConversationRelated(options?.conversationId)

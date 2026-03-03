@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Search, Loader2, Phone, User, Building, Package } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useNotification } from '@/contexts/notification-context'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useCheckConversation, useCreateConversation } from '@/hooks/mutations'
 import { formatPhoneForDisplay } from "@/lib/telnyx"
@@ -15,14 +15,19 @@ import { apiClient } from '@/lib/api-client'
 
 interface Deal {
   id: string
-  agentId: string
-  clientName: string
-  clientPhone: string
-  carrier: string
-  product: string
-  policyNumber: string
+  agentId?: string
+  client: {
+    name: string | null
+    firstName: string | null
+    lastName: string | null
+    email: string | null
+    phone: string | null
+  } | null
+  carrier: { id: string | null; name: string | null; displayName: string | null } | null
+  product: { id: string | null; name: string | null } | null
+  policyNumber: string | null
   status: string
-  agent: string
+  agent: { id: string | null; firstName: string | null; lastName: string | null; email: string | null; name: string } | null
 }
 
 interface CreateConversationModalProps {
@@ -36,8 +41,7 @@ export function CreateConversationModal({
   onOpenChange,
   onConversationCreated,
 }: CreateConversationModalProps) {
-  const { showSuccess, showError } = useNotification()
-  const queryClient = useQueryClient()
+  const { showError } = useNotification()
 
   const [clientNameSearch, setClientNameSearch] = useState("")
   const [clientPhoneSearch, setClientPhoneSearch] = useState("")
@@ -52,7 +56,7 @@ export function CreateConversationModal({
     const timer = setTimeout(() => {
       setDebouncedNameSearch(clientNameSearch)
       setDebouncedPhoneSearch(clientPhoneSearch)
-    }, 300) // 300ms debounce
+    }, 300)
 
     return () => clearTimeout(timer)
   }, [clientNameSearch, clientPhoneSearch])
@@ -61,7 +65,7 @@ export function CreateConversationModal({
   const { data: searchData, isLoading: loading } = useQuery({
     queryKey: queryKeys.searchDeals(debouncedNameSearch.trim(), debouncedPhoneSearch.trim()),
     queryFn: async ({ signal }) => {
-      const params: Record<string, string> = { limit: '20' }
+      const params: Record<string, string> = { limit: '20', view: 'all' }
       if (debouncedNameSearch.trim()) params.search = debouncedNameSearch.trim()
       if (debouncedPhoneSearch.trim()) params.client_phone = debouncedPhoneSearch.trim()
 
@@ -72,7 +76,7 @@ export function CreateConversationModal({
       return data.deals || []
     },
     enabled: !pauseSearch && !!(debouncedNameSearch.trim() || debouncedPhoneSearch.trim()),
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
   })
 
   const searchResults = searchData || []
@@ -80,16 +84,13 @@ export function CreateConversationModal({
   // Check if conversation exists mutation - using centralized hook
   const checkConversationMutation = useCheckConversation({
     onExists: (conversationId) => {
-      // Conversation already exists, open it
       onConversationCreated(conversationId)
       handleClose()
     },
     onNotExists: () => {
-      // Show confirmation dialog
       setConfirmCreate(true)
     },
     onError: (error) => {
-      console.error('Error checking conversation:', error)
       showError(error.message || 'Failed to check conversation')
       setSelectedDeal(null)
     }
@@ -102,20 +103,19 @@ export function CreateConversationModal({
       handleClose()
     },
     onError: (error) => {
-      console.error('Error creating conversation:', error)
       showError(error.message || 'Failed to create conversation')
     }
   })
 
   const handleDealSelect = (deal: Deal) => {
-    setPauseSearch(true) // Pause search to prevent stale results from appearing
+    setPauseSearch(true)
     setSelectedDeal(deal)
     checkConversationMutation.mutate(deal.id)
   }
 
   const handleCreateConversation = () => {
     if (!selectedDeal) return
-    createConversationMutation.mutate({ dealId: selectedDeal.id, agentId: selectedDeal.agentId })
+    createConversationMutation.mutate({ dealId: selectedDeal.id, agentId: selectedDeal.agent?.id ?? selectedDeal.agentId })
   }
 
   const handleClose = () => {
@@ -128,8 +128,6 @@ export function CreateConversationModal({
     setPauseSearch(false)
     onOpenChange(false)
   }
-
-  const formatPhoneNumber = formatPhoneForDisplay
 
   const creating = checkConversationMutation.isPending || createConversationMutation.isPending
 
@@ -214,23 +212,23 @@ export function CreateConversationModal({
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <User className="h-4 w-4 text-primary" />
-                            <h3 className="font-semibold text-foreground">{deal.clientName}</h3>
+                            <h3 className="font-semibold text-foreground">{deal.client?.name ?? 'Unknown'}</h3>
                           </div>
 
                           <div className="grid grid-cols-2 gap-2 text-sm">
                             <div className="flex items-center gap-2 text-muted-foreground">
                               <Phone className="h-3 w-3" />
-                              <span>{formatPhoneNumber(deal.clientPhone)}</span>
+                              <span>{formatPhoneForDisplay(deal.client?.phone)}</span>
                             </div>
 
                             <div className="flex items-center gap-2 text-muted-foreground">
                               <Building className="h-3 w-3" />
-                              <span>{deal.carrier}</span>
+                              <span>{deal.carrier?.name ?? 'N/A'}</span>
                             </div>
 
                             <div className="flex items-center gap-2 text-muted-foreground">
                               <Package className="h-3 w-3" />
-                              <span>{deal.product}</span>
+                              <span>{deal.product?.name ?? 'N/A'}</span>
                             </div>
 
                             {deal.policyNumber && (
@@ -241,7 +239,7 @@ export function CreateConversationModal({
                           </div>
 
                           <div className="mt-2 text-xs text-muted-foreground">
-                            Agent: {deal.agent}
+                            Agent: {deal.agent?.name ?? 'N/A'}
                           </div>
                         </div>
 
@@ -267,11 +265,11 @@ export function CreateConversationModal({
             {selectedDeal && (
               <div className="py-4 space-y-2">
                 <div className="p-4 bg-accent/30 rounded-lg">
-                  <h3 className="font-semibold text-foreground mb-2">{selectedDeal.clientName}</h3>
-                  <p className="text-sm text-muted-foreground">Phone: {formatPhoneNumber(selectedDeal.clientPhone)}</p>
-                  <p className="text-sm text-muted-foreground">Carrier: {selectedDeal.carrier}</p>
-                  <p className="text-sm text-muted-foreground">Product: {selectedDeal.product}</p>
-                  <p className="text-sm text-muted-foreground">Agent: {selectedDeal.agent}</p>
+                  <h3 className="font-semibold text-foreground mb-2">{selectedDeal.client?.name ?? 'Unknown'}</h3>
+                  <p className="text-sm text-muted-foreground">Phone: {formatPhoneForDisplay(selectedDeal.client?.phone)}</p>
+                  <p className="text-sm text-muted-foreground">Carrier: {selectedDeal.carrier?.name ?? 'N/A'}</p>
+                  <p className="text-sm text-muted-foreground">Product: {selectedDeal.product?.name ?? 'N/A'}</p>
+                  <p className="text-sm text-muted-foreground">Agent: {selectedDeal.agent?.name ?? 'N/A'}</p>
                 </div>
               </div>
             )}

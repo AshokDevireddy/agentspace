@@ -193,24 +193,24 @@ export function containsUrgentKeywords(messageBody: string): boolean {
 }
 
 /**
- * Check if a phone number is valid E.164 format (e.g., +12345678900).
- * Must start with + followed by 10-15 digits.
+ * Check if a phone number is valid US E.164 format: +1 followed by exactly 10 digits.
+ * e.g., +12345678900
  */
 export function isValidPhoneNumber(phone: string): boolean {
-  return /^\+\d{10,15}$/.test(phone.trim())
+  return /^\+1\d{10}$/.test(phone.trim())
 }
 
 /**
- * Get a human-readable validation error for a phone number
+ * Get a human-readable validation error for a phone number (US E.164 only)
  */
 export function getPhoneValidationError(phone: string): string | null {
   if (!phone || phone.trim() === '') return 'Phone number is required'
   const trimmed = phone.trim()
-  if (!trimmed.startsWith('+')) return 'Phone number must start with + (e.g., +12345678900)'
-  const digits = trimmed.slice(1)
-  if (!/^\d+$/.test(digits)) return 'Phone number must contain only digits after +'
-  if (digits.length < 10) return 'Phone number is too short. Use E.164 format (e.g., +12345678900)'
-  if (digits.length > 15) return 'Phone number is too long. Use E.164 format (e.g., +12345678900)'
+  if (!trimmed.startsWith('+1')) return 'Phone number must start with +1 (e.g., +12345678900)'
+  const digits = trimmed.slice(2)
+  if (!/^\d+$/.test(digits)) return 'Phone number must contain only digits after +1'
+  if (digits.length < 10) return 'Phone number is too short. Must be +1 followed by 10 digits (e.g., +12345678900)'
+  if (digits.length > 10) return 'Phone number is too long. Must be +1 followed by 10 digits (e.g., +12345678900)'
   return null
 }
 

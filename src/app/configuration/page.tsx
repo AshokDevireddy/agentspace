@@ -24,6 +24,7 @@ import type { AgentAutoSendInfo } from "@/components/agent-sms-automation-list"
 import { DiscordTemplateEditor } from "@/components/discord-template-editor"
 import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_PLACEHOLDERS } from "@/lib/sms-template-helpers"
 import { DEFAULT_DISCORD_TEMPLATE, DISCORD_TEMPLATE_PLACEHOLDERS } from "@/lib/discord-template-helpers"
+import { getPhoneValidationError } from "@/lib/telnyx"
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
@@ -1799,15 +1800,26 @@ export default function ConfigurationPage() {
   const handleSavePhoneNumber = async () => {
     if (!agency) return
 
+    const trimmed = phoneNumberValue.trim()
+
+    // Allow clearing the phone number
+    if (trimmed) {
+      const validationError = getPhoneValidationError(trimmed)
+      if (validationError) {
+        showError(validationError)
+        return
+      }
+    }
+
     try {
       setSavingPhoneNumber(true)
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { phoneNumber: phoneNumberValue.trim() || null },
+        data: { phoneNumber: trimmed || null },
       })
 
-      setAgencyPhoneNumber(phoneNumberValue.trim())
+      setAgencyPhoneNumber(trimmed)
       setEditingPhoneNumber(false)
       setPhoneNumberValue("")
     } catch (error) {

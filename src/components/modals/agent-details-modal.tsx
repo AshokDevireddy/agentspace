@@ -42,6 +42,19 @@ const positionLevelColors: string[] = [
   "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", // Level 10 - Emerald
 ]
 
+/** Map camelCased metrics from apiClient back to the snake_case keys the template uses. */
+const mapMetricsFields = (d: any) => ({
+  individual_production: d.individualProduction ?? 0,
+  individual_production_count: d.individualProductionCount ?? 0,
+  individual_debt: d.individualDebt ?? 0,
+  individual_debt_count: d.individualDebtCount ?? 0,
+  hierarchy_production: d.hierarchyProduction ?? 0,
+  hierarchy_production_count: d.hierarchyProductionCount ?? 0,
+  hierarchy_debt: d.hierarchyDebt ?? 0,
+  hierarchy_debt_count: d.hierarchyDebtCount ?? 0,
+  debt_to_production_ratio: d.debtToProductionRatio ?? null,
+})
+
 const getPositionColorByLevel = (positionLevel: number | null | undefined, colorMap: Map<number, string>): string => {
   if (positionLevel === null || positionLevel === undefined) {
     return "bg-slate-500/20 text-slate-400 border-slate-500/30"
@@ -173,6 +186,7 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
         upline: upl?.name ?? data.upline,
         upline_id: upl?.id ?? data.uplineId ?? null,
         downlines: data.downlines ?? data.hierarchy?.directDownlineCount ?? 0,
+        ...mapMetricsFields(data),
       }
       return transformedData
     },
@@ -191,7 +205,12 @@ export function AgentDetailsModal({ open, onOpenChange, agentId, onUpdate, start
       const data = await apiClient.get<{ downlines: any[] }>('/api/agents/downlines/', {
         params: { agentId }
       })
-      return data.downlines || []
+      return (data.downlines || []).map((d: any) => ({
+        ...d,
+        position_level: d.positionLevel ?? null,
+        created_at: d.createdAt ?? null,
+        ...mapMetricsFields(d),
+      }))
     },
     enabled: open && !!agentId,
     staleTime: 30 * 1000, // 30 seconds

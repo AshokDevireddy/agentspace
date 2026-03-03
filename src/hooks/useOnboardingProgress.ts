@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getOnboardingEndpoint } from '@/lib/api-config'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
+import { getAccessToken } from '@/lib/auth/token-store'
 
 // ============ Types ============
 
@@ -46,11 +47,13 @@ interface UpdateProgressInput {
 // ============ Helpers ============
 
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
+  const token = getAccessToken()
   const response = await fetch(url, {
     ...options,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...options.headers,
     },
   })

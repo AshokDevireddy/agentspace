@@ -2,6 +2,7 @@
  * Dashboard Data Hook
  *
  * Uses apiClient for direct backend calls with JWT auth.
+ * apiClient automatically unwraps Django {success, data} envelopes and camelCases responses.
  */
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
@@ -33,26 +34,19 @@ interface DashboardSummary {
   }
 }
 
-interface LeaderboardEntry {
+interface ScoreboardEntry {
   rank: number
   agentId: string
-  name: string
-  total: number
-  dailyBreakdown: Record<string, number>
-  dealCount: number
+  agentName: string
+  production: string
+  dealsCount: number
+  position?: string | null
 }
 
 interface ScoreboardData {
-  leaderboard: LeaderboardEntry[]
-  stats: {
-    totalProduction: number
-    totalDeals: number
-    activeAgents: number
-  }
-  dateRange: {
-    startDate: string
-    endDate: string
-  }
+  entries: ScoreboardEntry[]
+  userRank: number | null
+  userProduction: string | null
 }
 
 interface BillingCycleAgentScore {
@@ -85,6 +79,30 @@ interface ProductionEntry {
   hierarchyProductionCount: number
 }
 
+interface RawLeaderboardEntry {
+  rank: number
+  agentId: string
+  name: string
+  total: number
+  dealCount: number
+  position?: string | null
+}
+
+// ============ Helpers ============
+
+/** psycopg2 may return json_agg results as a raw JSON string instead of a parsed array */
+function ensureArray<T>(value: T[] | string | null | undefined): T[] {
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    try { return JSON.parse(value) as T[] } catch { return [] }
+  }
+  return []
+}
+
+function normalizeDealsSummary(deals: DealsSummary): DealsSummary {
+  return { ...deals, carriersActive: ensureArray<CarrierActive>(deals.carriersActive) }
+}
+
 // ============ Hooks ============
 
 export function useDashboardSummary(
@@ -94,7 +112,12 @@ export function useDashboardSummary(
   return useQuery<DashboardSummary, Error>({
     queryKey: queryKeys.dashboard(userId || ''),
     queryFn: async () => {
-      return apiClient.get<DashboardSummary>('/api/dashboard/summary/')
+      const data = await apiClient.get<DashboardSummary>('/api/dashboard/summary/')
+      return {
+        ...data,
+        yourDeals: normalizeDealsSummary(data.yourDeals),
+        downlineProduction: normalizeDealsSummary(data.downlineProduction),
+      }
     },
     enabled: !!userId && (options?.enabled !== false),
     retry: shouldRetry,
@@ -164,7 +187,7 @@ export function useScoreboardLapsedData(
   dateMode?: string,
   assumedMonthsTillLapse?: number,
 ) {
-  return useQuery<ScoreboardData, Error>({
+  return useQuery<BillingCycleScoreboardData, Error>({
     queryKey: queryKeys.scoreboardLapsed(userId || '', startDate, endDate, scope, submitted, dateMode, assumedMonthsTillLapse),
     queryFn: async () => {
       const params: Record<string, string | number> = {
@@ -175,7 +198,7 @@ export function useScoreboardLapsedData(
       }
       if (dateMode) params.date_mode = dateMode
       if (assumedMonthsTillLapse !== undefined) params.assumed_months_till_lapse = assumedMonthsTillLapse
-      return apiClient.get<ScoreboardData>('/api/dashboard/scoreboard-lapsed/', { params })
+      return apiClient.get<BillingCycleScoreboardData>('/api/dashboard/scoreboard-lapsed/', { params })
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,
@@ -202,12 +225,8 @@ export function useScoreboardBillingCycleData(
         end_date: endDate,
         scope,
       }
-      if (dateMode) {
-        params.date_mode = dateMode
-      }
-      if (assumedMonthsTillLapse !== undefined) {
-        params.assumed_months_till_lapse = assumedMonthsTillLapse
-      }
+      if (dateMode) params.date_mode = dateMode
+      if (assumedMonthsTillLapse !== undefined) params.assumed_months_till_lapse = assumedMonthsTillLapse
 
       return apiClient.get<BillingCycleScoreboardData>('/api/dashboard/scoreboard-billing-cycle/', { params })
     },

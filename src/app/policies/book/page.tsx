@@ -93,6 +93,9 @@ interface FilterOptions {
   billingCycles: FilterOption[]
   leadSources: FilterOption[]
   effectiveDateSort: FilterOption[]
+  agents: FilterOption[]
+  clients: FilterOption[]
+  policyNumbers: FilterOption[]
 }
 
 // Dynamic color generator for status values - MORE VIBRANT
@@ -219,6 +222,9 @@ export default function BookOfBusiness() {
     billingCycles?: FilterOption[]
     leadSources?: FilterOption[]
     effectiveDateSort?: FilterOption[]
+    agents?: FilterOption[]
+    clients?: FilterOption[]
+    policyNumbers?: FilterOption[]
   }>(
     queryKeys.dealsFilterOptions(),
     '/api/deals/filter-options',
@@ -252,7 +258,10 @@ export default function BookOfBusiness() {
     statuses: filterOptionsData?.statusStandardized || [],
     billingCycles: filterOptionsData?.billingCycles || [{ value: "all", label: "All Billing Cycles" }],
     leadSources: filterOptionsData?.leadSources || [{ value: "all", label: "All Lead Sources" }],
-    effectiveDateSort: filterOptionsData?.effectiveDateSort || []
+    effectiveDateSort: filterOptionsData?.effectiveDateSort || [],
+    agents: filterOptionsData?.agents || [{ value: "all", label: "All Agents" }],
+    clients: filterOptionsData?.clients || [{ value: "all", label: "All Clients" }],
+    policyNumbers: filterOptionsData?.policyNumbers || [{ value: "all", label: "All Policy Numbers" }],
   }
 
   // Build query params for deals API
@@ -730,12 +739,12 @@ export default function BookOfBusiness() {
                     <label className="block text-[10px] font-medium text-muted-foreground mb-1">
                       Agent
                     </label>
-                    <AsyncSearchableSelect
+                    <SimpleSearchableSelect
+                      options={filterOptions.agents}
                       value={localFilters.agent}
                       onValueChange={(value) => setLocalFilters({ agent: value })}
                       placeholder="All Agents"
                       searchPlaceholder="Type to search agents..."
-                      searchEndpoint="/api/deals/search-agents"
                     />
                   </div>
                 )}
@@ -775,12 +784,12 @@ export default function BookOfBusiness() {
                     <label className="block text-[10px] font-medium text-muted-foreground mb-1">
                       Client
                     </label>
-                    <AsyncSearchableSelect
+                    <SimpleSearchableSelect
+                      options={filterOptions.clients}
                       value={localFilters.client}
                       onValueChange={(value) => setLocalFilters({ client: value })}
                       placeholder="All Clients"
                       searchPlaceholder="Type to search clients..."
-                      searchEndpoint="/api/deals/search-clients"
                     />
                   </div>
                 )}
@@ -790,12 +799,12 @@ export default function BookOfBusiness() {
                     <label className="block text-[10px] font-medium text-muted-foreground mb-1">
                       Policy #
                     </label>
-                    <AsyncSearchableSelect
+                    <SimpleSearchableSelect
+                      options={filterOptions.policyNumbers}
                       value={localFilters.policyNumber}
                       onValueChange={(value) => setLocalFilters({ policyNumber: value })}
                       placeholder="All Policy Numbers"
                       searchPlaceholder="Type to search policy numbers..."
-                      searchEndpoint="/api/deals/search-policy-numbers"
                     />
                   </div>
                 )}

@@ -643,7 +643,17 @@ export default function AnalyticsTestPage() {
 	const isRefreshing = isMainAnalyticsFetching && !isMainAnalyticsLoading
 	const analyticsData = _analyticsData as AnalyticsTestValue | null
 
-	const carriers = React.useMemo(() => ["ALL", ...(_analyticsData?.meta.carriers ?? [])], [_analyticsData])
+	const carriers = React.useMemo(() => {
+		return ["ALL", ...(_analyticsData?.meta.carriers ?? [])]
+	}, [_analyticsData])
+
+	// Reset carrier filter when carriers list changes and current selection is no longer available
+	React.useEffect(() => {
+		if (carrierFilter !== "ALL" && !carriers.includes(carrierFilter)) {
+			setCarrierFilter("ALL")
+			setSelectedCarrier(null)
+		}
+	}, [carriers, carrierFilter])
 
 	// Don't initialize visible carriers - by default, only show cumulative (all carriers hidden)
 	// Users can click on carriers in the legend to show/hide them
@@ -1534,7 +1544,11 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 									...leadSources.map(ls => ({ value: ls, label: ls }))
 								]}
 								value={leadSourceFilter}
-								onValueChange={setLeadSourceFilter}
+								onValueChange={(value) => {
+									setLeadSourceFilter(value)
+									setCarrierFilter("ALL")
+									setSelectedCarrier(null)
+								}}
 								placeholder="All Lead Types"
 								searchPlaceholder="Search lead type..."
 								className="w-[160px] flex-shrink-0"
@@ -1630,7 +1644,11 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 								...leadSources.map(ls => ({ value: ls, label: ls }))
 							]}
 							value={leadSourceFilter}
-							onValueChange={setLeadSourceFilter}
+							onValueChange={(value) => {
+								setLeadSourceFilter(value)
+								setCarrierFilter("ALL")
+								setSelectedCarrier(null)
+							}}
 							placeholder="All Lead Types"
 							searchPlaceholder="Search lead type..."
 							className="w-[160px] flex-shrink-0"

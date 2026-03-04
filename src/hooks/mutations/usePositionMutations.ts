@@ -53,7 +53,7 @@ export function useUpdatePosition() {
   return useApiMutation<Position, UpdatePositionInput & { positionId: string }>(
     (variables) => `/api/positions/${variables.positionId}/`,
     {
-      method: 'PUT',
+      method: 'PATCH',
       invalidateKeys: [
         queryKeys.configurationPositions(),
         queryKeys.positions,

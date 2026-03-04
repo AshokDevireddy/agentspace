@@ -24,6 +24,7 @@ import type { AgentAutoSendInfo } from "@/components/agent-sms-automation-list"
 import { DiscordTemplateEditor } from "@/components/discord-template-editor"
 import { DEFAULT_SMS_TEMPLATES, SMS_TEMPLATE_PLACEHOLDERS } from "@/lib/sms-template-helpers"
 import { DEFAULT_DISCORD_TEMPLATE, DISCORD_TEMPLATE_PLACEHOLDERS } from "@/lib/discord-template-helpers"
+import { getPhoneValidationError } from "@/lib/telnyx"
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
@@ -571,8 +572,6 @@ export default function ConfigurationPage() {
   useEffect(() => {
     if (!carriersData.length) return
 
-    // Paid on draft → policy_effective_date (carrier pays when first premium collected)
-    // Paid on approval/issue → submission_date (carrier pays when app submitted/approved)
     const PAID_ON_DRAFT_CARRIERS = [
       'Aetna', 'Aflac', 'AIG', 'Americo', 'Assurity', 'Baltimore Life',
       'Elco Mutual', 'F&G', 'Gerber', 'GTL', 'Fidelity Life', 'KC Life',
@@ -586,7 +585,6 @@ export default function ConfigurationPage() {
 
     const modes: Record<string, 'submission_date' | 'policy_effective_date'> = {}
 
-    // Set defaults based on carrier name matching
     carriersData.forEach((carrier: Carrier) => {
       const name = carrier.displayName || carrier.name
       if (PAID_ON_DRAFT_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
@@ -594,11 +592,10 @@ export default function ConfigurationPage() {
       } else if (PAID_ON_APPROVAL_CARRIERS.some(n => name.toLowerCase().includes(n.toLowerCase()))) {
         modes[carrier.id] = 'submission_date'
       } else {
-        modes[carrier.id] = 'policy_effective_date' // default
+        modes[carrier.id] = 'policy_effective_date'
       }
     })
 
-    // Override with saved settings from DB (apiClient converts snake_case → camelCase)
     if (payoutSettingsData) {
       payoutSettingsData.forEach((setting: { carrierId: string; dateMode: 'submission_date' | 'policy_effective_date' }) => {
         modes[setting.carrierId] = setting.dateMode
@@ -693,8 +690,6 @@ export default function ConfigurationPage() {
       staleTime: 10 * 60 * 1000, // 10 minutes
     }
   )
-  const carrierNamesData = carrierNamesRawData.map((c: {id: string, name: string}) => c.name)
-
   // Fetch existing policy files from ingest jobs (only when policy-reports tab is active)
   const { data: policyFilesData, isLoading: checkingExistingFiles, refetch: refetchPolicyFiles } = useApiFetch<{files: any[], jobs?: any[]}>(
     queryKeys.configurationPolicyFiles(),
@@ -833,10 +828,10 @@ export default function ConfigurationPage() {
 
   // Sync carrier names to local state
   useEffect(() => {
-    if (carrierNamesData.length > 0) {
-      setCarrierNames(carrierNamesData)
+    if (carrierNamesRawData.length > 0) {
+      setCarrierNames(carrierNamesRawData.map((c) => c.name))
     }
-  }, [carrierNamesData])
+  }, [carrierNamesRawData])
 
   // Sync policy files to local state
   useEffect(() => {
@@ -1799,15 +1794,26 @@ export default function ConfigurationPage() {
   const handleSavePhoneNumber = async () => {
     if (!agency) return
 
+    const trimmed = phoneNumberValue.trim()
+
+    // Allow clearing the phone number
+    if (trimmed) {
+      const validationError = getPhoneValidationError(trimmed)
+      if (validationError) {
+        showError(validationError)
+        return
+      }
+    }
+
     try {
       setSavingPhoneNumber(true)
 
       await updateAgencySettingsMutation.mutateAsync({
         agencyId: agency.id,
-        data: { phoneNumber: phoneNumberValue.trim() || null },
+        data: { phoneNumber: trimmed || null },
       })
 
-      setAgencyPhoneNumber(phoneNumberValue.trim())
+      setAgencyPhoneNumber(trimmed)
       setEditingPhoneNumber(false)
       setPhoneNumberValue("")
     } catch (error) {

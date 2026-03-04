@@ -61,7 +61,7 @@ export function useUpdateProduct() {
   return useApiMutation<Product, UpdateProductInput>(
     (variables) => `/api/products/${variables.productId}/`,
     {
-      method: 'PUT',
+      method: 'PATCH',
       invalidateKeys: [queryKeys.configurationProducts(), queryKeys.products],
     }
   )

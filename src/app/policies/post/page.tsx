@@ -1044,7 +1044,6 @@ export default function PostDeal() {
                             <p>
                               Monthly premium of <strong>${formattedPremium}</strong> results
                               in an annual premium of <strong>${formattedAnnual}</strong>.
-                              Did you mean to enter the coverage amount instead?
                             </p>
                             <button
                               type="button"

@@ -93,7 +93,7 @@ export default function Scoreboard() {
   const { data: downlineData } = useQuery({
     queryKey: queryKeys.myDownlineIds(user?.id || ''),
     queryFn: async () => {
-      const data = await apiClient.get<{ downlines?: Array<{ id: string; name: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id } })
+      const data = await apiClient.get<{ downlines?: Array<{ id: string; name: string }> }>('/api/agents/downlines/', { params: { agentId: user?.id, recursive: 'true' } })
       const agents = (data.downlines || []).map(d => ({
         id: d.id,
         firstName: d.name?.split(' ')[0] || '',
@@ -110,7 +110,7 @@ export default function Scoreboard() {
   const { data: selectedAgentDownlineData } = useQuery({
     queryKey: queryKeys.myDownlineIds(selectedDownlineAgentId),
     queryFn: async () => {
-      const data = await apiClient.get<{ downlines?: Array<{ id: string }> }>('/api/agents/downlines/', { params: { agentId: selectedDownlineAgentId } })
+      const data = await apiClient.get<{ downlines?: Array<{ id: string }> }>('/api/agents/downlines/', { params: { agentId: selectedDownlineAgentId, recursive: 'true' } })
       const ids: string[] = (data.downlines || []).map((d) => d.id)
       return { downlineIds: ids }
     },

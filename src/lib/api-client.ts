@@ -18,6 +18,7 @@ import snakecaseKeys from 'snakecase-keys'
 import { getAccessToken } from '@/lib/auth/token-store'
 import { getApiBaseUrl } from '@/lib/api-config'
 import { AuthError, NetworkError, createErrorFromResponse } from '@/lib/error-utils'
+import { AUTH_TIMEOUT_MS } from '@/lib/auth/constants'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const UPLOAD_TIMEOUT_MS = 60_000
@@ -86,17 +87,17 @@ function buildUrl(endpoint: string, params?: Record<string, string | number | bo
  */
 function waitForTokenRefresh(): Promise<boolean> {
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      window.removeEventListener('auth:refresh-complete', onRefresh)
-      resolve(false)
-    }, 10_000)
-
-    const onRefresh = () => {
+    const cleanup = () => {
       clearTimeout(timeout)
-      resolve(true)
+      window.removeEventListener('auth:refresh-complete', onRefresh)
+      window.removeEventListener('auth:refresh-failed', onFailed)
     }
+    const timeout = setTimeout(() => { cleanup(); resolve(false) }, AUTH_TIMEOUT_MS)
+    const onRefresh = () => { cleanup(); resolve(true) }
+    const onFailed = () => { cleanup(); resolve(false) }
 
-    window.addEventListener('auth:refresh-complete', onRefresh, { once: true })
+    window.addEventListener('auth:refresh-complete', onRefresh)
+    window.addEventListener('auth:refresh-failed', onFailed)
     window.dispatchEvent(new Event('auth:token-expired'))
   })
 }

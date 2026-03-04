@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api-client'
 import { initTokenFromCookie, setAccessToken, getAccessToken, clearAccessToken } from '@/lib/auth/token-store'
 import { getApiBaseUrl } from '@/lib/api-config'
 import { AUTH_PATHS } from '@/lib/auth/constants'
+import { fetchWithTimeout } from '@/lib/api/auth'
 
 export type UserData = {
   id: string
@@ -95,16 +96,18 @@ export function AuthProvider({
           isAdmin: boolean
           status: string
           subscriptionTier: string
+          authUserId: string | null
+          themeMode: string | null
         } | null
       }>('/api/auth/session/')
       if (data.authenticated && data.user) {
         setUser({
           id: data.user.id,
-          authUserId: '', // Session endpoint doesn't return this
+          authUserId: data.user.authUserId || '',
           email: data.user.email,
           role: data.user.role as UserData['role'],
           status: data.user.status as UserData['status'],
-          themeMode: null,
+          themeMode: (data.user.themeMode as UserData['themeMode']) || null,
           isAdmin: data.user.isAdmin,
           agencyId: data.user.agencyId,
           subscriptionTier: (data.user.subscriptionTier || 'free') as UserData['subscriptionTier'],
@@ -137,9 +140,8 @@ export function AuthProvider({
       isRefreshingRef.current = true
 
       try {
-        // Call Django refresh endpoint — refresh_token is sent via httpOnly cookie
         const baseUrl = getApiBaseUrl()
-        const res = await fetch(`${baseUrl}/api/auth/refresh/`, {
+        const res = await fetchWithTimeout(`${baseUrl}/api/auth/refresh/`, {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -156,8 +158,10 @@ export function AuthProvider({
         }
 
         handleAuthFailure()
+        window.dispatchEvent(new Event('auth:refresh-failed'))
       } catch {
         handleAuthFailure()
+        window.dispatchEvent(new Event('auth:refresh-failed'))
       } finally {
         isRefreshingRef.current = false
       }
@@ -170,7 +174,7 @@ export function AuthProvider({
   // Sign in via Django — Django sets cookies + returns tokens
   const signIn = useCallback(async (email: string, password: string) => {
     const baseUrl = getApiBaseUrl()
-    const res = await fetch(`${baseUrl}/api/auth/login/`, {
+    const res = await fetchWithTimeout(`${baseUrl}/api/auth/login/`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -179,7 +183,11 @@ export function AuthProvider({
 
     if (!res.ok) {
       const error = await res.json().catch(() => ({ message: 'Login failed' }))
-      throw new Error(error.message || error.detail || 'Login failed')
+      const message =
+        error.message ||
+        (typeof error.detail === 'string' ? error.detail : error.detail?.message) ||
+        'Login failed'
+      throw new Error(message)
     }
 
     const data = await res.json()

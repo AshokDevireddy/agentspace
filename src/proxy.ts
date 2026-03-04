@@ -47,6 +47,23 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
+  try {
+    const token = request.cookies.get('access_token')?.value
+    if (token) {
+      const parts = token.split('.')
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString())
+        if (payload.exp && payload.exp * 1000 < Date.now()) {
+          const response = NextResponse.redirect(new URL('/login', request.url))
+          response.cookies.delete('access_token')
+          return response
+        }
+      }
+    }
+  } catch {
+    // Malformed JWT — API calls will handle auth
+  }
+
   return NextResponse.next()
 }
 

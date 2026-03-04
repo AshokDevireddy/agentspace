@@ -63,7 +63,7 @@ export default function OnboardingWizard({ userData, onComplete }: OnboardingWiz
   // Check if NIPR already completed
   const { data: niprStatusData } = useApiFetch<{ completed: boolean; carriers: string[] }>(
     queryKeys.niprStatus(userData.id),
-    '/api/nipr/status',
+    '/api/onboarding/nipr/status',
     {
       enabled: !!userData.id,
       staleTime: 5 * 60 * 1000,

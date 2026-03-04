@@ -6,7 +6,7 @@
  * Handles NIPR verification through document upload or auto-retrieval.
  * Uses SSE for real-time progress updates when feature flag is enabled.
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Shield, Upload, FileText, X, Loader2, Clock, CheckCircle2, AlertCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -118,21 +118,6 @@ export function NiprVerificationStep({
     }
   }, [niprJobId, niprRunning, connectSse, disconnectSse])
 
-  // Store carriers in database
-  const storeCarriers = useCallback(
-    async (carriers: string[]) => {
-      if (!userData.id || !Array.isArray(carriers) || carriers.length === 0) return
-
-      try {
-        // This will be handled by the parent component
-        onComplete(carriers)
-      } catch (error) {
-        console.error('[NiprVerificationStep] Failed to store carriers:', error)
-      }
-    },
-    [userData.id, onComplete]
-  )
-
   // Validate form
   const validateForm = (): boolean => {
     const validationErrors: string[] = []
@@ -151,7 +136,7 @@ export function NiprVerificationStep({
   }
 
   // Run NIPR automation
-  const runNiprAutomation = async () => {
+  const runNiprAutomation = () => {
     setErrors([])
     setNiprRunning(true)
     setNiprResult(null)
@@ -166,7 +151,7 @@ export function NiprVerificationStep({
     }
 
     runNiprMutation.mutate(niprForm, {
-      onSuccess: async (result) => {
+      onSuccess: (result) => {
         // Handle conflict (already has pending job)
         if (result.status === 'conflict') {
           if (result.jobId) {
@@ -198,7 +183,7 @@ export function NiprVerificationStep({
 
         // Job completed immediately
         if (result.success && result.analysis?.uniqueCarriers) {
-          await storeCarriers(result.analysis.uniqueCarriers)
+          onComplete(result.analysis.uniqueCarriers)
         }
 
         setNiprResult({
@@ -236,7 +221,7 @@ export function NiprVerificationStep({
   }
 
   // Upload NIPR document
-  const uploadNiprDocument = async () => {
+  const uploadNiprDocument = () => {
     if (!niprUploadFile) {
       setErrors(['Please select a PDF file to upload'])
       return
@@ -246,9 +231,9 @@ export function NiprVerificationStep({
     setNiprResult(null)
 
     uploadNiprMutation.mutate(niprUploadFile, {
-      onSuccess: async (result) => {
+      onSuccess: (result) => {
         if (result.analysis?.carriers && result.analysis.carriers.length > 0) {
-          await storeCarriers(result.analysis.carriers)
+          onComplete(result.analysis.carriers)
         }
 
         setNiprResult({
@@ -364,7 +349,7 @@ export function NiprVerificationStep({
                   ? 'border-primary bg-primary/5'
                   : niprDragging
                     ? 'border-primary bg-primary/10'
-                    : 'border-gray-300 hover:border-primary'
+                    : 'border-border hover:border-primary'
               }`}
               onDragOver={(e) => {
                 e.preventDefault()

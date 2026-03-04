@@ -50,7 +50,21 @@ export async function GET(request: NextRequest) {
       }
 
       const verifyData = await verifyResponse.json()
-      const authUserId = verifyData.auth_user_id || verifyData.user?.auth_user_id
+      let authUserId = verifyData.auth_user_id || verifyData.user?.auth_user_id
+      if (!authUserId && verifyData.access_token) {
+        try {
+          const parts = verifyData.access_token.split('.')
+          if (parts.length === 3) {
+            const payload = JSON.parse(atob(parts[1]))
+            authUserId = payload.sub
+          }
+        } catch { /* ignore decode errors */ }
+      }
+      if (!authUserId) {
+        return NextResponse.redirect(
+          `${requestUrl.origin}/login?error=${encodeURIComponent('Invalid invitation response')}`
+        )
+      }
 
       // Forward Set-Cookie headers from Django (access_token + refresh_token cookies)
       const redirectResponse = await routeUserByAuthId(requestUrl.origin, authUserId, apiUrl)

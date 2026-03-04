@@ -6,6 +6,26 @@
  */
 
 import { getAuthEndpoint } from '@/lib/api-config'
+import { AUTH_TIMEOUT_MS } from '@/lib/auth/constants'
+
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs = AUTH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out. Please try again.')
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 // ============================================================================
 // Types
@@ -79,14 +99,15 @@ export interface SetupAccountResponse {
 export interface VerifyInviteRequest {
   email?: string
   token?: string
-  access_token?: string
-  refresh_token?: string
+  token_hash?: string
+  type?: string
 }
 
 export interface VerifyInviteResponse {
   valid: boolean
   access_token: string
   refresh_token: string
+  auth_user_id?: string
 }
 
 export interface SessionResponse {
@@ -154,7 +175,7 @@ export const authApi = {
    * Returns tokens and user data
    */
   async login(data: LoginRequest): Promise<LoginResponse> {
-    const response = await fetch(getAuthEndpoint('login'), {
+    const response = await fetchWithTimeout(getAuthEndpoint('login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -167,7 +188,7 @@ export const authApi = {
    */
   async logout(accessToken: string): Promise<void> {
     try {
-      await fetch(getAuthEndpoint('logout'), {
+      await fetchWithTimeout(getAuthEndpoint('logout'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -183,7 +204,7 @@ export const authApi = {
    * Register new admin user with agency
    */
   async register(data: RegisterRequest): Promise<RegisterResponse> {
-    const response = await fetch(getAuthEndpoint('register'), {
+    const response = await fetchWithTimeout(getAuthEndpoint('register'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -195,7 +216,7 @@ export const authApi = {
    * Send password reset email
    */
   async forgotPassword(data: ForgotPasswordRequest): Promise<ForgotPasswordResponse> {
-    const response = await fetch(getAuthEndpoint('forgotPassword'), {
+    const response = await fetchWithTimeout(getAuthEndpoint('forgotPassword'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -207,7 +228,7 @@ export const authApi = {
    * Reset password using access token from recovery email
    */
   async resetPassword(data: ResetPasswordRequest): Promise<ResetPasswordResponse> {
-    const response = await fetch(getAuthEndpoint('resetPassword'), {
+    const response = await fetchWithTimeout(getAuthEndpoint('resetPassword'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -220,7 +241,7 @@ export const authApi = {
    * Requires valid access token in Authorization header
    */
   async setupAccount(accessToken: string, data: SetupAccountRequest): Promise<SetupAccountResponse> {
-    const response = await fetch(getAuthEndpoint('setupAccount'), {
+    const response = await fetchWithTimeout(getAuthEndpoint('setupAccount'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -233,10 +254,10 @@ export const authApi = {
 
   /**
    * Verify invite token
-   * Accepts either OTP (email + token) or hash tokens (access_token + refresh_token)
+   * Accepts either OTP (email + token) or token_hash
    */
   async verifyInvite(data: VerifyInviteRequest): Promise<VerifyInviteResponse> {
-    const response = await fetch(getAuthEndpoint('verifyInvite'), {
+    const response = await fetchWithTimeout(getAuthEndpoint('verifyInvite'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -248,7 +269,7 @@ export const authApi = {
    * Get current session info
    */
   async getSession(accessToken: string): Promise<SessionResponse> {
-    const response = await fetch(getAuthEndpoint('session'), {
+    const response = await fetchWithTimeout(getAuthEndpoint('session'), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -262,7 +283,7 @@ export const authApi = {
    * Refresh access token
    */
   async refresh(refreshToken: string): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
-    const response = await fetch(getAuthEndpoint('refresh'), {
+    const response = await fetchWithTimeout(getAuthEndpoint('refresh'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),

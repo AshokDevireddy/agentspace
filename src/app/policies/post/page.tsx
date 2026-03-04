@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { useAuth } from "@/providers/AuthProvider"
 import { createClient } from "@/lib/supabase/client"
-import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2, MapPin } from "lucide-react"
+import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2, MapPin, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -59,6 +59,8 @@ const STEPS = [
   { id: 3, name: 'Review & Submit', icon: ClipboardCheck }
 ]
 
+const HIGH_PREMIUM_THRESHOLD = 1500
+
 export default function PostDeal() {
   const [formData, setFormData] = useState<typeof initialFormData>(initialFormData)
   const { user, userData: authUserData } = useAuth()
@@ -72,6 +74,8 @@ export default function PostDeal() {
   const [currentStep, setCurrentStep] = useState(1)
   const submitIntentRef = useRef(false)
   const submittedDateTouchedRef = useRef(false)
+  const [highPremiumAcknowledged, setHighPremiumAcknowledged] = useState(false)
+  const [showHighPremiumWarning, setShowHighPremiumWarning] = useState(false)
 
   // Fetch agency timezone for computing "today" in the correct timezone
   const { data: agencySettings } = useAgencyScoreboardSettings(authUserData?.agency_id)
@@ -825,6 +829,10 @@ export default function PostDeal() {
     }
     if (field === "monthlyPremium" || field === "coverageAmount") {
       if (value.startsWith("-")) return
+      if (field === "monthlyPremium") {
+        setHighPremiumAcknowledged(false)
+        setShowHighPremiumWarning(false)
+      }
       setFormData({ ...formData, [field]: value })
       return
     }
@@ -840,6 +848,15 @@ export default function PostDeal() {
       return
     }
     setFormData({ ...formData, [field]: value })
+  }
+
+  const handlePremiumBlur = () => {
+    const monthly = parseFloat(formData.monthlyPremium)
+    if (!Number.isNaN(monthly) && monthly > HIGH_PREMIUM_THRESHOLD && !highPremiumAcknowledged) {
+      setShowHighPremiumWarning(true)
+    } else {
+      setShowHighPremiumWarning(false)
+    }
   }
 
   const generateBeneficiaryId = () => {
@@ -879,6 +896,12 @@ export default function PostDeal() {
     const monthly = parseFloat(formData.monthlyPremium)
     if (Number.isNaN(monthly) || monthly < 0) {
       setError("Please enter a valid monthly premium.")
+      return false
+    }
+    if (monthly > HIGH_PREMIUM_THRESHOLD && !highPremiumAcknowledged) {
+      const annual = (monthly * 12).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      setShowHighPremiumWarning(true)
+      setError(`Monthly premium of $${formData.monthlyPremium} results in an annual premium of $${annual}. Please confirm this is correct.`)
       return false
     }
     const coverage = parseFloat(formData.coverageAmount)
@@ -933,6 +956,12 @@ export default function PostDeal() {
       const monthly = parseFloat(formData.monthlyPremium)
       if (Number.isNaN(monthly) || monthly < 0) {
         setError("Please enter a valid monthly premium.")
+        return false
+      }
+      if (monthly > HIGH_PREMIUM_THRESHOLD && !highPremiumAcknowledged) {
+        const annual = (monthly * 12).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        setShowHighPremiumWarning(true)
+        setError(`Monthly premium of $${formData.monthlyPremium} results in an annual premium of $${annual}. Please confirm this is correct.`)
         return false
       }
       if (!formData.coverageAmount) {
@@ -1301,9 +1330,36 @@ export default function PostDeal() {
                       min="0"
                       value={formData.monthlyPremium}
                       onChange={(e) => handleInputChange("monthlyPremium", e.target.value)}
-                      className="h-12"
+                      onBlur={handlePremiumBlur}
+                      className={cn("h-12", showHighPremiumWarning && "border-destructive focus-visible:ring-destructive")}
                       placeholder="0.00"
                     />
+                    {showHighPremiumWarning && (
+                      <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                          <div className="text-sm text-destructive">
+                            <p>
+                              Monthly premium of <span className="font-semibold">${formData.monthlyPremium}</span> results in an annual premium of{" "}
+                              <span className="font-semibold">
+                                ${(parseFloat(formData.monthlyPremium) * 12).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>.
+                            </p>
+                            <button
+                              type="button"
+                              className="mt-2 text-sm underline hover:no-underline"
+                              onClick={() => {
+                                setHighPremiumAcknowledged(true)
+                                setShowHighPremiumWarning(false)
+                                setError(null)
+                              }}
+                            >
+                              Yes, ${formData.monthlyPremium}/month is correct
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

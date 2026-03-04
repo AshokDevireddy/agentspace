@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { queryKeys } from "@/hooks/queryKeys"
+import { apiClient } from "@/lib/api-client"
 
 interface Option {
   value: string
@@ -19,8 +20,9 @@ interface AsyncSearchableSelectProps {
   placeholder?: string
   className?: string
   searchPlaceholder?: string
-  searchEndpoint: string // API endpoint for dynamic search
+  searchEndpoint: string // Django API endpoint for dynamic search
   defaultLabel?: string // Label to show for selected value before search
+  transformResponse?: (data: any[]) => Option[] // Transform API response to {value, label}
 }
 
 export function AsyncSearchableSelect({
@@ -31,6 +33,7 @@ export function AsyncSearchableSelect({
   searchPlaceholder = "Type to search...",
   searchEndpoint,
   defaultLabel,
+  transformResponse,
 }: AsyncSearchableSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [searchTerm, setSearchTerm] = React.useState("")
@@ -67,18 +70,10 @@ export function AsyncSearchableSelect({
     queryKey: queryKeys.searchAsync(searchEndpoint, debouncedSearchTerm),
     queryFn: async ({ signal }) => {
       const separator = searchEndpoint.includes('?') ? '&' : '?'
-      const url = `${searchEndpoint}${separator}q=${encodeURIComponent(debouncedSearchTerm)}&limit=20`
-      const response = await fetch(url, {
-        signal,
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch options')
-      }
-
-      const data = await response.json()
-      return data || []
+      const endpoint = `${searchEndpoint}${separator}q=${encodeURIComponent(debouncedSearchTerm)}&limit=20`
+      const data = await apiClient.get<any[]>(endpoint, { signal })
+      const items = data || []
+      return transformResponse ? transformResponse(items) : items
     },
     enabled: open && !pauseSearch,
     staleTime: 30000,
@@ -103,14 +98,14 @@ export function AsyncSearchableSelect({
     }
   }, [open, showDropdown])
 
-  // Show dropdown when options are ready
+  // Show dropdown when opened
   React.useEffect(() => {
-    if (open && options.length > 0 && !pauseSearch) {
+    if (open && !pauseSearch) {
       setShowDropdown(true)
     } else if (!open || pauseSearch) {
       setShowDropdown(false)
     }
-  }, [open, options, pauseSearch])
+  }, [open, pauseSearch])
 
   // Reset states when dropdown closes
   React.useEffect(() => {

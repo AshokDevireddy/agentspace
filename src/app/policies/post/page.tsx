@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { useAuth } from "@/providers/AuthProvider"
-import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2, MapPin } from "lucide-react"
+import { Loader2, CheckCircle2, Circle, ArrowRight, ArrowLeft, FileText, User, ClipboardCheck, Plus, Trash2, MapPin, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useNotification } from "@/contexts/notification-context"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -18,6 +18,8 @@ import { apiClient } from '@/lib/api-client'
 import { formatPhoneInput, normalizePhoneForStorage } from "@/lib/telnyx"
 
 // Options are loaded dynamically from Supabase based on the user's agency
+
+const HIGH_PREMIUM_THRESHOLD = 1500
 
 const initialFormData = {
   carrierId: "",
@@ -79,6 +81,8 @@ export default function PostDeal() {
   const [addressSuggestions, setAddressSuggestions] = useState<Array<{display_name: string, address: any}>>([])
   const [showAddressSuggestions, setShowAddressSuggestions] = useState(false)
   const [addressSearchTimeout, setAddressSearchTimeout] = useState<NodeJS.Timeout | null>(null)
+  const [highPremiumAcknowledged, setHighPremiumAcknowledged] = useState(false)
+  const [showHighPremiumWarning, setShowHighPremiumWarning] = useState(false)
   const addressInputRef = useRef<HTMLInputElement>(null)
 
   // Billing cycle options (fixed enum)
@@ -572,6 +576,8 @@ export default function PostDeal() {
     if (field === "monthlyPremium") {
       // Don't allow negative sign as the first character
       if (value.startsWith("-")) return
+      setHighPremiumAcknowledged(false)
+      setShowHighPremiumWarning(false)
       setFormData({ ...formData, [field]: value })
       return
     }
@@ -593,6 +599,22 @@ export default function PostDeal() {
       return
     }
     setFormData({ ...formData, [field]: value })
+  }
+
+  const isHighPremium = (value: number) => value > HIGH_PREMIUM_THRESHOLD && !highPremiumAcknowledged
+
+  const checkHighPremium = (premium: number) => {
+    if (isHighPremium(premium)) {
+      setShowHighPremiumWarning(true)
+      setError(`Monthly premium of $${premium.toLocaleString()} results in an annual premium of $${(premium * 12).toLocaleString()}. Please confirm this is correct.`)
+      return false
+    }
+    return true
+  }
+
+  const handlePremiumBlur = () => {
+    const value = parseFloat(formData.monthlyPremium)
+    setShowHighPremiumWarning(!isNaN(value) && isHighPremium(value))
   }
 
   const generateBeneficiaryId = () => {
@@ -635,6 +657,7 @@ export default function PostDeal() {
       setError("Please enter a valid monthly premium.")
       return false
     }
+    if (!checkHighPremium(monthly)) return false
     setError(null)
     return true
   }
@@ -680,6 +703,7 @@ export default function PostDeal() {
         setError("Please enter a valid monthly premium.")
         return false
       }
+      if (!checkHighPremium(monthly)) return false
       if (!formData.rateClass) {
         setError("Please select a rate class.")
         return false
@@ -782,6 +806,10 @@ export default function PostDeal() {
   const activeBeneficiaries = beneficiaries.filter(b =>
     b.name.trim() || b.relationship.trim()
   )
+
+  const premiumValue = parseFloat(formData.monthlyPremium)
+  const formattedPremium = isNaN(premiumValue) ? '' : premiumValue.toLocaleString()
+  const formattedAnnual = isNaN(premiumValue) ? '' : (premiumValue * 12).toLocaleString()
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto post-deal-content" data-tour="post-deal">
@@ -1004,9 +1032,35 @@ export default function PostDeal() {
                       min="0"
                       value={formData.monthlyPremium}
                       onChange={(e) => handleInputChange("monthlyPremium", e.target.value)}
-                      className="h-12"
+                      onBlur={handlePremiumBlur}
+                      className={cn("h-12", showHighPremiumWarning && "border-destructive")}
                       placeholder="0.00"
                     />
+                    {showHighPremiumWarning && (
+                      <div className="mt-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg">
+                        <div className="flex items-start gap-2 text-destructive">
+                          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                          <div className="text-sm">
+                            <p>
+                              Monthly premium of <strong>${formattedPremium}</strong> results
+                              in an annual premium of <strong>${formattedAnnual}</strong>.
+                              Did you mean to enter the coverage amount instead?
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setHighPremiumAcknowledged(true)
+                                setShowHighPremiumWarning(false)
+                                setError(null)
+                              }}
+                              className="mt-2 text-sm underline font-medium hover:opacity-80"
+                            >
+                              Yes, ${formattedPremium}/month is correct
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

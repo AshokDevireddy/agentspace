@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getApiBaseUrl } from '@/lib/api-config'
+import { getAccessToken } from '@/lib/auth/token-store'
 
 type NiprStatus = 'idle' | 'pending' | 'running' | 'completed' | 'failed'
 
@@ -73,8 +74,6 @@ export function useNiprSSE(
   jobId: string | null,
   options: UseNiprSSEOptions = {}
 ): UseNiprSSEReturn {
-  const { onProgress, onCompleted, onFailed, onError } = options
-
   const [status, setStatus] = useState<NiprStatus>('idle')
   const [progress, setProgress] = useState(0)
   const [progressMessage, setProgressMessage] = useState('')
@@ -86,6 +85,10 @@ export function useNiprSSE(
 
   const eventSourceRef = useRef<EventSource | null>(null)
 
+  // Store callbacks in a ref so connect/disconnect stay stable across renders
+  const callbacksRef = useRef(options)
+  callbacksRef.current = options
+
   const disconnect = useCallback(() => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
@@ -95,15 +98,14 @@ export function useNiprSSE(
   }, [])
 
   const connect = useCallback(() => {
-    // Don't connect if no job ID
-    if (!jobId) {
-      return
-    }
+    if (!jobId) return
 
     // Close existing connection
-    disconnect()
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null
+    }
 
-    // Reset state
     setStatus('pending')
     setProgress(0)
     setProgressMessage('Connecting...')
@@ -113,7 +115,8 @@ export function useNiprSSE(
     setErrorMessage(null)
 
     try {
-      const url = `${getApiBaseUrl()}/api/onboarding/nipr/sse?job_id=${jobId}`
+      const token = getAccessToken()
+      const url = `${getApiBaseUrl()}/api/onboarding/nipr/sse?job_id=${jobId}${token ? `&token=${encodeURIComponent(token)}` : ''}`
       const es = new EventSource(url, { withCredentials: true })
       eventSourceRef.current = es
 
@@ -129,7 +132,7 @@ export function useNiprSSE(
           setProgress(data.progress)
           setProgressMessage(data.progress_message)
           setQueuePosition(data.queue_position)
-          onProgress?.(data)
+          callbacksRef.current.onProgress?.(data)
         } catch (e) {
           console.error('[useNiprSSE] Failed to parse progress event:', e)
         }
@@ -143,8 +146,7 @@ export function useNiprSSE(
           setProgressMessage('Verification complete!')
           setResultCarriers(data.result_carriers || [])
           setResultFiles(data.result_files || [])
-          onCompleted?.(data)
-          // Auto-disconnect on completion
+          callbacksRef.current.onCompleted?.(data)
           disconnect()
         } catch (e) {
           console.error('[useNiprSSE] Failed to parse completed event:', e)
@@ -157,8 +159,7 @@ export function useNiprSSE(
           setStatus('failed')
           setErrorMessage(data.error_message)
           setProgressMessage('Verification failed')
-          onFailed?.(data)
-          // Auto-disconnect on failure
+          callbacksRef.current.onFailed?.(data)
           disconnect()
         } catch (e) {
           console.error('[useNiprSSE] Failed to parse failed event:', e)
@@ -169,11 +170,10 @@ export function useNiprSSE(
         try {
           const data = JSON.parse((event as MessageEvent).data)
           setErrorMessage(data.error)
-          onError?.(new Error(data.error))
+          callbacksRef.current.onError?.(new Error(data.error))
         } catch {
-          // Generic error
           setErrorMessage('Connection error')
-          onError?.(new Error('SSE connection error'))
+          callbacksRef.current.onError?.(new Error('SSE connection error'))
         }
         disconnect()
       })
@@ -190,9 +190,9 @@ export function useNiprSSE(
       }
     } catch (e) {
       console.error('[useNiprSSE] Failed to create EventSource:', e)
-      onError?.(e instanceof Error ? e : new Error('Failed to connect'))
+      callbacksRef.current.onError?.(e instanceof Error ? e : new Error('Failed to connect'))
     }
-  }, [jobId, disconnect, onProgress, onCompleted, onFailed, onError])
+  }, [jobId, disconnect])
 
   // Cleanup on unmount
   useEffect(() => {

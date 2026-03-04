@@ -33,6 +33,17 @@ export default function LoginPage() {
     if (processedRef.current) return
     processedRef.current = true
 
+    // Check for auth tokens in hash (invite flow: Supabase redirects to root with hash tokens)
+    const rawHash = window.location.hash
+    if (rawHash) {
+      const hashParams = new URLSearchParams(rawHash.substring(1))
+      if (hashParams.get('access_token') && hashParams.get('refresh_token')) {
+        // Redirect to /auth/confirm which handles token capture and user routing
+        window.location.href = `/auth/confirm${rawHash}`
+        return
+      }
+    }
+
     const urlParams = new URLSearchParams(window.location.search)
     const queryError = urlParams.get('error')
     const message = urlParams.get('message')

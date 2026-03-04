@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { decodeAndValidateJwt } from '@/lib/auth/jwt'
 import { REDIRECT_DELAY_MS, storeInviteTokens, captureHashTokens, type HashTokens } from '@/lib/auth/constants'
 import { apiClient } from '@/lib/api-client'
-import { getAccessToken } from '@/lib/auth/token-store'
+import { getAccessToken, setAccessToken } from '@/lib/auth/token-store'
 
 interface UserRecord {
   id: string
@@ -48,6 +48,7 @@ export default function ConfirmSession() {
     try {
       // Try hash tokens first (from email invite links)
       if (initialHashTokens) {
+        setAccessToken(initialHashTokens.accessToken)
         const payload = decodeAndValidateJwt(initialHashTokens.accessToken)
 
         if (!payload) {
@@ -179,20 +180,21 @@ export default function ConfirmSession() {
   }
 
   const handleInvitedUser = async (user: UserRecord, accessToken?: string) => {
-    // Update status to onboarding via Django API
+    if (accessToken) {
+      setAccessToken(accessToken)
+    }
+
+    if (accessToken && initialHashTokens?.refreshToken) {
+      storeInviteTokens(accessToken, initialHashTokens.refreshToken)
+    }
+
+    // Non-fatal — backend also handles this transition
     try {
       await apiClient.put('/api/user/profile/', { status: 'onboarding' })
     } catch (err) {
       console.error('Failed to update user status:', err)
     }
 
-    // Store tokens for setup-account page to use
-    if (accessToken && initialHashTokens?.refreshToken) {
-      console.log(`[ConfirmSession] Storing tokens to localStorage`)
-      storeInviteTokens(accessToken, initialHashTokens.refreshToken)
-    }
-
-    console.log(`[ConfirmSession] Navigating to /setup-account`)
     completedRef.current = true
     setMessage('Setting up your account...')
     router.push('/setup-account')

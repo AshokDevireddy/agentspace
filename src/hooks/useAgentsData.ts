@@ -120,19 +120,23 @@ function buildAgentFilterParams(filters: AgentsFilters): Record<string, string |
   const params: Record<string, string | undefined> = {}
 
   if (filters.inUpline && filters.inUpline !== 'all') {
-    params.inUpline = filters.inUpline
+    params.inUplineId = filters.inUpline
   }
   if (filters.directUpline && filters.directUpline !== 'all') {
-    params.directUpline = filters.directUpline === 'not_set' ? 'not_set' : filters.directUpline
+    if (filters.directUpline === 'not_set') {
+      params.directUpline = 'not_set'
+    } else {
+      params.directUplineId = filters.directUpline
+    }
   }
   if (filters.inDownline && filters.inDownline !== 'all') {
-    params.inDownline = filters.inDownline
+    params.inDownlineId = filters.inDownline
   }
   if (filters.directDownline && filters.directDownline !== 'all') {
-    params.directDownline = filters.directDownline
+    params.directDownlineId = filters.directDownline
   }
   if (filters.agentName && filters.agentName !== 'all') {
-    params.agentName = filters.agentName
+    params.agentId = filters.agentName
   }
   if (filters.status && filters.status !== 'all') {
     params.status = filters.status

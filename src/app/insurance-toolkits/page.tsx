@@ -10,7 +10,7 @@ export default function InsuranceToolkits() {
           className="w-full h-full border-0"
           title="Insurance Toolkits"
           allow="fullscreen"
-          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms"
         />
       </div>
     </div>

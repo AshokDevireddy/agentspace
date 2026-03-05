@@ -84,6 +84,8 @@ export function useNiprSSE(
   const [isConnected, setIsConnected] = useState(false)
 
   const eventSourceRef = useRef<EventSource | null>(null)
+  const reconnectCountRef = useRef(0)
+  const MAX_RECONNECTS = 3
 
   // Store callbacks in a ref so connect/disconnect stay stable across renders
   const callbacksRef = useRef(options)
@@ -128,6 +130,7 @@ export function useNiprSSE(
       es.addEventListener('progress', (event) => {
         try {
           const data = JSON.parse(event.data) as NiprProgress
+          reconnectCountRef.current = 0 // Connection healthy
           setStatus(data.status as NiprStatus)
           setProgress(data.progress)
           setProgressMessage(data.progress_message)
@@ -179,8 +182,14 @@ export function useNiprSSE(
       })
 
       es.addEventListener('timeout', () => {
-        setProgressMessage('Connection timed out, please refresh')
-        disconnect()
+        if (reconnectCountRef.current < MAX_RECONNECTS) {
+          reconnectCountRef.current += 1
+          disconnect()
+          setTimeout(() => connect(), 2000)
+        } else {
+          setProgressMessage('Connection timed out, please refresh')
+          disconnect()
+        }
       })
 
       es.onerror = () => {

@@ -244,34 +244,39 @@ export function TeamInvitationStep({ userData, onComplete, onBack }: TeamInvitat
     const agentsToInvite = onboardingProgress?.progress?.pending_invitations || invitedAgents
 
     if (agentsToInvite.length === 0) {
+      setIsSubmitting(false)
       onComplete()
       return
     }
 
     const inviteErrors: string[] = []
 
-    for (const agent of agentsToInvite) {
-      try {
-        await inviteAgentMutation.mutateAsync({
-          email: agent.email,
-          firstName: agent.firstName,
-          lastName: agent.lastName,
-          phoneNumber: agent.phoneNumber,
-          permissionLevel: agent.permissionLevel,
-          uplineAgentId: agent.uplineAgentId || userData.id,
-          preInviteUserId: agent.preInviteUserId,
-        })
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Network error'
-        inviteErrors.push(`${agent.firstName} ${agent.lastName}: ${errorMessage}`)
+    try {
+      for (const agent of agentsToInvite) {
+        try {
+          await inviteAgentMutation.mutateAsync({
+            email: agent.email,
+            firstName: agent.firstName,
+            lastName: agent.lastName,
+            phoneNumber: agent.phoneNumber,
+            permissionLevel: agent.permissionLevel,
+            uplineAgentId: agent.uplineAgentId || userData.id,
+            preInviteUserId: agent.preInviteUserId,
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Network error'
+          inviteErrors.push(`${agent.firstName} ${agent.lastName}: ${errorMessage}`)
+        }
       }
+    } finally {
+      setIsSubmitting(false)
     }
 
     if (inviteErrors.length > 0) {
       setErrors(inviteErrors)
+      return
     }
 
-    setIsSubmitting(false)
     onComplete()
   }
 

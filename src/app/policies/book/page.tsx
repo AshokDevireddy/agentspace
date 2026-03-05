@@ -94,8 +94,6 @@ interface FilterOptions {
   leadSources: FilterOption[]
   effectiveDateSort: FilterOption[]
   agents: FilterOption[]
-  clients: FilterOption[]
-  policyNumbers: FilterOption[]
 }
 
 // Dynamic color generator for status values - MORE VIBRANT
@@ -223,8 +221,6 @@ export default function BookOfBusiness() {
     leadSources?: FilterOption[]
     effectiveDateSort?: FilterOption[]
     agents?: FilterOption[]
-    clients?: FilterOption[]
-    policyNumbers?: FilterOption[]
   }>(
     queryKeys.dealsFilterOptions(),
     '/api/deals/filter-options',
@@ -260,8 +256,6 @@ export default function BookOfBusiness() {
     leadSources: filterOptionsData?.leadSources || [{ value: "all", label: "All Lead Sources" }],
     effectiveDateSort: filterOptionsData?.effectiveDateSort || [],
     agents: filterOptionsData?.agents || [{ value: "all", label: "All Agents" }],
-    clients: filterOptionsData?.clients || [{ value: "all", label: "All Clients" }],
-    policyNumbers: filterOptionsData?.policyNumbers || [{ value: "all", label: "All Policy Numbers" }],
   }
 
   // Build query params for deals API
@@ -784,12 +778,12 @@ export default function BookOfBusiness() {
                     <label className="block text-[10px] font-medium text-muted-foreground mb-1">
                       Client
                     </label>
-                    <SimpleSearchableSelect
-                      options={filterOptions.clients}
+                    <AsyncSearchableSelect
                       value={localFilters.client}
                       onValueChange={(value) => setLocalFilters({ client: value })}
                       placeholder="All Clients"
                       searchPlaceholder="Type to search clients..."
+                      searchEndpoint="/api/deals/search-clients"
                     />
                   </div>
                 )}
@@ -799,12 +793,12 @@ export default function BookOfBusiness() {
                     <label className="block text-[10px] font-medium text-muted-foreground mb-1">
                       Policy #
                     </label>
-                    <SimpleSearchableSelect
-                      options={filterOptions.policyNumbers}
+                    <AsyncSearchableSelect
                       value={localFilters.policyNumber}
                       onValueChange={(value) => setLocalFilters({ policyNumber: value })}
                       placeholder="All Policy Numbers"
                       searchPlaceholder="Type to search policy numbers..."
+                      searchEndpoint="/api/deals/search-policy-numbers"
                     />
                   </div>
                 )}

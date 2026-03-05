@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, createServerClient } from "@/lib/supabase/server";
+import { buildBookFilters } from "./_shared";
 
 export async function GET(req: NextRequest) {
   const admin = createAdminClient();
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
     // Map auth user to `users` row
     const { data: currentUser, error: currentUserError } = await admin
       .from("users")
-      .select("id, agency_id, perm_level, role")
+      .select("id, agency_id, perm_level, role, is_admin")
       .eq("auth_user_id", user.id)
       .single();
 
@@ -29,22 +30,9 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Check if user is admin
     // Get query parameters for filtering + pagination (keyset)
     const { searchParams } = new URL(req.url);
-    const agentId = searchParams.get("agent_id");
-    const carrierId = searchParams.get("carrier_id");
-    const productId = searchParams.get("product_id");
-    const clientId = searchParams.get("client_id");
-    const policyNumber = searchParams.get("policy_number");
-    const statusMode = searchParams.get("status_mode");
-    const statusStandardized = searchParams.get("status_standardized");
     const effectiveDateSort = searchParams.get("effective_date_sort");
-    const billingCycle = searchParams.get("billing_cycle");
-    const leadSource = searchParams.get("lead_source");
-    const clientPhone = searchParams.get("client_phone");
-    const effectiveDateStart = searchParams.get("effective_date_start");
-    const effectiveDateEnd = searchParams.get("effective_date_end");
     const view = searchParams.get("view") || "downlines";
     const limit = Math.min(
       parseInt(searchParams.get("limit") || "50", 10),
@@ -54,27 +42,10 @@ export async function GET(req: NextRequest) {
     const cursorId = searchParams.get("cursor_id");
 
     const filters = {
-      agent_id: agentId && agentId !== "all" ? agentId : null,
-      carrier_id: carrierId && carrierId !== "all" ? carrierId : null,
-      product_id: productId && productId !== "all" ? productId : null,
-      client_id: clientId && clientId !== "all" ? clientId : null,
-      policy_number: policyNumber && policyNumber !== "all"
-        ? policyNumber.trim()
-        : null,
-      status_mode: statusMode || null,
-      status_standardized: statusStandardized && statusStandardized !== "all"
-        ? statusStandardized
-        : null,
+      ...buildBookFilters(searchParams),
       effective_date_sort: effectiveDateSort && effectiveDateSort !== "all"
         ? effectiveDateSort
         : null,
-      billing_cycle: billingCycle && billingCycle !== "all"
-        ? billingCycle
-        : null,
-      lead_source: leadSource && leadSource !== "all" ? leadSource : null,
-      client_phone: clientPhone ? clientPhone.replace(/\D/g, '') : null,
-      effective_date_start: effectiveDateStart || null,
-      effective_date_end: effectiveDateEnd || null,
     };
 
     const { data: deals, error: rpcError } = await admin.rpc(
@@ -96,7 +67,7 @@ export async function GET(req: NextRequest) {
 
     // Check if user is admin
     const isAdmin = currentUser.perm_level === "admin" ||
-      currentUser.role === "admin";
+      currentUser.role === "admin" || currentUser.is_admin;
 
     // Sort deals by created_at timestamp (descending - newest first)
     // NOTE: This client-side sort ensures data is ordered by created_at.
@@ -110,12 +81,11 @@ export async function GET(req: NextRequest) {
 
     const transformedDeals = sortedDeals.map((deal: any) => {
       // Determine if phone should be hidden
-      // Hide if: view is 'downlines' AND user is not admin AND user is not the writing agent AND deal is active/pending
+      // Hide if: view is 'downlines' AND user is not admin AND user is not the writing agent AND deal is NOT explicitly inactive
       const isWritingAgent = deal.agent_id === currentUser.id;
-      const isActiveOrPending = deal.status_impact === "positive" ||
-        deal.status_impact === "neutral";
+      const isInactive = deal.status_impact === "negative";
       const shouldHidePhone = view === "downlines" && !isAdmin &&
-        !isWritingAgent && isActiveOrPending;
+        !isWritingAgent && !isInactive;
 
       // Helper function to parse and format date safely
       const parseAndFormatDate = (

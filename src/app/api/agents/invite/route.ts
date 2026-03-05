@@ -1,5 +1,6 @@
 import { createServerClient, createAdminClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { getDatePartsInTimezone, DEFAULT_TIMEZONE } from '@/lib/timezone'
 
 export async function POST(request: Request) {
   try {
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
     // Get agency info for white-label redirect URL and email
     const { data: agencyData } = await supabaseAdmin
       .from('agencies')
-      .select('whitelabel_domain, name')
+      .select('whitelabel_domain, name, timezone')
       .eq('id', currentUser.agency_id)
       .single()
 
@@ -197,7 +198,7 @@ export async function POST(request: Request) {
         status: 'invited',
         total_prod: 0,
         total_policies_sold: 0,
-        start_date: new Date().toISOString().split('T')[0],
+        start_date: getDatePartsInTimezone(agencyData?.timezone || DEFAULT_TIMEZONE).isoDate,
         agency_id: currentUser.agency_id,
         theme_mode: 'system'
       }])

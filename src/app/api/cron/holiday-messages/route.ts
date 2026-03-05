@@ -12,6 +12,7 @@ import { replaceSmsPlaceholders, DEFAULT_SMS_TEMPLATES, formatBeneficiaries, for
 import { batchFetchAgencySmsSettings } from '@/lib/sms-template-helpers.server';
 import { sendOrCreateDraft, batchFetchAutoSendSettings, batchFetchAgentAutoSendStatus } from '@/lib/sms-auto-send';
 import { formatPhoneForDisplay } from '@/lib/telnyx';
+import { getDatePartsInTimezone, DEFAULT_TIMEZONE } from '@/lib/timezone';
 
 // US Federal Bank Holidays configuration
 const HOLIDAYS = [
@@ -57,11 +58,11 @@ function getNthWeekdayOfMonth(year: number, month: number, nth: number, weekday:
   return nthOccurrence;
 }
 
-// Get today's holiday if any
-function getTodaysHoliday(): { name: string; greeting: string } | null {
-  const today = new Date();
-  const month = today.getMonth(); // 0-indexed
-  const day = today.getDate();
+// Get today's holiday if any (timezone-aware)
+function getTodaysHoliday(timezone: string = DEFAULT_TIMEZONE): { name: string; greeting: string } | null {
+  const tz = getDatePartsInTimezone(timezone);
+  const month = tz.month;
+  const day = tz.day;
   const todayStr = `${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
   // Check fixed date holidays
@@ -76,7 +77,7 @@ function getTodaysHoliday(): { name: string; greeting: string } | null {
       const holidayMonth = parseInt(holiday.date.split('-')[0], 10) - 1;
       if (month !== holidayMonth) continue;
 
-      const year = today.getFullYear();
+      const year = tz.year;
       const holidayDate = getNthWeekdayOfMonth(year, holidayMonth, holiday.week, holiday.weekday!);
       if (holidayDate && holidayDate.getDate() === day) {
         return { name: holiday.name, greeting: holiday.greeting };
@@ -106,10 +107,19 @@ export async function GET(request: NextRequest) {
     }
     console.log('✅ Authorization passed');
 
-    // Check if today is a holiday
-    const holiday = getTodaysHoliday();
-    if (!holiday) {
-      console.log('⚠️  Today is not a holiday - no messages to send');
+    // Check if today is a holiday in any US timezone
+    // Different timezones may be on different calendar dates at execution time
+    const timezonesToCheck = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Pacific/Honolulu'];
+    const holidaysByTimezone = new Map<string, { name: string; greeting: string }>();
+    for (const timezone of timezonesToCheck) {
+      const holiday = getTodaysHoliday(timezone);
+      if (holiday) {
+        holidaysByTimezone.set(timezone, holiday);
+      }
+    }
+
+    if (holidaysByTimezone.size === 0) {
+      console.log('⚠️  Today is not a holiday in any US timezone - no messages to send');
       return NextResponse.json({
         success: true,
         sent: 0,
@@ -117,14 +127,17 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    console.log(`🎊 Today is ${holiday.name}! Sending greetings...`);
+    // Use the first found holiday for the RPC query (all timezones showing a holiday will have the same one)
+    const firstHoliday = holidaysByTimezone.values().next().value!;
+    console.log(`🎊 Today is ${firstHoliday.name}! Sending greetings...`);
+    console.log(`📅 Holiday detected in timezones: ${[...holidaysByTimezone.keys()].join(', ')}`);
 
     const supabase = createAdminClient();
 
     // Query deals using RPC function
     console.log('🔍 Querying deals for holiday messages...');
     const { data: deals, error: dealsError } = await supabase
-      .rpc('get_holiday_message_deals', { p_holiday_name: holiday.name });
+      .rpc('get_holiday_message_deals', { p_holiday_name: firstHoliday.name });
 
     if (dealsError) {
       console.error('❌ Error querying deals:', dealsError);
@@ -154,6 +167,15 @@ export async function GET(request: NextRequest) {
     let errorCount = 0;
     let skippedCount = 0;
 
+    // Cache holiday lookups per timezone to avoid redundant work
+    const holidayCache = new Map<string, { name: string; greeting: string } | null>();
+    const getHolidayForTimezone = (tz: string) => {
+      if (holidayCache.has(tz)) return holidayCache.get(tz)!;
+      const result = getTodaysHoliday(tz);
+      holidayCache.set(tz, result);
+      return result;
+    };
+
     // Process each deal
     console.log('\n🎁 Processing holiday messages...');
     for (const deal of deals) {
@@ -179,6 +201,15 @@ export async function GET(request: NextRequest) {
         const agencySettings = agencySettingsMap.get(deal.agency_id);
         if (!agencySettings?.sms_holiday_enabled) {
           console.log(`  ⏭️  SKIPPED: Holiday messages disabled for agency`);
+          skippedCount++;
+          continue;
+        }
+
+        // Verify holiday applies in this agency's timezone
+        const agencyTz = agencySettings?.timezone || DEFAULT_TIMEZONE;
+        const agencyHoliday = getHolidayForTimezone(agencyTz);
+        if (!agencyHoliday) {
+          console.log(`  ⏭️  SKIPPED: Not a holiday in agency timezone (${agencyTz})`);
           skippedCount++;
           continue;
         }
@@ -254,7 +285,7 @@ export async function GET(request: NextRequest) {
           client_first_name: clientFirstName,
           agent_name: agentName,
           agent_phone: agentPhone,
-          holiday_greeting: holiday.greeting,
+          holiday_greeting: agencyHoliday.greeting,
           insured,
           policy_number: policyNumber,
           face_amount: faceAmount,
@@ -277,7 +308,7 @@ export async function GET(request: NextRequest) {
           autoSendSettings: autoSendSettingsMap.get(deal.agency_id),
           agentAutoSendEnabled: agentAutoSendMap.get(deal.agent_id) ?? null,
           metadata: {
-            holiday_name: holiday.name,
+            holiday_name: agencyHoliday.name,
             client_phone: deal.client_phone,
             client_name: deal.client_name,
             deal_id: deal.deal_id,
@@ -294,7 +325,7 @@ export async function GET(request: NextRequest) {
 
     console.log('\n🎊 ========================================');
     console.log(`🎊 HOLIDAY MESSAGES COMPLETE`);
-    console.log(`🎊 Holiday: ${holiday.name}`);
+    console.log(`🎊 Holiday: ${firstHoliday.name}`);
     console.log(`🎊 Success: ${successCount}`);
     console.log(`🎊 Skipped: ${skippedCount}`);
     console.log(`🎊 Errors: ${errorCount}`);
@@ -305,7 +336,7 @@ export async function GET(request: NextRequest) {
       sent: successCount,
       skipped: skippedCount,
       errors: errorCount,
-      holiday: holiday.name,
+      holiday: firstHoliday.name,
     });
   } catch (err: any) {
     console.error('❌ Fatal error in holiday messages cron:', err);

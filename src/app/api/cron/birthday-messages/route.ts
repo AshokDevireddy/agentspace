@@ -44,14 +44,9 @@ export async function GET(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // Get current date in PST (Pacific Time)
-    const pstDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-    const month = pstDate.getMonth() + 1; // JavaScript months are 0-indexed
-    const day = pstDate.getDate();
-
+    // Date filtering is now handled per-agency timezone in the RPC
     console.log(`📅 Current time (UTC): ${new Date().toISOString()}`);
-    console.log(`📅 Current date (PST): ${pstDate.toLocaleDateString('en-US')} - ${month}/${day}`);
-    console.log(`📅 Looking for birthdays on: ${month}/${day}`);
+    console.log(`📅 Birthday matching uses per-agency timezone (RPC-level)`);
 
     // Query deals using RPC function with proper status checking
     console.log('🔍 Querying deals using RPC function with status_mapping...');

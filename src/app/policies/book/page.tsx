@@ -72,6 +72,12 @@ interface FilterOptions {
   effectiveDateSort: FilterOption[]
 }
 
+interface BookSummary {
+  totalAnnualPremium: number
+  totalCoverageAmount: number
+  totalPolicies: number
+}
+
 // Dynamic color generator for status values - MORE VIBRANT
 const getStatusColor = (status: string) => {
   const statusLower = status.toLowerCase();
@@ -97,6 +103,10 @@ const leadSourceColors: Record<string, string> = {
   "online lead": "bg-pink-600 text-white border-pink-700",
 }
 
+const currencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0,
+})
+
 const billingCycleColors: Record<string, string> = {
   "monthly": "bg-blue-600 text-white border-blue-700",
   "quarterly": "bg-green-600 text-white border-green-700",
@@ -121,6 +131,8 @@ export default function BookOfBusiness() {
       effectiveDateSort: "all",
       effectiveDateStart: "",
       effectiveDateEnd: "",
+      submittedDateStart: "",
+      submittedDateEnd: "",
       statusMode: 'all' as 'all' | 'active' | 'pending' | 'inactive',
       viewMode: 'downlines' as 'downlines' | 'self'
     },
@@ -261,6 +273,8 @@ export default function BookOfBusiness() {
     if (appliedFilters.effectiveDateSort !== 'all') params.append('effective_date_sort', appliedFilters.effectiveDateSort)
     if (appliedFilters.effectiveDateStart) params.append('effective_date_start', appliedFilters.effectiveDateStart)
     if (appliedFilters.effectiveDateEnd) params.append('effective_date_end', appliedFilters.effectiveDateEnd)
+    if (appliedFilters.submittedDateStart) params.append('submitted_date_start', appliedFilters.submittedDateStart)
+    if (appliedFilters.submittedDateEnd) params.append('submitted_date_end', appliedFilters.submittedDateEnd)
     if (appliedFilters.viewMode) params.append('view', appliedFilters.viewMode)
     params.append('limit', '50')
     if (cursor) {
@@ -286,6 +300,21 @@ export default function BookOfBusiness() {
   })
 
   const isRefreshing = dealsFetching && !loading // Background refetch with stale data shown
+
+  // Fetch summary totals (same filters, no pagination)
+  const { data: summaryData, isPending: summaryLoading } = useQuery<BookSummary>({
+    queryKey: queryKeys.dealsBookOfBusinessSummary(appliedFilters),
+    queryFn: async () => {
+      const params = buildDealsParams()
+      const response = await fetch(`/api/deals/book-of-business/summary?${params}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch summary')
+      }
+      return response.json()
+    },
+    staleTime: 30 * 1000,
+    placeholderData: (previousData) => previousData,
+  })
 
   // Update deals and cursor when data changes
   useEffect(() => {
@@ -345,9 +374,10 @@ export default function BookOfBusiness() {
   }
 
   const handlePolicyUpdate = () => {
-    // Refresh the deals list after update by invalidating the query
-    // Use partial key prefix ['deals', 'book-of-business'] to match all filter variations
+    // Refresh the deals list and summary after update by invalidating the queries
+    // Use partial key prefix to match all filter variations
     queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business'] })
+    queryClient.invalidateQueries({ queryKey: ['deals', 'book-of-business-summary'] })
   }
 
   const getLeadSourceColor = (leadSource: string) => {
@@ -390,7 +420,9 @@ export default function BookOfBusiness() {
     appliedFilters.status !== 'all' ||
     appliedFilters.effectiveDateSort !== 'all' ||
     appliedFilters.effectiveDateStart ||
-    appliedFilters.effectiveDateEnd
+    appliedFilters.effectiveDateEnd ||
+    appliedFilters.submittedDateStart ||
+    appliedFilters.submittedDateEnd
 
   const addFilter = (filterName: string) => {
     const newVisibleFilters = new Set(visibleFilters)
@@ -439,6 +471,9 @@ export default function BookOfBusiness() {
       case 'dateRange':
         setLocalFilters({ effectiveDateStart: '', effectiveDateEnd: '' })
         break
+      case 'submittedDateRange':
+        setLocalFilters({ submittedDateStart: '', submittedDateEnd: '' })
+        break
       case 'persistencyPlacement':
         setStatusMode('all')
         break
@@ -457,6 +492,7 @@ export default function BookOfBusiness() {
     { id: 'status', label: 'Status' },
     { id: 'effectiveDateSort', label: 'Oldest/Newest' },
     { id: 'dateRange', label: 'Date Range' },
+    { id: 'submittedDateRange', label: 'Submitted Date' },
     { id: 'persistencyPlacement', label: 'Persistency/Placement' },
   ]
 
@@ -672,6 +708,15 @@ export default function BookOfBusiness() {
                   />
                 </Badge>
               )}
+              {visibleFilters.has('submittedDateRange') && (
+                <Badge variant="outline" className="h-8 px-3">
+                  Submitted Date
+                  <X
+                    className="h-3 w-3 ml-2 cursor-pointer"
+                    onClick={() => removeFilter('submittedDateRange')}
+                  />
+                </Badge>
+              )}
               {visibleFilters.has('persistencyPlacement') && (
                 <Badge variant="outline" className="h-8 px-3">
                   Persistency/Placement
@@ -872,6 +917,20 @@ export default function BookOfBusiness() {
                   </div>
                 )}
 
+                {visibleFilters.has('submittedDateRange') && (
+                  <div>
+                    <label className="block text-[10px] font-medium text-muted-foreground mb-1">
+                      Submitted Date Range
+                    </label>
+                    <DateRangePicker
+                      startDate={localFilters.submittedDateStart}
+                      endDate={localFilters.submittedDateEnd}
+                      onRangeChange={(start, end) => setLocalFilters({ submittedDateStart: start, submittedDateEnd: end })}
+                      disabled={loading}
+                    />
+                  </div>
+                )}
+
                 {visibleFilters.has('persistencyPlacement') && (
                   <div>
                     <label className="block text-[10px] font-medium text-muted-foreground mb-1">
@@ -896,6 +955,31 @@ export default function BookOfBusiness() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Summary Totals - only show when filters are applied */}
+      {hasActiveFilters && (
+        <div className={cn(
+          "grid grid-cols-3 gap-4",
+          userTier === 'basic' && viewMode === 'downlines' && "blur-sm pointer-events-none"
+        )}>
+          {[
+            { label: "Total Annual Premium", value: currencyFormatter.format(summaryData?.totalAnnualPremium ?? 0) },
+            { label: "Total Coverage Amount", value: currencyFormatter.format(summaryData?.totalCoverageAmount ?? 0) },
+            { label: "Total Policies", value: (summaryData?.totalPolicies ?? 0).toLocaleString() },
+          ].map(({ label, value }) => (
+            <Card key={label} className="professional-card !rounded-md">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">{label}</p>
+                {summaryLoading ? (
+                  <div className="h-8 mt-1 bg-muted/50 rounded animate-pulse" />
+                ) : (
+                  <p className="text-2xl font-bold text-foreground">{value}</p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Policies Table */}
       <div className={cn(

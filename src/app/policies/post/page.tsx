@@ -759,6 +759,10 @@ export default function PostDeal() {
         setError("Please enter the client's date of birth.")
         return false
       }
+      if (new Date(formData.clientDateOfBirth) > new Date()) {
+        setError("Date of birth cannot be a future date.")
+        return false
+      }
       if (!formData.clientAddress) {
         setError("Please enter the client's address.")
         return false
@@ -1339,6 +1343,7 @@ export default function PostDeal() {
                       type="date"
                       value={formData.clientDateOfBirth}
                       onChange={(e) => handleInputChange("clientDateOfBirth", e.target.value)}
+                      max={new Date().toISOString().split('T')[0]}
                       className="h-12"
                     />
                   </div>

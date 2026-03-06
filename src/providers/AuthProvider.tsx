@@ -7,6 +7,7 @@ import { initTokenFromCookie, setAccessToken, getAccessToken, clearAccessToken }
 import { getApiBaseUrl } from '@/lib/api-config'
 import { AUTH_PATHS } from '@/lib/auth/constants'
 import { fetchWithTimeout } from '@/lib/api/auth'
+import { AuthError } from '@/lib/error-utils'
 
 export type UserData = {
   id: string
@@ -115,8 +116,11 @@ export function AuthProvider({
       } else {
         handleAuthFailure()
       }
-    } catch {
-      handleAuthFailure()
+    } catch (err) {
+      // Only logout on auth errors (401/token issues), not network errors
+      if (err instanceof AuthError) {
+        handleAuthFailure()
+      }
     }
   }, [handleAuthFailure])
 

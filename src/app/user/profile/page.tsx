@@ -323,7 +323,7 @@ export default function ProfilePage() {
           </div>
           <button
             onClick={() => updatePhoneMutation.mutate({ phoneNumber })}
-            disabled={updatePhoneMutation.isPending || phoneNumber.length !== 10}
+            disabled={updatePhoneMutation.isPending || phoneNumber.length !== 10 || phoneNumber === (profileData.phoneNumber ?? "")}
             className="mt-0 px-6 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {updatePhoneMutation.isPending ? 'Saving...' : 'Save Phone'}

@@ -35,7 +35,7 @@ import {
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { useNotification } from '@/contexts/notification-context'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useSendMessage, useResolveNotification, useApproveDrafts, useRejectDrafts, useEditDraft, useRetryFailed } from '@/hooks/mutations'
@@ -186,6 +186,7 @@ function SMSMessagingPageContent() {
 
   // Ref for selected conversation to avoid stale closures in subscriptions
   const selectedConversationRef = useRef<Conversation | null>(null)
+  const conversationListRef = useRef<HTMLDivElement>(null)
 
   // Check if user is admin - uses apiClient direct to Django
   const { data: adminData, isSuccess: isAdminChecked } = useQuery({
@@ -225,17 +226,27 @@ function SMSMessagingPageContent() {
   useEffect(() => {
     selectedConversationRef.current = selectedConversation
   }, [selectedConversation])
-  const { data: conversationsData, isPending: loading } = useApiFetch<{ conversations: Conversation[] }>(
-    queryKeys.conversationsList(effectiveViewMode, { searchQuery, notificationFilter }),
-    `/api/sms/conversations?view_mode=${effectiveViewMode}`,
-    {
-      enabled: isAdminChecked,
-      staleTime: 30 * 1000, // 30 seconds
-      placeholderData: (previousData) => previousData, // Keep previous data while fetching (stale-while-revalidate)
-    }
-  )
+  const CONVERSATIONS_PAGE_SIZE = 150
 
-  const conversations = conversationsData?.conversations || []
+  const {
+    data: conversationsData,
+    isPending: loading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<{ conversations: Conversation[]; pagination: { hasNextPage: boolean } }>({
+    queryKey: queryKeys.conversationsList(effectiveViewMode, { searchQuery, notificationFilter }),
+    queryFn: async ({ pageParam, signal }) => {
+      return apiClient.get(`/api/sms/conversations?view_mode=${effectiveViewMode}&page=${pageParam}&limit=${CONVERSATIONS_PAGE_SIZE}`, { signal })
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
+      lastPage.pagination?.hasNextPage ? (lastPageParam as number) + 1 : undefined,
+    enabled: isAdminChecked,
+    staleTime: 30 * 1000,
+  })
+
+  const conversations = conversationsData?.pages.flatMap(p => p.conversations) || []
 
   // Messages query - migrated to useApiFetch
   const { data: messagesData, isPending: messagesLoading } = useApiFetch<{ messages: Message[] }>(
@@ -317,6 +328,15 @@ function SMSMessagingPageContent() {
   })
 
   const totalUnreadCount = conversations.reduce((sum, conv) => sum + (conv.unreadCount || 0), 0)
+
+  const handleConversationListScroll = useCallback(() => {
+    const el = conversationListRef.current
+    if (!el || !hasNextPage || isFetchingNextPage) return
+    // Load more when scrolled within 200px of the bottom
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+      fetchNextPage()
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -689,20 +709,16 @@ function SMSMessagingPageContent() {
   }
 
   const handleConversationCreated = useCallback(async (conversationId: string) => {
-    // Use filtersRef.current to get fresh filter values
     const { effectiveViewMode: mode, searchQuery: search, notificationFilter: filter } = filtersRef.current
 
-    // Invalidate conversations query and wait for refetch to complete
+    // Invalidate and refetch conversations
     await queryClient.invalidateQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
 
-    // Refetch and get the updated data directly
-    const data = await queryClient.fetchQuery({
-      queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }),
-      staleTime: 0, // Force fresh fetch
-    }) as { conversations: Conversation[] } | undefined
-
-    // Find and select the new conversation from the fresh data
-    const conversation = data?.conversations?.find(c => c.id === conversationId)
+    // Get the updated data from the cache (invalidation triggers refetch for active queries)
+    await queryClient.refetchQueries({ queryKey: queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter }) })
+    const cachedData = queryClient.getQueryData(queryKeys.conversationsList(mode, { searchQuery: search, notificationFilter: filter })) as { pages: { conversations: Conversation[] }[] } | undefined
+    const allConversations = cachedData?.pages?.flatMap(p => p.conversations) || []
+    const conversation = allConversations.find(c => c.id === conversationId)
     if (conversation) {
       handleConversationSelect(conversation)
     }
@@ -924,7 +940,10 @@ function SMSMessagingPageContent() {
             }}
           />
         ) : (
-          <div className={cn(
+          <div
+            ref={conversationListRef}
+            onScroll={handleConversationListScroll}
+            className={cn(
             "flex-1 overflow-y-auto custom-scrollbar",
             userTier === 'basic' && viewMode === 'downlines' && "blur-sm pointer-events-none"
           )}>
@@ -948,7 +967,8 @@ function SMSMessagingPageContent() {
               </p>
             </div>
           ) : (
-            filteredConversations.map((conversation) => (
+            <>
+            {filteredConversations.map((conversation) => (
               <div
                 key={conversation.id}
                 onClick={() => handleConversationSelect(conversation)}
@@ -990,7 +1010,13 @@ function SMSMessagingPageContent() {
                   </div>
                 </div>
               </div>
-            ))
+            ))}
+            {isFetchingNextPage && (
+              <div className="p-4 flex justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            </>
           )}
           </div>
         )}

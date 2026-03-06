@@ -304,11 +304,11 @@ export default function ProfilePage() {
         <p className="text-sm text-muted-foreground mb-4">
           Your phone number is included in SMS messages sent to clients. Please enter your direct cell number.
         </p>
-        <div className="flex items-end gap-4">
+        <label className="block text-sm font-medium text-muted-foreground mb-2">
+          Cell Phone Number
+        </label>
+        <div className="flex items-start gap-4">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-muted-foreground mb-2">
-              Cell Phone Number
-            </label>
             <input
               type="tel"
               value={formatPhoneDisplay(phoneNumber)}
@@ -324,7 +324,7 @@ export default function ProfilePage() {
           <button
             onClick={() => updatePhoneMutation.mutate({ phoneNumber })}
             disabled={updatePhoneMutation.isPending || phoneNumber.length !== 10}
-            className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="mt-0 px-6 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {updatePhoneMutation.isPending ? 'Saving...' : 'Save Phone'}
           </button>

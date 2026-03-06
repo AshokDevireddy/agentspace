@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 import { MonthRangePicker } from "@/components/ui/month-range-picker"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
@@ -335,9 +336,24 @@ export default function ExpectedPayoutsPage() {
   const loading = authLoading || userLoading || payoutsLoading
   const error = payoutsError ? (payoutsError instanceof Error ? payoutsError.message : 'Failed to load payouts') : null
 
+  // Check if any filters differ from defaults
+  const hasActiveFilters =
+    appliedFilters.carrier !== 'all' ||
+    appliedFilters.startMonth !== defaultRange.startMonth ||
+    appliedFilters.endMonth !== defaultRange.endMonth ||
+    (appliedFilters.agent !== '' && appliedFilters.agent !== currentUserId)
+
   // Apply filters handler
   const handleApplyFilters = () => {
     applyFilters()
+  }
+
+  // Clear filters handler - reset to defaults but keep current user as agent
+  const handleClearFilters = () => {
+    clearFilters()
+    if (currentUserId) {
+      setAndApply({ agent: currentUserId } as Partial<typeof localFilters>)
+    }
   }
 
   // Aggregate data by month for chart - only include months within the selected date range
@@ -451,14 +467,26 @@ export default function ExpectedPayoutsPage() {
               />
             </div>
 
-            {/* Filter Button */}
-            <button
-              onClick={handleApplyFilters}
-              disabled={loading}
-              className="px-6 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors font-medium whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Apply Filters
-            </button>
+            {/* Filter Buttons */}
+            <div className="flex items-center gap-2">
+              {hasActiveFilters && (
+                <Button
+                  onClick={handleClearFilters}
+                  variant="ghost"
+                  size="sm"
+                  className="h-8"
+                >
+                  Clear All
+                </Button>
+              )}
+              <button
+                onClick={handleApplyFilters}
+                disabled={loading}
+                className="px-6 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors font-medium whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Apply Filters
+              </button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -630,7 +658,12 @@ export default function ExpectedPayoutsPage() {
                 />
                 <YAxis
                   tick={{ fill: 'hsl(var(--foreground))' }}
-                  tickFormatter={(value) => `$${value.toLocaleString()}`}
+                  tickFormatter={(value) => {
+                    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
+                    if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`
+                    return `$${value.toLocaleString()}`
+                  }}
+                  width={80}
                 />
                 <Tooltip
                   contentStyle={{

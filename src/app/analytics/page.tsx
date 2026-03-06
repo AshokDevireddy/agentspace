@@ -471,20 +471,6 @@ function describeArc(cx: number, cy: number, r: number, startAngle: number, endA
 	return [`M ${cx} ${cy}`, `L ${start.x} ${start.y}`, `A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`, "Z"].join(" ")
 }
 
-function describeDonutArc(cx: number, cy: number, outerR: number, innerR: number, startAngle: number, endAngle: number) {
-	const outerStart = polarToCartesian(cx, cy, outerR, endAngle)
-	const outerEnd = polarToCartesian(cx, cy, outerR, startAngle)
-	const innerStart = polarToCartesian(cx, cy, innerR, startAngle)
-	const innerEnd = polarToCartesian(cx, cy, innerR, endAngle)
-	const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1
-	return [
-		`M ${outerStart.x} ${outerStart.y}`,
-		`A ${outerR} ${outerR} 0 ${largeArcFlag} 0 ${outerEnd.x} ${outerEnd.y}`,
-		`L ${innerStart.x} ${innerStart.y}`,
-		`A ${innerR} ${innerR} 0 ${largeArcFlag} 1 ${innerEnd.x} ${innerEnd.y}`,
-		"Z"
-	].join(" ")
-}
 
 // Helper function to create smooth curve path from points using cubic Bezier curves
 function createSmoothCurvePath(points: Array<{ x: number; y: number }>): string {
@@ -1874,9 +1860,6 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 										size="sm"
 										onClick={() => {
 											setGroupBy(g.key)
-											if (g.key !== "carrier" && g.key !== "downline") {
-												setSelectedCarrier(null)
-											}
 											if (g.key !== "downline") {
 												setDownlineTitle(null)
 											}
@@ -1891,7 +1874,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 							{/* Render breakdown charts based on groupBy */}
 							{groupBy === "carrier" && statusBreakdown && (
 								<div className="flex flex-col items-center justify-center gap-6">
-									{/* Donut Chart */}
+									{/* Pie Chart */}
 									<div className="relative h-[320px] w-[320px]">
 										<svg width={320} height={320} viewBox="0 0 320 320" className="overflow-visible">
 											<defs>
@@ -1902,12 +1885,11 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 													<feColorMatrix type="matrix" values="0.7 0 0 0 0 0 0.7 0 0 0 0 0 0.7 0 0 0 0 0 1 0"/>
 												</filter>
 											</defs>
-											<circle cx={160} cy={160} r={100} style={{ fill: 'hsl(var(--card))' }} />
 											<g filter="url(#shadow-status)">
 												{statusBreakdown.wedges.map((w, idx) => {
-													const path = describeDonutArc(160, 160, 150, 100, w.start, w.end)
+													const path = describeArc(160, 160, 150, w.start, w.end)
 													const mid = (w.start + w.end) / 2
-													const center = polarToCartesian(160, 160, 125, mid)
+													const center = polarToCartesian(160, 160, 90, mid)
 													const isHovered = hoverStatusInfo?.status === w.status
 													const isOtherHovered = hoverStatusInfo !== null && !isHovered
 													// Check if this is a full circle (360 degrees)

@@ -658,6 +658,12 @@ export default function PostDeal() {
       return false
     }
     if (!checkHighPremium(monthly)) return false
+    // Phone number must be exactly 10 digits (valid US number for Telnyx E.164)
+    const phoneDigits = normalizePhoneForStorage(formData.clientPhone)
+    if (phoneDigits.length !== 10) {
+      setError("Please enter a valid 10-digit US phone number.")
+      return false
+    }
     setError(null)
     return true
   }
@@ -1322,13 +1328,19 @@ export default function PostDeal() {
                       type="tel"
                       value={formData.clientPhone}
                       onChange={(e) => handleInputChange("clientPhone", e.target.value)}
-                      className="h-12"
+                      className={`h-12 ${formData.clientPhone && normalizePhoneForStorage(formData.clientPhone).length !== 10 ? 'border-destructive' : ''}`}
                       placeholder="(555) 123-4567"
                       maxLength={14}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Format: (XXX) XXX-XXXX
-                    </p>
+                    {formData.clientPhone && normalizePhoneForStorage(formData.clientPhone).length !== 10 ? (
+                      <p className="text-xs text-destructive">
+                        Please enter a valid 10-digit US phone number. Format: (XXX) XXX-XXXX
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Format: (XXX) XXX-XXXX
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-2">

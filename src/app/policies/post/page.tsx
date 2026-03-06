@@ -658,12 +658,6 @@ export default function PostDeal() {
       return false
     }
     if (!checkHighPremium(monthly)) return false
-    // Phone number must be exactly 10 digits (valid US number for Telnyx E.164)
-    const phoneDigits = normalizePhoneForStorage(formData.clientPhone)
-    if (phoneDigits.length !== 10) {
-      setError("Please enter a valid 10-digit US phone number.")
-      return false
-    }
     setError(null)
     return true
   }

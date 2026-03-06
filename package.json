@@ -2,15 +2,16 @@
   "name": "agentspace",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.29.3",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "setup:browsers": "npx playwright install",
-    "test:browsers": "npx playwright --version && echo 'Browsers check: OK'",
-    "fix:browsers": "npx playwright install --force",
-    "test:sms-agent": "npx tsx scripts/test-sms-agent.ts"
+    "setup:browsers": "pnpm dlx playwright install",
+    "test:browsers": "pnpm dlx playwright --version && echo 'Browsers check: OK'",
+    "fix:browsers": "pnpm dlx playwright install --force",
+    "test:sms-agent": "pnpm dlx tsx scripts/test-sms-agent.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",

@@ -12,7 +12,6 @@ import type { UserData as OnboardingUserData } from "@/components/onboarding/typ
 import { useTour } from "@/contexts/onboarding-tour-context"
 import type { UserProfile, CarrierActive, PieChartEntry, LeaderboardProducer, DashboardData, DealsSummary } from "@/types"
 import { useDashboardSummary, useScoreboardLapsedData } from "@/hooks/useDashboardData"
-import { useCompleteOnboarding } from "@/hooks/mutations"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiClient } from "@/lib/api-client"
 import { queryKeys } from "@/hooks/queryKeys"
@@ -38,12 +37,12 @@ export default function Home() {
   // SSR-safe week date range - returns deterministic dates on server, actual current week on client
   const weekRange = useWeekDateRange()
   const queryClient = useQueryClient()
-  const completeOnboardingMutation = useCompleteOnboarding()
 
   const { data: profileData, isLoading: profileLoading, error: profileError } = useQuery<UserProfile, Error>({
     queryKey: queryKeys.userProfile(user?.id),
     queryFn: () => apiClient.get<UserProfile>('/api/user/profile/', { params: { user_id: user?.id } }),
     enabled: !!user?.id,
+    staleTime: 30 * 1000,
     placeholderData: (previousData) => previousData,
   })
 
@@ -175,30 +174,14 @@ export default function Home() {
     }
   }, [authLoading, profileLoading, userData, isTourActive, tourCompleted, hasStartedTour, startTour, user?.id, user?.tutorialCompleted])
 
-  const handleOnboardingComplete = () => {
-    completeOnboardingMutation.mutate(undefined, {
-      onSuccess: async () => {
-        // Refresh AuthProvider state so client-layout shows sidebar immediately
-        await refreshUser()
-        // Force refetch of active queries to immediately update UI
-        await Promise.all([
-          queryClient.refetchQueries({ queryKey: queryKeys.user, type: 'active' }),
-          queryClient.refetchQueries({ queryKey: queryKeys.userProfile(), type: 'active' }),
-        ])
-        // showWizard will be automatically set to false by the useEffect watching userData.status
-      },
-      onError: async (error) => {
-        // If user is already active, treat as success and close wizard
-        if (error.message?.toLowerCase().includes('not in onboarding')) {
-          await refreshUser()
-          await queryClient.refetchQueries({ queryKey: queryKeys.userProfile(), type: 'active' })
-          return
-        }
-        console.error('Error completing onboarding:', error)
-        await queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() })
-      },
-    })
-  }
+  const handleOnboardingComplete = useCallback(async () => {
+    // OnboardingWizard already called completeOnboarding() — just refresh UI state
+    await refreshUser()
+    await Promise.all([
+      queryClient.refetchQueries({ queryKey: queryKeys.user, type: 'active' }),
+      queryClient.refetchQueries({ queryKey: queryKeys.userProfile(), type: 'active' }),
+    ])
+  }, [refreshUser, queryClient])
 
   // Decoupled loading states per section for better UX
   // Include authLoading to show skeletons while auth is initializing (prevents "no data" flash)

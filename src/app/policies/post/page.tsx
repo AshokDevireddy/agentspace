@@ -1322,19 +1322,13 @@ export default function PostDeal() {
                       type="tel"
                       value={formData.clientPhone}
                       onChange={(e) => handleInputChange("clientPhone", e.target.value)}
-                      className={`h-12 ${formData.clientPhone && normalizePhoneForStorage(formData.clientPhone).length !== 10 ? 'border-destructive' : ''}`}
+                      className="h-12"
                       placeholder="(555) 123-4567"
                       maxLength={14}
                     />
-                    {formData.clientPhone && normalizePhoneForStorage(formData.clientPhone).length !== 10 ? (
-                      <p className="text-xs text-destructive">
-                        Please enter a valid 10-digit US phone number. Format: (XXX) XXX-XXXX
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        Format: (XXX) XXX-XXXX
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Format: (XXX) XXX-XXXX
+                    </p>
                   </div>
 
                   <div className="space-y-2">

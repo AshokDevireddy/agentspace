@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, useRef } from 'react'
 import { useTour } from '@/contexts/onboarding-tour-context'
-import { useAuth } from '@/providers/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -13,7 +12,6 @@ const HIGHLIGHT_PADDING = 8
 const TOOLTIP_PADDING = 20
 
 export default function OnboardingTour() {
-  const { user } = useAuth()
   const {
     isTourActive,
     currentStep,
@@ -22,6 +20,7 @@ export default function OnboardingTour() {
     nextStep,
     previousStep,
     skipTour,
+    dismissTour,
     isLastStep,
     isFirstStep,
   } = useTour()
@@ -248,7 +247,7 @@ export default function OnboardingTour() {
                 </h3>
               </div>
               <button
-                onClick={() => skipTour(user?.id)}
+                onClick={() => dismissTour()}
                 className="text-muted-foreground hover:text-foreground transition-colors p-1 -mr-1 -mt-1"
                 aria-label="Close tour"
               >
@@ -278,7 +277,7 @@ export default function OnboardingTour() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => skipTour(user?.id)}
+                  onClick={() => skipTour()}
                   className="text-muted-foreground hover:text-foreground"
                 >
                   Skip Tour
@@ -298,7 +297,7 @@ export default function OnboardingTour() {
                   )}
                   <Button
                     size="sm"
-                    onClick={() => nextStep(user?.id)}
+                    onClick={() => nextStep()}
                     style={{ backgroundColor: 'hsl(var(--primary))' }}
                     className="gap-1 text-primary-foreground"
                   >

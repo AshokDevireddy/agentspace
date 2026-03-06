@@ -19,6 +19,7 @@ export type UserData = {
   isAdmin: boolean
   agencyId: string | null
   subscriptionTier: 'free' | 'basic' | 'pro' | 'expert'
+  tutorialCompleted: boolean
 }
 
 type AuthContextType = {
@@ -99,6 +100,7 @@ export function AuthProvider({
           subscriptionTier: string
           authUserId: string | null
           themeMode: string | null
+          tutorialCompleted: boolean
         } | null
       }>('/api/auth/session/')
       if (data.authenticated && data.user) {
@@ -112,6 +114,7 @@ export function AuthProvider({
           isAdmin: data.user.isAdmin,
           agencyId: data.user.agencyId,
           subscriptionTier: (data.user.subscriptionTier || 'free') as UserData['subscriptionTier'],
+          tutorialCompleted: data.user.tutorialCompleted ?? false,
         })
       } else {
         handleAuthFailure()
@@ -225,6 +228,7 @@ export function AuthProvider({
       isAdmin: userData.is_admin,
       agencyId: userData.agency_id,
       subscriptionTier: userData.subscription_tier || 'free',
+      tutorialCompleted: userData.tutorial_completed ?? false,
     }
 
     setUser(userObj)

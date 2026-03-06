@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useCompleteOnboarding } from '@/hooks/mutations/useAuthMutations'
+import { useAuth } from '@/providers/AuthProvider'
 
 export interface TourStep {
   id: string
@@ -16,14 +17,16 @@ export interface TourStep {
 
 interface TourContextType {
   isTourActive: boolean
+  tourCompleted: boolean
   currentStepIndex: number
   currentStep: TourStep | null
   tourSteps: TourStep[]
   startTour: () => void
-  nextStep: (userId?: string) => void
+  nextStep: () => void
   previousStep: () => void
-  skipTour: (userId?: string) => void
-  endTour: (userId?: string) => void
+  skipTour: () => void
+  dismissTour: () => void
+  endTour: () => void
   isLastStep: boolean
   isFirstStep: boolean
   userRole: 'admin' | 'agent' | null
@@ -42,10 +45,12 @@ export const useTour = () => {
 
 export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isTourActive, setIsTourActive] = useState(false)
+  const [tourCompleted, setTourCompleted] = useState(false)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const [userRole, setUserRole] = useState<'admin' | 'agent' | null>(null)
   const router = useRouter()
   const pathname = usePathname()
+  const { refreshUser } = useAuth()
   const completeOnboardingMutation = useCompleteOnboarding()
 
   // Define all tour steps
@@ -201,47 +206,52 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [router])
 
-  const skipTour = useCallback((userId?: string) => {
+  // Dismiss tour without marking as completed — tour will show again next session
+  const dismissTour = useCallback(() => {
     setIsTourActive(false)
     setCurrentStepIndex(0)
+    router.push('/')
+  }, [router])
 
-    // Mark tour as completed
-    if (userId && typeof window !== 'undefined') {
-      localStorage.setItem(`tour_completed_${userId}`, 'true')
-    }
+  const skipTour = useCallback(() => {
+    setIsTourActive(false)
+    setTourCompleted(true)
+    setCurrentStepIndex(0)
 
     // Navigate to dashboard immediately
     router.push('/')
 
-    // Use mutation for proper error handling and cache invalidation
+    // Mark tutorial as completed in the database, then refresh auth state
     completeOnboardingMutation.mutate(undefined, {
+      onSuccess: () => {
+        refreshUser()
+      },
       onError: (error) => {
         console.error('Error completing onboarding:', error)
       }
     })
-  }, [router, completeOnboardingMutation])
+  }, [router, completeOnboardingMutation, refreshUser])
 
-  const endTour = useCallback((userId?: string) => {
+  const endTour = useCallback(() => {
     setIsTourActive(false)
+    setTourCompleted(true)
     setCurrentStepIndex(0)
-
-    // Mark tour as completed
-    if (userId && typeof window !== 'undefined') {
-      localStorage.setItem(`tour_completed_${userId}`, 'true')
-    }
 
     // Navigate to dashboard immediately
     router.push('/')
 
-    // Use mutation for proper error handling and cache invalidation
+    // Mark tutorial as completed in the database, then refresh auth state
     completeOnboardingMutation.mutate(undefined, {
+      onSuccess: () => {
+        refreshUser()
+      },
       onError: (error) => {
         console.error('Error completing onboarding:', error)
       }
     })
-  }, [router, completeOnboardingMutation])
+  }, [router, completeOnboardingMutation, refreshUser])
 
-  const nextStep = useCallback((userId?: string) => {
+  const nextStep = useCallback(() => {
     const steps = tourStepsRef.current
     const currentIndex = currentStepIndexRef.current
 
@@ -255,7 +265,7 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       setCurrentStepIndex(nextIndex)
     } else {
-      endTour(userId)
+      endTour()
     }
   }, [endTour])
 
@@ -290,12 +300,12 @@ export const TourProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [pathname, isTourActive])
 
   const contextValue = useMemo(() => ({
-    isTourActive, currentStepIndex, currentStep, tourSteps,
-    startTour, nextStep, previousStep, skipTour, endTour,
+    isTourActive, tourCompleted, currentStepIndex, currentStep, tourSteps,
+    startTour, nextStep, previousStep, skipTour, dismissTour, endTour,
     isLastStep, isFirstStep, userRole, setUserRole
   }), [
-    isTourActive, currentStepIndex, currentStep, tourSteps,
-    startTour, nextStep, previousStep, skipTour, endTour,
+    isTourActive, tourCompleted, currentStepIndex, currentStep, tourSteps,
+    startTour, nextStep, previousStep, skipTour, dismissTour, endTour,
     isLastStep, isFirstStep, userRole, setUserRole
   ])
 

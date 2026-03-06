@@ -19,6 +19,7 @@ interface AuthUser {
   status: 'active' | 'onboarding' | 'invited' | 'inactive'
   subscriptionTier: 'free' | 'basic' | 'pro' | 'expert'
   themeMode: 'light' | 'dark' | 'system' | null
+  tutorialCompleted: boolean
 }
 
 interface AuthAgency {
@@ -67,6 +68,7 @@ export async function getAuthSession(): Promise<AuthSession | null> {
         isAdmin: data.user.is_admin,
         agencyId: data.user.agency_id,
         subscriptionTier: data.user.subscription_tier || 'free',
+        tutorialCompleted: data.user.tutorial_completed ?? false,
       },
       agency: data.agency ? {
         displayName: data.agency.display_name,

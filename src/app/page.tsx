@@ -26,7 +26,7 @@ import { PIE_CHART_COLORS, PIE_CHART_GROUP_THRESHOLD } from "@/lib/chart-colors"
 
 export default function Home() {
   const { user, loading: authLoading, refreshUser } = useAuth()
-  const { startTour, setUserRole, isTourActive } = useTour()
+  const { startTour, setUserRole, isTourActive, tourCompleted } = useTour()
   const [showWizard, setShowWizard] = useState(false)
   const [hasStartedTour, setHasStartedTour] = useState(false)
   // SSR-safe localStorage hook - returns 'downlines' on server, synced value on client
@@ -166,19 +166,14 @@ export default function Home() {
 
   useEffect(() => {
     if (!authLoading && !profileLoading && userData && user?.id) {
-      const oldKey = `tour_shown_${user.id}`
-      if (localStorage.getItem(oldKey)) {
-        localStorage.removeItem(oldKey)
-      }
-      const tourCompleted = localStorage.getItem(`tour_completed_${user.id}`)
-      if (userData.status === 'active' && !tourCompleted && !isTourActive && !hasStartedTour) {
+      if (!user.tutorialCompleted && !tourCompleted && !isTourActive && !hasStartedTour) {
         setTimeout(() => {
           startTour()
           setHasStartedTour(true)
         }, 500)
       }
     }
-  }, [authLoading, profileLoading, userData, isTourActive, hasStartedTour, startTour, user?.id])
+  }, [authLoading, profileLoading, userData, isTourActive, tourCompleted, hasStartedTour, startTour, user?.id, user?.tutorialCompleted])
 
   const handleOnboardingComplete = () => {
     completeOnboardingMutation.mutate(undefined, {

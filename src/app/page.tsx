@@ -165,7 +165,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!authLoading && !profileLoading && userData && user?.id) {
-      if (!user.tutorialCompleted && !tourCompleted && !isTourActive && !hasStartedTour) {
+      if (!user.tutorialCompleted && !tourCompleted && !isTourActive && !hasStartedTour && userData.status !== 'onboarding') {
         setTimeout(() => {
           startTour()
           setHasStartedTour(true)

@@ -58,7 +58,7 @@ export interface RegisterRequest {
   email: string
   first_name: string
   last_name: string
-  phone_number?: string
+  phone_number: string
   agency_name: string
 }
 

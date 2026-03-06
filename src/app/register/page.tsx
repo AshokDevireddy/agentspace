@@ -69,8 +69,11 @@ export default function RegisterPage() {
       newErrorFields.agencyName = "Required"
     }
 
-    // Phone validation (10 digits) - optional
-    if (formData.phoneNumber && formData.phoneNumber.length !== 10) {
+    // Phone validation (10 digits)
+    if (!formData.phoneNumber.trim()) {
+      newErrors.push("Phone number is required")
+      newErrorFields.phoneNumber = "Required"
+    } else if (formData.phoneNumber.length !== 10) {
       newErrors.push("Phone number must be 10 digits")
       newErrorFields.phoneNumber = "Invalid phone format"
     }
@@ -208,7 +211,7 @@ export default function RegisterPage() {
             {/* Phone Number */}
             <div className="space-y-2">
               <label className="block text-sm font-medium text-foreground">
-                Phone Number (Optional)
+                Phone Number <span className="text-destructive">*</span>
               </label>
               <Input
                 type="tel"
@@ -216,6 +219,7 @@ export default function RegisterPage() {
                 onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
                 className={`h-12 ${errorFields.phoneNumber ? 'border-destructive' : ''}`}
                 placeholder="1234567890"
+                required
               />
               {errorFields.phoneNumber && (
                 <p className="text-destructive text-sm">{errorFields.phoneNumber}</p>

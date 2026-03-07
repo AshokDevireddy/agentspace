@@ -12,8 +12,19 @@
 
 let currentToken: string | null = null
 
+const LS_TOKEN_KEY = 'access_token'
+
 export function setAccessToken(token: string | null) {
   currentToken = token
+  // Persist to localStorage so the token survives full page reloads
+  // when the cookie is cross-origin (e.g. localhost → prod API).
+  if (typeof window !== 'undefined') {
+    if (token) {
+      localStorage.setItem(LS_TOKEN_KEY, token)
+    } else {
+      localStorage.removeItem(LS_TOKEN_KEY)
+    }
+  }
 }
 
 export function getAccessToken(): string | null {
@@ -22,6 +33,8 @@ export function getAccessToken(): string | null {
 
 /**
  * Read access_token cookie on page load to initialize the store.
+ * Falls back to localStorage when the cookie is not readable
+ * (e.g. cross-origin: localhost frontend → remote API backend).
  * Called once from AuthProvider on mount.
  */
 export function initTokenFromCookie() {
@@ -29,6 +42,11 @@ export function initTokenFromCookie() {
   const match = document.cookie.match(/(?:^|;\s*)access_token=([^;]+)/)
   if (match) {
     currentToken = decodeURIComponent(match[1])
+  } else if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem(LS_TOKEN_KEY)
+    if (stored) {
+      currentToken = stored
+    }
   }
 }
 
@@ -40,5 +58,8 @@ export function clearAccessToken() {
   currentToken = null
   if (typeof document !== 'undefined') {
     document.cookie = 'access_token=; Max-Age=0; path=/'
+  }
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(LS_TOKEN_KEY)
   }
 }

@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Navigation from '@/components/navigation'
 import OnboardingTour from '@/components/onboarding-tour'
@@ -32,6 +33,19 @@ export default function ClientLayout({
 }) {
   const pathname = usePathname()
   const { user, loading } = useAuth()
+
+  // Intercept hash tokens on any page (safety net for Supabase redirect stripping /auth/confirm path)
+  useEffect(() => {
+    if (pathname === '/auth/confirm') return
+    const hash = window.location.hash
+    if (hash) {
+      const hashParams = new URLSearchParams(hash.substring(1))
+      if (hashParams.get('access_token') && hashParams.get('refresh_token')) {
+        window.location.href = `/auth/confirm${hash}`
+      }
+    }
+  }, [pathname])
+
   const { branding, isWhiteLabel, loading: brandingLoading } = useAgencyBranding()
   const isAuthPage = AUTH_PAGES.includes(pathname)
   const isClientPage = CLIENT_PAGES.some(page => pathname.startsWith(page))

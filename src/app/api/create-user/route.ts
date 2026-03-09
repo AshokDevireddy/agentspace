@@ -85,6 +85,7 @@ export async function POST(request: Request) {
         status: 'pending',
         is_admin: (permissionLevel?.trim().toLowerCase() === 'admin'),
         theme_mode: themeMode,
+        tutorial_completed: false,
       }])
 
     if (insertError) {

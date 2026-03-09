@@ -189,7 +189,8 @@ export async function POST(request: Request) {
         total_policies_sold: 0,
         start_date: getDatePartsInTimezone(DEFAULT_TIMEZONE).isoDate,
         agency_id: agencyData.id,
-        theme_mode: 'system'
+        theme_mode: 'system',
+        tutorial_completed: false
       }])
 
     if (dbError) {

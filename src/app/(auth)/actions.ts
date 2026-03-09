@@ -202,6 +202,7 @@ export async function signup(formData: FormData): Promise<ActionResult> {
       start_date: getDatePartsInTimezone(DEFAULT_TIMEZONE).isoDate,
       agency_id: agencyData.id,
       theme_mode: 'system',
+      tutorial_completed: false,
     }])
 
   if (dbError) {

@@ -148,7 +148,8 @@ export async function POST(request: Request) {
         perm_level: 'client',
         is_admin: false,
         status: 'invited',
-        agency_id: currentUser.agency_id  // Inherit agency from inviter
+        agency_id: currentUser.agency_id,  // Inherit agency from inviter
+        tutorial_completed: false
       }])
 
     if (dbError) {

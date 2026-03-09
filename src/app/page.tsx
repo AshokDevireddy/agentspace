@@ -11,9 +11,11 @@ import OnboardingWizard from "@/components/onboarding/OnboardingWizard"
 import type { UserData as OnboardingUserData } from "@/components/onboarding/types"
 import { useTour } from "@/contexts/onboarding-tour-context"
 import type { UserProfile, CarrierActive, PieChartEntry, LeaderboardProducer, DashboardData, DealsSummary } from "@/types"
-import { useDashboardSummary, useScoreboardLapsedData } from "@/hooks/useDashboardData"
+import { useDashboardSummary, useScoreboardBatch } from "@/hooks/useDashboardData"
+import type { ScoreboardBatchRange } from "@/hooks/useDashboardData"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiClient } from "@/lib/api-client"
+import { STALE_TIMES } from "@/lib/query-config"
 import { queryKeys } from "@/hooks/queryKeys"
 import { Skeleton } from "@/components/ui/skeleton"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
@@ -42,25 +44,15 @@ export default function Home() {
     queryKey: queryKeys.userProfile(user?.id),
     queryFn: () => apiClient.get<UserProfile>('/api/user/profile/', { params: { user_id: user?.id } }),
     enabled: !!user?.id,
-    staleTime: 30 * 1000,
+    staleTime: STALE_TIMES.slow,
     placeholderData: (previousData) => previousData,
   })
 
   // Derive scope early so it can be used in query options below.
   // Non-admin agents must see only their team's data, not the full agency.
-  // Defaults to 'downline' (safe default) until profileData resolves.
-  const isAdmin = (profileData?.isAdmin) || false
+  // isAdmin is available immediately from the auth session — no API call required.
+  const isAdmin = user?.isAdmin || false
   const scoreboardScope: 'agency' | 'downline' = isAdmin ? 'agency' : 'downline'
-
-  const { isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useScoreboardLapsedData(
-    user?.id,
-    weekRange.startDate,
-    weekRange.endDate,
-    scoreboardScope,
-    { enabled: !!user?.id && isHydrated && !!profileData },
-    true,
-    dateMode,
-  )
 
   const { data: dashboardResult, isLoading: dashboardLoading, isFetching: dashboardFetching, error: dashboardError } = useDashboardSummary(
     user?.id,
@@ -83,40 +75,29 @@ export default function Home() {
     }
   }, [])
 
-  // Top producers query with YTD/MTD period selection
-  const topProducersRange = topProducersPeriod === 'ytd' ? productionDateRanges.ytd : productionDateRanges.mtd
+  // Batch all scoreboard ranges into a single HTTP request (Phase 3 optimization)
+  // Previously: 4 separate useScoreboardLapsedData calls → 4 HTTP requests
+  // Now: 1 useScoreboardBatch call → 1 HTTP request
+  const batchRanges = useMemo((): ScoreboardBatchRange[] => [
+    { label: 'weekly', startDate: weekRange.startDate, endDate: weekRange.endDate },
+    { label: 'ytd', startDate: productionDateRanges.ytd.start, endDate: productionDateRanges.ytd.end },
+    { label: 'mtd', startDate: productionDateRanges.mtd.start, endDate: productionDateRanges.mtd.end },
+  ], [weekRange.startDate, weekRange.endDate, productionDateRanges])
+  const batchRangesKey = useMemo(() => batchRanges.map(r => `${r.label}:${r.startDate}:${r.endDate}`).join(','), [batchRanges])
 
-  const { data: topProducersResult, isLoading: topProducersLoading } = useScoreboardLapsedData(
+  const { data: batchResult, isLoading: scoreboardLoading, isFetching: scoreboardFetching, error: scoreboardError } = useScoreboardBatch(
     user?.id,
-    topProducersRange.start,
-    topProducersRange.end,
+    batchRanges,
     scoreboardScope,
-    { enabled: !!user?.id && !!profileData },
+    { enabled: !!user?.id && isHydrated },
     true,
     dateMode,
   )
 
-  // YTD production — same scoreboard endpoint as weekly/top producers (matches main branch)
-  const { data: ytdScoreboardResult, isLoading: ytdProductionLoading } = useScoreboardLapsedData(
-    user?.id,
-    productionDateRanges.ytd.start,
-    productionDateRanges.ytd.end,
-    scoreboardScope,
-    { enabled: !!user?.id && !!profileData },
-    true,
-    dateMode,
-  )
-
-  // MTD production — same scoreboard endpoint
-  const { data: mtdScoreboardResult, isLoading: mtdProductionLoading } = useScoreboardLapsedData(
-    user?.id,
-    productionDateRanges.mtd.start,
-    productionDateRanges.mtd.end,
-    scoreboardScope,
-    { enabled: !!user?.id && !!profileData },
-    true,
-    dateMode,
-  )
+  // Extract individual results from batch response
+  const topProducersResult = batchResult?.[topProducersPeriod]
+  const ytdScoreboardResult = batchResult?.ytd
+  const mtdScoreboardResult = batchResult?.mtd
 
   // Extract production from scoreboard leaderboard (matches main branch):
   // individual = current user's entry total, hierarchy = all agents' totalProduction
@@ -138,7 +119,7 @@ export default function Home() {
     }
   }, [mtdScoreboardResult, user?.id])
 
-  const isProductionLoading = authLoading || profileLoading || ytdProductionLoading || mtdProductionLoading
+  const isProductionLoading = authLoading || scoreboardLoading
 
   // Combined error state for main data
   const queryError = dashboardError || scoreboardError || profileError
@@ -308,7 +289,7 @@ export default function Home() {
           error={queryError}
           onRetry={() => {
             queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(user?.id || '') })
-            queryClient.invalidateQueries({ queryKey: queryKeys.scoreboardLapsed(user?.id || '', weekRange.startDate, weekRange.endDate, scoreboardScope, true, dateMode) })
+            queryClient.invalidateQueries({ queryKey: queryKeys.scoreboardBatch(user?.id || '', batchRangesKey, scoreboardScope, true, dateMode) })
             queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(user?.id) })
           }}
           variant="inline"
@@ -432,7 +413,7 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             <div className="text-sm text-muted-foreground mb-4">
-              {topProducersLoading ? (
+              {scoreboardLoading ? (
                 <span className="inline-block h-4 w-32 bg-muted animate-pulse rounded" />
               ) : (
                 <div className="flex flex-col gap-1">
@@ -464,7 +445,7 @@ export default function Home() {
               )}
             </div>
             <div className="space-y-4">
-              {topProducersLoading ? (
+              {scoreboardLoading ? (
                 Array.from({ length: 5 }).map((_, index) => (
                   <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
                     <div className="flex items-center space-x-3">

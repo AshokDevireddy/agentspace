@@ -5,6 +5,7 @@
  * apiClient automatically unwraps Django {success, data} envelopes and camelCases responses.
  */
 import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { apiClient } from '@/lib/api-client'
 import { STALE_TIMES } from '@/lib/query-config'
 import { queryKeys } from './queryKeys'
@@ -120,6 +121,7 @@ export function useDashboardSummary(
       }
     },
     enabled: !!userId && (options?.enabled !== false),
+    refetchOnWindowFocus: false,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,
@@ -202,6 +204,58 @@ export function useScoreboardLapsedData(
     },
     enabled: !!userId && (options?.enabled !== false),
     staleTime: options?.staleTime ?? STALE_TIMES.standard,
+    retry: shouldRetry,
+    retryDelay: getRetryDelay,
+    placeholderData: (previousData) => previousData,
+  })
+}
+
+export interface ScoreboardBatchRange {
+  label: string
+  startDate: string
+  endDate: string
+}
+
+export interface ScoreboardBatchResult {
+  [label: string]: {
+    leaderboard: BillingCycleAgentScore[]
+    stats: {
+      totalProduction: number
+      totalDeals: number
+      activeAgents: number
+    }
+    dateRange: {
+      startDate: string
+      endDate: string
+    }
+  }
+}
+
+export function useScoreboardBatch(
+  userId: string | undefined,
+  ranges: ScoreboardBatchRange[],
+  scope: 'agency' | 'downline' = 'agency',
+  options?: { enabled?: boolean; staleTime?: number },
+  submitted: boolean = true,
+  dateMode?: string,
+) {
+  // Build a stable key from the ranges (memoized to avoid per-render allocations)
+  const rangesKey = useMemo(() => ranges.map(r => `${r.label}:${r.startDate}:${r.endDate}`).join(','), [ranges])
+
+  return useQuery<ScoreboardBatchResult, Error>({
+    queryKey: queryKeys.scoreboardBatch(userId || '', rangesKey, scope, submitted, dateMode),
+    queryFn: async () => {
+      const params: Record<string, string> = {
+        ranges: rangesKey,
+        scope,
+        submitted: submitted ? 'true' : 'false',
+      }
+      if (dateMode) params.date_mode = dateMode
+      return apiClient.get<ScoreboardBatchResult>('/api/dashboard/scoreboard-batch/', { params })
+    },
+    enabled: !!userId && ranges.length > 0 && (options?.enabled !== false),
+    staleTime: options?.staleTime ?? STALE_TIMES.standard,
+    refetchOnWindowFocus: false,
     retry: shouldRetry,
     retryDelay: getRetryDelay,
     placeholderData: (previousData) => previousData,

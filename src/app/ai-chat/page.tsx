@@ -7,7 +7,6 @@ import { Sparkles, Send, Loader2, CheckCircle2, Circle, ChevronDown, ChevronUp }
 import { Button } from '@/components/ui/button';
 import CodeExecutor from '@/components/ai/CodeExecutor';
 import ThinkingProgress from '@/components/ai/ThinkingProgress';
-import { useAdminStatus } from '@/hooks/useUserQueries';
 import { getAccessToken } from '@/lib/auth/token-store';
 import { getApiBaseUrl } from '@/lib/api-config';
 import ReactMarkdown from 'react-markdown';
@@ -57,11 +56,9 @@ export default function AIChat() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
 
-  // Check admin status using TanStack Query
-  const { data: adminData, isSuccess: isAdminChecked } = useAdminStatus(user?.id, {
-    enabled: !loading && !!user,
-  });
-  const isAdmin = adminData?.isAdmin || false;
+  // Use isAdmin directly from auth context (no extra API call needed)
+  const isAdmin = user?.isAdmin || false;
+  const isAdminChecked = !loading && !!user;
 
   // Handle auth and admin redirects
   useEffect(() => {

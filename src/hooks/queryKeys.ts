@@ -50,6 +50,7 @@ export const queryKeys = {
   clientsList: (page: number, filters: Record<string, unknown>) =>
     ['clients', 'list', page, stableFilterKey(filters)] as const,
   clientsAll: (viewMode: string) => ['clients', 'all', viewMode] as const,
+  clientsFilterOptions: (viewMode: string) => ['clients', 'filter-options', viewMode] as const,
   clientDetail: (id: string) => ['clients', 'detail', id] as const,
 
   // Conversations & Messages (SMS)
@@ -78,7 +79,6 @@ export const queryKeys = {
   user: ['user'] as const,
   userProfile: (id?: string) => ['user', 'profile', id] as const,
   userById: (id: string) => ['user', 'by-id', id] as const,
-  userAdminStatus: (id?: string) => ['user', 'admin-status', id] as const,
   userDefaultUpline: () => ['user', 'default-upline'] as const,
 
   // Dashboard
@@ -95,6 +95,8 @@ export const queryKeys = {
     ['scoreboard', 'lapsed', userId, startDate, endDate, scope, submitted, dateMode, assumedMonthsTillLapse] as const,
   scoreboardBillingCycle: (userId: string, startDate: string, endDate: string, scope?: string, dateMode?: string, assumedMonthsTillLapse?: number) =>
     ['scoreboard', 'billing-cycle', userId, startDate, endDate, scope, dateMode, assumedMonthsTillLapse] as const,
+  scoreboardBatch: (userId: string, rangesKey: string, scope?: string, submitted?: boolean, dateMode?: string) =>
+    ['scoreboard', 'batch', userId, rangesKey, scope, submitted, dateMode] as const,
 
   // Analytics
   analytics: ['analytics'] as const,

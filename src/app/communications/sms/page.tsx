@@ -35,7 +35,7 @@ import {
 import { usePersistedFilters } from "@/hooks/usePersistedFilters"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 import { useNotification } from '@/contexts/notification-context'
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiFetch } from '@/hooks/useApiFetch'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useSendMessage, useResolveNotification, useApproveDrafts, useRejectDrafts, useEditDraft, useRetryFailed } from '@/hooks/mutations'
@@ -126,7 +126,7 @@ function SMSMessagingPageContent() {
   const { showSuccess, showError } = useNotification()
   const searchParams = useSearchParams()
   const conversationIdFromUrl = searchParams.get('conversation')
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const queryClient = useQueryClient()
 
   // Persisted filter state using custom hook (for real-time filters, use setAndApply)
@@ -188,31 +188,11 @@ function SMSMessagingPageContent() {
   const selectedConversationRef = useRef<Conversation | null>(null)
   const conversationListRef = useRef<HTMLDivElement>(null)
 
-  // Check if user is admin - uses apiClient direct to Django
-  const { data: adminData, isSuccess: isAdminChecked } = useQuery({
-    queryKey: queryKeys.userProfile(user?.id),
-    queryFn: async () => {
-      if (!user?.id) {
-        throw new Error('No user ID found')
-      }
-
-      const profileData = await apiClient.get<{ data?: any; isAdmin?: boolean; subscriptionTier?: string; id?: string }>('/api/user/profile/')
-      // Handle both wrapped and unwrapped response formats
-      const userData = profileData.data || profileData
-
-      const isAdmin = userData?.isAdmin || false
-      const userTier = userData?.subscriptionTier || 'free'
-      const currentUserId = userData?.id || null
-
-      return { isAdmin, userTier, currentUserId }
-    },
-    enabled: !!user?.id,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  })
-
-  const isAdmin = adminData?.isAdmin || false
-  const userTier = adminData?.userTier || 'free'
-  const currentUserId = adminData?.currentUserId || null
+  // Use auth context directly — isAdmin, subscriptionTier, and id are all hydrated server-side
+  const isAdmin = user?.isAdmin || false
+  const isAdminChecked = !authLoading && !!user
+  const userTier = user?.subscriptionTier || 'free'
+  const currentUserId = user?.id || null
 
   // Conversations query - migrated to useApiFetch
   const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode

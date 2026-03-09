@@ -166,30 +166,30 @@ export default function BookOfBusiness() {
     setAndApply({ viewMode: value })
   }
 
-  // Track which filters are visible (showing input fields) - load from localStorage
-  const [visibleFilters, setVisibleFilters] = useState<Set<string>>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('book-of-business-visible-filters')
-      if (stored) {
-        try {
-          return new Set(JSON.parse(stored))
-        } catch {
-          return new Set()
-        }
-      }
-    }
-    return new Set()
-  })
+  // Track which filters are visible (showing input fields)
+  // Initialize empty to match server render, then hydrate from localStorage
+  const [visibleFilters, setVisibleFilters] = useState<Set<string>>(new Set())
 
   // Track if the add filter menu is open
   const [addFilterMenuOpen, setAddFilterMenuOpen] = useState(false)
 
-  // Persist visible filters to localStorage whenever they change
+  // Hydrate visible filters from localStorage after mount (avoids hydration mismatch)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('book-of-business-visible-filters', JSON.stringify(Array.from(visibleFilters)))
+    const stored = localStorage.getItem('book-of-business-visible-filters')
+    if (stored) {
+      try {
+        setVisibleFilters(new Set(JSON.parse(stored)))
+      } catch {
+        // ignore invalid JSON
+      }
     }
-  }, [visibleFilters])
+  }, [])
+
+  // Persist visible filters to localStorage imperatively (not via effect)
+  // to avoid race conditions between hydrate and persist effects on mount
+  const persistVisibleFilters = useCallback((filters: Set<string>) => {
+    localStorage.setItem('book-of-business-visible-filters', JSON.stringify(Array.from(filters)))
+  }, [])
 
   const queryClient = useQueryClient()
 
@@ -349,7 +349,9 @@ export default function BookOfBusiness() {
   const handleClearFilters = () => {
     clearFilters()
     // Also hide all filter input fields
-    setVisibleFilters(new Set())
+    const empty = new Set<string>()
+    setVisibleFilters(empty)
+    persistVisibleFilters(empty)
   }
 
   const handleRowClick = (deal: Deal) => {
@@ -403,6 +405,7 @@ export default function BookOfBusiness() {
     const newVisibleFilters = new Set(visibleFilters)
     newVisibleFilters.add(filterName)
     setVisibleFilters(newVisibleFilters)
+    persistVisibleFilters(newVisibleFilters)
     setAddFilterMenuOpen(false)
   }
 
@@ -410,6 +413,7 @@ export default function BookOfBusiness() {
     const newVisibleFilters = new Set(visibleFilters)
     newVisibleFilters.delete(filterName)
     setVisibleFilters(newVisibleFilters)
+    persistVisibleFilters(newVisibleFilters)
 
     // Reset the filter value when removing
     switch(filterName) {

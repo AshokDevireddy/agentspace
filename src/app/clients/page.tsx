@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,7 +15,7 @@ import { useApiFetch } from "@/hooks/useApiFetch"
 import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/queryKeys"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
-import { useAdminStatus } from "@/hooks/useUserQueries"
+import { STALE_TIMES } from "@/lib/query-config"
 
 // Client data type
 interface Client {
@@ -37,37 +37,50 @@ const statusColors: { [key: string]: string } = {
   "inactive": "bg-red-500/20 text-red-400 border-red-500/30",
 }
 
-const generateClientOptions = (clients: Client[]) => {
+// Filter options from lightweight endpoint
+interface ClientFilterOption {
+  id: string
+  name: string
+  email: string
+}
+
+interface FilterOptionsData {
+  clients: ClientFilterOption[]
+  agents: string[]
+  statuses: string[]
+}
+
+const generateClientOptions = (filterData: FilterOptionsData | undefined) => {
   const options = [{ value: "all", label: "All Clients" }]
-  clients.forEach(client => {
-    // Format as "Name - email" so users can search by either
-    options.push({
-      value: client.id,
-      label: `${client.name} - ${client.email}`
+  if (filterData?.clients) {
+    filterData.clients.forEach(client => {
+      options.push({
+        value: client.id,
+        label: `${client.name} - ${client.email}`
+      })
     })
-  })
+  }
   return options
 }
 
-const generateAgentOptions = (clients: Client[]) => {
-  const agents = new Set(clients.map(client => client.supportingAgent))
+const generateAgentOptions = (filterData: FilterOptionsData | undefined) => {
   const options = [{ value: "all", label: "All Agents" }]
-  agents.forEach(agent => {
-    if (agent !== 'N/A') {
+  if (filterData?.agents) {
+    filterData.agents.forEach(agent => {
       options.push({ value: agent, label: agent })
-    }
-  })
+    })
+  }
   return options
 }
 
-const generateStatusOptions = () => {
+const generateStatusOptions = (filterData: FilterOptionsData | undefined) => {
+  const statuses = filterData?.statuses || ['pre-invite', 'invited', 'onboarding', 'active', 'inactive']
   return [
     { value: "all", label: "All Statuses" },
-    { value: "pre-invite", label: "Pre-Invite" },
-    { value: "invited", label: "Invited" },
-    { value: "onboarding", label: "Onboarding" },
-    { value: "active", label: "Active" },
-    { value: "inactive", label: "Inactive" },
+    ...statuses.map(s => ({
+      value: s,
+      label: s.charAt(0).toUpperCase() + s.slice(1).replace('-', ' ')
+    }))
   ]
 }
 
@@ -93,26 +106,23 @@ export default function Clients() {
   }
 
   const [currentPage, setCurrentPage] = useState(1)
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const queryClient = useQueryClient()
 
-  // Check if user is admin using centralized hook
-  const { data: adminData, isPending: isAdminLoading } = useAdminStatus(user?.id)
-  const isAdmin = adminData?.isAdmin || false
-  // Wait for both loading to complete AND data to be available to prevent race conditions
-  const isAdminChecked = !isAdminLoading && adminData !== undefined
+  // Use isAdmin directly from auth context (hydrated server-side, no extra API call needed)
+  const isAdmin = user?.isAdmin || false
+  const isAdminChecked = !authLoading && !!user
 
   // For admins viewing "downlines", we actually fetch "all"
   const effectiveViewMode = (isAdmin && viewMode === 'downlines') ? 'all' : viewMode
 
-  // Fetch all clients for dropdown options (without pagination)
-  const { data: allClientsData } = useApiFetch<{ clients: Client[] }>(
-    queryKeys.clientsAll(effectiveViewMode),
-    `/api/clients?page=1&limit=1000&view=${effectiveViewMode}`,
-    { enabled: isAdminChecked }
+  // Lightweight filter-options endpoint — fetches only {id, name, email} + agent names
+  // instead of full client records (was limit=1000)
+  const { data: filterOptionsData } = useApiFetch<FilterOptionsData>(
+    queryKeys.clientsFilterOptions(effectiveViewMode),
+    `/api/clients/filter-options/?view=${effectiveViewMode}`,
+    { enabled: isAdminChecked, staleTime: STALE_TIMES.static }
   )
-
-  const allClients = allClientsData?.clients || []
 
   // Fetch clients data from API with pagination
   const { data: clientsResponse, isPending: clientsLoading, isFetching: clientsFetching, error: clientsError } = useApiFetch<{
@@ -136,7 +146,7 @@ export default function Clients() {
   const clientsData = clientsResponse?.clients || []
   const totalPages = clientsResponse?.pagination.totalPages || 1
   const totalCount = clientsResponse?.pagination.totalCount || 0
-  const loading = isAdminLoading || clientsLoading
+  const loading = authLoading || clientsLoading
   const isRefreshing = clientsFetching && !clientsLoading // Background refetch with stale data shown
 
   // Apply filters when button is clicked
@@ -172,9 +182,9 @@ export default function Clients() {
 
   // Error will be shown inline in the table, not blocking the whole page
 
-  const clientOptions = generateClientOptions(allClients)
-  const agentOptions = generateAgentOptions(allClients)
-  const statusOptions = generateStatusOptions()
+  const clientOptions = useMemo(() => generateClientOptions(filterOptionsData), [filterOptionsData])
+  const agentOptions = useMemo(() => generateAgentOptions(filterOptionsData), [filterOptionsData])
+  const statusOptions = useMemo(() => generateStatusOptions(filterOptionsData), [filterOptionsData])
 
   return (
     <div className="space-y-6">

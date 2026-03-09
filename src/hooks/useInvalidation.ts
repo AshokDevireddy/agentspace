@@ -155,7 +155,6 @@ export function useInvalidation() {
       if (userId) {
         invalidations.push(
           queryClient.invalidateQueries({ queryKey: queryKeys.userProfile(userId) }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.userAdminStatus(userId) }),
           queryClient.invalidateQueries({ queryKey: queryKeys.userById(userId) })
         )
       }

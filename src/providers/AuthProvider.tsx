@@ -220,7 +220,7 @@ export function AuthProvider({
 
     const userObj: UserData = {
       id: userData.id,
-      authUserId: '',
+      authUserId: userData.auth_user_id || '',
       email: userData.email,
       role: userData.role,
       status: userData.status,

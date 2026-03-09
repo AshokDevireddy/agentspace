@@ -662,6 +662,13 @@ export default function PostDeal() {
     return true
   }
 
+  // Helper to validate date year is reasonable (1900-2099)
+  const isValidDateYear = (dateStr: string): boolean => {
+    if (!dateStr) return true // empty is handled by required checks
+    const year = parseInt(dateStr.split('-')[0])
+    return year >= 1900 && year <= 2099
+  }
+
   const validateStep = (step: number) => {
     setError(null)
 
@@ -677,6 +684,14 @@ export default function PostDeal() {
       }
       if (!formData.policyEffectiveDate) {
         setError("Please select a policy effective date.")
+        return false
+      }
+      if (!isValidDateYear(formData.policyEffectiveDate)) {
+        setError("Policy effective date has an invalid year. Please use a year between 1900 and 2099.")
+        return false
+      }
+      if (formData.submittedDate && !isValidDateYear(formData.submittedDate)) {
+        setError("Submitted date has an invalid year. Please use a year between 1900 and 2099.")
         return false
       }
       if (!formData.ssnBenefit) {
@@ -761,6 +776,10 @@ export default function PostDeal() {
       }
       if (new Date(formData.clientDateOfBirth) > new Date()) {
         setError("Date of birth cannot be a future date.")
+        return false
+      }
+      if (!isValidDateYear(formData.clientDateOfBirth)) {
+        setError("Date of birth has an invalid year. Please use a year between 1900 and 2099.")
         return false
       }
       if (!formData.clientAddress) {
@@ -1021,6 +1040,8 @@ export default function PostDeal() {
                       type="date"
                       value={formData.policyEffectiveDate}
                       onChange={(e) => handleInputChange("policyEffectiveDate", e.target.value)}
+                      min="1900-01-01"
+                      max="2099-12-31"
                       className="h-12"
                     />
                   </div>
@@ -1108,6 +1129,7 @@ export default function PostDeal() {
                       value={formData.submittedDate}
                       onChange={(e) => handleInputChange("submittedDate", e.target.value)}
                       className="h-12"
+                      min="1900-01-01"
                       max={today}
                     />
                     <p className="text-xs text-muted-foreground">
@@ -1343,6 +1365,7 @@ export default function PostDeal() {
                       type="date"
                       value={formData.clientDateOfBirth}
                       onChange={(e) => handleInputChange("clientDateOfBirth", e.target.value)}
+                      min="1900-01-01"
                       max={new Date().toISOString().split('T')[0]}
                       className="h-12"
                     />

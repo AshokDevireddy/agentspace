@@ -199,14 +199,6 @@ export function useSSE(
     }
   }, [enabled, connect, disconnect])
 
-  // Reconnect when URL changes
-  useEffect(() => {
-    if (enabled && eventSourceRef.current) {
-      disconnect()
-      connect()
-    }
-  }, [url])
-
   const reconnect = useCallback(() => {
     reconnectAttemptsRef.current = 0
     disconnect()

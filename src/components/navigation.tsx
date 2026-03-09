@@ -28,6 +28,7 @@ import { queryKeys } from '@/hooks/queryKeys'
 import { useUpdateAgencyColor } from '@/hooks/mutations/useAgencyMutations'
 import { useUnreadCountSSE } from '@/hooks/use-sse'
 import { apiClient } from '@/lib/api-client'
+import { shouldRetry, getRetryDelay } from '@/hooks/useQueryRetry'
 
 const navigationItems = [
   { name: "Dashboard", href: "/", icon: Home },
@@ -89,30 +90,28 @@ export default function Navigation() {
     queryFn: async () => {
       if (!agencyId) return null
 
-      try {
-        const data = await apiClient.get<{
-          displayName: string
-          name: string
-          logoUrl: string
-          primaryColor: string
-          deactivatedPostADeal: boolean
-        }>(`/api/agencies/${agencyId}/settings/`)
+      const data = await apiClient.get<{
+        displayName: string
+        name: string
+        logoUrl: string
+        primaryColor: string
+        deactivatedPostADeal: boolean
+      }>(`/api/agencies/${agencyId}/settings/`)
 
-        // apiClient auto-converts snake_case → camelCase
-        return {
-          display_name: data.displayName,
-          name: data.name,
-          logo_url: data.logoUrl,
-          primary_color: data.primaryColor,
-          deactivated_post_a_deal: data.deactivatedPostADeal,
-        }
-      } catch (error) {
-        console.error('Error fetching agency branding:', error)
-        return null
+      // apiClient auto-converts snake_case → camelCase
+      return {
+        display_name: data.displayName,
+        name: data.name,
+        logo_url: data.logoUrl,
+        primary_color: data.primaryColor,
+        deactivated_post_a_deal: data.deactivatedPostADeal,
       }
     },
     enabled: !!agencyId && isHydrated,
     staleTime: 1000 * 60 * 5, // 5 minutes
+    refetchOnMount: false,
+    retry: shouldRetry,
+    retryDelay: getRetryDelay,
   })
 
   // Derive agency values from query data
@@ -180,19 +179,17 @@ export default function Navigation() {
   const { data: unreadCountData } = useQuery({
     queryKey: queryKeys.conversationCount('self'),
     queryFn: async () => {
-      try {
-        const data = await apiClient.get<{ unreadCount: number }>('/api/sms/unread-count/', {
-          params: { view_mode: 'downlines' }
-        })
-        return { unreadCount: data.unreadCount || 0 }
-      } catch (error) {
-        console.error('Error fetching unread count:', error)
-        return { unreadCount: 0 }
-      }
+      const data = await apiClient.get<{ unreadCount: number }>('/api/sms/unread-count/', {
+        params: { view_mode: 'downlines' }
+      })
+      return { unreadCount: data.unreadCount || 0 }
     },
     enabled: !!user?.id && isHydrated,
     staleTime: 1000 * 60 * 5, // 5 minutes - rely on real-time updates instead of polling
     refetchInterval: false, // Disable polling - use real-time subscriptions only
+    refetchOnMount: false,
+    retry: shouldRetry,
+    retryDelay: getRetryDelay,
   })
 
   const unreadCount = unreadCountData?.unreadCount || 0

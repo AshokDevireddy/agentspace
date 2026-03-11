@@ -48,9 +48,11 @@ const ASSUMED_MONTHS_MIN = 1
 const ASSUMED_MONTHS_MAX = 10
 const SKELETON_DATE_COLUMNS = 7
 
-type TimeframeOption = 'this_week' | 'last_week' | 'past_7_days' | 'past_14_days' | 'this_month' | 'last_month' | 'past_30_days' | 'past_90_days' | 'past_180_days' | 'past_12_months' | 'ytd' | 'custom'
+type TimeframeOption = 'today' | 'yesterday' | 'this_week' | 'last_week' | 'past_7_days' | 'past_14_days' | 'this_month' | 'last_month' | 'past_30_days' | 'past_90_days' | 'past_180_days' | 'past_12_months' | 'ytd' | 'custom'
 
 const timeframeOptions = [
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
   { value: 'this_week', label: 'This Week' },
   { value: 'last_week', label: 'Last Week' },
   { value: 'past_7_days', label: 'Past 7 Days' },
@@ -138,6 +140,14 @@ export default function Scoreboard() {
     let endDate: Date = new Date(today)
 
     switch (selectedTimeframe) {
+      case 'today':
+        startDate = new Date(today)
+        break
+      case 'yesterday':
+        startDate = new Date(today)
+        startDate.setDate(today.getDate() - 1)
+        endDate.setDate(today.getDate() - 1)
+        break
       case 'this_week': {
         // Monday to Sunday week
         const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1

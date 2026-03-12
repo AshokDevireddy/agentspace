@@ -23,7 +23,7 @@ interface SSEOptions {
   autoReconnect?: boolean
   /** Delay before reconnecting in ms (default: 3000) */
   reconnectDelay?: number
-  /** Maximum reconnection attempts (default: 5) */
+  /** Maximum reconnection attempts (default: 20) */
   maxReconnectAttempts?: number
 }
 
@@ -53,7 +53,7 @@ export function useSSE(
     onClose,
     autoReconnect = true,
     reconnectDelay = 3000,
-    maxReconnectAttempts = 5,
+    maxReconnectAttempts = 20,
   } = options
 
   const eventSourceRef = useRef<EventSource | null>(null)

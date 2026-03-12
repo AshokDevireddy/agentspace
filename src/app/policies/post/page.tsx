@@ -478,6 +478,10 @@ export default function PostDeal() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (submitDealMutation.isPending) {
+      return
+    }
+
     // Only submit if we're on the final step
     if (currentStep !== STEPS.length) {
       submitIntentRef.current = false

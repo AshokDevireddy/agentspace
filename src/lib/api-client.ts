@@ -167,11 +167,13 @@ async function request<T>(
         signal: controller.signal,
       })
 
-      // 401 handling: dispatch event for AuthProvider to refresh, then retry
+      // Only retry GETs on 401 — mutation retries cause duplicate side effects
       if (response.status === 401 && !retrying && !skipAuth) {
-        const refreshed = await waitForTokenRefresh()
-        if (refreshed) {
-          return execute(true)
+        if (method === 'GET') {
+          const refreshed = await waitForTokenRefresh()
+          if (refreshed) {
+            return execute(true)
+          }
         }
         throw new AuthError('Session expired. Please log in again.')
       }
@@ -227,71 +229,63 @@ async function upload<T>(
 
   const url = buildUrl(endpoint, params)
 
-  async function execute(retrying: boolean): Promise<T> {
-    let token: string | null = null
-    if (!skipAuth) {
-      token = getAccessToken()
-      if (!token) {
-        throw new AuthError('Authentication required. Please log in.')
-      }
-    }
-
-    // No Content-Type — browser sets it with multipart boundary
-    const headers: Record<string, string> = { ...extraHeaders }
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), timeout)
-
-    if (externalSignal) {
-      externalSignal.addEventListener('abort', () => controller.abort())
-    }
-
-    try {
-      const response = await fetch(url, {
-        method,
-        headers,
-        body: formData,
-        signal: controller.signal,
-      })
-
-      if (response.status === 401 && !retrying && !skipAuth) {
-        const refreshed = await waitForTokenRefresh()
-        if (refreshed) {
-          return execute(true)
-        }
-        throw new AuthError('Session expired. Please log in again.')
-      }
-
-      if (!response.ok) {
-        throw await createErrorFromResponse(response)
-      }
-
-      const text = await response.text()
-      if (!text) return null as T
-
-      try {
-        const data = JSON.parse(text)
-        return unwrapEnvelope<T>(camelcaseKeys(data, CAMELCASE_OPTIONS))
-      } catch {
-        return text as unknown as T
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new NetworkError('Request timed out. Please try again.')
-      }
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        throw new NetworkError()
-      }
-      throw error
-    } finally {
-      clearTimeout(timeoutId)
+  let token: string | null = null
+  if (!skipAuth) {
+    token = getAccessToken()
+    if (!token) {
+      throw new AuthError('Authentication required. Please log in.')
     }
   }
 
-  return execute(false)
+  // No Content-Type — browser sets it with multipart boundary
+  const headers: Record<string, string> = { ...extraHeaders }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+  if (externalSignal) {
+    externalSignal.addEventListener('abort', () => controller.abort())
+  }
+
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: formData,
+      signal: controller.signal,
+    })
+
+    if (response.status === 401 && !skipAuth) {
+      throw new AuthError('Session expired. Please log in again.')
+    }
+
+    if (!response.ok) {
+      throw await createErrorFromResponse(response)
+    }
+
+    const text = await response.text()
+    if (!text) return null as T
+
+    try {
+      const data = JSON.parse(text)
+      return unwrapEnvelope<T>(camelcaseKeys(data, CAMELCASE_OPTIONS))
+    } catch {
+      return text as unknown as T
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new NetworkError('Request timed out. Please try again.')
+    }
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new NetworkError()
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }
 
 export const apiClient = {

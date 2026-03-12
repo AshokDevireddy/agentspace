@@ -67,6 +67,13 @@ const timeframeOptions = [
   { value: 'custom', label: 'Custom' }
 ]
 
+const formatLocalDate = (date: Date): string => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export default function Scoreboard() {
   const { user, loading: authLoading } = useAuth()
   const queryClient = useQueryClient()
@@ -227,14 +234,6 @@ export default function Scoreboard() {
       }
     }
 
-    // Format dates in local timezone to avoid UTC conversion issues
-    const formatLocalDate = (date: Date): string => {
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      return `${year}-${month}-${day}`
-    }
-
     // Use agency default start date if available and not null, but only when in submitted mode
     const finalStartDate = defaultScoreboardStartDate
       ? defaultScoreboardStartDate
@@ -361,7 +360,7 @@ export default function Scoreboard() {
 
     const currentDate = new Date(startDate)
     while (currentDate <= endDate) {
-      dates.push(currentDate.toISOString().split('T')[0])
+      dates.push(formatLocalDate(currentDate))
       currentDate.setDate(currentDate.getDate() + 1)
     }
 

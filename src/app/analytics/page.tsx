@@ -501,6 +501,46 @@ function createSmoothCurvePath(points: Array<{ x: number; y: number }>): string 
 
 type AnalyticsTestValue = typeof analytics_test_value
 
+function ViewModeToggle({ viewMode, setViewMode, selectedAgentName }: {
+	viewMode: 'just_me' | 'downlines'
+	setViewMode: (mode: 'just_me' | 'downlines') => void
+	selectedAgentName: string | null
+}) {
+	return (
+		<div className="relative bg-muted/50 p-1 rounded-lg min-w-fit">
+			<div
+				className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out"
+				style={{
+					left: viewMode === 'just_me' ? '4px' : 'calc(50%)',
+					width: 'calc(50% - 4px)'
+				}}
+			/>
+			<div className="relative z-10 flex">
+				<button
+					onClick={() => setViewMode('just_me')}
+					className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 w-1/2 text-center ${
+						viewMode === 'just_me'
+							? 'text-primary-foreground'
+							: 'text-muted-foreground hover:text-foreground'
+					}`}
+				>
+					{selectedAgentName || 'Just Me'}
+				</button>
+				<button
+					onClick={() => setViewMode('downlines')}
+					className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 w-1/2 text-center ${
+						viewMode === 'downlines'
+							? 'text-primary-foreground'
+							: 'text-muted-foreground hover:text-foreground'
+					}`}
+				>
+					{selectedAgentName ? `${selectedAgentName}'s Downlines` : 'Downlines'}
+				</button>
+			</div>
+		</div>
+	)
+}
+
 export default function AnalyticsTestPage() {
 	const [groupBy, setGroupBy] = React.useState("carrier")
 	const [trendMetric, setTrendMetric] = React.useState<"persistency" | "placement" | "submitted" | "active" | "avgprem" | "all">("persistency")
@@ -592,6 +632,18 @@ export default function AnalyticsTestPage() {
 		}
 		return agentsData.allAgents
 	}, [agentsData?.allAgents, originalUserId])
+
+	const selectedAgentName = React.useMemo(() => {
+		if (!selectedAgentId || !allAgents.length) return null
+		return allAgents.find(a => a.id === selectedAgentId)?.name || null
+	}, [selectedAgentId, allAgents])
+
+	// When viewing a specific agent, default to their individual production (not their downlines tree)
+	React.useEffect(() => {
+		if (selectedAgentId) {
+			setViewMode('just_me')
+		}
+	}, [selectedAgentId])
 
 	// 3. Fetch analytics when selected agent changes
 	const targetUserId = selectedAgentId || originalUserId
@@ -1460,39 +1512,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 					<RefreshingIndicator isRefreshing={isRefreshing} />
 
 					<div className="flex items-center gap-2 flex-wrap xl:hidden ml-auto">
-						{/* Just Me / Downlines Toggle */}
-						<div className="relative bg-muted/50 p-1 rounded-lg">
-							{/* Animated background slider */}
-							<div
-								className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out"
-								style={{
-									left: viewMode === 'just_me' ? '4px' : 'calc(50%)',
-									width: 'calc(50% - 4px)'
-								}}
-							/>
-							<div className="relative z-10 flex">
-								<button
-									onClick={() => setViewMode('just_me')}
-									className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${
-										viewMode === 'just_me'
-											? 'text-primary-foreground'
-											: 'text-muted-foreground hover:text-foreground'
-									}`}
-								>
-									Just Me
-								</button>
-								<button
-									onClick={() => setViewMode('downlines')}
-									className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${
-										viewMode === 'downlines'
-											? 'text-primary-foreground'
-											: 'text-muted-foreground hover:text-foreground'
-									}`}
-								>
-									Downlines
-								</button>
-							</div>
-						</div>
+						<ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} selectedAgentName={selectedAgentName} />
 
 						{/* Time window: 3,6,9,All Time */}
 						<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>
@@ -1560,39 +1580,7 @@ function getTimeframeLabel(timeWindow: "3" | "6" | "9" | "all"): string {
 
 				{/* Controls for xl screens - right aligned */}
 				<div className="hidden xl:flex items-center gap-2 flex-wrap">
-					{/* Just Me / Downlines Toggle */}
-					<div className="relative bg-muted/50 p-1 rounded-lg">
-						{/* Animated background slider */}
-						<div
-							className="absolute top-1 bottom-1 bg-primary rounded-md transition-all duration-300 ease-in-out"
-							style={{
-								left: viewMode === 'just_me' ? '4px' : 'calc(50%)',
-								width: 'calc(50% - 4px)'
-							}}
-						/>
-						<div className="relative z-10 flex">
-							<button
-								onClick={() => setViewMode('just_me')}
-								className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${
-									viewMode === 'just_me'
-										? 'text-primary-foreground'
-										: 'text-muted-foreground hover:text-foreground'
-								}`}
-							>
-								Just Me
-							</button>
-							<button
-								onClick={() => setViewMode('downlines')}
-								className={`relative z-10 py-2 px-4 rounded-md text-sm font-medium transition-colors duration-300 min-w-[100px] text-center ${
-									viewMode === 'downlines'
-										? 'text-primary-foreground'
-										: 'text-muted-foreground hover:text-foreground'
-								}`}
-							>
-								Downlines
-							</button>
-						</div>
-					</div>
+					<ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} selectedAgentName={selectedAgentName} />
 
 					{/* Time window: 3,6,9,All Time */}
 					<Select value={timeWindow} onValueChange={(v) => setTimeWindow(v as any)}>

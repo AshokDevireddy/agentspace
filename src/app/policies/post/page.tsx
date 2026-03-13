@@ -76,6 +76,7 @@ export default function PostDeal() {
   const errorRef = useRef<HTMLDivElement>(null)
   const [currentStep, setCurrentStep] = useState(1)
   const submitIntentRef = useRef(false)
+  const userHasEditedDate = useRef(false)
 
   // Dynamic option states
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([])
@@ -135,9 +136,11 @@ export default function PostDeal() {
     }
   }, [error])
 
-  // Initialize submitted date to today
+  // Initialize submitted date to today (re-apply when timezone loads, unless user manually edited)
   useEffect(() => {
-    setFormData(prev => ({ ...prev, submittedDate: prev.submittedDate || today }))
+    if (!userHasEditedDate.current) {
+      setFormData(prev => ({ ...prev, submittedDate: today }))
+    }
   }, [today])
 
   // Query: Check if user and upline have positions assigned
@@ -598,6 +601,10 @@ export default function PostDeal() {
     if (field === "carrierId") {
       setFormData(prev => ({ ...prev, carrierId: value, productId: "" }))
       return
+    }
+    // Track manual date edits so timezone reload doesn't overwrite user's choice
+    if (field === "submittedDate") {
+      userHasEditedDate.current = true
     }
     // Format phone number input
     if (field === "clientPhone") {

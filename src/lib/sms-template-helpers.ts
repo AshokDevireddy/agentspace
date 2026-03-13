@@ -32,11 +32,11 @@ export const DEFAULT_SMS_TEMPLATES = {
  * Placeholder definitions for each template type
  */
 export const SMS_TEMPLATE_PLACEHOLDERS = {
-  welcome: ['client_first_name', 'agency_name', 'agent_name', 'client_email'],
-  billing_reminder: ['client_first_name'],
-  lapse_reminder: ['client_first_name', 'agent_name', 'agent_phone'],
-  birthday: ['client_first_name', 'agency_name'],
-  holiday: ['client_first_name', 'agent_name', 'holiday_greeting'],
-  quarterly: ['client_first_name', 'agent_name', 'agent_phone'],
-  policy_packet: ['client_first_name'],
+  welcome: ['client_first_name', 'insured', 'agency_name', 'agent_name', 'agent_phone', 'client_email', 'carrier_name', 'policy_number', 'face_amount', 'monthly_premium', 'policy_effective_date', 'beneficiaries'],
+  billing_reminder: ['client_first_name', 'insured', 'agency_name', 'agent_name', 'agent_phone', 'carrier_name', 'policy_number', 'monthly_premium', 'initial_draft'],
+  lapse_reminder: ['client_first_name', 'insured', 'agency_name', 'agent_name', 'agent_phone', 'carrier_name', 'policy_number', 'face_amount', 'monthly_premium'],
+  birthday: ['client_first_name', 'insured', 'agency_name', 'agent_name', 'agent_phone'],
+  holiday: ['client_first_name', 'insured', 'agency_name', 'agent_name', 'agent_phone', 'holiday_greeting'],
+  quarterly: ['client_first_name', 'insured', 'agency_name', 'agent_name', 'agent_phone', 'carrier_name', 'policy_number', 'face_amount', 'monthly_premium', 'policy_effective_date', 'beneficiaries'],
+  policy_packet: ['client_first_name', 'insured', 'agency_name', 'agent_name', 'agent_phone', 'client_email', 'carrier_name', 'policy_number', 'face_amount', 'monthly_premium', 'policy_effective_date', 'beneficiaries'],
 };

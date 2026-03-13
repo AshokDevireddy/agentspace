@@ -171,6 +171,7 @@ export function useInvalidation() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.subscription }),
       queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.agencyBillingDashboard() }),
       queryClient.invalidateQueries({ queryKey: queryKeys.user }),
       queryClient.invalidateQueries({ queryKey: queryKeys.userProfile() }),
     ])

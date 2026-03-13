@@ -142,6 +142,7 @@ export const queryKeys = {
   // Subscriptions & Billing
   subscription: ['subscription'] as const,
   subscriptionStatus: () => ['subscription', 'status'] as const,
+  agencyBillingDashboard: () => ['subscription', 'agency-billing'] as const,
 
   // Search
   search: ['search'] as const,

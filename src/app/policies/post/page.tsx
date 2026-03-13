@@ -16,6 +16,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { apiClient } from '@/lib/api-client'
 import { formatPhoneInput, normalizePhoneForStorage } from "@/lib/telnyx"
+import { formatDateToYYYYMMDD } from "@/lib/date-utils"
+import { useAgencySettings } from "@/hooks/useAgencySettings"
 
 // Options are loaded dynamically from Supabase based on the user's agency
 
@@ -66,8 +68,9 @@ export default function PostDeal() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { showSuccess, showError, showWarning } = useNotification()
+  const { data: agencySettings } = useAgencySettings()
 
-  const today = useMemo(() => new Date().toISOString().split('T')[0], [])
+  const today = useMemo(() => formatDateToYYYYMMDD(new Date(), agencySettings?.timezone), [agencySettings?.timezone])
 
   const [error, setError] = useState<string | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
@@ -1370,7 +1373,7 @@ export default function PostDeal() {
                       value={formData.clientDateOfBirth}
                       onChange={(e) => handleInputChange("clientDateOfBirth", e.target.value)}
                       min="1900-01-01"
-                      max={new Date().toISOString().split('T')[0]}
+                      max={today}
                       className="h-12"
                     />
                   </div>

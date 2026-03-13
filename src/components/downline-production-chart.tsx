@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button"
 import { ChevronLeft, Home } from "lucide-react"
 import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
+import { formatDateToYYYYMMDD } from "@/lib/date-utils"
+import { useAgencySettings } from "@/hooks/useAgencySettings"
 
 // Types for the RPC response
 interface DownlineProductionData {
@@ -97,6 +99,7 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
     isClickable: boolean
     hasDownlines: boolean
   } | null>(null)
+  const { data: agencySettings } = useAgencySettings()
 
   // Calculate date range based on time window
   const getDateRange = React.useCallback(() => {
@@ -109,10 +112,10 @@ const DownlineProductionChart = React.forwardRef<DownlineProductionChartHandle, 
     }
 
     return {
-      startDate: startDate ? startDate.toISOString().split('T')[0] : null,
-      endDate: endDate.toISOString().split('T')[0]
+      startDate: startDate ? formatDateToYYYYMMDD(startDate, agencySettings?.timezone) : null,
+      endDate: formatDateToYYYYMMDD(endDate, agencySettings?.timezone)
     }
-  }, [timeWindow])
+  }, [timeWindow, agencySettings?.timezone])
 
   // Fetch downline production data with TanStack Query via Django API
   const { data = [], isLoading, error, refetch, isFetching } = useQuery<DownlineProductionData[], Error>({

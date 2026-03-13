@@ -1,4 +1,5 @@
 import { getBackendUrl } from '@/lib/api-config';
+import { formatDateToYYYYMMDD } from '@/lib/date-utils';
 import camelcaseKeys from 'camelcase-keys';
 
 // Helper to call Django API with authentication
@@ -303,25 +304,25 @@ export async function getCarriersAndProducts(params: any, agencyId: string, acce
 }
 
 // Get agency summary
-export async function getAgencySummary(params: any, agencyId: string, accessToken?: string) {
+export async function getAgencySummary(params: any, agencyId: string, accessToken?: string, timezone?: string) {
   try {
     if (!accessToken) {
       return { error: 'Authentication required' };
     }
 
-    // Get date range based on time period
+    // Get date range based on time period using agency timezone
     let startDate: string | null = null;
     const now = new Date();
 
     switch (params.time_period) {
       case 'current_month':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        startDate = formatDateToYYYYMMDD(new Date(now.getFullYear(), now.getMonth(), 1), timezone);
         break;
       case 'last_month':
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
+        startDate = formatDateToYYYYMMDD(new Date(now.getFullYear(), now.getMonth() - 1, 1), timezone);
         break;
       case 'ytd':
-        startDate = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
+        startDate = formatDateToYYYYMMDD(new Date(now.getFullYear(), 0, 1), timezone);
         break;
       default:
         startDate = null;

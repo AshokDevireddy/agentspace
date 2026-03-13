@@ -1,5 +1,6 @@
 import { useMemo, useCallback } from 'react'
 import { useClientValue } from './useClientValue'
+import { formatDateToYYYYMMDD, DEFAULT_TIMEZONE } from '@/lib/date-utils'
 
 export interface DateInfo {
   date: Date
@@ -59,28 +60,35 @@ export function useClientDate(
 /**
  * Calculate week date range (Sunday to Saturday) in SSR-safe way.
  */
-export function useWeekDateRange(serverYear: number = new Date().getFullYear(), serverMonth: number = new Date().getMonth(), serverDay: number = new Date().getDate()) {
-  // Memoize server default
+export function useWeekDateRange(
+  serverYear: number = new Date().getFullYear(),
+  serverMonth: number = new Date().getMonth(),
+  serverDay: number = new Date().getDate(),
+  timezone: string = DEFAULT_TIMEZONE
+) {
   const serverDefault = useMemo(() => ({
     startDate: `${serverYear}-${String(serverMonth + 1).padStart(2, '0')}-01`,
     endDate: `${serverYear}-${String(serverMonth + 1).padStart(2, '0')}-07`
   }), [serverYear, serverMonth, serverDay])
 
-  // Memoize the getter function
   const getClientValue = useCallback(() => {
-    const today = new Date()
-    const dayOfWeek = today.getDay()
-    const sunday = new Date(today)
-    sunday.setDate(today.getDate() - dayOfWeek)
+    const now = new Date()
+    // Get day-of-week in agency timezone
+    const weekdayStr = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short' }).format(now)
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+    const dayOfWeek = dayMap[weekdayStr] ?? 0
+
+    const sunday = new Date(now)
+    sunday.setDate(now.getDate() - dayOfWeek)
     sunday.setHours(0, 0, 0, 0)
     const saturday = new Date(sunday)
     saturday.setDate(sunday.getDate() + 6)
     saturday.setHours(23, 59, 59, 999)
     return {
-      startDate: sunday.toISOString().split('T')[0],
-      endDate: saturday.toISOString().split('T')[0]
+      startDate: formatDateToYYYYMMDD(sunday, timezone),
+      endDate: formatDateToYYYYMMDD(saturday, timezone)
     }
-  }, [])
+  }, [timezone])
 
   return useClientValue(serverDefault, getClientValue)
 }

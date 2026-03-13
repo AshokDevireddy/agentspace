@@ -44,14 +44,17 @@ export function getMTDDateRange(): DateRange {
 }
 
 /**
- * Format a date string to YYYY-MM-DD format
- * @param date - Date object or date string
- * @returns Formatted date string in YYYY-MM-DD format
+ * Format an ISO date string as "Month DD, YYYY" for display (e.g. billing dates)
  */
-export function formatDateToYYYYMMDD(date: Date | string): string {
+export function formatRenewalDate(dateString: string | null | undefined): string {
+  if (!dateString) return 'Not available'
+  const date = new Date(dateString)
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+}
+
+export const DEFAULT_TIMEZONE = 'America/Los_Angeles';
+
+export function formatDateToYYYYMMDD(date: Date | string, timezone: string = DEFAULT_TIMEZONE): string {
   const d = typeof date === 'string' ? new Date(date) : date;
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 }

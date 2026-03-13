@@ -49,6 +49,7 @@ export interface AgencySettings {
   smsQuarterlyRequireApproval: boolean
   smsPolicyPacketRequireApproval: boolean
   scoreboardAgentVisibility: boolean
+  timezone: string
 }
 
 /**

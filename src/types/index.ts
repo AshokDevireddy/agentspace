@@ -175,6 +175,8 @@ export interface UserProfile {
   positionId: string | null
   positionName: string | null
   positionLevel: number | null
+  agencyBillingEnabled?: boolean
+  agencyBillingTier?: string | null
 }
 
 export interface DealsSummary {

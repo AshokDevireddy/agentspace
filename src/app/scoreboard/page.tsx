@@ -18,6 +18,8 @@ import { QueryErrorDisplay } from "@/components/ui/query-error-display"
 import { RefreshingIndicator } from "@/components/ui/refreshing-indicator"
 import { useHydrated } from "@/hooks/useHydrated"
 import { useClientDate } from "@/hooks/useClientDate"
+import { formatDateToYYYYMMDD } from "@/lib/date-utils"
+import { useAgencySettings } from "@/hooks/useAgencySettings"
 import { useLocalStorage } from "@/hooks/useLocalStorage"
 import { SimpleSearchableSelect } from "@/components/ui/simple-searchable-select"
 
@@ -67,13 +69,6 @@ const timeframeOptions = [
   { value: 'custom', label: 'Custom' }
 ]
 
-const formatLocalDate = (date: Date): string => {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
 export default function Scoreboard() {
   const { user, loading: authLoading } = useAuth()
   const queryClient = useQueryClient()
@@ -81,6 +76,8 @@ export default function Scoreboard() {
   // SSR-safe hydration and date hooks
   const isHydrated = useHydrated()
   const clientDate = useClientDate()
+  const { data: agencyTimezoneSettings } = useAgencySettings()
+  const formatLocalDate = useCallback((date: Date | string) => formatDateToYYYYMMDD(date, agencyTimezoneSettings?.timezone), [agencyTimezoneSettings?.timezone])
 
   const [timeframe, setTimeframe] = useState<TimeframeOption>('this_month')
   const [customStartDate, setCustomStartDate] = useState('')
@@ -243,7 +240,7 @@ export default function Scoreboard() {
       startDate: finalStartDate,
       endDate: formatLocalDate(endDate)
     }
-  }, [clientDate, customStartDate, customEndDate, defaultScoreboardStartDate])
+  }, [clientDate, customStartDate, customEndDate, defaultScoreboardStartDate, formatLocalDate])
 
   // Memoize the date range calculation to avoid unnecessary recalculations
   // SSR-safe: uses clientDate which returns deterministic values on server

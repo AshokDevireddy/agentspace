@@ -24,6 +24,7 @@ import { useWeekDateRange } from "@/hooks/useClientDate"
 import { useLocalStorage } from "@/hooks/useLocalStorage"
 import { useHydrated } from "@/hooks/useHydrated"
 import { PIE_CHART_COLORS, PIE_CHART_GROUP_THRESHOLD } from "@/lib/chart-colors"
+import { useAgencySettings } from "@/hooks/useAgencySettings"
 
 export default function Home() {
   const { user, loading: authLoading, refreshUser } = useAuth()
@@ -37,7 +38,8 @@ export default function Home() {
   const isHydrated = useHydrated()
 
   // SSR-safe week date range - returns deterministic dates on server, actual current week on client
-  const weekRange = useWeekDateRange()
+  const { data: agencySettingsData } = useAgencySettings()
+  const weekRange = useWeekDateRange(undefined, undefined, undefined, agencySettingsData?.timezone)
   const queryClient = useQueryClient()
 
   const { data: profileData, isLoading: profileLoading, error: profileError } = useQuery<UserProfile, Error>({

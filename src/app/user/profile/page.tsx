@@ -17,6 +17,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queryKeys'
 import { useResetPassword } from '@/hooks/mutations'
 import { apiClient } from '@/lib/api-client'
+import { AgencyManagedBanner } from '@/components/agency-managed-banner'
+import { AgencyBillingDashboard } from '@/components/agency-billing-dashboard'
+import { formatRenewalDate } from '@/lib/date-utils'
 
 interface ThemeOption {
   value: ThemeMode
@@ -57,6 +60,8 @@ interface ProfileData {
   phoneNumber?: string | null;
   smsAutoSendEnabled: boolean | null;
   agencySmsAutoSendEnabled: boolean;
+  agencyBillingEnabled?: boolean;
+  agencyBillingTier?: string | null;
 }
 
 interface Position {
@@ -66,17 +71,6 @@ interface Position {
   description: string | null;
   isActive: boolean;
 }
-
-// Helper function to format date as "Month DD, YYYY"
-const formatRenewalDate = (dateString: string | null | undefined): string => {
-  if (!dateString) return 'Not available';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-};
 
 export default function ProfilePage() {
   const { user, refreshUser, loading: authLoading } = useAuth();
@@ -478,149 +472,180 @@ export default function ProfilePage() {
       )}
 
       {/* Subscription Section */}
-      <div className="w-full max-w-7xl mb-8">
-        <h2 className="text-3xl font-bold text-foreground mb-2 text-center">Choose Your Plan</h2>
-        <p className="text-muted-foreground text-center mb-8">Select the perfect tier for your needs</p>
+      {profileData.agencyBillingEnabled && !profileData.isAdmin ? (
+        /* Non-admin agent in agency-billed org: show managed banner */
+        <div className="w-full max-w-7xl mb-8">
+          <AgencyManagedBanner tier={profileData.agencyBillingTier} />
 
-        {/* Current Subscription Status */}
-        {profileData.subscriptionTier && profileData.subscriptionTier !== 'free' && (
-          <div className="mb-8">
-            <SubscriptionManager
-              subscriptionStatus={profileData.subscriptionStatus || 'active'}
-              hasAiAddon={false}
-            />
-
-            {/* Billing Cycle Information */}
-            {profileData.billingCycleEnd && (
-              <div className="mt-4 p-4 bg-muted/50 rounded-lg border border-border">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Next Billing Date</p>
-                    <p className="text-lg font-semibold text-foreground">
-                      {formatRenewalDate(profileData.billingCycleEnd)}
-                    </p>
-                  </div>
-
-                  {/* Show scheduled tier change if any */}
-                  {profileData.scheduledTierChange && (
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
-                        Scheduled Change
-                      </p>
-                      <p className="text-base font-semibold text-amber-700 dark:text-amber-300 capitalize">
-                        → {profileData.scheduledTierChange} Tier
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Usage Stats */}
-        {profileData.subscriptionTier === 'free' && (
-          <div className="mb-8 rounded-xl border-2 border-yellow-300 bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20 dark:border-yellow-700 p-6">
-            <h3 className="font-bold text-yellow-900 dark:text-yellow-200 mb-3 text-lg">Free Tier Usage</h3>
-            <div className="grid gap-3">
-              <div>
-                <div className="flex justify-between mb-1">
-                  <span className="text-sm text-yellow-800 dark:text-yellow-300">Deals Created</span>
-                  <span className="text-sm font-medium text-yellow-900 dark:text-yellow-200">
-                    {profileData.dealsCreatedCount || 0} / 10
-                  </span>
-                </div>
-                <div className="w-full bg-yellow-200 dark:bg-yellow-900/30 rounded-full h-2">
-                  <div
-                    className="bg-yellow-600 dark:bg-yellow-500 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(((profileData.dealsCreatedCount || 0) / 10) * 100, 100)}%` }}
-                  />
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between mb-1">
-                  <span className="text-sm text-yellow-800 dark:text-yellow-300">Messages Sent</span>
-                  <span className="text-sm font-medium text-yellow-900 dark:text-yellow-200">
-                    {profileData.messagesSentCount || 0} / 10
-                  </span>
-                </div>
-                <div className="w-full bg-yellow-200 dark:bg-yellow-900/30 rounded-full h-2">
-                  <div
-                    className="bg-yellow-600 dark:bg-yellow-500 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(((profileData.messagesSentCount || 0) / 10) * 100, 100)}%` }}
-                  />
-                </div>
+          {/* Individual subscription notice */}
+          {profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free' && (
+            <div className="mt-4 max-w-3xl mx-auto p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                Your agency now covers your plan. You can cancel your personal subscription via{' '}
+                <span className="font-semibold">Manage Subscription</span> below.
+              </p>
+              <div className="mt-3">
+                <SubscriptionManager
+                  subscriptionStatus={profileData.subscriptionStatus}
+                  hasAiAddon={false}
+                />
               </div>
             </div>
-            {((profileData.dealsCreatedCount || 0) >= 10 || (profileData.messagesSentCount || 0) >= 10) && (
-              <p className="text-sm font-semibold text-red-600 dark:text-red-400 mt-4">
-                ⚠️ You've reached your limits. Upgrade to unlock more!
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Pricing Tiers Grid */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {/* Free Tier */}
-          <PricingTierCard
-            tier="free"
-            name={TIER_LIMITS.free.name}
-            price={TIER_LIMITS.free.price}
-            features={TIER_LIMITS.free.features}
-            priceId=""
-            isCurrentPlan={profileData.subscriptionTier === 'free'}
-            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
-          />
-
-          {/* Basic Tier */}
-          <PricingTierCard
-            tier="basic"
-            name={TIER_LIMITS.basic.name}
-            price={TIER_LIMITS.basic.price}
-            features={TIER_LIMITS.basic.features}
-            priceId={TIER_PRICE_IDS.basic}
-            isCurrentPlan={profileData.subscriptionTier === 'basic'}
-            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
-          />
-
-          {/* Pro Tier */}
-          <PricingTierCard
-            tier="pro"
-            name={TIER_LIMITS.pro.name}
-            price={TIER_LIMITS.pro.price}
-            features={TIER_LIMITS.pro.features}
-            priceId={TIER_PRICE_IDS.pro}
-            isCurrentPlan={profileData.subscriptionTier === 'pro'}
-            recommended={true}
-            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
-          />
-
-          {/* Expert Tier */}
-          <PricingTierCard
-            tier="expert"
-            name={TIER_LIMITS.expert.name}
-            price={TIER_LIMITS.expert.price}
-            features={TIER_LIMITS.expert.features}
-            priceId={TIER_PRICE_IDS.expert}
-            isCurrentPlan={profileData.subscriptionTier === 'expert'}
-            currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
-            hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
-          />
+          )}
         </div>
+      ) : profileData.agencyBillingEnabled && profileData.isAdmin ? (
+        /* Admin in agency-billed org: show agency billing dashboard */
+        <div className="w-full max-w-7xl mb-8">
+          <h2 className="text-3xl font-bold text-foreground mb-2 text-center">Agency Billing</h2>
+          <p className="text-muted-foreground text-center mb-8">Manage billing for all agents in your agency</p>
+          <AgencyBillingDashboard />
+        </div>
+      ) : (
+        /* Individual billing (default) */
+        <div className="w-full max-w-7xl mb-8">
+          <h2 className="text-3xl font-bold text-foreground mb-2 text-center">Choose Your Plan</h2>
+          <p className="text-muted-foreground text-center mb-8">Select the perfect tier for your needs</p>
 
-        {profileData.subscriptionTier && ['basic', 'pro', 'expert'].includes(profileData.subscriptionTier) && (
-          <TierUsageCard
-            tier={profileData.subscriptionTier as 'basic' | 'pro' | 'expert'}
-            messagesSentCount={profileData.messagesSentCount || 0}
-            aiRequestsCount={profileData.aiRequestsCount || 0}
-            isAdmin={profileData.isAdmin}
-          />
-        )}
-      </div>
+          {/* Current Subscription Status */}
+          {profileData.subscriptionTier && profileData.subscriptionTier !== 'free' && (
+            <div className="mb-8">
+              <SubscriptionManager
+                subscriptionStatus={profileData.subscriptionStatus || 'active'}
+                hasAiAddon={false}
+              />
+
+              {/* Billing Cycle Information */}
+              {profileData.billingCycleEnd && (
+                <div className="mt-4 p-4 bg-muted/50 rounded-lg border border-border">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Next Billing Date</p>
+                      <p className="text-lg font-semibold text-foreground">
+                        {formatRenewalDate(profileData.billingCycleEnd)}
+                      </p>
+                    </div>
+
+                    {/* Show scheduled tier change if any */}
+                    {profileData.scheduledTierChange && (
+                      <div className="text-right">
+                        <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                          Scheduled Change
+                        </p>
+                        <p className="text-base font-semibold text-amber-700 dark:text-amber-300 capitalize">
+                          → {profileData.scheduledTierChange} Tier
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Usage Stats */}
+          {profileData.subscriptionTier === 'free' && (
+            <div className="mb-8 rounded-xl border-2 border-yellow-300 bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20 dark:border-yellow-700 p-6">
+              <h3 className="font-bold text-yellow-900 dark:text-yellow-200 mb-3 text-lg">Free Tier Usage</h3>
+              <div className="grid gap-3">
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-sm text-yellow-800 dark:text-yellow-300">Deals Created</span>
+                    <span className="text-sm font-medium text-yellow-900 dark:text-yellow-200">
+                      {profileData.dealsCreatedCount || 0} / 10
+                    </span>
+                  </div>
+                  <div className="w-full bg-yellow-200 dark:bg-yellow-900/30 rounded-full h-2">
+                    <div
+                      className="bg-yellow-600 dark:bg-yellow-500 h-2 rounded-full transition-all"
+                      style={{ width: `${Math.min(((profileData.dealsCreatedCount || 0) / 10) * 100, 100)}%` }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-sm text-yellow-800 dark:text-yellow-300">Messages Sent</span>
+                    <span className="text-sm font-medium text-yellow-900 dark:text-yellow-200">
+                      {profileData.messagesSentCount || 0} / 10
+                    </span>
+                  </div>
+                  <div className="w-full bg-yellow-200 dark:bg-yellow-900/30 rounded-full h-2">
+                    <div
+                      className="bg-yellow-600 dark:bg-yellow-500 h-2 rounded-full transition-all"
+                      style={{ width: `${Math.min(((profileData.messagesSentCount || 0) / 10) * 100, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+              {((profileData.dealsCreatedCount || 0) >= 10 || (profileData.messagesSentCount || 0) >= 10) && (
+                <p className="text-sm font-semibold text-red-600 dark:text-red-400 mt-4">
+                  ⚠️ You've reached your limits. Upgrade to unlock more!
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Pricing Tiers Grid */}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {/* Free Tier */}
+            <PricingTierCard
+              tier="free"
+              name={TIER_LIMITS.free.name}
+              price={TIER_LIMITS.free.price}
+              features={TIER_LIMITS.free.features}
+              priceId=""
+              isCurrentPlan={profileData.subscriptionTier === 'free'}
+              currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+              hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
+            />
+
+            {/* Basic Tier */}
+            <PricingTierCard
+              tier="basic"
+              name={TIER_LIMITS.basic.name}
+              price={TIER_LIMITS.basic.price}
+              features={TIER_LIMITS.basic.features}
+              priceId={TIER_PRICE_IDS.basic}
+              isCurrentPlan={profileData.subscriptionTier === 'basic'}
+              currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+              hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
+            />
+
+            {/* Pro Tier */}
+            <PricingTierCard
+              tier="pro"
+              name={TIER_LIMITS.pro.name}
+              price={TIER_LIMITS.pro.price}
+              features={TIER_LIMITS.pro.features}
+              priceId={TIER_PRICE_IDS.pro}
+              isCurrentPlan={profileData.subscriptionTier === 'pro'}
+              recommended={true}
+              currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+              hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
+            />
+
+            {/* Expert Tier */}
+            <PricingTierCard
+              tier="expert"
+              name={TIER_LIMITS.expert.name}
+              price={TIER_LIMITS.expert.price}
+              features={TIER_LIMITS.expert.features}
+              priceId={TIER_PRICE_IDS.expert}
+              isCurrentPlan={profileData.subscriptionTier === 'expert'}
+              currentTier={(profileData.subscriptionTier as 'free' | 'basic' | 'pro' | 'expert') || 'free'}
+              hasActiveSubscription={profileData.subscriptionStatus === 'active' && profileData.subscriptionTier !== 'free'}
+            />
+          </div>
+
+          {profileData.subscriptionTier && ['basic', 'pro', 'expert'].includes(profileData.subscriptionTier) && (
+            <TierUsageCard
+              tier={profileData.subscriptionTier as 'basic' | 'pro' | 'expert'}
+              messagesSentCount={profileData.messagesSentCount || 0}
+              aiRequestsCount={profileData.aiRequestsCount || 0}
+              isAdmin={profileData.isAdmin}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
